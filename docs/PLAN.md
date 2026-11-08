@@ -55,7 +55,7 @@ QA builds append `.qa`, so both can be installed side by side. Minimum OS: iOS/t
 | Live QA | Guarded by `AUN_LIVE_QA=1`, run locally; CI stays hermetic | local |
 | Static | SwiftLint (pinned), swift-format, L10n key parity, WCAG contrast of tokens | CI |
 
-Snapshot references are recorded on the iOS 26.4 simulator (`RECORD_SNAPSHOTS=1`), the runtime shared by CI and local.
+Snapshot references are recorded on the iOS 26.4 simulator (`TEST_RUNNER_RECORD_SNAPSHOTS=1`), the runtime shared by CI and local.
 
 ## 4. Environments
 

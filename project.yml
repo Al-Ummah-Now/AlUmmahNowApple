@@ -67,6 +67,8 @@ targets:
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
     dependencies:
       - package: AUNFeatures
+      - package: AUNDesign
+      - package: AUNCoreBridge
     scheme:
       testTargets:
         - ViewerIOSUITests
@@ -85,6 +87,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "3"
     dependencies:
       - package: AUNFeatures
+      - package: AUNDesign
+      - package: AUNCoreBridge
     scheme:
       testTargets:
         - ViewerTVUITests
@@ -101,6 +105,8 @@ targets:
         AUN_APP_NAME: Al Ummah Now
     dependencies:
       - package: AUNFeatures
+      - package: AUNDesign
+      - package: AUNCoreBridge
     scheme:
       testTargets:
         - ViewerMacUITests
@@ -119,6 +125,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
     dependencies:
       - package: AUNStudio
+      - package: AUNDesign
+      - package: AUNCoreBridge
     scheme: {}
 
   StudioMac:
@@ -130,6 +138,8 @@ targets:
         AUN_APP_NAME: Al Ummah Now Studio
     dependencies:
       - package: AUNStudio
+      - package: AUNDesign
+      - package: AUNCoreBridge
     scheme: {}
 
   ViewerIOSUITests:
