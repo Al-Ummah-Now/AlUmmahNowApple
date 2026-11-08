@@ -76,6 +76,7 @@ targets:
         - package: AUNDesign/AUNDesignTests
         - package: AUNPlayer/AUNPlayerTests
         - package: AUNFeatures/AUNFeaturesTests
+        - package: AUNStudio/AUNStudioTests
 
   ViewerTV:
     templates: [App]
@@ -133,7 +134,8 @@ targets:
       - package: AUNStudio
       - package: AUNDesign
       - package: AUNCoreBridge
-    scheme: {}
+    scheme:
+      testTargets: [StudioIOSUITests]
 
   StudioMac:
     templates: [App]
@@ -152,7 +154,8 @@ targets:
       - package: AUNStudio
       - package: AUNDesign
       - package: AUNCoreBridge
-    scheme: {}
+    scheme:
+      testTargets: [StudioMacUITests]
 
   ViewerIOSUITests:
     type: bundle.ui-testing
@@ -172,3 +175,15 @@ targets:
     sources: [UITests/ViewerMac]
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: ViewerMac}}
     dependencies: [{target: ViewerMac}]
+  StudioIOSUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests/StudioIOS]
+    settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: StudioIOS, TARGETED_DEVICE_FAMILY: "1,2"}}
+    dependencies: [{target: StudioIOS}]
+  StudioMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [UITests/StudioMac]
+    settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: StudioMac}}
+    dependencies: [{target: StudioMac}]
