@@ -50,8 +50,8 @@ public enum PlayerPhase: Hashable, Sendable {
 /// Platform-neutral control over one AVPlayer. Surfaces render it; features only talk to this.
 @MainActor @Observable
 public final class PlayerController {
-    public static let speeds: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
-    public static let skipInterval: Double = 10
+    public nonisolated static let speeds: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+    public nonisolated static let skipInterval: Double = 10
 
     public let player = AVPlayer()
     public private(set) var item: PlaybackItem?

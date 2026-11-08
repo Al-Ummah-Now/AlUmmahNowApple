@@ -16,8 +16,8 @@ import SwiftUI
             let view = AVPlayerViewController()
             view.player = controller.player
             view.speeds = []
-            view.updatesNowPlayingInfoCenter = false
             #if os(iOS)
+                view.updatesNowPlayingInfoCenter = false
                 view.allowsPictureInPicturePlayback = true
                 view.canStartPictureInPictureAutomaticallyFromInline = true
                 view.delegate = context.coordinator
