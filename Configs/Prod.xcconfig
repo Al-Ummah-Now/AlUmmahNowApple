@@ -1,0 +1,6 @@
+#include "Base.xcconfig"
+SLASH = /
+AUN_API_BASE_URL = https:$(SLASH)$(SLASH)videos.api.alummahnow.net
+AUN_ENVIRONMENT = prod
+AUN_BUNDLE_SUFFIX =
+AUN_DISPLAY_SUFFIX =

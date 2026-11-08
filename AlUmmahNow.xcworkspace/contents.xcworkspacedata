@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace version = "1.0">
+   <FileRef location = "group:AlUmmahNow.xcodeproj"></FileRef>
+   <FileRef location = "group:Packages/AUNCoreBridge"></FileRef>
+   <FileRef location = "group:Packages/AUNDesign"></FileRef>
+   <FileRef location = "group:Packages/AUNPlayer"></FileRef>
+   <FileRef location = "group:Packages/AUNFeatures"></FileRef>
+   <FileRef location = "group:Packages/AUNStudio"></FileRef>
+   <FileRef location = "group:docs"></FileRef>
+</Workspace>

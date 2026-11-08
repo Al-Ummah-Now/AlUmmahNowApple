@@ -1,0 +1,152 @@
+# Source of truth for AlUmmahNow.xcodeproj. Run `make generate` after changing it.
+name: AlUmmahNow
+options:
+  bundleIdPrefix: net.alummahnow
+  developmentLanguage: en
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "17.0"
+    tvOS: "17.0"
+    macOS: "14.0"
+configs:
+  Debug: debug
+  QA: release
+  Release: release
+configFiles:
+  Debug: Configs/QA.xcconfig
+  QA: Configs/QA.xcconfig
+  Release: Configs/Prod.xcconfig
+settings:
+  base:
+    GENERATE_INFOPLIST_FILE: YES
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_PREVIEWS: YES
+    INFOPLIST_KEY_CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+packages:
+  AUNCoreBridge: {path: Packages/AUNCoreBridge}
+  AUNDesign: {path: Packages/AUNDesign}
+  AUNPlayer: {path: Packages/AUNPlayer}
+  AUNFeatures: {path: Packages/AUNFeatures}
+  AUNStudio: {path: Packages/AUNStudio}
+
+targetTemplates:
+  App:
+    type: application
+    sources:
+      - path: Apps/${target_name}
+    info:
+      path: Apps/${target_name}/Info.plist
+      properties:
+        CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
+        CFBundleLocalizations: [en, ar]
+        AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
+        AUNEnvironment: "$(AUN_ENVIRONMENT)"
+        UILaunchScreen: {}
+
+targets:
+  ViewerIOS:
+    templates: [App]
+    platform: iOS
+    supportedDestinations: [iOS]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.viewer$(AUN_BUNDLE_SUFFIX)
+        AUN_APP_NAME: Al Ummah Now
+        TARGETED_DEVICE_FAMILY: "1,2"
+    info:
+      path: Apps/ViewerIOS/Info.plist
+      properties:
+        CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
+        CFBundleLocalizations: [en, ar]
+        AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
+        AUNEnvironment: "$(AUN_ENVIRONMENT)"
+        UILaunchScreen: {}
+        UIBackgroundModes: [audio]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+    dependencies:
+      - package: AUNFeatures
+    scheme:
+      testTargets:
+        - ViewerIOSUITests
+        - package: AUNCoreBridge/AUNCoreBridgeTests
+        - package: AUNDesign/AUNDesignTests
+        - package: AUNPlayer/AUNPlayerTests
+        - package: AUNFeatures/AUNFeaturesTests
+
+  ViewerTV:
+    templates: [App]
+    platform: tvOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.viewer.tv$(AUN_BUNDLE_SUFFIX)
+        AUN_APP_NAME: Al Ummah Now
+        TARGETED_DEVICE_FAMILY: "3"
+    dependencies:
+      - package: AUNFeatures
+    scheme:
+      testTargets:
+        - ViewerTVUITests
+        - package: AUNCoreBridge/AUNCoreBridgeTests
+        - package: AUNDesign/AUNDesignTests
+        - package: AUNPlayer/AUNPlayerTests
+
+  ViewerMac:
+    templates: [App]
+    platform: macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.viewer.mac$(AUN_BUNDLE_SUFFIX)
+        AUN_APP_NAME: Al Ummah Now
+    dependencies:
+      - package: AUNFeatures
+    scheme:
+      testTargets:
+        - ViewerMacUITests
+        - package: AUNCoreBridge/AUNCoreBridgeTests
+        - package: AUNDesign/AUNDesignTests
+        - package: AUNPlayer/AUNPlayerTests
+        - package: AUNStudio/AUNStudioTests
+
+  StudioIOS:
+    templates: [App]
+    platform: iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.studio$(AUN_BUNDLE_SUFFIX)
+        AUN_APP_NAME: Al Ummah Now Studio
+        TARGETED_DEVICE_FAMILY: "1,2"
+    dependencies:
+      - package: AUNStudio
+    scheme: {}
+
+  StudioMac:
+    templates: [App]
+    platform: macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.studio.mac$(AUN_BUNDLE_SUFFIX)
+        AUN_APP_NAME: Al Ummah Now Studio
+    dependencies:
+      - package: AUNStudio
+    scheme: {}
+
+  ViewerIOSUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests/ViewerIOS]
+    settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: ViewerIOS, TARGETED_DEVICE_FAMILY: "1,2"}}
+    dependencies: [{target: ViewerIOS}]
+  ViewerTVUITests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources: [UITests/ViewerTV]
+    settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: ViewerTV, TARGETED_DEVICE_FAMILY: "3"}}
+    dependencies: [{target: ViewerTV}]
+  ViewerMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [UITests/ViewerMac]
+    settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: ViewerMac}}
+    dependencies: [{target: ViewerMac}]

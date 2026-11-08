@@ -1,0 +1,19 @@
+included: [Apps, Packages, UITests]
+excluded: ["**/.build", "**/__Snapshots__", "**/Package.swift"]
+disabled_rules: [trailing_comma, opening_brace, identifier_name, todo]
+opt_in_rules: [force_unwrapping, empty_count, first_where]
+custom_rules:
+  no_todo_comments:
+    name: "No TODO comments"
+    regex: "(//|/\\*).*\\b(TODO|FIXME|HACK)\\b"
+    message: "Implement it now or open a GitHub issue labelled queue."
+    severity: error
+  no_print:
+    name: "Use os.Logger"
+    regex: "^\\s*(print|NSLog|debugPrint)\\("
+    message: "Use os.Logger via AUNLog."
+    severity: error
+line_length: {warning: 130, error: 180}
+file_length: {warning: 600, error: 900}
+type_body_length: {warning: 400, error: 600}
+function_body_length: {warning: 80, error: 140}

@@ -1,0 +1,45 @@
+name: CI
+on:
+  pull_request:
+  push: {branches: [main]}
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+permissions: {contents: read}
+env:
+  SWIFTLINT_VERSION: 0.65.1
+  AUN_IOS_SIM_OS: "26.4.1"
+jobs:
+  lint:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install SwiftLint (pinned)
+        run: |
+          curl -fsSL -o /tmp/swiftlint.zip "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/portable_swiftlint.zip"
+          unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint
+      - run: SWIFTLINT=/tmp/swiftlint/swiftlint scripts/ci.sh lint
+  test:
+    name: ${{ matrix.job }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [ios, ipad, tvos, mac, studio]
+    steps:
+      - uses: actions/checkout@v5
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - uses: actions/cache@v4
+        with:
+          path: build/DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+      - run: scripts/ci.sh ${{ matrix.job }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: results-${{ matrix.job }}
+          path: build/DerivedData/Logs/Test/*.xcresult
+          retention-days: 7
