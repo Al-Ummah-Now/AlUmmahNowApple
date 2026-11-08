@@ -1,6 +1,6 @@
 included: [Apps, Packages, UITests]
 excluded: ["**/.build", "**/__Snapshots__", "**/Package.swift"]
-disabled_rules: [trailing_comma, opening_brace, identifier_name, todo, large_tuple, nesting, static_over_final_class, multiple_closures_with_trailing_closure]
+disabled_rules: [closure_parameter_position, trailing_comma, opening_brace, identifier_name, todo, large_tuple, nesting, static_over_final_class, multiple_closures_with_trailing_closure]
 opt_in_rules: [empty_count, first_where]
 custom_rules:
   no_todo_comments:
