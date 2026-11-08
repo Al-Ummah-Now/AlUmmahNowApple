@@ -1,0 +1,19 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+# Generated from project.yml by XcodeGen. Run `make generate`.
+AlUmmahNow.xcodeproj/
+# Never commit secrets or signing material (public repo).
+.env
+.env.*
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+fastlane/report.xml
+fastlane/README.md
