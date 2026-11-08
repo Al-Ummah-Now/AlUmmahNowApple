@@ -32,9 +32,9 @@ case "${1:-}" in
     xcodebuild test "${COMMON[@]}" -scheme ViewerMac -destination "platform=macOS" "${ADHOC[@]}"
     ;;
   studio)
-    xcodebuild build "${COMMON[@]}" -scheme StudioIOS \
-      -destination "generic/platform=iOS Simulator" "${UNSIGNED[@]}"
-    xcodebuild build "${COMMON[@]}" -scheme StudioMac -destination "platform=macOS" "${ADHOC[@]}"
+    xcodebuild test "${COMMON[@]}" -scheme StudioIOS \
+      -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${UNSIGNED[@]}"
+    xcodebuild test "${COMMON[@]}" -scheme StudioMac -destination "platform=macOS" "${ADHOC[@]}"
     ;;
   *) echo "usage: $0 lint|ios|ipad|tvos|mac|studio" >&2; exit 2 ;;
 esac
