@@ -14,7 +14,7 @@ ADHOC=(CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=)
 case "${1:-}" in
   lint)
     "${SWIFTLINT:-swiftlint}" lint --strict --quiet
-    xcrun swift-format lint --strict -r Apps Packages UITests
+    find Apps Packages UITests -name "*.swift" -not -name Package.swift -not -path "*/.build/*" -print0 | xargs -0 xcrun swift-format lint --strict
     ;;
   ios)
     xcodebuild test "${COMMON[@]}" -scheme ViewerIOS \
