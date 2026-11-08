@@ -1,8 +1,18 @@
+import AUNCoreBridge
+import AUNDesign
+import AUNFeatures
 import SwiftUI
 
 @main
 struct ViewerTVApp: App {
+    @State private var settings = AppSettings()
+    private let core = ViewerBootstrap.makeCore()
+
     var body: some Scene {
-        WindowGroup { EmptyView() }
+        WindowGroup {
+            ViewerRootView(core: core)
+                .fanousRoot(settings)
+                .environment(settings)
+        }
     }
 }

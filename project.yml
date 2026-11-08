@@ -103,6 +103,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.viewer.mac$(AUN_BUNDLE_SUFFIX)
         AUN_APP_NAME: Al Ummah Now
+    entitlements:
+      path: Apps/ViewerMac/ViewerMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
     dependencies:
       - package: AUNFeatures
       - package: AUNDesign
@@ -114,6 +119,7 @@ targets:
         - package: AUNDesign/AUNDesignTests
         - package: AUNPlayer/AUNPlayerTests
         - package: AUNStudio/AUNStudioTests
+        - package: AUNFeatures/AUNFeaturesTests
 
   StudioIOS:
     templates: [App]
@@ -136,6 +142,12 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.studio.mac$(AUN_BUNDLE_SUFFIX)
         AUN_APP_NAME: Al Ummah Now Studio
+    entitlements:
+      path: Apps/StudioMac/StudioMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.files.user-selected.read-write: true
     dependencies:
       - package: AUNStudio
       - package: AUNDesign
