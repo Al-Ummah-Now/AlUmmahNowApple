@@ -68,3 +68,13 @@ private struct ProcessingCatalog: CatalogServicing {
         #expect(ViewerBootstrap.makeCore(defaults: defaults, info: nil).catalog is FixtureCatalogService)
     }
 }
+
+#if os(macOS)
+    import SwiftUI
+
+    @Test func arrowKeysFollowReadingDirection() {
+        #expect(SkipKey.delta(isRightArrow: true, direction: .leftToRight) == 10)
+        #expect(SkipKey.delta(isRightArrow: true, direction: .rightToLeft) == -10)
+        #expect(SkipKey.delta(isRightArrow: false, direction: .rightToLeft) == 10)
+    }
+#endif

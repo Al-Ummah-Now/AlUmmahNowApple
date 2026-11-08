@@ -90,7 +90,26 @@
             .background(Fanous.background)
             .task { await model.load(language: l10n.language) }
             .onDisappear { model.player.stop() }
+            #if os(macOS)
+                .focusable()
+                .focusEffectDisabled()
+                .onKeyPress(.space) {
+                    model.player.togglePlayback()
+                    return .handled
+                }
+                .onKeyPress(.leftArrow) { skip(isRightArrow: false) }
+                .onKeyPress(.rightArrow) { skip(isRightArrow: true) }
+            #endif
         }
+
+        #if os(macOS)
+            @Environment(\.layoutDirection) private var direction
+
+            private func skip(isRightArrow: Bool) -> KeyPress.Result {
+                model.player.skip(by: SkipKey.delta(isRightArrow: isRightArrow, direction: direction))
+                return .handled
+            }
+        #endif
 
         @ViewBuilder
         private func playerArea(_ content: WatchContent) -> some View {
