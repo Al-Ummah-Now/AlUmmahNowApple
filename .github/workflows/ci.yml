@@ -8,6 +8,7 @@ concurrency:
 permissions: {contents: read}
 env:
   SWIFTLINT_VERSION: 0.65.1
+  AUN_IOS_SIM_OS: "26.4.1"
 jobs:
   lint:
     runs-on: macos-26
