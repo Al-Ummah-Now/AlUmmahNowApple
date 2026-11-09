@@ -24,6 +24,8 @@
             let root =
                 view
                 .fanousTheme(theme, dark: style == .dark)
+                // Loops (loader breath, skeleton shine) land on their end state, so every render is the same.
+                .transaction { $0.disablesAnimations = true }
                 .environment(\.l10n, L10n(language))
                 .environment(\.locale, language.locale)
                 .environment(\.layoutDirection, language.isRTL ? .rightToLeft : .leftToRight)
