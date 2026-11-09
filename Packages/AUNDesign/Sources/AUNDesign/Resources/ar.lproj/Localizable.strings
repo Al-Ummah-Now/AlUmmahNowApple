@@ -59,3 +59,14 @@
 "studio.editor.moveDown" = "نقل للخلف";
 "studio.live.title" = "بث مباشر";
 "studio.live.unavailable" = "يتطلب البث المباشر تحديد مزوّد الخدمة وهو غير متاح بعد.";
+"player.play" = "تشغيل";
+"player.pause" = "إيقاف مؤقت";
+"player.mute" = "كتم الصوت";
+"player.unmute" = "إلغاء الكتم";
+"player.settings" = "الإعدادات";
+"player.pip" = "صورة داخل صورة";
+"player.fullscreen" = "ملء الشاشة";
+"player.exitFullscreen" = "الخروج من ملء الشاشة";
+"player.seek" = "البحث في الفيديو";
+"player.seekValue" = "%1$@ من %2$@";
+"player.retry" = "حاول مرة أخرى";

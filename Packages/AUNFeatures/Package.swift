@@ -18,6 +18,7 @@ let package = Package(
             name: "AUNFeaturesTests",
             dependencies: [
                 "AUNFeatures",
+                "AUNPlayer",
                 .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
             ],
             exclude: ["__Snapshots__"]

@@ -59,3 +59,14 @@
 "studio.editor.moveDown" = "Move later";
 "studio.live.title" = "Go live";
 "studio.live.unavailable" = "Live broadcasting needs a live provider decision and isn't available yet.";
+"player.play" = "Play";
+"player.pause" = "Pause";
+"player.mute" = "Mute";
+"player.unmute" = "Unmute";
+"player.settings" = "Settings";
+"player.pip" = "Picture-in-Picture";
+"player.fullscreen" = "Fullscreen";
+"player.exitFullscreen" = "Exit Fullscreen";
+"player.seek" = "Seek video";
+"player.seekValue" = "%1$@ of %2$@";
+"player.retry" = "Try Again";

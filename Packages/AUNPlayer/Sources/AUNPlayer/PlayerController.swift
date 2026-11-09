@@ -1,5 +1,6 @@
 import AUNCoreBridge
 import AVFoundation
+import AVKit
 import Combine
 import CoreMedia
 import Observation
@@ -63,6 +64,19 @@ public final class PlayerController {
     public private(set) var speed: Float = 1
     public private(set) var selectedSubtitleID: String?
     public private(set) var currentCue: SubtitleCue?
+    /// Seconds loaded ahead, for the buffered part of the scrubber.
+    public private(set) var bufferedTime: Double = 0
+    /// True once playback first ran; until then the chrome shows only the big play button.
+    public private(set) var hasStarted = false
+    /// Waiting for data while asked to play.
+    public private(set) var isBuffering = false
+    public private(set) var hasEnded = false
+    public var isMuted: Bool {
+        get { access(keyPath: \.isMuted); return player.isMuted }
+        set { withMutation(keyPath: \.isMuted) { player.isMuted = newValue } }
+    }
+    /// The watch screen shows the player alone while this is on (iOS) or the window goes full screen (macOS).
+    public var isFullscreen = false
 
     public var qualityOptions: [PlayerQuality] { PlayerQuality.options(from: item?.resolutions ?? []) }
     public var currentChapter: Chapter? { item?.chapters.last { $0.startTime <= currentTime } }
@@ -90,6 +104,9 @@ public final class PlayerController {
         cueTimeline = CueTimeline([])
         currentTime = 0
         duration = 0
+        bufferedTime = 0
+        hasStarted = false
+        hasEnded = false
 
         let playerItem = AVPlayerItem(url: newItem.url)
         playerItem.audioTimePitchAlgorithm = .timeDomain
@@ -107,7 +124,49 @@ public final class PlayerController {
     public func pause() { player.pause() }
 
     public func togglePlayback() {
-        if isPlaying { pause() } else { play() }
+        if isPlaying {
+            pause()
+        } else {
+            if hasEnded { seek(to: 0) }
+            play()
+        }
+    }
+
+    public func toggleMute() { isMuted.toggle() }
+
+    /// A controller frozen in a state, with nothing loaded, for snapshots and previews of the chrome.
+    public static func preview(
+        item: PlaybackItem, currentTime: Double, duration: Double, buffered: Double, playing: Bool, phase: PlayerPhase = .ready
+    ) -> PlayerController {
+        let controller = PlayerController { _ in "" }
+        controller.item = item
+        controller.phase = phase
+        controller.currentTime = currentTime
+        controller.duration = duration
+        controller.bufferedTime = buffered
+        controller.hasStarted = currentTime > 0
+        controller.isPlaying = playing
+        return controller
+    }
+
+    #if os(iOS) || os(macOS)
+        /// Set by the surface that draws the picture.
+        @ObservationIgnored public var pictureInPicture: AVPictureInPictureController?
+
+        public func togglePictureInPicture() {
+            guard let pictureInPicture, AVPictureInPictureController.isPictureInPictureSupported() else { return }
+            if pictureInPicture.isPictureInPictureActive {
+                pictureInPicture.stopPictureInPicture()
+            } else {
+                pictureInPicture.startPictureInPicture()
+            }
+        }
+    #endif
+
+    /// Loads the current item again after a failure.
+    public func retry() {
+        guard let item else { return }
+        load(item)
     }
 
     public func seek(to seconds: Double) {
@@ -183,6 +242,19 @@ public final class PlayerController {
                 MainActor.assumeIsolated { self?.handle(timeControl: status) }
             }
             .store(in: &cancellables)
+        playerItem.publisher(for: \.loadedTimeRanges)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] ranges in
+                MainActor.assumeIsolated {
+                    let ends = ranges.map { $0.timeRangeValue.end.seconds }.filter(\.isFinite)
+                    self?.bufferedTime = ends.max() ?? 0
+                }
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: AVPlayerItem.didPlayToEndTimeNotification, object: playerItem)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.hasEnded = true } }
+            .store(in: &cancellables)
         let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             MainActor.assumeIsolated { self?.applyTime(time.seconds) }
@@ -203,6 +275,11 @@ public final class PlayerController {
 
     private func handle(timeControl status: AVPlayer.TimeControlStatus) {
         isPlaying = status != .paused
+        isBuffering = status == .waitingToPlayAtSpecifiedRate
+        if isPlaying {
+            hasStarted = true
+            hasEnded = false
+        }
         #if os(iOS) || os(macOS)
             nowPlaying.update()
         #endif

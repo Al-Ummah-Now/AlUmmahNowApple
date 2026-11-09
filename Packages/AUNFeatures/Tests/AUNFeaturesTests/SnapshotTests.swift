@@ -1,6 +1,7 @@
 #if os(iOS)
     import AUNCoreBridge
     import AUNDesign
+    import AUNPlayer
     import SnapshotTesting
     import SwiftUI
     import Testing
@@ -66,6 +67,26 @@
                 assertView(
                     HomeRailsContent(rails: rails, open: { _ in }), name: "home", theme: theme, language: language, style: style)
             }
+        }
+
+        private func player(menu: PlayerMenu?) -> some View {
+            let video = FixtureCatalogService.videos[0]
+            let item = PlaybackItem(
+                url: URL(string: "https://cdn.test/v.m3u8")!, title: video.title, subtitle: nil,
+                resolutions: ["240p", "480p", "720p"], subtitles: [], chapters: content.chapters)
+            let controller = PlayerController.preview(item: item, currentTime: 3, duration: 26, buffered: 14, playing: false)
+            return PlayerSnapshotFrame(controller: controller, menu: menu).padding(12).frame(
+                maxHeight: .infinity, alignment: .top
+            )
+            .fanousPage()
+        }
+
+        @Test(arguments: themes, languages)
+        func playerControls(theme: FanousThemeID, language: AppLanguage) {
+            for style in Self.styles {
+                assertView(player(menu: nil), name: "player", theme: theme, language: language, style: style)
+            }
+            assertView(player(menu: .settings), name: "player-menu", theme: theme, language: language, style: .dark)
         }
 
         @Test(arguments: themes, languages)

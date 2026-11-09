@@ -82,6 +82,61 @@
         }
     }
 
+    /// One clip for the picture and its chrome, in the theme's radius, with the page's player ring and glow.
+    struct PlayerClip<Picture: View>: View {
+        @Environment(\.fanous) private var theme
+        @ViewBuilder let picture: Picture
+
+        var body: some View {
+            let shape = FanousShape.rounded(theme.radius.lg)
+            picture
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .clipShape(shape)
+                .background {
+                    FanousSurface(fills: [], shadows: theme.material.player + theme.material.playerRing, shape: shape)
+                }
+                .overlay { FanousSurface(fills: [], shadows: theme.material.playerInner, shape: shape) }
+                .accessibilityIdentifier("player")
+        }
+    }
+
+    struct PlayerFrame: View {
+        let controller: PlayerController
+
+        var body: some View { PlayerClip { PlayerSurface(controller: controller) } }
+    }
+
+    /// The chrome over a still frame instead of the live picture, for snapshots: a night scene with lantern lights,
+    /// so the bar is judged over bright and dark video at once.
+    struct PlayerSnapshotFrame: View {
+        let controller: PlayerController
+        let menu: PlayerMenu?
+
+        var body: some View {
+            PlayerClip {
+                ZStack {
+                    Canvas { context, size in
+                        context.fill(
+                            Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: 0.06, green: 0.07, blue: 0.12)))
+                        let lights: [(CGFloat, CGFloat, CGFloat, Color)] = [
+                            (0.18, 0.3, 0.35, .orange), (0.55, 0.2, 0.3, .purple), (0.82, 0.45, 0.28, .green),
+                            (0.4, 0.75, 0.4, Color(red: 1, green: 0.85, blue: 0.6)),
+                        ]
+                        for (x, y, r, color) in lights {
+                            let center = CGPoint(x: size.width * x, y: size.height * y)
+                            context.fill(
+                                Path(CGRect(origin: .zero, size: size)),
+                                with: .radialGradient(
+                                    Gradient(colors: [color.opacity(0.85), .clear]), center: center, startRadius: 0,
+                                    endRadius: size.width * r))
+                        }
+                    }
+                    PlayerChrome(controller: controller, menu: menu)
+                }
+            }
+        }
+    }
+
     public struct WatchView: View {
         @Environment(\.l10n) private var l10n
         #if os(iOS)
@@ -114,6 +169,16 @@
             }
             .fanousPage()
             .task { await model.load(language: l10n.language) }
+            #if os(iOS)
+                .fullScreenCover(
+                    isPresented: Binding(get: { model.player.isFullscreen }, set: { model.player.isFullscreen = $0 })
+                ) {
+                    PlayerSurface(controller: model.player).ignoresSafeArea().preferredColorScheme(.dark)
+                    .persistentSystemOverlays(.hidden)
+                }
+            #elseif os(macOS)
+                .onChange(of: model.player.isFullscreen) { _, _ in NSApp.keyWindow?.toggleFullScreen(nil) }
+            #endif
             .onDisappear { model.player.stop() }
             #if os(macOS)
                 .focusable()
@@ -140,14 +205,7 @@
         private func playerArea(_ content: WatchContent) -> some View {
             VStack(spacing: 8) {
                 if content.video.isPlayable {
-                    PlayerSurface(controller: model.player)
-                        .aspectRatio(16 / 9, contentMode: .fit)
-                        .accessibilityIdentifier("player")
-                    if model.player.phase == .failed {
-                        Text(l10n("player.error")).font(.footnote).foregroundStyle(Fanous.errorText)
-                            .accessibilityIdentifier("player-error")
-                    }
-                    PlayerControlsBar(controller: model.player).padding(.horizontal)
+                    PlayerFrame(controller: model.player).padding(.horizontal, usesTwoPanes ? 16 : 12)
                 } else {
                     VStack(spacing: 12) {
                         FanousMotif(.loader).frame(width: 44, height: 44)
