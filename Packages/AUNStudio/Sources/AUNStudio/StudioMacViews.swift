@@ -66,7 +66,7 @@
                         .accessibilityIdentifier("upload-start")
                 }
                 if queue.needsSignIn {
-                    Text(l10n("studio.upload.signIn")).foregroundStyle(Fanous.error).accessibilityIdentifier("upload-sign-in")
+                    Text(l10n("studio.upload.signIn")).foregroundStyle(Fanous.errorText).accessibilityIdentifier("upload-sign-in")
                 }
                 if queue.items.isEmpty {
                     Text(l10n("studio.upload.empty")).foregroundStyle(Fanous.textSecondary).frame(

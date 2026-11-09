@@ -6,7 +6,7 @@ struct StatusLabel: View {
     let status: QueueItemStatus
 
     var body: some View {
-        Text(l10n(key)).font(.caption).foregroundStyle(status == .failed ? Fanous.error : Fanous.textSecondary)
+        Text(l10n(key)).font(.caption).foregroundStyle(status == .failed ? Fanous.errorText : Fanous.textSecondary)
     }
 
     private var key: String {

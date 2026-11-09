@@ -2,6 +2,7 @@
 // The double slash must be escaped: xcconfig treats // as a comment.
 SLASH = /
 AUN_API_BASE_URL = https:$(SLASH)$(SLASH)videos.api.qa.alummahnow.net
+AUN_ADMIN_API_BASE_URL = https:$(SLASH)$(SLASH)admin.api.qa.alummahnow.net
 AUN_ENVIRONMENT = qa
 AUN_BUNDLE_SUFFIX = .qa
 AUN_DISPLAY_SUFFIX = " QA"

@@ -21,15 +21,78 @@ import Testing
         #expect(L10n(.en)("nope") == "⟦nope⟧")
     }
 
-    @Test(arguments: [FanousPalette.dark, FanousPalette.light])
-    func paletteMeetsWCAGAA(_ palette: FanousPalette) {
-        #expect(palette.textPrimary.contrast(with: palette.background) >= 4.5)
-        #expect(palette.textPrimary.contrast(with: palette.surface) >= 4.5)
-        #expect(palette.textSecondary.contrast(with: palette.background) >= 4.5)
-        #expect(palette.textSecondary.contrast(with: palette.surface) >= 4.5)
-        #expect(palette.accentText.contrast(with: palette.background) >= 4.5)
-        #expect(palette.onAccent.contrast(with: palette.accent) >= 4.5)
-        #expect(palette.error.contrast(with: palette.background) >= 4.5)
+    static let everyTheme = FanousThemeID.allCases.flatMap { [FanousTheme($0, dark: false), FanousTheme($0, dark: true)] }
+
+    @Test(arguments: everyTheme)
+    func everySiteThemeMeetsWCAGAA(_ theme: FanousTheme) {
+        let c = theme.colors
+        let label = "\(theme.id) dark=\(theme.isDark)"
+        let roles = [
+            (c.textPrimary, "textPrimary"), (c.textSecondary, "textSecondary"), (c.link, "link"), (c.errorText, "errorText"),
+        ]
+        for (text, name) in roles {
+            #expect(text.contrast(with: c.background) >= 4.5, "\(label) \(name) on background")
+            #expect(text.contrast(with: c.surface) >= 4.5, "\(label) \(name) on surface")
+        }
+        #expect(c.onPrimary.contrast(with: c.primary) >= 4.5, "\(label) onPrimary")
+    }
+
+    @Test(arguments: everyTheme)
+    func goldPrimaryActionTextPassesOnEveryStopOfThePrimaryMaterial(_ theme: FanousTheme) {
+        let text = theme.parts.buttonPrimaryText
+        for fills in [theme.material.primary, theme.material.primaryHover, theme.material.primaryPress] {
+            for fill in fills {
+                let colors: [FanousRGBA]
+                switch fill {
+                case .solid(let color): colors = [color]
+                case .linear(_, _, let stops), .radial(_, _, _, _, let stops): colors = stops.map(\.color)
+                }
+                for color in colors {
+                    #expect(text.contrast(with: color.over(theme.colors.background)) >= 7, "\(theme.id) dark=\(theme.isDark)")
+                }
+            }
+        }
+    }
+
+    @Test func fallbackIsFawanees() {
+        #expect(FanousThemeID.fallback == .fawanees)
+        #expect(FanousThemeID(siteValue: nil) == .fawanees)
+        #expect(FanousThemeID(siteValue: "retro") == .fawanees)
+        #expect(FanousThemeID(siteValue: "zujaj") == .zujaj)
+    }
+
+    @Test func themesKeepTheirOwnTypeface() {
+        #expect(FanousTypeface.family(FanousThemeID.nahas.tokens.font.latin) == "Source Serif 4")
+        #expect(FanousTypeface.family(FanousThemeID.nahas.tokens.font.arabic) == "Amiri")
+        #expect(FanousTypeface.family(FanousThemeID.zujaj.tokens.font.arabic) == "Noto Kufi Arabic")
+        #expect(FanousTypeface.family(FanousThemeID.fawanees.tokens.font.latin) == nil)
+    }
+
+    @Test func bundledFontsRegister() throws {
+        FanousTypeface.register()
+        let urls = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
+        #expect(urls.count == 5)
+    }
+
+    @Test func linearGradientsFollowTheCSSGradientLine() {
+        let rect = CGRect(x: 0, y: 0, width: 200, height: 100)
+        let down = FanousPaint.linearPoints(angle: 180, in: rect)
+        #expect(abs(down.start.y) < 0.001 && abs(down.end.y - 100) < 0.001 && abs(down.start.x - 100) < 0.001)
+        let end = FanousPaint.linearPoints(angle: 90, in: rect)
+        #expect(abs(end.start.x) < 0.001 && abs(end.end.x - 200) < 0.001)
+        // 45deg reaches the corners: half-length is (w·sin + h·cos) / 2.
+        let diag = FanousPaint.linearPoints(angle: 45, in: rect)
+        #expect(abs(hypot(diag.end.x - diag.start.x, diag.end.y - diag.start.y) - 150 * 2.squareRoot()) < 0.001)
+    }
+
+    @Test func radialExtentsFollowCSS() {
+        let rect = CGRect(x: 0, y: 0, width: 200, height: 100)
+        let c = CGPoint(x: 50, y: 50)
+        #expect(FanousPaint.radialRadii(circle: true, extent: .closestSide, center: c, in: rect) == (50, 50))
+        #expect(FanousPaint.radialRadii(circle: false, extent: .farthestSide, center: c, in: rect) == (150, 50))
+        let corner = FanousPaint.radialRadii(circle: true, extent: .farthestCorner, center: c, in: rect)
+        #expect(abs(corner.0 - hypot(150, 50)) < 0.001)
+        #expect(FanousPaint.radialRadii(circle: false, extent: .radii(0.5, 0.25), center: c, in: rect) == (100, 25))
     }
 
     @Test func durationUsesLocaleDigits() {

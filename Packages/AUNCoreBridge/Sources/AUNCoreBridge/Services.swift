@@ -33,14 +33,17 @@ public struct CoreBridge: Sendable {
     public var catalog: any CatalogServicing
     public var auth: any AuthSessionProviding
     public var uploads: any UploadEngine
+    public var siteTheme: any SiteThemeServicing
 
     public init(
-        environment: AppEnvironment, catalog: any CatalogServicing, auth: any AuthSessionProviding, uploads: any UploadEngine
+        environment: AppEnvironment, catalog: any CatalogServicing, auth: any AuthSessionProviding, uploads: any UploadEngine,
+        siteTheme: any SiteThemeServicing
     ) {
         self.environment = environment
         self.catalog = catalog
         self.auth = auth
         self.uploads = uploads
+        self.siteTheme = siteTheme
     }
 
     /// Interim implementation in Swift. The Rust XCFramework replaces this one factory.
@@ -50,14 +53,15 @@ public struct CoreBridge: Sendable {
             environment: environment,
             catalog: NativeCatalogService(baseURL: environment.apiBaseURL, session: session),
             auth: auth,
-            uploads: NativeTUSUploadEngine(session: session)
+            uploads: NativeTUSUploadEngine(session: session),
+            siteTheme: NativeSiteThemeService(adminAPIBaseURL: environment.adminAPIBaseURL, session: session)
         )
     }
 
-    /// Hermetic bridge for UI tests, snapshots and previews.
-    public static func fixtures() -> CoreBridge {
+    /// Hermetic bridge for UI tests, snapshots and previews. The site theme is the one given, Fawanees by default.
+    public static func fixtures(siteTheme: String = "fawanees") -> CoreBridge {
         CoreBridge(
             environment: .qa, catalog: FixtureCatalogService(), auth: GuestAuthSession(),
-            uploads: NativeTUSUploadEngine(session: .shared))
+            uploads: NativeTUSUploadEngine(session: .shared), siteTheme: FixedSiteThemeService(siteTheme))
     }
 }

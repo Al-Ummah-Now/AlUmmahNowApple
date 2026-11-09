@@ -35,7 +35,7 @@
                                 HStack {
                                     Text(DisplayFormat.duration(chapter.startTime, l10n.language))
                                         .monospacedDigit()
-                                        .foregroundStyle(Fanous.accentText)
+                                        .foregroundStyle(Fanous.link)
                                     Text(chapter.displayTitle(l10n.language)).foregroundStyle(Fanous.textPrimary)
                                     Spacer()
                                 }
@@ -119,7 +119,7 @@
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .accessibilityIdentifier("player")
                     if model.player.phase == .failed {
-                        Text(l10n("player.error")).font(.footnote).foregroundStyle(Fanous.error)
+                        Text(l10n("player.error")).font(.footnote).foregroundStyle(Fanous.errorText)
                             .accessibilityIdentifier("player-error")
                     }
                     PlayerControlsBar(controller: model.player).padding(.horizontal)

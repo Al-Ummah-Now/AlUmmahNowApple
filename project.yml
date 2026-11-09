@@ -41,6 +41,7 @@ targetTemplates:
         CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
         CFBundleLocalizations: [en, ar]
         AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
+        AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
         AUNEnvironment: "$(AUN_ENVIRONMENT)"
         UILaunchScreen: {}
 
@@ -60,6 +61,7 @@ targets:
         CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
         CFBundleLocalizations: [en, ar]
         AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
+        AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
         AUNEnvironment: "$(AUN_ENVIRONMENT)"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]

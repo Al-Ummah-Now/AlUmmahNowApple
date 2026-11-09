@@ -4,6 +4,8 @@
 <dict>
 	<key>AUNAPIBaseURL</key>
 	<string>$(AUN_API_BASE_URL)</string>
+	<key>AUNAdminAPIBaseURL</key>
+	<string>$(AUN_ADMIN_API_BASE_URL)</string>
 	<key>AUNEnvironment</key>
 	<string>$(AUN_ENVIRONMENT)</string>
 	<key>CFBundleDevelopmentRegion</key>

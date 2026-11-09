@@ -8,24 +8,33 @@
 
     @testable import AUNFeatures
 
-    /// Reference images are recorded on the iOS 26.4 simulator with `RECORD_SNAPSHOTS=1`.
+    /// Every key screen in every site theme, light and dark, English and Arabic.
+    ///
+    /// References come from the CI simulator (iOS 26.4): a missing reference is recorded and fails the run, and CI
+    /// uploads `__Snapshots__` as an artifact to commit. `RECORD_SNAPSHOTS=1` re-records them all.
     @MainActor @Suite(.serialized) struct SnapshotTests {
+        static let themes = FanousThemeID.allCases
+        static let languages = [AppLanguage.en, .ar]
+        static let styles = [UIUserInterfaceStyle.light, .dark]
+
         private func assertView(
-            _ view: some View, name: String, language: AppLanguage, style: UIUserInterfaceStyle, line: UInt = #line
+            _ view: some View, name: String, theme: FanousThemeID, language: AppLanguage, style: UIUserInterfaceStyle,
+            line: UInt = #line
         ) {
             let root =
                 view
+                .fanousTheme(theme, dark: style == .dark)
                 .environment(\.l10n, L10n(language))
                 .environment(\.locale, language.locale)
                 .environment(\.layoutDirection, language.isRTL ? .rightToLeft : .leftToRight)
             let host = UIHostingController(rootView: root)
             let traits = UITraitCollection(userInterfaceStyle: style)
             let record = ProcessInfo.processInfo.environment["RECORD_SNAPSHOTS"] == "1"
-            withSnapshotTesting(record: record ? .all : .never) {
+            withSnapshotTesting(record: record ? .all : .missing) {
                 assertSnapshot(
                     of: host,
                     as: .image(precision: 0.97, perceptualPrecision: 0.95, size: CGSize(width: 393, height: 620), traits: traits),
-                    named: "\(name)-\(language.rawValue)-\(style == .dark ? "dark" : "light")",
+                    named: "\(name)-\(theme.rawValue)-\(language.rawValue)-\(style == .dark ? "dark" : "light")",
                     line: line)
             }
         }
@@ -49,17 +58,22 @@
                 ])
         }
 
-        @Test(arguments: [AppLanguage.en, .ar], [UIUserInterfaceStyle.dark, .light])
-        func home(language: AppLanguage, style: UIUserInterfaceStyle) {
-            assertView(HomeRailsContent(rails: rails, open: { _ in }), name: "home", language: language, style: style)
+        @Test(arguments: themes, languages)
+        func home(theme: FanousThemeID, language: AppLanguage) {
+            for style in Self.styles {
+                assertView(
+                    HomeRailsContent(rails: rails, open: { _ in }), name: "home", theme: theme, language: language, style: style)
+            }
         }
 
-        @Test(arguments: [AppLanguage.en, .ar], [UIUserInterfaceStyle.dark, .light])
-        func watchDetails(language: AppLanguage, style: UIUserInterfaceStyle) {
-            assertView(
-                WatchDetails(content: content, seek: { _ in }).padding().frame(maxHeight: .infinity, alignment: .top).background(
-                    Fanous.background),
-                name: "watch", language: language, style: style)
+        @Test(arguments: themes, languages)
+        func watchDetails(theme: FanousThemeID, language: AppLanguage) {
+            for style in Self.styles {
+                assertView(
+                    WatchDetails(content: content, seek: { _ in }).padding().frame(maxHeight: .infinity, alignment: .top)
+                        .fanousMaterial(.page),
+                    name: "watch", theme: theme, language: language, style: style)
+            }
         }
     }
 #endif
