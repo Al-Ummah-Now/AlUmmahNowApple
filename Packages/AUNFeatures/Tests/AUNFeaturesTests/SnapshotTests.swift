@@ -13,9 +13,9 @@
     /// References come from the CI simulator (iOS 26.4): a missing reference is recorded and fails the run, and CI
     /// uploads `__Snapshots__` as an artifact to commit. `RECORD_SNAPSHOTS=1` re-records them all.
     @MainActor @Suite(.serialized) struct SnapshotTests {
-        static let themes = FanousThemeID.allCases
-        static let languages = [AppLanguage.en, .ar]
-        static let styles = [UIUserInterfaceStyle.light, .dark]
+        nonisolated static let themes = FanousThemeID.allCases
+        nonisolated static let languages = [AppLanguage.en, .ar]
+        nonisolated static let styles = [UIUserInterfaceStyle.light, .dark]
 
         private func assertView(
             _ view: some View, name: String, theme: FanousThemeID, language: AppLanguage, style: UIUserInterfaceStyle,
