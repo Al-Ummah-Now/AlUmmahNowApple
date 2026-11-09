@@ -13,6 +13,8 @@
 "theme.light" = "فاتح";
 "home.title" = "الرئيسية";
 "home.empty" = "لا يوجد محتوى للمشاهدة بعد.";
+"home.featured" = "مختارات";
+"home.watchNow" = "شاهد الآن";
 "rail.trending" = "الأكثر رواجًا";
 "rail.recommended" = "مقترح لك";
 "rail.popular" = "الأكثر مشاهدة";

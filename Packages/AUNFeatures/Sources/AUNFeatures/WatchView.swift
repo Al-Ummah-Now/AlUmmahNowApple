@@ -7,53 +7,78 @@
     /// Title, description and chapters. Separate from the player so it can be snapshot-tested.
     struct WatchDetails: View {
         @Environment(\.l10n) private var l10n
+        @Environment(\.fanous) private var theme
         let content: WatchContent
         let seek: (Chapter) -> Void
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(content.video.displayTitle(l10n.language))
-                        .font(.title3.weight(.bold))
+                        .fanousFont(.title)
+                        .fontWeight(.bold)
                         .foregroundStyle(Fanous.textPrimary)
                         .accessibilityIdentifier("watch-title")
-                    Text(metadata).font(.footnote).foregroundStyle(Fanous.textSecondary)
+                    Text(metadata).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
                 }
                 let description = content.video.displayDescription(l10n.language)
                 if !description.isEmpty {
-                    Text(description).font(.body).foregroundStyle(Fanous.textPrimary)
+                    Text(description).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(FanousScale.spacingLg)
+                        .fanousMaterial(.card) { .rounded($0.lg) }
                         .accessibilityIdentifier("watch-description")
                 }
-                if !content.chapters.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(l10n("watch.chapters")).font(.headline).foregroundStyle(Fanous.textPrimary)
-                            .accessibilityAddTraits(.isHeader)
-                        ForEach(content.chapters) { chapter in
-                            Button {
-                                seek(chapter)
-                            } label: {
-                                HStack {
-                                    Text(DisplayFormat.duration(chapter.startTime, l10n.language))
-                                        .monospacedDigit()
-                                        .foregroundStyle(Fanous.link)
-                                    Text(chapter.displayTitle(l10n.language)).foregroundStyle(Fanous.textPrimary)
-                                    Spacer()
-                                }
-                                .padding(.vertical, 6)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("chapter-\(chapter.id)")
-                        }
-                    }
-                }
+                if !content.chapters.isEmpty { chapters }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        private var chapters: some View {
+            VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                Text(l10n("watch.chapters")).fanousFont(.label).fontWeight(.bold).foregroundStyle(Fanous.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                VStack(spacing: 0) {
+                    ForEach(Array(content.chapters.enumerated()), id: \.element.id) { index, chapter in
+                        if index > 0 { Rectangle().fill(Fanous.divider).frame(height: 1).padding(.horizontal, 12) }
+                        Button {
+                            seek(chapter)
+                        } label: {
+                            HStack(spacing: FanousScale.spacingMd) {
+                                Text(DisplayFormat.duration(chapter.startTime, l10n.language))
+                                    .fanousFont(.caption)
+                                    .monospacedDigit()
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(Fanous.link)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .fanousMaterial(.control) { .rounded($0.sm) }
+                                Text(chapter.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(ChapterRowStyle())
+                        .accessibilityIdentifier("chapter-\(chapter.id)")
+                    }
+                }
+                .clipShape(FanousShape.rounded(theme.radius.lg))
+                .fanousMaterial(.card) { .rounded($0.lg) }
+            }
         }
 
         private var metadata: String {
             let views = l10n("video.views", DisplayFormat.count(content.video.views, l10n.language))
             return [content.video.channelName, views].compactMap { $0 }.joined(separator: " · ")
+        }
+    }
+
+    /// A chapter row takes the hover material while pressed.
+    private struct ChapterRowStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label.background { if configuration.isPressed { FanousSurfaceKind(kind: .hover, shape: .rect) } }
         }
     }
 
@@ -80,14 +105,14 @@
             Group {
                 switch model.state {
                 case .loading:
-                    ProgressView(l10n("common.loading")).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ThemeLoader()
                 case .failed:
                     ErrorStateView { Task { await model.load(language: l10n.language) } }
                 case .loaded(let content):
                     if usesTwoPanes { twoPanes(content) } else { singleColumn(content) }
                 }
             }
-            .background(Fanous.background)
+            .fanousPage()
             .task { await model.load(language: l10n.language) }
             .onDisappear { model.player.stop() }
             #if os(macOS)
@@ -124,12 +149,17 @@
                     }
                     PlayerControlsBar(controller: model.player).padding(.horizontal)
                 } else {
-                    Text(l10n("watch.notReady"))
-                        .foregroundStyle(Fanous.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .aspectRatio(16 / 9, contentMode: .fit)
-                        .background(Fanous.surface)
-                        .accessibilityIdentifier("watch-not-ready")
+                    VStack(spacing: 12) {
+                        FanousMotif(.loader).frame(width: 44, height: 44)
+                        Text(l10n("watch.notReady")).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .fanousMaterial(.hero) { .rounded($0.lg) }
+                    .padding(.horizontal)
+                    .accessibilityIdentifier("watch-not-ready")
                 }
             }
         }

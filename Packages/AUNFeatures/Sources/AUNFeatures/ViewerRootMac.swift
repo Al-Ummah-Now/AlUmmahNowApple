@@ -17,7 +17,12 @@
             NavigationSplitView {
                 List(selection: $selection) {
                     Label(l10n("home.title"), systemImage: "house").tag("home")
+                        .listRowBackground(
+                            selection == "home"
+                                ? FanousSurfaceKind(kind: .active, shape: .rounded(8)).padding(.horizontal, 6) : nil)
                 }
+                .scrollContentBackground(.hidden)
+                .fanousMaterial(.rail)
                 .navigationSplitViewColumnWidth(min: 160, ideal: 200)
             } detail: {
                 HomeView(catalog: core.catalog) { openWindow(id: Self.watchWindowID, value: $0.id) }

@@ -13,6 +13,8 @@
 "theme.light" = "Light";
 "home.title" = "Home";
 "home.empty" = "Nothing to watch yet.";
+"home.featured" = "Featured";
+"home.watchNow" = "Watch now";
 "rail.trending" = "Trending";
 "rail.recommended" = "Recommended";
 "rail.popular" = "Popular";
