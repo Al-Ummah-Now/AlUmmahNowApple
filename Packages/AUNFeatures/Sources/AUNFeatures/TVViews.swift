@@ -34,7 +34,7 @@
 
         var body: some View {
             ZStack {
-                Fanous.background.ignoresSafeArea()
+                Rectangle().fill(Fanous.background).ignoresSafeArea()
                 switch model.state {
                 case .loading:
                     ProgressView(l10n("common.loading"))
