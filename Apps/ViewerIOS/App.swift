@@ -6,12 +6,13 @@ import SwiftUI
 @main
 struct ViewerIOSApp: App {
     @State private var settings = AppSettings()
+    @State private var siteTheme = SiteThemeStore.live()
     private let core = ViewerBootstrap.makeCore()
 
     var body: some Scene {
         WindowGroup {
             ViewerRootView(core: core)
-                .fanousRoot(settings)
+                .fanousRoot(settings, siteTheme: siteTheme)
                 .environment(settings)
         }
     }

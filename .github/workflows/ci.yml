@@ -20,6 +20,14 @@ jobs:
           curl -fsSL -o /tmp/swiftlint.zip "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/portable_swiftlint.zip"
           unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint
       - run: SWIFTLINT=/tmp/swiftlint/swiftlint scripts/ci.sh lint
+  fanous:
+    name: fanous registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Vendored theme registry matches the pinned monorepo commit
+        run: scripts/sync-fanous.sh --check
   test:
     name: ${{ matrix.job }}
     runs-on: macos-26
@@ -42,4 +50,11 @@ jobs:
         with:
           name: results-${{ matrix.job }}
           path: build/DerivedData/Logs/Test/*.xcresult
+          retention-days: 7
+      - name: Snapshots recorded on this simulator, to review and commit
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: snapshots-${{ matrix.job }}
+          path: Packages/*/Tests/*/__Snapshots__
           retention-days: 7

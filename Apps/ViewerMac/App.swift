@@ -6,18 +6,19 @@ import SwiftUI
 @main
 struct ViewerMacApp: App {
     @State private var settings = AppSettings()
+    @State private var siteTheme = SiteThemeStore.live()
     private let core = ViewerBootstrap.makeCore()
 
     var body: some Scene {
         WindowGroup {
             ViewerRootView(core: core)
-                .fanousRoot(settings)
+                .fanousRoot(settings, siteTheme: siteTheme)
                 .environment(settings)
         }
         WindowGroup(id: ViewerRootView.watchWindowID, for: String.self) { $videoID in
             if let videoID {
                 WatchWindow(videoID: videoID, core: core)
-                    .fanousRoot(settings)
+                    .fanousRoot(settings, siteTheme: siteTheme)
                     .environment(settings)
             }
         }

@@ -56,7 +56,7 @@
             List {
                 ForEach(Array(list.clips.enumerated()), id: \.element.id) { index, clip in
                     HStack {
-                        Text("\(index + 1)").monospacedDigit().foregroundStyle(Fanous.accentText)
+                        Text("\(index + 1)").monospacedDigit().foregroundStyle(Fanous.link)
                         Text(DisplayFormat.duration(clip.duration, l10n.language)).monospacedDigit()
                         Spacer()
                         Button {

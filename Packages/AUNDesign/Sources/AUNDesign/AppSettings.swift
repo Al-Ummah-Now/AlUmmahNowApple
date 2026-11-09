@@ -46,13 +46,35 @@ public final class AppSettings {
     }
 }
 
+/// Resolves the window theme from the site theme and the colour scheme in effect (system or the person's choice).
+private struct FanousThemeRoot: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.scenePhase) private var phase
+    let siteTheme: SiteThemeStore
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.fanous, FanousTheme(siteTheme.id, dark: scheme == .dark))
+            .tint(Fanous.link)
+            .task { await siteTheme.refresh() }
+            .onChange(of: phase) { _, now in
+                if now == .active { Task { await siteTheme.refresh() } }
+            }
+    }
+}
+
 extension View {
-    /// Applies language, direction and theme for a whole window.
-    public func fanousRoot(_ settings: AppSettings) -> some View {
-        environment(\.l10n, L10n(settings.language))
+    /// Applies language, direction, the site theme and the light or dark mode for a whole window.
+    public func fanousRoot(_ settings: AppSettings, siteTheme: SiteThemeStore) -> some View {
+        modifier(FanousThemeRoot(siteTheme: siteTheme))
+            .environment(\.l10n, L10n(settings.language))
             .environment(\.locale, settings.language.locale)
             .environment(\.layoutDirection, settings.language.isRTL ? .rightToLeft : .leftToRight)
             .preferredColorScheme(settings.theme.colorScheme)
-            .tint(Fanous.accent)
+    }
+
+    /// The window theme for previews and snapshots, without a store.
+    public func fanousTheme(_ id: FanousThemeID, dark: Bool) -> some View {
+        environment(\.fanous, FanousTheme(id, dark: dark)).tint(Fanous.link)
     }
 }
