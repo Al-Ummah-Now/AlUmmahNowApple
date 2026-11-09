@@ -2,35 +2,33 @@ import AUNCoreBridge
 import AUNDesign
 import SwiftUI
 
-/// Card content shared by phone, tablet, desktop and TV.
+/// Card content shared by phone, tablet, desktop and TV: the web's `.video-card`, a lifted thumbnail over plain text.
 struct VideoCardContent: View {
     @Environment(\.l10n) private var l10n
     let video: Video
+    var lifted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ThumbnailImage(url: video.thumbnailURL)
+            ThumbnailImage(url: video.thumbnailURL, lifted: lifted)
                 .overlay(alignment: .bottomTrailing) {
                     if let duration = video.durationSeconds {
-                        Text(DisplayFormat.duration(duration, l10n.language))
-                            .font(.caption2.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(Fanous.textPrimary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Fanous.background.opacity(0.85), in: RoundedRectangle(cornerRadius: 4))
-                            .padding(6)
+                        DurationBadge(DisplayFormat.duration(duration, l10n.language)).padding(6)
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            Text(video.displayTitle(l10n.language))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Fanous.textPrimary)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-            Text(metadata)
-                .font(.caption)
-                .foregroundStyle(Fanous.textSecondary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(video.displayTitle(l10n.language))
+                    .fanousFont(.label)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Fanous.part(\.cardVideoTitle))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Text(metadata)
+                    .fanousFont(.caption)
+                    .foregroundStyle(Fanous.part(\.cardVideoMeta))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -41,20 +39,30 @@ struct VideoCardContent: View {
     }
 }
 
+/// A card that lifts and shows the thumbnail edge while pressed, as the web does on hover and focus.
+struct VideoCardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .offset(y: configuration.isPressed ? -2 : 0)
+            .animation(.easeOut(duration: FanousScale.durationStandard), value: configuration.isPressed)
+    }
+}
+
 struct RailHeader: View {
     @Environment(\.l10n) private var l10n
     let kind: HomeRailKind
 
     var body: some View {
         Text(l10n(kind.titleKey))
-            .font(.title3.weight(.bold))
+            .fanousFont(.title)
+            .fontWeight(.bold)
             .foregroundStyle(Fanous.textPrimary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
     }
 }
 
-/// Language and theme choice, available wherever the app has a top bar.
+/// Language and light or dark choice, available wherever the app has a top bar. The site theme is set by an admin.
 struct SettingsMenu: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.l10n) private var l10n
@@ -72,8 +80,25 @@ struct SettingsMenu: View {
                 }
             }
         } label: {
-            Image(systemName: "gearshape").accessibilityLabel(l10n("common.settings"))
+            Image(systemName: "gearshape")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(Fanous.part(\.navIcon))
+                .accessibilityLabel(l10n("common.settings"))
         }
         .accessibilityIdentifier("settings-menu")
+    }
+}
+
+extension View {
+    /// The app header in the theme's nav colours (`--m-header` sits under the bar's own material).
+    func fanousNavigationBar() -> some View {
+        #if os(iOS)
+            self.toolbarBackground(Fanous.part(\.navBg), for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+        #elseif os(macOS)
+            self.toolbarBackground(Fanous.part(\.navBg), for: .windowToolbar)
+        #else
+            self
+        #endif
     }
 }

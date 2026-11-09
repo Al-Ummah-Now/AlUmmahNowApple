@@ -60,6 +60,17 @@ public enum FanousTypeface {
         return nil
     }
 
+    /// Space to add between lines so a line is `size × lineHeight` tall, given the face's own line height.
+    static func extraLeading(family: String?, style: FanousTypeStyle) -> CGFloat {
+        register()
+        let font =
+            family.map { CTFontCreateWithName($0 as CFString, style.size, nil) }
+            ?? CTFontCreateUIFontForLanguage(.system, style.size, nil)
+        guard let font else { return 0 }
+        let natural = CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)
+        return max(0, style.size * style.lineHeight - natural)
+    }
+
     static func weight(_ value: Int) -> Font.Weight {
         switch value {
         case ..<350: .light
@@ -93,10 +104,11 @@ private struct FanousFontModifier: ViewModifier {
     func body(content: Content) -> some View {
         let arabic = locale.language.languageCode == .arabic
         let style = role.style(arabic: arabic)
+        let family = FanousTypeface.family(arabic ? theme.tokens.font.arabic : theme.tokens.font.latin)
         content
             .font(theme.font(role, arabic: arabic))
             .tracking(style.letterSpacing)
-            .lineSpacing(max(0, style.size * (style.lineHeight - 1.2)))
+            .lineSpacing(FanousTypeface.extraLeading(family: family, style: style))
     }
 }
 
