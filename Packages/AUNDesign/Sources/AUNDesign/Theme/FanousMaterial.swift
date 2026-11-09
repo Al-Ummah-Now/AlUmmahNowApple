@@ -1,13 +1,15 @@
 import SwiftUI
 
 /// The outline a material is drawn in. Spread rings and glows grow it, as CSS grows a border box.
-public enum FanousShape: Shape, Equatable {
+public enum FanousShape: InsettableShape, Equatable {
     case rect
     case rounded(Double)
     case capsule
     case circle
 
     public func path(in rect: CGRect) -> Path { path(in: rect, expand: 0) }
+
+    public func inset(by amount: CGFloat) -> FanousInsetShape { FanousInsetShape(base: self, amount: amount) }
 
     public func path(in rect: CGRect, expand: Double) -> Path {
         let box = rect.insetBy(dx: -expand, dy: -expand)
@@ -21,6 +23,15 @@ public enum FanousShape: Shape, Equatable {
         case .circle: return Path(ellipseIn: box)
         }
     }
+}
+
+/// A `FanousShape` drawn inside its box, for strokes that stay within the outline.
+public struct FanousInsetShape: InsettableShape {
+    let base: FanousShape
+    let amount: CGFloat
+
+    public func path(in rect: CGRect) -> Path { base.path(in: rect, expand: -amount) }
+    public func inset(by more: CGFloat) -> FanousInsetShape { FanousInsetShape(base: base, amount: amount + more) }
 }
 
 /// Paints the generated CSS layers natively: the same gradient geometry, layer order and shadow model as the web.

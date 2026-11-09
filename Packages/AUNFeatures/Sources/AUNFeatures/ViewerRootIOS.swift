@@ -21,9 +21,11 @@
                     .navigationTitle(l10n("app.name"))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .topBarTrailing) { SettingsMenu() } }
+                    .fanousNavigationBar()
                     .navigationDestination(for: String.self) { id in
                         WatchView(videoID: id, catalog: core.catalog)
                             .navigationBarTitleDisplayMode(.inline)
+                            .fanousNavigationBar()
                     }
             }
         }

@@ -67,6 +67,19 @@
         }
 
         @Test(arguments: themes, languages)
+        func states(theme: FanousThemeID, language: AppLanguage) {
+            for style in Self.styles {
+                assertView(
+                    VStack(spacing: 0) {
+                        HomeSkeleton().frame(height: 300).clipped()
+                        ErrorStateView {}
+                    }
+                    .fanousPage(),
+                    name: "states", theme: theme, language: language, style: style)
+            }
+        }
+
+        @Test(arguments: themes, languages)
         func watchDetails(theme: FanousThemeID, language: AppLanguage) {
             for style in Self.styles {
                 assertView(
