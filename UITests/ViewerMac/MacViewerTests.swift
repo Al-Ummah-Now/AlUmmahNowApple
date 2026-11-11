@@ -34,14 +34,11 @@ final class MacViewerTests: XCTestCase {
         let app = launch("en")
         let element = app.buttons[card]
         XCTAssertTrue(element.waitForExistence(timeout: 30))
-        // The featured hero sits above the rails, so the first rail can start below the fold.
-        var scrolls = 0
-        while element.frame.maxY > app.windows.firstMatch.frame.maxY - 20, scrolls < 6 {
-            app.windows.firstMatch.scroll(byDeltaX: 0, deltaY: -200)
-            scrolls += 1
-        }
+        // The card can sit below the fold of a small CI screen; the hero's Watch now opens the same window.
+        let watch = app.buttons["hero-watch"]
+        XCTAssertTrue(watch.waitForExistence(timeout: 10))
         let windows = app.windows.count
-        element.click()
+        watch.click()
         let title = app.staticTexts["watch-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 20))
         XCTAssertGreaterThan(app.windows.count, windows)
