@@ -1,6 +1,15 @@
 {
-  "originHash" : "42aaf0f7f37406c426e421d84040b43e11901c97d2ad40ec84ca71c0ece579d7",
+  "originHash" : "4247cc6f3f5e7ae2fd6d6a1f12b0ffc4d5e4f34fff14e5152e77c74632dcb4c8",
   "pins" : [
+    {
+      "identity" : "alummahnowcore",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Al-Ummah-Now/AlUmmahNowCore",
+      "state" : {
+        "revision" : "fed638d0f8c6f1310219e4193696b0439a02786f",
+        "version" : "0.2.0"
+      }
+    },
     {
       "identity" : "swift-custom-dump",
       "kind" : "remoteSourceControl",

@@ -39,7 +39,7 @@ QA builds append `.qa`, so both can be installed side by side. Minimum OS: iOS/t
 |---|---|---|
 | `aun-core` / `aun-media` XCFramework | Protocols in `AUNCoreBridge` (`CatalogServicing`, `AuthSessionProviding`, `UploadEngine`, `EncodePlanning`, `EditDecisionList`), each with a native implementation | Add the binary target and one adapter per protocol; change `CoreBridge.temporaryNative` |
 | Epic 9 backend | Public api-videos endpoints on QA | Regenerated client inside `aun-api` |
-| Sign-in | `GuestAuthSession`; Studio upload reports "sign in required" | Native PKCE client once registered; no workaround is built |
+| Sign-in | Studio: `aun-auth` through `AUNCoreKit` (PKCE, several accounts, Keychain). Viewers: `GuestAuthSession` | Viewers adopt `AUNCoreKit` |
 | Epic 10 tokens | `Fanous` placeholder values from spec §3 | Replace `FanousPalette` with the generated package |
 | Fonts (D6) | System fonts (SF Arabic) | Add the licensed pair once decided |
 | Live provider (D3) | `LiveBroadcasting` protocol, no ingest | Provider adapter, see `docs/research/live-broadcast.md` |

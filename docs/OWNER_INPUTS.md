@@ -16,10 +16,10 @@ CI builds unsigned until these exist. Nothing here is committed to the repo; val
 `net.alummahnow.viewer`, `net.alummahnow.viewer.tv`, `net.alummahnow.viewer.mac`, `net.alummahnow.studio`,
 `net.alummahnow.studio.mac`, plus the same IDs with `.qa`.
 
-## Native OAuth client (Epic 9)
+## Native OAuth clients (Epic 9): done
 
-A registered public PKCE client per app family and a device-flow client for tvOS: client ID, the redirect URI scheme
-(proposed `net.alummahnow.viewer:/oauth` and `net.alummahnow.studio:/oauth`) and the allowed scopes.
+Registered in AlUmmahNowAuth migration `0013_native_clients` (public PKCE clients, not secrets). Studio uses
+`alummahnow-studio://auth/callback`; the client ids per environment and platform are in `Configs/*.xcconfig`.
 
 ## Decisions that block later work
 

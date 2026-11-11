@@ -3,6 +3,10 @@
 SLASH = /
 AUN_API_BASE_URL = https:$(SLASH)$(SLASH)videos.api.qa.alummahnow.net
 AUN_ADMIN_API_BASE_URL = https:$(SLASH)$(SLASH)admin.api.qa.alummahnow.net
+AUN_AUTH_ISSUER = https:$(SLASH)$(SLASH)auth.qa.alummahnow.net
+// Public PKCE clients registered in AlUmmahNowAuth migration 0013_native_clients (not secrets).
+AUN_STUDIO_CLIENT_ID_IOS = 45364a42-21f4-4359-a76c-0a1e6615fd7b
+AUN_STUDIO_CLIENT_ID_MAC = 29b4792a-caad-4814-a83f-4337bc6a1aeb
 AUN_ENVIRONMENT = qa
 AUN_BUNDLE_SUFFIX = .qa
 AUN_DISPLAY_SUFFIX = " QA"

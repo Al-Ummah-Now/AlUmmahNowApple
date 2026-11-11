@@ -5,48 +5,15 @@
     import UniformTypeIdentifiers
 
     enum StudioSection: String, CaseIterable, Identifiable {
-        case upload, encode, editor
+        case home, encode, editor
         var id: String { rawValue }
         var titleKey: String { "studio.\(rawValue).title" }
         var icon: String {
             switch self {
-            case .upload: "square.and.arrow.up.on.square"
+            case .home: "square.grid.2x2"
             case .encode: "cpu"
             case .editor: "timeline.selection"
             }
-        }
-    }
-
-    /// Studio for Mac: batch upload, encode queue and the editor spike.
-    public struct StudioMacRoot: View {
-        @Environment(\.l10n) private var l10n
-        @State private var section: StudioSection? = .upload
-        @State private var uploads: BatchUploadQueue
-        @State private var encodes: EncodeQueue
-
-        public init(core: CoreBridge) {
-            _uploads = State(
-                initialValue: BatchUploadQueue(engine: core.uploads, destinations: SignInRequiredDestinationProvider()))
-            _encodes = State(
-                initialValue: EncodeQueue(outputDirectory: URL.moviesDirectory.appending(path: "Al Ummah Now Studio")))
-        }
-
-        public var body: some View {
-            NavigationSplitView {
-                List(StudioSection.allCases, selection: $section) { item in
-                    Label(l10n(item.titleKey), systemImage: item.icon)
-                        .tag(item)
-                        .accessibilityIdentifier("section-\(item.rawValue)")
-                }
-                .navigationSplitViewColumnWidth(min: 170, ideal: 200)
-            } detail: {
-                switch section ?? .upload {
-                case .upload: UploadQueueView(queue: uploads)
-                case .encode: EncodeQueueView(queue: encodes)
-                case .editor: EditorView()
-                }
-            }
-            .frame(minWidth: 960, minHeight: 600)
         }
     }
 

@@ -29,6 +29,7 @@ packages:
   AUNPlayer: {path: Packages/AUNPlayer}
   AUNFeatures: {path: Packages/AUNFeatures}
   AUNStudio: {path: Packages/AUNStudio}
+  AUNCoreKit: {path: Packages/AUNCoreKit}
 
 targetTemplates:
   App:
@@ -43,6 +44,8 @@ targetTemplates:
         AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
         AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
         AUNEnvironment: "$(AUN_ENVIRONMENT)"
+        AUNAuthIssuer: "$(AUN_AUTH_ISSUER)"
+        AUNOAuthClientID: "$(AUN_OAUTH_CLIENT_ID)"
         UILaunchScreen: {}
 
 targets:
@@ -131,13 +134,18 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.studio$(AUN_BUNDLE_SUFFIX)
         AUN_APP_NAME: Al Ummah Now Studio
+        AUN_OAUTH_CLIENT_ID: $(AUN_STUDIO_CLIENT_ID_IOS)
         TARGETED_DEVICE_FAMILY: "1,2"
     dependencies:
       - package: AUNStudio
       - package: AUNDesign
       - package: AUNCoreBridge
+      - package: AUNCoreKit
     scheme:
-      testTargets: [StudioIOSUITests]
+      testTargets:
+        - StudioIOSUITests
+        - package: AUNStudio/AUNStudioTests
+        - package: AUNCoreKit/AUNCoreKitTests
 
   StudioMac:
     templates: [App]
@@ -146,6 +154,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.studio.mac$(AUN_BUNDLE_SUFFIX)
         AUN_APP_NAME: Al Ummah Now Studio
+        AUN_OAUTH_CLIENT_ID: $(AUN_STUDIO_CLIENT_ID_MAC)
     entitlements:
       path: Apps/StudioMac/StudioMac.entitlements
       properties:
@@ -156,8 +165,11 @@ targets:
       - package: AUNStudio
       - package: AUNDesign
       - package: AUNCoreBridge
+      - package: AUNCoreKit
     scheme:
-      testTargets: [StudioMacUITests]
+      testTargets:
+        - StudioMacUITests
+        - package: AUNCoreKit/AUNCoreKitTests
 
   ViewerIOSUITests:
     type: bundle.ui-testing

@@ -2,6 +2,7 @@ name: CI
 on:
   pull_request:
   push: {branches: [main]}
+  workflow_dispatch:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -57,4 +58,33 @@ jobs:
         with:
           name: snapshots-${{ matrix.job }}
           path: Packages/*/Tests/*/__Snapshots__
+          retention-days: 7
+
+  # Real sign-in through auth.qa with the seeded QA creator. Runs on main and by hand, never on fork PRs.
+  live-qa:
+    if: github.event_name != 'pull_request'
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      AUN_QA_EMAIL: qa-creator@delivered.resend.dev
+      AUN_QA_PASSWORD: ${{ secrets.QA_SEED_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Skip without the QA secret
+        id: gate
+        run: if [ -n "$AUN_QA_PASSWORD" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.gate.outputs.run == 'true'
+        run: brew install xcodegen && xcodegen generate
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: build/DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+      - if: steps.gate.outputs.run == 'true'
+        run: scripts/ci.sh live-qa
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: results-live-qa
+          path: build/DerivedData/Logs/Test/*.xcresult
           retention-days: 7
