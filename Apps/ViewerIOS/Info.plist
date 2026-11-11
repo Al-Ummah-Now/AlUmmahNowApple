@@ -6,8 +6,12 @@
 	<string>$(AUN_API_BASE_URL)</string>
 	<key>AUNAdminAPIBaseURL</key>
 	<string>$(AUN_ADMIN_API_BASE_URL)</string>
+	<key>AUNAuthIssuer</key>
+	<string>$(AUN_AUTH_ISSUER)</string>
 	<key>AUNEnvironment</key>
 	<string>$(AUN_ENVIRONMENT)</string>
+	<key>AUNOAuthClientID</key>
+	<string>$(AUN_OAUTH_CLIENT_ID)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

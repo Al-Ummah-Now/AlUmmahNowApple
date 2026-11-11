@@ -6,6 +6,11 @@ public enum CoreError: Error, Equatable, Sendable {
     case signInRequired
     case notFound
     case upload(String)
+    case forbidden
+    case offline
+    case cancelled
+    /// The server refused the input; the message is safe to show.
+    case invalid(String)
 }
 
 /// Read access to the public catalog. `aun-api` replaces the native implementation.

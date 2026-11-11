@@ -21,30 +21,6 @@
         }
     }
 
-    /// Edit spike on AVFoundation, and the Go Live entry behind its interface.
-    public struct StudioIOSRoot: View {
-        @Environment(\.l10n) private var l10n
-        private let broadcaster: any LiveBroadcasting
-
-        public init(broadcaster: any LiveBroadcasting = UnavailableLiveBroadcaster()) { self.broadcaster = broadcaster }
-
-        public var body: some View {
-            TabView {
-                NavigationStack { MobileEditorView() }
-                    .tabItem { Label(l10n("studio.editor.title"), systemImage: "scissors") }
-                NavigationStack {
-                    Text(l10n("studio.live.unavailable"))
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(Fanous.textSecondary)
-                        .padding()
-                        .accessibilityIdentifier("live-unavailable")
-                        .navigationTitle(l10n("studio.live.title"))
-                }
-                .tabItem { Label(l10n("studio.live.title"), systemImage: "dot.radiowaves.left.and.right") }
-            }
-        }
-    }
-
     struct MobileEditorView: View {
         @Environment(\.l10n) private var l10n
         @State private var list = EditDecisionList()

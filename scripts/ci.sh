@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One entry point shared by CI and local runs: scripts/ci.sh lint|ios|ipad|tvos|mac|studio
+# One entry point shared by CI and local runs: scripts/ci.sh lint|ios|ipad|tvos|mac|studio|live-qa
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -36,5 +36,13 @@ case "${1:-}" in
       -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${UNSIGNED[@]}"
     xcodebuild test "${COMMON[@]}" -scheme StudioMac -destination "platform=macOS" "${ADHOC[@]}"
     ;;
-  *) echo "usage: $0 lint|ios|ipad|tvos|mac|studio" >&2; exit 2 ;;
+  live-qa)
+    # Real sign-in against auth.qa. Signed to run locally (ad hoc), because the Keychain needs entitlements.
+    : "${AUN_QA_EMAIL:?}" "${AUN_QA_PASSWORD:?}"
+    TEST_RUNNER_AUN_LIVE_QA=1 TEST_RUNNER_AUN_QA_EMAIL="$AUN_QA_EMAIL" TEST_RUNNER_AUN_QA_PASSWORD="$AUN_QA_PASSWORD" \
+      xcodebuild test "${COMMON[@]}" -scheme StudioIOS \
+      -only-testing:StudioIOSUITests/LiveQASignInTests/testSignInThroughAuthAndSignOut \
+      -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${ADHOC[@]}"
+    ;;
+  *) echo "usage: $0 lint|ios|ipad|tvos|mac|studio|live-qa" >&2; exit 2 ;;
 esac
