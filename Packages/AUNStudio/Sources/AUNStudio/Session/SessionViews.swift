@@ -259,7 +259,10 @@ struct ChannelPicker: View {
             HStack(spacing: FanousScale.spacingSm) {
                 AvatarView(
                     name: session.channel?.displayName(l10n.language) ?? "?", url: session.channel?.avatarURL, size: 24)
-                Text(session.channel?.displayName(l10n.language) ?? l10n("studio.channel.pick")).lineLimit(1)
+                Text(session.channel?.displayName(l10n.language) ?? l10n("studio.channel.pick"))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 230, alignment: .leading)
                 Image(systemName: "chevron.up.chevron.down").font(.caption).accessibilityHidden(true)
             }
         }

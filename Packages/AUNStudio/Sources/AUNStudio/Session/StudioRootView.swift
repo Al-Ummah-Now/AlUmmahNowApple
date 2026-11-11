@@ -30,10 +30,42 @@ struct StudioToolbar: ToolbarContent {
     @Binding var showingAccounts: Bool
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .principal) { ChannelPicker(session: session) }
+        #if os(iOS)
+            // Leading, not centred: a long channel name then truncates instead of running into the account button.
+            ToolbarItem(placement: .topBarLeading) { ChannelPicker(session: session) }
+        #else
+            ToolbarItem(placement: .principal) { ChannelPicker(session: session) }
+        #endif
         ToolbarItem(placement: .primaryAction) { AccountButton(session: session, showing: $showingAccounts) }
     }
 }
+
+extension View {
+    /// A solid bar in the theme's page colour, so content never shows through the channel picker as it scrolls.
+    func studioNavigationBar() -> some View {
+        #if os(iOS)
+            modifier(SolidNavigationBar())
+        #else
+            self
+        #endif
+    }
+}
+
+#if os(iOS)
+    private struct SolidNavigationBar: ViewModifier {
+        func body(content: Content) -> some View {
+            let solid =
+                content
+                .toolbarBackground(Fanous.background, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+            if #available(iOS 26, *) {
+                solid.scrollEdgeEffectStyle(.hard, for: .top)
+            } else {
+                solid
+            }
+        }
+    }
+#endif
 
 #if os(iOS)
     struct StudioShell: View {
@@ -52,12 +84,14 @@ struct StudioToolbar: ToolbarContent {
                         .navigationTitle(l10n("studio.home.title"))
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
+                        .studioNavigationBar()
                 }
                 .tabItem { Label(l10n("studio.home.title"), systemImage: "square.grid.2x2") }
                 NavigationStack {
                     UploadView(session: session)
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
+                        .studioNavigationBar()
                 }
                 .tabItem { Label(l10n("studio.upload.title"), systemImage: "square.and.arrow.up") }
                 .badge(session.uploads.jobs.filter { $0.isActive && $0.accountID == session.account?.id }.count)
