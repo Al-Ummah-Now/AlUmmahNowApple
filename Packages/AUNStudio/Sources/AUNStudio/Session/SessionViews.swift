@@ -130,6 +130,7 @@ struct AccountsView: View {
                 Section {
                     ForEach(session.accounts) { account in row(account) }
                 }
+                .studioRows()
                 Section {
                     Button {
                         Task {
@@ -142,8 +143,11 @@ struct AccountsView: View {
                     .disabled(session.isSigningIn)
                     .accessibilityIdentifier("account-add")
                 }
+                .studioRows()
                 if session.notice != nil { Section { NoticeView(session: session) } }
             }
+            .scrollContentBackground(.hidden)
+            .fanousPage()
             .navigationTitle(l10n("studio.account.title"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

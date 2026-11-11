@@ -72,46 +72,9 @@ private func makeVideo(seconds: Int) async throws -> URL {
     }
 }
 
-private struct FakeEngine: UploadEngine {
-    func upload(
-        file: URL, to destination: UploadDestination, resumeURL: URL?,
-        onCreated: @Sendable (URL) async -> Void, onProgress: @Sendable (UploadProgress) async -> Void
-    ) async throws -> URL {
-        if file.lastPathComponent == "bad.mp4" { throw CoreError.upload("x") }
-        await onCreated(destination.endpoint)
-        await onProgress(UploadProgress(sent: 1, total: 1))
-        return destination.endpoint
-    }
-}
-
-private struct FakeDestinations: UploadDestinationProviding {
-    func destination(for file: URL) async throws -> UploadDestination {
-        UploadDestination(endpoint: URL(fileURLWithPath: "/tus"))
-    }
-}
-
 @MainActor @Suite struct QueueTests {
     private let good = URL(fileURLWithPath: "/good.mp4")
     private let bad = URL(fileURLWithPath: "/bad.mp4")
-
-    @Test func uploadsReportStatusPerFileAndSkipDuplicates() async {
-        let queue = BatchUploadQueue(engine: FakeEngine(), destinations: FakeDestinations())
-        queue.add([good, bad, good])
-        #expect(queue.items.count == 2)
-        await queue.run()
-        #expect(queue.items[0].status == .done)
-        #expect(queue.items[0].fraction == 1)
-        #expect(queue.items[0].resumeURL != nil)
-        #expect(queue.items[1].status == .failed)
-    }
-
-    @Test func signInGateLeavesFilesWaitingWithoutUploading() async {
-        let queue = BatchUploadQueue(engine: FakeEngine(), destinations: SignInRequiredDestinationProvider())
-        queue.add([good])
-        await queue.run()
-        #expect(queue.needsSignIn)
-        #expect(queue.items[0].status == .waiting)
-    }
 
     @Test func encodeQueueProducesPlayableHEVCOrH264() async throws {
         let source = try await makeVideo(seconds: 1)

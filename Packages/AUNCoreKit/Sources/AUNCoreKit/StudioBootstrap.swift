@@ -2,6 +2,9 @@ import AUNCoreBridge
 import Foundation
 
 public enum StudioBootstrap {
+    /// One per process: iOS reconnects the background upload session by its identifier.
+    public static let liveTransfer = TUSTransfer.live()
+
     /// Fixture runs start from empty preferences, so UI tests never see an earlier test's choices.
     public static func preferences(defaults: UserDefaults = .standard) -> UserDefaults {
         guard defaults.bool(forKey: "AUNUseFixtures") else { return defaults }
@@ -29,12 +32,13 @@ public enum StudioBootstrap {
                 environment: environment, bundleID: bundle.bundleIdentifier ?? "net.alummahnow.studio")
             return StudioServices(
                 environment: environment, accounts: accounts,
-                studio: NativeStudioService(baseURL: environment.apiBaseURL, accounts: accounts))
+                studio: NativeStudioService(baseURL: environment.apiBaseURL, accounts: accounts), transfer: liveTransfer)
         } catch {
             AUNLog.studio.fault("Studio services could not start: \(error)")
             return StudioServices(
                 environment: environment, accounts: FixtureAccountService(),
-                studio: NativeStudioService(baseURL: environment.apiBaseURL, accounts: FixtureAccountService()))
+                studio: NativeStudioService(baseURL: environment.apiBaseURL, accounts: FixtureAccountService()),
+                transfer: liveTransfer)
         }
     }
 }

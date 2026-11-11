@@ -2,6 +2,10 @@ import AUNCoreBridge
 import Foundation
 import Observation
 
+public enum QueueItemStatus: Hashable, Sendable {
+    case waiting, running, done, failed
+}
+
 public struct EncodeQueueItem: Identifiable, Hashable, Sendable {
     public let id = UUID()
     public let source: URL

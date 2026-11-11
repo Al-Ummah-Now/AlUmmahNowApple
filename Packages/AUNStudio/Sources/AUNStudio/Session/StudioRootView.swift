@@ -54,6 +54,13 @@ struct StudioToolbar: ToolbarContent {
                         .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
                 }
                 .tabItem { Label(l10n("studio.home.title"), systemImage: "square.grid.2x2") }
+                NavigationStack {
+                    UploadView(session: session)
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
+                }
+                .tabItem { Label(l10n("studio.upload.title"), systemImage: "square.and.arrow.up") }
+                .badge(session.uploads.jobs.filter { $0.isActive && $0.accountID == session.account?.id }.count)
                 NavigationStack { MobileEditorView() }
                     .tabItem { Label(l10n("studio.editor.title"), systemImage: "scissors") }
                 NavigationStack {
@@ -89,6 +96,7 @@ struct StudioToolbar: ToolbarContent {
                 Group {
                     switch section ?? .home {
                     case .home: StudioHomeView(session: session)
+                    case .upload: UploadView(session: session)
                     case .encode: EncodeQueueView(queue: encodes)
                     case .editor: EditorView()
                     }
