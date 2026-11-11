@@ -17,8 +17,10 @@ final class StudioUploadTests: XCTestCase {
 
     @MainActor
     private func openUpload(_ app: XCUIApplication, tab: String) {
-        let button = app.tabBars.buttons[tab]
-        XCTAssertTrue(button.waitForExistence(timeout: 30))
+        // iPhone has a bottom tab bar; iPadOS draws the tabs at the top, outside `tabBars`.
+        let bar = app.tabBars.buttons[tab]
+        let button = bar.waitForExistence(timeout: 15) ? bar : app.buttons[tab].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 15))
         button.tap()
     }
 

@@ -79,12 +79,16 @@ struct UploadServiceTests {
 
     @Test func playlistsFollowTheCursor() async throws {
         let playlists = try await service { request in
+            // The real server refuses an empty cursor, as QA does.
+            if request.url?.query()?.contains("cursor=&") == true || request.url?.query()?.hasSuffix("cursor=") == true {
+                return (400, [:], Data(#"{"success":false}"#.utf8))
+            }
             let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
                 .first { $0.name == "cursor" }?.value
             let page =
                 cursor == nil
                 ? #"{"cursor":"p2","limit":100,"data":[{"id":"p1","title":"One","isPublic":false}]}"#
-                : #"{"cursor":null,"limit":100,"data":[{"id":"p2","title":"Two"}]}"#
+                : #"{"cursor":"","limit":100,"data":[{"id":"p2","title":"Two"}]}"#
             return (200, [:], Data(page.utf8))
         }.playlists(channelID: "c1")
         #expect(playlists.map(\.id) == ["p1", "p2"])

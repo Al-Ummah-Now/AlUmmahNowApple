@@ -50,7 +50,8 @@ public struct NativeStudioService: StudioServicing {
             let page = try await client.send(
                 .get, "/api/channels/\(channelID)/playlists", query: query, channelID: channelID, as: PlaylistPage.self)
             all += page.data
-            cursor = page.data.isEmpty ? nil : page.cursor
+            // The last page has `"cursor": ""`; sending `cursor=` back is a 400.
+            cursor = page.data.isEmpty || (page.cursor ?? "").isEmpty ? nil : page.cursor
         } while cursor != nil && all.count < 1000
         return all
     }

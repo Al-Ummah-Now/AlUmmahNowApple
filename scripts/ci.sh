@@ -43,6 +43,7 @@ case "${1:-}" in
       xcodebuild test "${COMMON[@]}" -scheme StudioIOS \
       -only-testing:StudioIOSUITests/LiveQASignInTests/testSignInThroughAuthAndSignOut \
       -only-testing:StudioIOSUITests/LiveQAUploadTests/testUploadOnePrivateClip \
+      -only-testing:StudioIOSUITests/LiveQAUploadTests/testArabicFormLoadsPlaylists \
       -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${ADHOC[@]}"
     ;;
   *) echo "usage: $0 lint|ios|ipad|tvos|mac|studio|live-qa" >&2; exit 2 ;;
