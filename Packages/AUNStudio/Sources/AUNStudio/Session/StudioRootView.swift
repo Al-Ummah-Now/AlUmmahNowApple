@@ -67,6 +67,21 @@ extension View {
     }
 #endif
 
+/// Shows a channel's screen, rebuilt when the channel changes, or the "no channel" state.
+struct ChannelGate<Content: View>: View {
+    @Environment(\.l10n) private var l10n
+    let session: StudioSession
+    @ViewBuilder let content: (String) -> Content
+
+    var body: some View {
+        if let channel = session.channel {
+            content(channel.id).id(channel.id)
+        } else {
+            EmptyStateView(title: l10n("studio.channel.none"), message: l10n("studio.channel.noneMessage")).fanousPage()
+        }
+    }
+}
+
 #if os(iOS)
     struct StudioShell: View {
         @Environment(\.l10n) private var l10n
@@ -77,35 +92,33 @@ extension View {
             tabs.sheet(isPresented: $showingAccounts) { AccountsView(session: session) }
         }
 
+        private func screen(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
+            NavigationStack {
+                content()
+                    .navigationTitle(title)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
+                    .studioNavigationBar()
+            }
+        }
+
         private var tabs: some View {
             TabView {
-                NavigationStack {
-                    StudioHomeView(session: session)
-                        .navigationTitle(l10n("studio.home.title"))
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
-                        .studioNavigationBar()
+                screen(l10n("studio.home.title")) { StudioHomeView(session: session) }
+                    .tabItem { Label(l10n("studio.home.title"), systemImage: "square.grid.2x2") }
+                screen(l10n("studio.content.title")) {
+                    ChannelGate(session: session) { channel in ContentView(session: session, channelID: channel) }
                 }
-                .tabItem { Label(l10n("studio.home.title"), systemImage: "square.grid.2x2") }
-                NavigationStack {
-                    UploadView(session: session)
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
-                        .studioNavigationBar()
+                .tabItem { Label(l10n("studio.content.title"), systemImage: "film.stack") }
+                screen(l10n("studio.upload.title")) { UploadView(session: session) }
+                    .tabItem { Label(l10n("studio.upload.title"), systemImage: "square.and.arrow.up") }
+                    .badge(session.uploads.jobs.filter { $0.isActive && $0.accountID == session.account?.id }.count)
+                screen(l10n("studio.analytics.title")) {
+                    ChannelGate(session: session) { channel in AnalyticsView(services: session.services, channelID: channel) }
                 }
-                .tabItem { Label(l10n("studio.upload.title"), systemImage: "square.and.arrow.up") }
-                .badge(session.uploads.jobs.filter { $0.isActive && $0.accountID == session.account?.id }.count)
+                .tabItem { Label(l10n("studio.analytics.title"), systemImage: "chart.bar") }
                 NavigationStack { MobileEditorView() }
                     .tabItem { Label(l10n("studio.editor.title"), systemImage: "scissors") }
-                NavigationStack {
-                    Text(l10n("studio.live.unavailable"))
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(Fanous.textSecondary)
-                        .padding()
-                        .accessibilityIdentifier("live-unavailable")
-                        .navigationTitle(l10n("studio.live.title"))
-                }
-                .tabItem { Label(l10n("studio.live.title"), systemImage: "dot.radiowaves.left.and.right") }
             }
         }
     }
@@ -125,17 +138,25 @@ extension View {
                         .tag(item)
                         .accessibilityIdentifier("section-\(item.rawValue)")
                 }
-                .navigationSplitViewColumnWidth(min: 180, ideal: 210)
+                .navigationSplitViewColumnWidth(min: 190, ideal: 220)
             } detail: {
-                Group {
-                    switch section ?? .home {
-                    case .home: StudioHomeView(session: session)
-                    case .upload: UploadView(session: session)
-                    case .encode: EncodeQueueView(queue: encodes)
-                    case .editor: EditorView()
+                NavigationStack {
+                    Group {
+                        switch section ?? .home {
+                        case .home: StudioHomeView(session: session)
+                        case .content:
+                            ChannelGate(session: session) { ContentView(session: session, channelID: $0) }
+                        case .deleted:
+                            ChannelGate(session: session) { RecentlyDeletedView(services: session.services, channelID: $0) }
+                        case .upload: UploadView(session: session)
+                        case .analytics:
+                            ChannelGate(session: session) { AnalyticsView(services: session.services, channelID: $0) }
+                        case .encode: EncodeQueueView(queue: encodes)
+                        case .editor: EditorView()
+                        }
                     }
+                    .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
                 }
-                .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
             }
             .frame(minWidth: 960, minHeight: 600)
             .sheet(isPresented: $showingAccounts) { AccountsView(session: session) }

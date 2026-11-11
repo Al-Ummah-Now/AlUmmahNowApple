@@ -8,7 +8,7 @@ let package = Package(
     products: [.library(name: "AUNCoreKit", targets: ["AUNCoreKit"])],
     dependencies: [
         .package(path: "../AUNCoreBridge"),
-        .package(url: "https://github.com/Al-Ummah-Now/AlUmmahNowCore", exact: "0.2.0"),
+        .package(url: "https://github.com/Al-Ummah-Now/AlUmmahNowCore", exact: "0.3.0-rc.1"),
     ],
     targets: [
         .target(

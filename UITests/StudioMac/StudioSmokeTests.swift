@@ -51,4 +51,23 @@ final class StudioSmokeTests: XCTestCase {
         app.buttons["confirm-action"].click()
         XCTAssertTrue(app.buttons["sign-in"].waitForExistence(timeout: 20))
     }
+
+    @MainActor
+    func testContentAndRecentlyDeleted() {
+        let app = launch("en", signedIn: true)
+        let content = app.descendants(matching: .any)["section-content"]
+        XCTAssertTrue(content.waitForExistence(timeout: 30))
+        content.click()
+        let row = app.descendants(matching: .any).matching(identifier: "video-fixture-content-1").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 20))
+        row.click()
+        XCTAssertTrue(app.descendants(matching: .any)["bulk-bar"].waitForExistence(timeout: 10))
+        app.buttons["bulk-delete"].click()
+        XCTAssertTrue(app.buttons["confirm-cancel"].waitForExistence(timeout: 10))
+        app.buttons["confirm-action"].click()
+        app.descendants(matching: .any)["section-deleted"].click()
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(identifier: "deleted-fixture-content-1").firstMatch
+                .waitForExistence(timeout: 20))
+    }
 }
