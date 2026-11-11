@@ -35,7 +35,8 @@ final class MacViewerTests: XCTestCase {
         let element = app.buttons[card]
         XCTAssertTrue(element.waitForExistence(timeout: 30))
         // The card can sit below the fold of a small CI screen; the hero's Watch now opens the same window.
-        let watch = app.buttons["hero-watch"]
+        // On the Mac the hero's container identifier covers its children, so find the button by its label.
+        let watch = app.buttons["Watch now"].firstMatch
         XCTAssertTrue(watch.waitForExistence(timeout: 10))
         let windows = app.windows.count
         watch.click()
