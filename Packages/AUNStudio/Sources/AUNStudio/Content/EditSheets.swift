@@ -64,8 +64,9 @@ struct VideoEditView: View {
                             Text(l10n("videoLanguage.\($0.rawValue)")).tag(VideoLanguage?.some($0))
                         }
                     }
-                    TextField(l10n("studio.upload.tags"), text: $tags, prompt: Text(l10n("studio.upload.tagsHint")))
-                        .accessibilityIdentifier("edit-tags")
+                    LabeledField(
+                        label: l10n("studio.upload.tags"), text: $tags, prompt: l10n("studio.upload.tagsHint"),
+                        identifier: "edit-tags")
                 }
                 .studioRows()
                 Section(l10n("studio.analytics.title")) { VideoStatsView(services: model.services, videoID: video.id) }
@@ -144,10 +145,12 @@ struct BulkEditView: View {
                         }
                     }
                     .accessibilityIdentifier("bulk-category")
-                    TextField(l10n("studio.bulk.addTags"), text: $addTags, prompt: Text(l10n("studio.upload.tagsHint")))
-                        .accessibilityIdentifier("bulk-add-tags")
-                    TextField(l10n("studio.bulk.removeTags"), text: $removeTags, prompt: Text(l10n("studio.upload.tagsHint")))
-                        .accessibilityIdentifier("bulk-remove-tags")
+                    LabeledField(
+                        label: l10n("studio.bulk.addTags"), text: $addTags, prompt: l10n("studio.upload.tagsHint"),
+                        identifier: "bulk-add-tags")
+                    LabeledField(
+                        label: l10n("studio.bulk.removeTags"), text: $removeTags, prompt: l10n("studio.upload.tagsHint"),
+                        identifier: "bulk-remove-tags")
                 } footer: {
                     Text(l10n("studio.bulk.footer", model.selection.count.formatted(.number.locale(l10n.language.locale))))
                 }
