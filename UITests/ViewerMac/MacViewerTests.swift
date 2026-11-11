@@ -34,6 +34,12 @@ final class MacViewerTests: XCTestCase {
         let app = launch("en")
         let element = app.buttons[card]
         XCTAssertTrue(element.waitForExistence(timeout: 30))
+        // The featured hero sits above the rails, so the first rail can start below the fold.
+        var scrolls = 0
+        while !element.isHittable, scrolls < 6 {
+            app.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200)
+            scrolls += 1
+        }
         let windows = app.windows.count
         element.click()
         let title = app.staticTexts["watch-title"]
