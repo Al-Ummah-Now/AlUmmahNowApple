@@ -5,57 +5,15 @@
     import UniformTypeIdentifiers
 
     enum StudioSection: String, CaseIterable, Identifiable {
-        case home, encode, editor
+        case home, upload, encode, editor
         var id: String { rawValue }
         var titleKey: String { "studio.\(rawValue).title" }
         var icon: String {
             switch self {
             case .home: "square.grid.2x2"
+            case .upload: "square.and.arrow.up.on.square"
             case .encode: "cpu"
             case .editor: "timeline.selection"
-            }
-        }
-    }
-
-    struct UploadQueueView: View {
-        @Environment(\.l10n) private var l10n
-        let queue: BatchUploadQueue
-        @State private var importing = false
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text(l10n("studio.upload.title")).font(.title2.weight(.bold)).accessibilityAddTraits(.isHeader)
-                    Spacer()
-                    Button(l10n("studio.upload.add")) { importing = true }.accessibilityIdentifier("upload-add")
-                    Button(l10n("studio.upload.start")) { Task { await queue.run() } }
-                        .disabled(queue.items.isEmpty || queue.isRunning)
-                        .accessibilityIdentifier("upload-start")
-                }
-                if queue.needsSignIn {
-                    Text(l10n("studio.upload.signIn")).foregroundStyle(Fanous.errorText).accessibilityIdentifier("upload-sign-in")
-                }
-                if queue.items.isEmpty {
-                    Text(l10n("studio.upload.empty")).foregroundStyle(Fanous.textSecondary).frame(
-                        maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List(queue.items) { item in
-                        HStack {
-                            Text(item.file.lastPathComponent).lineLimit(1)
-                            Spacer()
-                            ProgressView(value: item.fraction).frame(width: 120)
-                            StatusLabel(status: item.status)
-                        }
-                    }
-                }
-            }
-            .padding()
-            .dropDestination(for: URL.self) { urls, _ in
-                queue.add(urls)
-                return true
-            }
-            .fileImporter(isPresented: $importing, allowedContentTypes: [.movie], allowsMultipleSelection: true) { result in
-                if case .success(let urls) = result { queue.add(urls) }
             }
         }
     }

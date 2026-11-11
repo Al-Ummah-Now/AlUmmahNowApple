@@ -42,6 +42,7 @@ case "${1:-}" in
     TEST_RUNNER_AUN_LIVE_QA=1 TEST_RUNNER_AUN_QA_EMAIL="$AUN_QA_EMAIL" TEST_RUNNER_AUN_QA_PASSWORD="$AUN_QA_PASSWORD" \
       xcodebuild test "${COMMON[@]}" -scheme StudioIOS \
       -only-testing:StudioIOSUITests/LiveQASignInTests/testSignInThroughAuthAndSignOut \
+      -only-testing:StudioIOSUITests/LiveQAUploadTests/testUploadOnePrivateClip \
       -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${ADHOC[@]}"
     ;;
   *) echo "usage: $0 lint|ios|ipad|tvos|mac|studio|live-qa" >&2; exit 2 ;;

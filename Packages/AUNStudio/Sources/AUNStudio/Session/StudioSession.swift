@@ -37,11 +37,14 @@ public final class StudioSession {
     public var notice: StudioNotice?
 
     public let services: StudioServices
+    /// Uploads of every account on this device; only the active account's run.
+    public let uploads: UploadQueue
     private let authenticator: any WebAuthenticating
     private let defaults: UserDefaults
 
     public init(services: StudioServices, authenticator: any WebAuthenticating, defaults: UserDefaults = .standard) {
         self.services = services
+        uploads = UploadQueue(services: services)
         self.authenticator = authenticator
         self.defaults = defaults
     }
@@ -57,6 +60,7 @@ public final class StudioSession {
             AUNLog.studio.error("Reading accounts failed: \(error)")
         }
         phase = account == nil ? .signedOut : .signedIn
+        uploads.accountID = account?.id
         if account != nil { await loadChannels() }
     }
 
@@ -86,6 +90,7 @@ public final class StudioSession {
 
     /// Signs one account out of this device and revokes its refresh token. Other accounts stay signed in.
     public func signOut(_ id: String) async {
+        uploads.discardJobs(of: id)
         do {
             try await services.accounts.signOut(id)
         } catch {
@@ -97,6 +102,7 @@ public final class StudioSession {
             if next.id != account?.id { await adopt(next) }
         } else {
             account = nil
+            uploads.accountID = nil
             allChannels = []
             channel = nil
             channelsState = .idle
@@ -129,6 +135,7 @@ public final class StudioSession {
 
     private func adopt(_ next: StudioAccount) async {
         account = next
+        uploads.accountID = next.id
         accounts = (try? await services.accounts.accounts()) ?? [next]
         phase = .signedIn
         allChannels = []
