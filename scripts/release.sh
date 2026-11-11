@@ -96,8 +96,14 @@ case "$PLATFORM" in
       APP="$ARCHIVE/Products/Applications/$(ls "$ARCHIVE/Products/Applications" | head -1)"
       NAME="$NAME-unsigned"
     fi
+    # Ship the bundle under the app's name (the folder name is not part of the signature).
+    mkdir -p "$WORK/pkg"
+    PRETTY="$WORK/pkg/Al Ummah Now Studio$([[ "$CONFIG" == QA ]] && echo " QA").app"
+    ditto "$APP" "$PRETTY"
+    APP="$PRETTY"
     ditto -c -k --keepParent "$APP" "$OUT/$NAME.zip"
-    hdiutil create -volname "Al Ummah Now Studio" -srcfolder "$APP" -ov -format UDZO "$OUT/$NAME.dmg" >/dev/null
+    ln -s /Applications "$WORK/pkg/Applications"
+    hdiutil create -volname "Al Ummah Now Studio" -srcfolder "$WORK/pkg" -ov -format UDZO "$OUT/$NAME.dmg" >/dev/null
     if [[ $SIGNED == 1 ]]; then
       xcrun notarytool submit "$OUT/$NAME.dmg" --key "$WORK/AuthKey.p8" --key-id "$ASC_KEY_ID" \
         --issuer "$ASC_ISSUER_ID" --wait --timeout 30m
