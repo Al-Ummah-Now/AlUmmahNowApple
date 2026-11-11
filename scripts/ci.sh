@@ -44,7 +44,7 @@ case "${1:-}" in
     for tests in "LiveQASignInTests LiveQAUploadTests" "LiveQAManageTests"; do
       ONLY=()
       for test in $tests; do ONLY+=("-only-testing:StudioIOSUITests/$test"); done
-      env "${LIVE[@]}" xcodebuild test "${COMMON[@]}" -scheme StudioIOS "${ONLY[@]}" \
+      env "${LIVE[@]}" TEST_RUNNER_AUN_EXPECT_TEST_UPLOADS=1 xcodebuild test "${COMMON[@]}" -scheme StudioIOS "${ONLY[@]}" \
         -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${ADHOC[@]}"
     done
     ;;

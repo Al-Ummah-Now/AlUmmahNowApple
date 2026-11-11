@@ -159,16 +159,20 @@ final class LiveQAManageTests: LiveQATestCase {
             NSPredicate(format: "identifier BEGINSWITH 'video-' AND label CONTAINS %@", marker))
     }
 
-    /// Opens the status tab that holds this test's uploads; false when none is found.
+    /// Opens the status tab that holds this test's uploads; false when none appears within about three minutes
+    /// (a fresh upload takes a moment to reach the channel's content index).
     @MainActor
     private func openTabWithTestUploads(_ app: XCUIApplication) -> Bool {
         let tabs = app.segmentedControls["content-status"].buttons
         XCTAssertTrue(tabs.firstMatch.waitForExistence(timeout: 30))
-        for index in 0..<tabs.count {
-            tabs.element(boundBy: index).tap()
-            if testRows(app).firstMatch.waitForExistence(timeout: 8) { return true }
-            noLoadError(app)
-        }
+        let deadline = Date().addingTimeInterval(180)
+        repeat {
+            for index in 0..<tabs.count {
+                tabs.element(boundBy: index).tap()
+                if testRows(app).firstMatch.waitForExistence(timeout: 6) { return true }
+                noLoadError(app)
+            }
+        } while Date() < deadline
         return false
     }
 
@@ -181,6 +185,11 @@ final class LiveQAManageTests: LiveQATestCase {
         keep("content-live-en")
 
         guard openTabWithTestUploads(app) else {
+            // Right after the upload test (ci.sh live-qa) the uploads must be there; on their own, skip.
+            if ProcessInfo.processInfo.environment["AUN_EXPECT_TEST_UPLOADS"] == "1" {
+                XCTFail("The upload test's \(marker) videos never appeared in the channel's content.")
+                return
+            }
             throw XCTSkip("No \(marker) uploads on QA; run LiveQAUploadTests first.")
         }
         // Search narrows the tab to this test's uploads (and shows live suggestions).

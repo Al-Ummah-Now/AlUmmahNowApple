@@ -7,6 +7,22 @@ import UniformTypeIdentifiers
     import PhotosUI
 #endif
 
+/// A text field that keeps its label visible above it, so fields stay told apart after typing.
+struct LabeledField: View {
+    let label: String
+    @Binding var text: String
+    let prompt: String
+    var identifier = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
+            Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).accessibilityHidden(true)
+            TextField(label, text: $text, prompt: Text(prompt)).autocorrectionDisabled()
+                .accessibilityIdentifier(identifier)
+        }
+    }
+}
+
 extension View {
     /// List rows on the theme's surface instead of the system's grouped grey.
     func studioRows() -> some View { listRowBackground(Rectangle().fill(Fanous.surface)) }
@@ -255,9 +271,9 @@ private struct SetForAllSection: View {
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("upload-visibility")
-            TextField(l10n("studio.upload.tags"), text: $composer.tagsText, prompt: Text(l10n("studio.upload.tagsHint")))
-                .autocorrectionDisabled()
-                .accessibilityIdentifier("upload-tags")
+            LabeledField(
+                label: l10n("studio.upload.tags"), text: $composer.tagsText, prompt: l10n("studio.upload.tagsHint"),
+                identifier: "upload-tags")
         } header: {
             Text(l10n(composer.files.count > 1 ? "studio.upload.setForAll" : "studio.upload.details"))
         } footer: {
