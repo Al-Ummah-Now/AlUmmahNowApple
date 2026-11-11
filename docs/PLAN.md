@@ -68,9 +68,9 @@ Values come from `Configs/*.xcconfig` through `Info.plist` into `AppEnvironment`
 
 ## 5. Release (not active until the owner provides an Apple Developer team)
 
-Fastlane, run only by GitHub Actions, only from a `vYYYY.MM.DD` tag on a commit on `main`, matching the monorepo's
-deploy rules. TestFlight first, App Store by promotion with phased release. Uploading by hand is not allowed. CI builds
-unsigned until then. `docs/OWNER_INPUTS.md` lists what is needed.
+`.github/workflows/release.yml` with `scripts/release.sh`, run only by GitHub Actions from a `vX.Y.Z` tag on a commit
+on `main`: a notarized Mac download on the GitHub release, and TestFlight for iPhone and iPad. Uploading by hand is not
+allowed. Without the owner's Apple secrets it builds unsigned artifacts. `docs/RELEASING.md` has the details.
 
 ## 6. Delivery order
 

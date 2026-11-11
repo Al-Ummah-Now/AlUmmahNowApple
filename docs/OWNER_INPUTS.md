@@ -4,12 +4,9 @@ CI builds unsigned until these exist. Nothing here is committed to the repo; val
 
 ## Apple Developer (organisation, needs a D-U-N-S number)
 
-| Item | Where it goes |
-|---|---|
-| Team ID | Secret `APPLE_TEAM_ID` |
-| App Store Connect API key (App Manager role): Key ID, Issuer ID, `.p8` content | Secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` |
-| Certificate storage for Fastlane match: a private repo and passphrase, or Xcode Cloud managed signing | Secrets `MATCH_GIT_URL`, `MATCH_PASSWORD` |
-| Developer ID certificate, for the notarised macOS DMG | Via match |
+Exact list and use: `docs/RELEASING.md`. In short: `APPLE_TEAM_ID`; an App Store Connect team API key with the Admin
+role (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`); optionally a Developer ID Application `.p12`
+(`DEVELOPER_ID_P12`, `DEVELOPER_ID_P12_PASSWORD`); and the App Store Connect app records for TestFlight.
 
 ## Bundle IDs to confirm and register
 

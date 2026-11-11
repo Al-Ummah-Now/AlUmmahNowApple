@@ -11,7 +11,9 @@ Product spec: `docs/native-apps/EPICS.md` in https://github.com/Al-Ummah-Now/AlU
 
 ## Rules
 - **Public repo.** Never commit secrets, certificates, provisioning profiles, API keys or `.env` files.
-- **Small PRs into `main`, CI green**, then squash merge. Conventional commit titles.
+- **Small PRs into `main`, CI green**, then a rebase merge (`gh pr merge --rebase`), never squash: a squash commit is
+  authored with the merger's account email. Commit as `meywd <3499969+meywd@users.noreply.github.com>`. Conventional
+  commit titles.
 - **No TODO/FIXME/HACK comments** (lint fails). Implement it or open a GitHub issue labelled `queue`.
 - **No `print`.** Use `AUNLog` (os.Logger).
 - **Every user-facing string goes through `L10n`**, with both `en` and `ar` entries in
@@ -23,7 +25,7 @@ Product spec: `docs/native-apps/EPICS.md` in https://github.com/Al-Ummah-Now/AlU
 - **Every core call goes through a protocol in `AUNCoreBridge`**, so the Rust XCFramework can replace the temporary
   native implementation without touching features.
 - **APIs must exist in the CI SDK** (Xcode 26.6, macos-26 runner). Local Xcode may be newer.
-- **Never upload to TestFlight or the App Store by hand.** Releases are tag-triggered from `main` only.
+- **Never upload to TestFlight or the App Store by hand.** Releases are tag-triggered from `main` only (`docs/RELEASING.md`).
 - Every feature is tier-aware once Epic 27 entitlements land; never hard-code plans. Never use Stripe.
 
 ## Layout

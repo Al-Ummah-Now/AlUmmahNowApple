@@ -1,0 +1,89 @@
+name: Release
+# A tag vX.Y.Z on main builds Studio for Mac (zip + dmg, attached to the GitHub release) and Studio for iPhone and
+# iPad (uploaded to TestFlight). Without the Apple secrets everything is built unsigned, so the pipeline is proven.
+# workflow_dispatch builds the same artifacts from any branch without releasing anything.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+permissions: {contents: read}
+env:
+  ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+  ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+  ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+  DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+  DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v5
+        with: {fetch-depth: 0}
+      - id: v
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            git fetch origin main
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::$GITHUB_REF_NAME is not on main"; exit 1; }
+            VERSION="${GITHUB_REF_NAME#v}"
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::tag must be vX.Y.Z"; exit 1; }
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            VERSION="0.0.$GITHUB_RUN_NUMBER"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ -z "${ASC_KEY_P8:-}" ]]; then echo "::notice::No Apple secrets: building unsigned artifacts only."; fi
+
+  build:
+    needs: verify
+    name: ${{ matrix.platform }} ${{ matrix.config }}
+    runs-on: macos-26
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [mac, ios]
+        config: [Release, QA]
+    env:
+      AUN_VERSION: ${{ needs.verify.outputs.version }}
+      AUN_BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: brew install xcodegen && xcodegen generate
+      - uses: actions/cache@v4
+        with:
+          path: build/DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+      - run: scripts/release.sh ${{ matrix.platform }} ${{ matrix.config }} dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-${{ matrix.platform }}-${{ matrix.config }}
+          path: dist/*
+          retention-days: 14
+
+  publish:
+    needs: [verify, build]
+    if: needs.verify.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions: {contents: write}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {path: dist, pattern: studio-mac-*, merge-multiple: true}
+      - name: GitHub release with the Mac downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          (cd dist && shasum -a 256 * > SHA256SUMS.txt)
+          NOTES="Al Ummah Now Studio $TAG. Mac: download the .dmg (production) or the -qa build (QA). iPhone and iPad: TestFlight."
+          if ls dist | grep -q unsigned; then NOTES="$NOTES Unsigned build: on a Mac, right-click the app and choose Open the first time."; fi
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "Studio $TAG" --notes "$NOTES"
