@@ -36,7 +36,7 @@ final class MacViewerTests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: 30))
         // The featured hero sits above the rails, so the first rail can start below the fold.
         var scrolls = 0
-        while !element.isHittable, scrolls < 6 {
+        while element.frame.maxY > app.windows.firstMatch.frame.maxY - 20, scrolls < 6 {
             app.windows.firstMatch.scroll(byDeltaX: 0, deltaY: -200)
             scrolls += 1
         }
