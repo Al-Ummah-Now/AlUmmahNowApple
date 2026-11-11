@@ -52,8 +52,10 @@ public final class CoreAccountService: AccountServicing, @unchecked Sendable {
         try map { StudioAccount(try manager.switchAccount(userId: id)) }
     }
 
+    /// Removes the account here first, then revokes its refresh token on the server (RFC 7009, up to 10 s).
+    /// A slow or failed revocation never keeps the account signed in.
     public func signOut(_ id: String) async throws {
-        try map { try manager.signOut(userId: id) }
+        try await mapAsync { try await manager.signOutAndRevoke(userId: id) }
     }
 
     public func setActiveChannel(_ channelID: String?) async throws {

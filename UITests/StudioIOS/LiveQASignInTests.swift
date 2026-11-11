@@ -140,3 +140,111 @@ final class LiveQAUploadTests: LiveQATestCase {
         assertPlaylistsLoad(app, language: "ar")
     }
 }
+
+/// Manage against QA on the creator's own test uploads ("E2E Native …"): find them, bulk edit, delete, then
+/// queue them for permanent deletion, which also cleans up after the upload test. Then analytics.
+final class LiveQAManageTests: LiveQATestCase {
+    private let marker = "E2E Native"
+
+    @MainActor
+    private func noLoadError(_ app: XCUIApplication) {
+        XCTAssertEqual(
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "We couldn't load")).count, 0,
+            "a load error is on screen")
+    }
+
+    @MainActor
+    private func testRows(_ app: XCUIApplication) -> XCUIElementQuery {
+        app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH 'video-' AND label CONTAINS %@", marker))
+    }
+
+    /// Opens the status tab that holds this test's uploads; false when none is found.
+    @MainActor
+    private func openTabWithTestUploads(_ app: XCUIApplication) -> Bool {
+        let tabs = app.segmentedControls["content-status"].buttons
+        XCTAssertTrue(tabs.firstMatch.waitForExistence(timeout: 30))
+        for index in 0..<tabs.count {
+            tabs.element(boundBy: index).tap()
+            if testRows(app).firstMatch.waitForExistence(timeout: 8) { return true }
+            noLoadError(app)
+        }
+        return false
+    }
+
+    @MainActor
+    func testManageTestUploadsAndAnalytics() throws {
+        let app = try launchSignedIn()
+        app.tabBars.buttons["Content"].tap()
+        XCTAssertTrue(app.buttons["content-sort"].waitForExistence(timeout: 30))
+        noLoadError(app)
+        keep("content-live-en")
+
+        guard openTabWithTestUploads(app) else {
+            throw XCTSkip("No \(marker) uploads on QA; run LiveQAUploadTests first.")
+        }
+        // Search narrows the tab to this test's uploads (and shows live suggestions).
+        let field = app.searchFields.firstMatch
+        if !field.waitForExistence(timeout: 3) { app.swipeDown() }
+        field.tap()
+        field.typeText(marker)
+        let suggestion = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'suggestion-' AND label CONTAINS %@", marker))
+        XCTAssertTrue(suggestion.firstMatch.waitForExistence(timeout: 20), "no live suggestion")
+        keep("search-live-en")
+        // Submitting closes the suggestions and shows the filtered list.
+        app.keyboards.buttons["search"].firstMatch.tap()
+        XCTAssertTrue(testRows(app).firstMatch.waitForExistence(timeout: 20))
+        let count = testRows(app).count
+
+        // Bulk edit: tag them.
+        app.buttons["content-select"].tap()
+        for index in 0..<count { testRows(app).element(boundBy: index).tap() }
+        app.buttons["bulk-edit"].tap()
+        let addTags = app.textFields["bulk-add-tags"]
+        XCTAssertTrue(addTags.waitForExistence(timeout: 10))
+        addTags.tap()
+        addTags.typeText("e2e-native")
+        keep("bulk-edit-live-en")
+        app.buttons["bulk-apply"].tap()
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", "updated")).firstMatch
+                .waitForExistence(timeout: 30))
+
+        // Soft delete.
+        if !app.buttons["bulk-delete"].exists {
+            if app.buttons["Done"].exists { app.buttons["Done"].tap() }
+            app.buttons["content-select"].tap()
+        }
+        for index in 0..<testRows(app).count { testRows(app).element(boundBy: index).tap() }
+        app.buttons["bulk-delete"].tap()
+        XCTAssertTrue(app.buttons["confirm-cancel"].waitForExistence(timeout: 10))
+        app.buttons["confirm-action"].tap()
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Restore from Recently deleted"))
+                .firstMatch.waitForExistence(timeout: 30))
+
+        // Recently deleted: queue them for permanent deletion (cleanup).
+        if app.buttons["Done"].exists { app.buttons["Done"].tap() }
+        app.buttons["open-deleted"].tap()
+        let deleted = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH 'deleted-' AND label CONTAINS %@", marker))
+        XCTAssertTrue(deleted.firstMatch.waitForExistence(timeout: 30))
+        noLoadError(app)
+        keep("recently-deleted-live-en")
+        for index in 0..<deleted.count { deleted.element(boundBy: index).tap() }
+        app.buttons["deleted-purge"].tap()
+        XCTAssertTrue(app.buttons["confirm-cancel"].waitForExistence(timeout: 10))
+        app.buttons["confirm-action"].tap()
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", "queued for permanent deletion"))
+                .firstMatch.waitForExistence(timeout: 30))
+        keep("purged-live-en")
+
+        app.tabBars.buttons["Analytics"].tap()
+        XCTAssertTrue(app.segmentedControls["analytics-range"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.staticTexts["Top videos"].waitForExistence(timeout: 30))
+        noLoadError(app)
+        keep("analytics-live-en")
+    }
+}

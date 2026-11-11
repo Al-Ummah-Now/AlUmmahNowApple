@@ -37,14 +37,16 @@ case "${1:-}" in
     xcodebuild test "${COMMON[@]}" -scheme StudioMac -destination "platform=macOS" "${ADHOC[@]}"
     ;;
   live-qa)
-    # Real sign-in against auth.qa. Signed to run locally (ad hoc), because the Keychain needs entitlements.
+    # Real sign-in, upload and manage against auth.qa and videos.api.qa, as the QA creator. Signed to run locally
+    # (ad hoc), because the Keychain needs entitlements. Upload runs first; manage then cleans up its uploads.
     : "${AUN_QA_EMAIL:?}" "${AUN_QA_PASSWORD:?}"
-    TEST_RUNNER_AUN_LIVE_QA=1 TEST_RUNNER_AUN_QA_EMAIL="$AUN_QA_EMAIL" TEST_RUNNER_AUN_QA_PASSWORD="$AUN_QA_PASSWORD" \
-      xcodebuild test "${COMMON[@]}" -scheme StudioIOS \
-      -only-testing:StudioIOSUITests/LiveQASignInTests/testSignInThroughAuthAndSignOut \
-      -only-testing:StudioIOSUITests/LiveQAUploadTests/testUploadOnePrivateClip \
-      -only-testing:StudioIOSUITests/LiveQAUploadTests/testArabicFormLoadsPlaylists \
-      -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${ADHOC[@]}"
+    LIVE=(TEST_RUNNER_AUN_LIVE_QA=1 TEST_RUNNER_AUN_QA_EMAIL="$AUN_QA_EMAIL" TEST_RUNNER_AUN_QA_PASSWORD="$AUN_QA_PASSWORD")
+    for tests in "LiveQASignInTests LiveQAUploadTests" "LiveQAManageTests"; do
+      ONLY=()
+      for test in $tests; do ONLY+=("-only-testing:StudioIOSUITests/$test"); done
+      env "${LIVE[@]}" xcodebuild test "${COMMON[@]}" -scheme StudioIOS "${ONLY[@]}" \
+        -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${ADHOC[@]}"
+    done
     ;;
   *) echo "usage: $0 lint|ios|ipad|tvos|mac|studio|live-qa" >&2; exit 2 ;;
 esac

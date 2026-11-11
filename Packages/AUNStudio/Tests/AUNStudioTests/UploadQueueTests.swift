@@ -167,3 +167,29 @@ struct UploadComposerTests {
         #expect(composer.problem() == nil)
     }
 }
+
+/// The queue never calls these.
+extension RecordingStudio {
+    func content(channelID: String, query: ContentQuery, cursor: String?) async throws -> ContentPage {
+        ContentPage(items: [], cursor: nil)
+    }
+    func contentCounts(channelID: String) async throws -> ContentCounts { [:] }
+    func updateVideo(_ id: String, _ edit: VideoEdit, channelID: String) async throws {}
+    func deleteVideos(_ ids: [String], channelID: String) async throws -> BulkResult { BulkResult(items: []) }
+    func bulkUpdate(_ ids: [String], _ changes: BulkChanges, channelID: String) async throws -> BulkResult {
+        BulkResult(items: [])
+    }
+    func bulkSchedule(_ ids: [String], startAt: Date, intervalMinutes: Int, timeZone: TimeZone) async throws -> BulkResult {
+        BulkResult(items: [])
+    }
+    func addToPlaylist(_ playlistID: String, videoIDs: [String], channelID: String) async throws {}
+    func deletedVideos(channelID: String, cursor: String?) async throws -> (items: [DeletedVideo], cursor: String?) {
+        ([], nil)
+    }
+    func restoreVideos(_ ids: [String]) async throws -> BulkResult { BulkResult(items: []) }
+    func purgeVideos(_ ids: [String]) async throws -> BulkResult { BulkResult(items: []) }
+    func channelStats(channelID: String, period: DateInterval) async throws -> ChannelStats { ChannelStats(totalViews: 0) }
+    func videoStats(videoID: String, period: DateInterval) async throws -> VideoStats {
+        VideoStats(videoID: videoID, title: "", views: 0)
+    }
+}

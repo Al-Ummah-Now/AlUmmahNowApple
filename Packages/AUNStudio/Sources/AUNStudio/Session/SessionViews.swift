@@ -76,27 +76,36 @@ struct ConfirmSheet: View {
     let action: () -> Void
 
     var body: some View {
-        VStack(spacing: FanousScale.spacingLg) {
-            Image(systemName: "exclamationmark.triangle").font(.title).foregroundStyle(Fanous.errorText)
-                .accessibilityHidden(true)
-            Text(title).fanousFont(.title).foregroundStyle(Fanous.textPrimary).accessibilityAddTraits(.isHeader)
-            Text(message).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
-            ViewThatFits {
-                HStack(spacing: FanousScale.spacingMd) { buttons }
-                VStack(spacing: FanousScale.spacingMd) { buttons }
+        ScrollView {
+            VStack(spacing: FanousScale.spacingLg) {
+                Image(systemName: "exclamationmark.triangle").font(.title).foregroundStyle(Fanous.errorText)
+                    .accessibilityHidden(true)
+                Text(title).fanousFont(.title).foregroundStyle(Fanous.textPrimary).accessibilityAddTraits(.isHeader)
+                    .fixedSize(horizontal: false, vertical: true)
+                // Never truncated: the explanation is the point of the sheet.
+                Text(message).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ViewThatFits {
+                    HStack(spacing: FanousScale.spacingMd) { buttons }
+                    VStack(spacing: FanousScale.spacingMd) { buttons }
+                }
             }
+            .multilineTextAlignment(.center)
+            .padding(FanousScale.spacingXl)
+            .frame(maxWidth: 480)
+            .frame(maxWidth: .infinity)
         }
-        .multilineTextAlignment(.center)
-        .padding(FanousScale.spacingXl)
-        .frame(maxWidth: 480)
+        .scrollBounceBehavior(.basedOnSize)
         .onAppear {
             cancelFocused = true
             cancelSpoken = true
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .fanousPage()
         #if os(iOS)
             .presentationDetents([.medium, .large])
+            .presentationBackground { FanousSurfaceKind(kind: .page, shape: .rect) }
         #endif
-        .fanousPage()
     }
 
     @ViewBuilder private var buttons: some View {

@@ -32,13 +32,14 @@ public enum StudioBootstrap {
                 environment: environment, bundleID: bundle.bundleIdentifier ?? "net.alummahnow.studio")
             return StudioServices(
                 environment: environment, accounts: accounts,
-                studio: NativeStudioService(baseURL: environment.apiBaseURL, accounts: accounts), transfer: liveTransfer)
+                studio: NativeStudioService(baseURL: environment.apiBaseURL, accounts: accounts), transfer: liveTransfer,
+                search: CoreSearchService(accounts: accounts, baseURL: environment.apiBaseURL))
         } catch {
             AUNLog.studio.fault("Studio services could not start: \(error)")
             return StudioServices(
                 environment: environment, accounts: FixtureAccountService(),
                 studio: NativeStudioService(baseURL: environment.apiBaseURL, accounts: FixtureAccountService()),
-                transfer: liveTransfer)
+                transfer: liveTransfer, search: FixtureSearchService())
         }
     }
 }

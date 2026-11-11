@@ -5,13 +5,16 @@
     import UniformTypeIdentifiers
 
     enum StudioSection: String, CaseIterable, Identifiable {
-        case home, upload, encode, editor
+        case home, content, deleted, upload, analytics, encode, editor
         var id: String { rawValue }
         var titleKey: String { "studio.\(rawValue).title" }
         var icon: String {
             switch self {
             case .home: "square.grid.2x2"
+            case .content: "film.stack"
+            case .deleted: "trash"
             case .upload: "square.and.arrow.up.on.square"
+            case .analytics: "chart.bar"
             case .encode: "cpu"
             case .editor: "timeline.selection"
             }
