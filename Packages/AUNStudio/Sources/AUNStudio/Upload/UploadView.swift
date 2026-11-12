@@ -309,7 +309,7 @@ private struct SetForAllSection: View {
                     Text(l10n("common.error.load")).foregroundStyle(Fanous.errorText)
                     Spacer()
                     Button(l10n("common.retry"), action: retryPlaylists)
-                    .accessibilityIdentifier("upload-playlists-retry")
+                        .accessibilityIdentifier("upload-playlists-retry")
                 }
             } else if composer.playlists.isEmpty {
                 Text(l10n("studio.upload.noPlaylists")).foregroundStyle(Fanous.textSecondary)
