@@ -196,4 +196,28 @@ struct ManageServiceTests {
         #expect(periodChange(120, 100) == 0.2)
         #expect(periodChange(5, 0) == nil)
     }
+
+    @Test func lastNDaysCountsTodayAndTheDaysBefore() throws {
+        let now = try Date("2026-11-11T15:30:00Z", strategy: .iso8601)
+        let periods = AnalyticsRange.days28.periods(now: now)
+        #expect(periods.current.start == (try Date("2026-10-15T00:00:00Z", strategy: .iso8601)))
+        #expect(periods.current.end == now)
+        #expect(periods.previous.start == (try Date("2026-09-17T00:00:00Z", strategy: .iso8601)))
+        #expect(periods.previous.end == (try Date("2026-10-14T23:59:59Z", strategy: .iso8601)))
+    }
+
+    @Test func videoStatsReadTheRangeNumbers() throws {
+        let body = """
+            {"videoId":"v1","title":"A","views":900,"likes":50,"comments":9,"rangeViews":120,"rangeLikes":4,
+             "rangeComments":1,"recentMetrics":[{"date":"2026-11-11","views":120,"watchTime":60}]}
+            """
+        let stats = try JSONDecoder().decode(VideoStats.self, from: Data(body.utf8))
+        #expect(stats.periodViews == 120)
+        #expect(stats.periodLikes == 4)
+        #expect(stats.periodComments == 1)
+        #expect(stats.daily.count == 1)
+        let old = try JSONDecoder().decode(VideoStats.self, from: Data(#"{"videoId":"v1","views":900}"#.utf8))
+        #expect(old.periodViews == 900)
+        #expect(old.daily.isEmpty)
+    }
 }
