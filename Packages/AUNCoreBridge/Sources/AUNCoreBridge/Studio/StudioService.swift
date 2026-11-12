@@ -38,6 +38,14 @@ public protocol StudioServicing: Sendable {
     // MARK: Analytics
     func channelStats(channelID: String, period: DateInterval) async throws -> ChannelStats
     func videoStats(videoID: String, period: DateInterval) async throws -> VideoStats
+
+    // Creator tier and account state
+    func creatorAccess() async throws -> CreatorAccess
+}
+
+extension StudioServicing {
+    /// Services that cannot tell allow everything; the server still refuses with a code.
+    public func creatorAccess() async throws -> CreatorAccess { CreatorAccess() }
 }
 
 /// api-videos over URLSession with the active account's bearer token.
@@ -58,6 +66,26 @@ public struct NativeStudioService: StudioServicing {
 
     public func channels() async throws -> [StudioChannel] {
         try await client.send(.get, "/api/channels/access", as: DataEnvelope<[StudioChannel]>.self).data
+    }
+
+    struct CreatorEnvelope: Decodable {
+        let data: CreatorAccess?
+        let result: CreatorAccess?
+    }
+
+    public func creatorAccess() async throws -> CreatorAccess {
+        let data = try await client.sendRaw(.get, "/api/me/creator")
+        // The fields may sit at the top level or under `data`/`result`.
+        if let envelope = try? StudioHTTPClient.decoder.decode(CreatorEnvelope.self, from: data),
+            let access = envelope.data ?? envelope.result
+        {
+            return access
+        }
+        do {
+            return try StudioHTTPClient.decoder.decode(CreatorAccess.self, from: data)
+        } catch {
+            throw CoreError.decoding
+        }
     }
 
     public func playlists(channelID: String) async throws -> [StudioPlaylist] {
@@ -345,6 +373,7 @@ struct StudioHTTPClient: Sendable {
             AUNLog.network.error(
                 "\(method.rawValue, privacy: .public) \(path, privacy: .public) failed: \(status) \(body?.code ?? "", privacy: .public)"
             )
+            if let refusal = Refusal.parse(data) { throw CoreError.refused(refusal) }
             switch status {
             case 401: throw CoreError.signInRequired
             case 403: throw CoreError.forbidden
@@ -429,10 +458,31 @@ actor FixtureContentStore {
 
 /// Bilingual channels and videos for UI tests, snapshots and previews.
 public struct FixtureStudioService: StudioServicing {
+    /// The account states UI tests can start in (`-AUNFixtureAccountState`).
+    public enum AccountState: String, Sendable { case creator, invitation, pendingDeletion }
+
     let store = FixtureContentStore()
     private let original = FixtureContentStore()
+    let accountState: AccountState
 
-    public init() {}
+    public init(accountState: AccountState = .creator) { self.accountState = accountState }
+
+    public func creatorAccess() async throws -> CreatorAccess {
+        switch accountState {
+        case .creator: CreatorAccess(tierName: "Creator")
+        case .invitation: CreatorAccess(canUpload: false, canCreateChannel: false)
+        case .pendingDeletion: CreatorAccess(canUpload: false, canCreateChannel: false, pendingDeletion: true)
+        }
+    }
+
+    /// Writes refused the way api-videos refuses them for this account state. Without a tier only uploads are refused.
+    func refuseWrites(upload: Bool = false) throws {
+        switch accountState {
+        case .creator: return
+        case .invitation: if upload { throw CoreError.refused(Refusal(code: Refusal.uploadsByInvitation)) }
+        case .pendingDeletion: throw CoreError.refused(Refusal(code: Refusal.accountPendingDeletion))
+        }
+    }
 
     public static let channels: [StudioChannel] = [
         StudioChannel(
@@ -450,14 +500,18 @@ public struct FixtureStudioService: StudioServicing {
     public func channels() async throws -> [StudioChannel] { Self.channels }
 
     public static let playlists = [
-        StudioPlaylist(id: "fixture-playlist-1", title: "Tafsir series"),
+        StudioPlaylist(
+            id: "fixture-playlist-1", title: "Tafsir series",
+            titleLocalized: LocalizedText(en: "Tafsir series", ar: "سلسلة التفسير")),
+        // An older playlist with no bilingual names: shown as `title` in both languages.
         StudioPlaylist(id: "fixture-playlist-2", title: "Khutbahs", isPublic: false),
     ]
 
     public func playlists(channelID: String) async throws -> [StudioPlaylist] { Self.playlists }
 
     public func initiateUpload(_ upload: UploadInitiation, channelID: String) async throws -> UploadTicket {
-        UploadTicket(videoID: "fixture-video-\(UUID().uuidString.prefix(8))", tusSessionID: "fixture", chunkSize: 1 << 20)
+        try refuseWrites(upload: true)
+        return UploadTicket(videoID: "fixture-video-\(UUID().uuidString.prefix(8))", tusSessionID: "fixture", chunkSize: 1 << 20)
     }
 
     public func resumeUpload(videoID: String, channelID: String) async throws -> UploadTicket {
@@ -479,6 +533,7 @@ public struct FixtureStudioService: StudioServicing {
     public func contentCounts(channelID: String) async throws -> ContentCounts { await store.counts() }
 
     public func updateVideo(_ id: String, _ edit: VideoEdit, channelID: String) async throws {
+        try refuseWrites()
         _ = await store.apply([id]) { video in
             if let title = edit.title {
                 video.title = title
@@ -492,10 +547,14 @@ public struct FixtureStudioService: StudioServicing {
         }
     }
 
-    public func deleteVideos(_ ids: [String], channelID: String) async throws -> BulkResult { await store.delete(ids) }
+    public func deleteVideos(_ ids: [String], channelID: String) async throws -> BulkResult {
+        try refuseWrites()
+        return await store.delete(ids)
+    }
 
     public func bulkUpdate(_ ids: [String], _ changes: BulkChanges, channelID: String) async throws -> BulkResult {
-        await store.apply(ids) { video in
+        try refuseWrites()
+        return await store.apply(ids) { video in
             if let isPublic = changes.isPublic { video.isPublic = isPublic }
             if let category = changes.category { video.category = category }
             video.tags = (video.tags + (changes.addTags ?? [])).filter { !(changes.removeTags ?? []).contains($0) }

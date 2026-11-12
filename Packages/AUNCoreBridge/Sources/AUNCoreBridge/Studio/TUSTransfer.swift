@@ -90,8 +90,11 @@ public final class TUSTransfer: NSObject, TUSTransferring, URLSessionTaskDelegat
         return request
     }
 
-    private static func check(_ response: URLResponse?) throws -> HTTPURLResponse {
+    private static func check(_ response: URLResponse?, body: Data? = nil) throws -> HTTPURLResponse {
         guard let http = response as? HTTPURLResponse else { throw CoreError.upload("no response") }
+        if !(200..<300).contains(http.statusCode), let body, let refusal = Refusal.parse(body) {
+            throw CoreError.refused(refusal)
+        }
         switch http.statusCode {
         case 200..<300: return http
         case 401: throw CoreError.signInRequired
@@ -108,8 +111,8 @@ public final class TUSTransfer: NSObject, TUSTransferring, URLSessionTaskDelegat
         let encoded = metadata.sorted { $0.key < $1.key }
             .map { "\($0.key) \(Data($0.value.utf8).base64EncodedString())" }.joined(separator: ",")
         request.setValue(encoded, forHTTPHeaderField: "Upload-Metadata")
-        let (_, response) = try await control.data(for: request)
-        let http = try Self.check(response)
+        let (body, response) = try await control.data(for: request)
+        let http = try Self.check(response, body: body)
         guard let header = http.value(forHTTPHeaderField: "Location"),
             let location = URL(string: header, relativeTo: endpoint)?.absoluteURL
         else { throw CoreError.upload("no Location") }

@@ -56,6 +56,7 @@ final class ContentModel {
             self.counts = (try? await counts) ?? self.counts
             selection = selection.intersection(items.map(\.id))
             state = .loaded
+            if searchText.trimmingCharacters(in: .whitespaces).isEmpty { suggestions = initialSuggestions }
         } catch is CancellationError {
         } catch {
             AUNLog.studio.error("Loading content failed: \(error)")
@@ -74,12 +75,19 @@ final class ContentModel {
         }
     }
 
+    /// What the search field offers before anything is typed: the first videos of this tab, in the list's order
+    /// (newest first by default), including drafts and private videos.
+    var initialSuggestions: [StudioSuggestion] {
+        items.prefix(8).map { StudioSuggestion(text: $0.title, kind: .video, itemID: $0.id) }
+    }
+
     /// Server suggestions (public videos and completions in this channel) after the channel's own matches, which
     /// include drafts and private videos the server never suggests.
     func suggest(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard trimmed.count >= 2 else {
-            suggestions = []
+            // Empty: the field opens with the channel's videos. One letter clears them, so a stale row is never tapped.
+            suggestions = trimmed.isEmpty ? initialSuggestions : []
             return
         }
         let search = services.search
@@ -104,13 +112,20 @@ final class ContentModel {
         reload()
     }
 
+    /// Tells the session about account-wide refusals, which its banner shows once.
+    @ObservationIgnored var onError: ((any Error) -> Void)?
+
+    /// An action failed: say why, unless the account banner already does.
+    private func fail(_ error: any Error) {
+        onError?(error)
+        message = StudioFailure.accountState(error) == nil ? StudioFailure.message(error) : nil
+    }
+
     private func perform(_ key: String, _ action: () async throws -> BulkResult) async {
         do {
             finish(try await action(), done: key)
         } catch {
-            message = (
-                UploadQueue.failureKey(error) == "studio.upload.error.limit" ? "studio.content.limit" : "studio.error.generic", []
-            )
+            fail(error)
         }
     }
 
@@ -138,7 +153,7 @@ final class ContentModel {
             message = ("studio.content.addedToPlaylist", [String(ids.count)])
             selection = []
         } catch {
-            message = ("studio.error.generic", [])
+            fail(error)
         }
     }
 
@@ -149,7 +164,7 @@ final class ContentModel {
             reload()
             return true
         } catch {
-            message = ((error as? CoreError) == .forbidden ? "studio.error.forbidden" : "studio.error.generic", [])
+            fail(error)
             return false
         }
     }
@@ -206,7 +221,7 @@ final class DeletedModel {
                 ? (key, [String(result.succeeded)])
                 : ("studio.content.partial", [String(result.succeeded), String(result.failed.count)])
         } catch {
-            message = ("studio.error.generic", [])
+            message = StudioFailure.message(error)
         }
         selection = []
         await load()

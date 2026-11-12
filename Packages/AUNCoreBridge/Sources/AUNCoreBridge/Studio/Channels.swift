@@ -55,3 +55,31 @@ public struct StudioChannel: Identifiable, Hashable, Sendable, Decodable {
         nameLocalized?.value(for: language, fallback: name) ?? name
     }
 }
+
+/// What the signed-in person may do as a creator (`GET /api/me/creator`). Plans are managed by admins; the app never
+/// decides them, it only hides what the server says is not allowed.
+public struct CreatorAccess: Hashable, Sendable, Decodable {
+    public var canUpload: Bool
+    public var canCreateChannel: Bool
+    /// An admin ran "Delete videos data": writes are refused until it is restored.
+    public var pendingDeletion: Bool
+    public var tierName: String?
+
+    public init(canUpload: Bool = true, canCreateChannel: Bool = true, pendingDeletion: Bool = false, tierName: String? = nil) {
+        self.canUpload = canUpload
+        self.canCreateChannel = canCreateChannel
+        self.pendingDeletion = pendingDeletion
+        self.tierName = tierName
+    }
+
+    enum CodingKeys: String, CodingKey { case canUpload, canCreateChannel, pendingDeletion, tier }
+    private struct Tier: Decodable { let name: String? }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        canUpload = try c.decodeIfPresent(Bool.self, forKey: .canUpload) ?? false
+        canCreateChannel = try c.decodeIfPresent(Bool.self, forKey: .canCreateChannel) ?? false
+        pendingDeletion = try c.decodeIfPresent(Bool.self, forKey: .pendingDeletion) ?? false
+        tierName = (try? c.decodeIfPresent(Tier.self, forKey: .tier))?.name
+    }
+}

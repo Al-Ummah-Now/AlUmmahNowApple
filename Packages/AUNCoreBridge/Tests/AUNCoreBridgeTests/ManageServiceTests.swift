@@ -76,12 +76,84 @@ struct ManageServiceTests {
         #expect(lock.withLock { recorded.seen } == paths)
     }
 
-    @Test func bulkScheduleRefusalByPlanIsA402() async {
-        await #expect(throws: CoreError.http(status: 402)) {
+    @Test func bulkScheduleRefusalByPlanCarriesThePlansMessage() async {
+        let refusal = Refusal(
+            code: Refusal.upgradeRequired, message: "Scheduling many videos is on the Pro plan.",
+            entitlement: "studio.bulkSchedule")
+        await #expect(throws: CoreError.refused(refusal)) {
             try await service { _ in
-                (402, [:], Data(#"{"success":false,"error":"upgrade_required","entitlement":"studio.bulkSchedule"}"#.utf8))
+                let body = #"""
+                    {"success":false,"error":"upgrade_required","entitlement":"studio.bulkSchedule","limit":null,
+                    "current":null,"message":"Scheduling many videos is on the Pro plan."}
+                    """#
+                return (402, [:], Data(body.utf8))
             }.bulkSchedule(["a"], startAt: Date(), intervalMinutes: 60, timeZone: .current)
         }
+    }
+
+    @Test func accountStateAndTierRefusalsKeepTheirCode() async {
+        let cases: [(Int, String, Refusal)] = [
+            (
+                403,
+                #"{"success":false,"code":"videos_account_pending_deletion","error":"Your videos account is scheduled for deletion. Contact support.","deletion":{"deletedAt":"2026-11-11T10:00:00.000Z"}}"#,
+                Refusal(code: Refusal.accountPendingDeletion)
+            ),
+            (
+                403, #"{"success":false,"code":"uploads_by_invitation","error":"Uploads are by invitation"}"#,
+                Refusal(code: Refusal.uploadsByInvitation)
+            ),
+            (
+                429, #"{"success":false,"code":"upload_limit","error":"You've reached the upload limit","retryAfter":120}"#,
+                Refusal(code: Refusal.uploadLimit, retryAfter: 120)
+            ),
+            (410, #"{"success":false,"code":"dislikes_disabled"}"#, Refusal(code: Refusal.dislikesDisabled)),
+        ]
+        for (status, body, refusal) in cases {
+            await #expect(throws: CoreError.refused(refusal)) {
+                try await service { _ in (status, [:], Data(body.utf8)) }.updateVideo(
+                    "v1", VideoEdit(title: "T"), channelID: "c1")
+            }
+        }
+        // A 403 without a known code stays `forbidden`.
+        await #expect(throws: CoreError.forbidden) {
+            try await service { _ in (403, [:], Data(#"{"success":false,"error":"Forbidden"}"#.utf8)) }
+                .updateVideo("v1", VideoEdit(title: "T"), channelID: "c1")
+        }
+    }
+
+    @Test func creatorAccessReadsTierAndPendingDeletion() async throws {
+        let access = try await service { request in
+            #expect(request.url?.path() == "/api/me/creator")
+            return (
+                200, [:],
+                Data(#"{"success":true,"canUpload":false,"canCreateChannel":false,"pendingDeletion":true,"tier":null}"#.utf8)
+            )
+        }.creatorAccess()
+        #expect(access == CreatorAccess(canUpload: false, canCreateChannel: false, pendingDeletion: true))
+        let wrapped = try await service { _ in
+            (
+                200, [:],
+                Data(#"{"success":true,"data":{"canUpload":true,"canCreateChannel":true,"tier":{"name":"Creator"}}}"#.utf8)
+            )
+        }.creatorAccess()
+        #expect(wrapped.canUpload && wrapped.tierName == "Creator" && !wrapped.pendingDeletion)
+    }
+
+    @Test func playlistNamesFollowTheAppLanguageWithFallback() throws {
+        let json = #"""
+            [{"id":"p1","title":"Tafsir","titleLocalized":{"en":"Tafsir","ar":" التفسير "},"description":"About",
+              "descriptionLocalized":{"ar":"نبذة"}},
+             {"id":"p2","title":"Old list"},
+             {"id":"p3","title":"Only en","titleLocalized":{"en":"English name","ar":"  "}}]
+            """#
+        let playlists = try JSONDecoder().decode([StudioPlaylist].self, from: Data(json.utf8))
+        #expect(playlists[0].displayTitle(.ar) == "التفسير")
+        #expect(playlists[0].displayTitle(.en) == "Tafsir")
+        #expect(playlists[0].displayDescription(.ar) == "نبذة")
+        #expect(playlists[0].displayDescription(.en) == "About")
+        #expect(playlists[1].displayTitle(.ar) == "Old list")
+        #expect(playlists[2].displayTitle(.ar) == "Only en")
+        #expect(playlists[2].displayTitle(.en) == "English name")
     }
 
     @Test func deletedVideosDecodeTheirPurgeDate() async throws {

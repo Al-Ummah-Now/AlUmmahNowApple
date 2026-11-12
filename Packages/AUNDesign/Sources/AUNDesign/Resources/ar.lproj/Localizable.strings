@@ -240,3 +240,12 @@
 "studio.analytics.comments" = "التعليقات";
 "studio.analytics.newSubscribers" = "مشتركون جدد";
 "studio.analytics.lifetime" = "منذ البداية: %@ مشاهدة · %@ مشترك · تفاعل %@";
+
+/* Plan refusals and account states (api-videos codes) */
+"studio.plain" = "%@";
+"studio.refusal.invitation" = "الرفع بدعوة. اطلب من المشرف منح حسابك خطة صانع محتوى.";
+"studio.refusal.channelLimit" = "وصلت إلى حد القنوات في خطتك.";
+"studio.account.stateTitle" = "حسابك في الفيديوهات";
+"studio.account.pendingDeletion" = "حسابك في الفيديوهات مجدول للحذف. تواصل مع الدعم.";
+"studio.account.banned" = "لا يمكن لحسابك في الفيديوهات إجراء تغييرات. تواصل مع الدعم.";
+"studio.playlists.emptyMessage" = "لا توجد قوائم تشغيل في هذه القناة بعد.";

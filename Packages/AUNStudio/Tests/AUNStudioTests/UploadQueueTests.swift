@@ -90,6 +90,33 @@ struct UploadQueueTests {
             ])
     }
 
+    @Test func aPendingDeletionPausesTheQueueUntilTheAccountIsRestored() async throws {
+        let studio = RecordingStudio(refuseInitiate: .refused(Refusal(code: Refusal.accountPendingDeletion)))
+        let queue = UploadQueue(studio: studio, transfer: FixtureTUSTransfer(delay: .zero), store: store())
+        var reported: Refusal?
+        queue.onAccountState = { reported = $0 }
+        queue.accountID = "a1"
+        queue.enqueue([job(try file(bytes: 10), title: "Three")])
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .paused)
+        #expect(queue.jobs[0].failure == UploadQueue.accountStateKey)
+        #expect(queue.isBlocked)
+        #expect(reported?.code == Refusal.accountPendingDeletion)
+        queue.unblock()
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .done)
+    }
+
+    @Test func aTierRefusalSaysUploadsAreByInvitation() async throws {
+        let studio = RecordingStudio(refuseInitiate: .refused(Refusal(code: Refusal.uploadsByInvitation)))
+        let queue = UploadQueue(studio: studio, transfer: FixtureTUSTransfer(delay: .zero), store: store())
+        queue.accountID = "a1"
+        queue.enqueue([job(try file(bytes: 10), title: "Four")])
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .failed)
+        #expect(queue.jobs[0].failure == "studio.refusal.invitation")
+    }
+
     @Test func aRefusalFailsTheJobAndRetryContinues() async throws {
         let studio = RecordingStudio(refuseInitiate: .http(status: 429))
         let queue = UploadQueue(studio: studio, transfer: FixtureTUSTransfer(delay: .zero), store: store())

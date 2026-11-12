@@ -20,21 +20,43 @@ public enum UploadVisibility: String, CaseIterable, Sendable, Codable {
 public struct StudioPlaylist: Identifiable, Hashable, Sendable, Codable {
     public var id: String
     public var title: String
+    /// English and Arabic names, edited together (AlUmmahNow#833). Older playlists have none.
+    public var titleLocalized: LocalizedText?
+    public var description: String?
+    public var descriptionLocalized: LocalizedText?
     public var isPublic: Bool
 
-    public init(id: String, title: String, isPublic: Bool = true) {
+    public init(
+        id: String, title: String, titleLocalized: LocalizedText? = nil, description: String? = nil,
+        descriptionLocalized: LocalizedText? = nil, isPublic: Bool = true
+    ) {
         self.id = id
         self.title = title
+        self.titleLocalized = titleLocalized
+        self.description = description
+        self.descriptionLocalized = descriptionLocalized
         self.isPublic = isPublic
     }
 
-    enum CodingKeys: String, CodingKey { case id, title, isPublic }
+    enum CodingKeys: String, CodingKey { case id, title, titleLocalized, description, descriptionLocalized, isPublic }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        titleLocalized = try? c.decodeIfPresent(LocalizedText.self, forKey: .titleLocalized)
+        description = try? c.decodeIfPresent(String.self, forKey: .description)
+        descriptionLocalized = try? c.decodeIfPresent(LocalizedText.self, forKey: .descriptionLocalized)
         isPublic = try c.decodeIfPresent(Bool.self, forKey: .isPublic) ?? true
+    }
+
+    /// The name in the app's language, else `title` (`localizedPlaylistText` on the web).
+    public func displayTitle(_ language: AppLanguage) -> String {
+        titleLocalized?.value(for: language, fallback: title) ?? title
+    }
+
+    public func displayDescription(_ language: AppLanguage) -> String? {
+        descriptionLocalized?.value(for: language, fallback: description ?? "") ?? description
     }
 }
 

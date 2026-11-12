@@ -24,6 +24,10 @@ public final class UploadQueue {
     public var accountID: String? {
         didSet { if accountID != oldValue { kick() } }
     }
+    /// Called when the server refuses for the whole account (pending deletion, ban). The queue pauses rather than
+    /// fails its jobs, and runs nothing until `unblock()`.
+    var onAccountState: ((Refusal) -> Void)?
+    private(set) var isBlocked = false
 
     init(studio: any StudioServicing, transfer: any TUSTransferring, store: UploadStore, maxParallel: Int = 2) {
         self.studio = studio
@@ -92,9 +96,24 @@ public final class UploadQueue {
         save()
     }
 
+    /// The account may write again (an admin restored it): resume the jobs the refusal paused.
+    func unblock() {
+        guard isBlocked else { return }
+        isBlocked = false
+        for job in jobs where job.state == .paused && job.failure == Self.accountStateKey {
+            update(job.id) {
+                $0.state = .waiting
+                $0.failure = nil
+            }
+        }
+        kick()
+    }
+
+    static let accountStateKey = "studio.account.pendingDeletion"
+
     /// Starts as many waiting jobs of the active account as the parallel limit allows.
     public func kick() {
-        guard let accountID else { return }
+        guard let accountID, !isBlocked else { return }
         let running = jobs.filter { tasks[$0.id] != nil }.count
         let ready = jobs.filter { $0.state == .waiting && $0.accountID == accountID && tasks[$0.id] == nil }
         for job in ready.prefix(max(0, maxParallel - running)) {
@@ -140,6 +159,15 @@ public final class UploadQueue {
             if job.ownsFile { try? FileManager.default.removeItem(at: job.file) }
         } catch is CancellationError {
             update(id) { if $0.state != .paused { $0.state = .waiting } }
+        } catch let error as CoreError where error.refusal?.isAccountState == true {
+            // Not a failure of this file: pause it, keep its progress, and wait for the account to be restored.
+            isBlocked = true
+            update(id) {
+                $0.state = .paused
+                $0.inFlight = 0
+                $0.failure = Self.accountStateKey
+            }
+            if let refusal = error.refusal { onAccountState?(refusal) }
         } catch {
             AUNLog.studio.error("Upload \(id, privacy: .public) failed: \(error)")
             update(id) {
@@ -254,6 +282,8 @@ public final class UploadQueue {
                 (endpoint, headers) = try await studio.tusEndpoint()
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let error as CoreError where error.refusal != nil {
+                throw error
             } catch {
                 attempts += 1
                 guard attempts <= 4 else { throw error }
@@ -275,7 +305,10 @@ public final class UploadQueue {
     }
 
     static func failureKey(_ error: any Error) -> String {
-        switch error as? CoreError {
+        if let refusal = (error as? CoreError)?.refusal {
+            return refusal.code == Refusal.upgradeRequired ? "studio.content.limit" : StudioFailure.refusalMessage(refusal).key
+        }
+        return switch error as? CoreError {
         case .offline: "studio.error.offline"
         case .signInRequired: "studio.error.signIn"
         case .forbidden: "studio.upload.error.forbidden"

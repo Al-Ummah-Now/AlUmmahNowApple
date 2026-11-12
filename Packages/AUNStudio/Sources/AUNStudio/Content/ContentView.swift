@@ -21,7 +21,9 @@ struct ContentView: View {
 
     init(session: StudioSession, channelID: String) {
         self.session = session
-        _model = State(initialValue: ContentModel(channelID: channelID, services: session.services))
+        let model = ContentModel(channelID: channelID, services: session.services)
+        model.onError = { [weak session] in session?.note($0) }
+        _model = State(initialValue: model)
     }
 
     var body: some View {
@@ -303,7 +305,10 @@ struct MessageBanner: View {
         }
     }
 
-    private func isError(_ key: String) -> Bool { key.hasPrefix("studio.error.") || key == "studio.content.limit" }
+    private func isError(_ key: String) -> Bool {
+        key.hasPrefix("studio.error.") || key.hasPrefix("studio.refusal.") || key.hasPrefix("studio.account.")
+            || [StudioFailure.plainKey, "studio.content.limit", "studio.upload.error.limit"].contains(key)
+    }
 
     private func text(_ message: (key: String, values: [String])) -> String {
         let numbers = message.values.map { Int($0).map { $0.formatted(.number.locale(l10n.language.locale)) } ?? $0 }

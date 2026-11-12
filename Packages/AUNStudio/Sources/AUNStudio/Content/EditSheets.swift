@@ -230,37 +230,55 @@ struct PlaylistPickView: View {
     @Environment(\.dismiss) private var dismiss
     let model: ContentModel
     @State private var playlists: [StudioPlaylist] = []
-    @State private var failed = false
+    @State private var state: LoadState = .loading
+
+    enum LoadState { case loading, loaded, failed }
 
     var body: some View {
         NavigationStack {
-            List {
-                if failed { Text(l10n("common.error.load")).foregroundStyle(Fanous.errorText) }
-                ForEach(playlists) { playlist in
-                    Button {
-                        dismiss()
-                        Task { await model.addSelection(toPlaylist: playlist.id) }
-                    } label: {
-                        Label(playlist.title, systemImage: playlist.isPublic ? "list.bullet" : "lock")
-                    }
-                    .accessibilityIdentifier("pick-playlist-\(playlist.id)")
+            // Opens with the channel's playlists: a loader, then the list, an empty state, or an error with retry.
+            Group {
+                switch state {
+                case .loading: ThemeLoader().frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .failed: ErrorStateView { Task { await load() } }
+                case .loaded where playlists.isEmpty:
+                    EmptyStateView(title: l10n("studio.upload.noPlaylists"), message: l10n("studio.playlists.emptyMessage"))
+                case .loaded: list
                 }
-                .listRowBackground(Rectangle().fill(Fanous.surface))
             }
-            .scrollContentBackground(.hidden)
             .fanousPage()
             .navigationTitle(l10n("studio.content.bulkPlaylist"))
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(l10n("common.cancel")) { dismiss() } } }
-            .task {
-                do {
-                    playlists = try await model.services.studio.playlists(channelID: model.channelID)
-                } catch {
-                    failed = true
-                }
-            }
+            .task { await load() }
         }
         #if os(macOS)
             .frame(minWidth: 420, minHeight: 360)
         #endif
+    }
+
+    private var list: some View {
+        List {
+            ForEach(playlists) { playlist in
+                Button {
+                    dismiss()
+                    Task { await model.addSelection(toPlaylist: playlist.id) }
+                } label: {
+                    Label(playlist.displayTitle(l10n.language), systemImage: playlist.isPublic ? "list.bullet" : "lock")
+                }
+                .accessibilityIdentifier("pick-playlist-\(playlist.id)")
+            }
+            .listRowBackground(Rectangle().fill(Fanous.surface))
+        }
+        .scrollContentBackground(.hidden)
+    }
+
+    private func load() async {
+        state = .loading
+        do {
+            playlists = try await model.services.studio.playlists(channelID: model.channelID)
+            state = .loaded
+        } catch {
+            state = .failed
+        }
     }
 }
