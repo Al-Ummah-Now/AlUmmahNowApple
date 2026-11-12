@@ -32,7 +32,9 @@ struct ContentView: View {
         }
         .fanousPage()
         .navigationTitle(l10n("studio.content.title"))
-        .searchable(text: $model.searchText, prompt: Text(l10n("studio.content.search")))
+        .searchable(
+            text: $model.searchText, placement: Self.searchPlacement, prompt: Text(l10n("studio.content.search"))
+        )
         .searchSuggestions {
             ForEach(model.suggestions) { suggestion in
                 suggestionRow(suggestion)
@@ -68,24 +70,25 @@ struct ContentView: View {
         .overlay(alignment: .bottom) { MessageBanner(message: $model.message) }
     }
 
-    /// Status tabs, then sort and select, in the screen rather than the toolbar: the toolbar keeps the channel picker
-    /// and the account button visible on a phone.
-    /// iOS opens the editor with a tap; on the Mac a click selects and a double-click edits.
-    #if os(macOS)
-        static let editTapCount = 2
+    /// On a phone the search field stays in view, rather than hiding until the list is pulled down.
+    #if os(iOS)
+        static let searchPlacement = SearchFieldPlacement.navigationBarDrawer(displayMode: .always)
     #else
-        static let editTapCount = 1
+        static let searchPlacement = SearchFieldPlacement.automatic
     #endif
 
-    /// While selecting, a tap selects; otherwise it opens the editor.
-    private var isSelecting: Bool {
+    /// iOS opens the editor with a tap, or selects while selecting. The Mac leaves the click to the List, so a click
+    /// selects, and opens the editor on a double-click (`primaryAction`); a tap gesture on the row would eat the click.
+    private var opensOnTap: Bool {
         #if os(iOS)
-            editMode.isEditing
+            !editMode.isEditing
         #else
             false
         #endif
     }
 
+    /// Status tabs, then sort and select, in the screen rather than the toolbar: the toolbar keeps the channel picker
+    /// and the account button visible on a phone.
     private var statusPicker: some View {
         VStack(spacing: FanousScale.spacingXs) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -158,14 +161,16 @@ struct ContentView: View {
                     ForEach(model.items) { video in
                         VideoRow(video: video)
                             .contentShape(Rectangle())
-                            .onTapGesture(count: Self.editTapCount, perform: { editing = video }, when: !isSelecting)
+                            .onTapGesture(count: 1, perform: { editing = video }, when: opensOnTap)
                             .swipeActions(edge: .trailing) {
                                 Button(l10n("studio.content.delete"), role: .destructive) { confirmingDelete = [video.id] }
                             }
-                            .contextMenu {
-                                Button(l10n("studio.content.edit")) { editing = video }
-                                Button(l10n("studio.content.delete"), role: .destructive) { confirmingDelete = [video.id] }
-                            }
+                            #if os(iOS)
+                                .contextMenu {
+                                    Button(l10n("studio.content.edit")) { editing = video }
+                                    Button(l10n("studio.content.delete"), role: .destructive) { confirmingDelete = [video.id] }
+                                }
+                            #endif
                             .listRowBackground(Rectangle().fill(Fanous.surface))
                             .tag(video.id)
                             .task { if video.id == model.items.last?.id { await model.loadMore() } }
@@ -174,6 +179,17 @@ struct ContentView: View {
                 .scrollContentBackground(.hidden)
                 #if os(iOS)
                     .environment(\.editMode, $editMode)
+                #else
+                    .contextMenu(forSelectionType: String.self) { ids in
+                        if ids.count == 1, let video = model.items.first(where: { ids.contains($0.id) }) {
+                            Button(l10n("studio.content.edit")) { editing = video }
+                        }
+                        if !ids.isEmpty {
+                            Button(l10n("studio.content.delete"), role: .destructive) { confirmingDelete = Array(ids) }
+                        }
+                    } primaryAction: { ids in
+                        if ids.count == 1, let video = model.items.first(where: { ids.contains($0.id) }) { editing = video }
+                    }
                 #endif
                 .accessibilityIdentifier("content-list")
             }
