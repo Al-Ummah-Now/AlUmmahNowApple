@@ -39,12 +39,26 @@ struct UploadView: View {
         @State private var loadingPhotos = false
     #endif
 
+    /// Why this account cannot upload at all, from `GET /api/me/creator`: its videos data is pending deletion, or it
+    /// has no creator tier (uploads by invitation).
+    private var uploadRefusal: Refusal? {
+        if let state = session.accountState { return state }
+        if let creator = session.creator, !creator.canUpload { return Refusal(code: Refusal.uploadsByInvitation) }
+        return nil
+    }
+
     var body: some View {
         Form {
-            if let channel = session.channel {
+            if let refusal = uploadRefusal {
+                // The server would refuse every upload; say why instead of offering the picker.
+                Text(l10n(StudioFailure.refusalMessage(refusal).key)).foregroundStyle(Fanous.textSecondary).studioRows()
+                    .accessibilityIdentifier("upload-refused")
+            } else if let channel = session.channel {
                 filesSection.studioRows()
                 if !composer.files.isEmpty {
-                    SetForAllSection(composer: composer, channel: channel)
+                    SetForAllSection(composer: composer, channel: channel) {
+                        Task { await composer.loadPlaylists(channelID: channel.id, studio: session.services.studio) }
+                    }
                     sendSection(channel).studioRows()
                 }
             } else {
@@ -228,6 +242,7 @@ private struct SetForAllSection: View {
     @Environment(\.l10n) private var l10n
     @Bindable var composer: UploadComposer
     let channel: StudioChannel
+    let retryPlaylists: () -> Void
 
     var body: some View {
         Section {
@@ -286,8 +301,16 @@ private struct SetForAllSection: View {
 
     @ViewBuilder private var playlistsSection: some View {
         Section(l10n("studio.upload.playlists")) {
-            if composer.playlistsFailed {
-                Text(l10n("common.error.load")).foregroundStyle(Fanous.errorText)
+            // The channel's playlists show as soon as the form opens: loading, then the list, empty or retry.
+            if composer.playlistsLoading && composer.playlists.isEmpty {
+                ProgressView().frame(maxWidth: .infinity).accessibilityLabel(l10n("common.loading"))
+            } else if composer.playlistsFailed {
+                HStack {
+                    Text(l10n("common.error.load")).foregroundStyle(Fanous.errorText)
+                    Spacer()
+                    Button(l10n("common.retry"), action: retryPlaylists)
+                    .accessibilityIdentifier("upload-playlists-retry")
+                }
             } else if composer.playlists.isEmpty {
                 Text(l10n("studio.upload.noPlaylists")).foregroundStyle(Fanous.textSecondary)
             }
@@ -297,7 +320,7 @@ private struct SetForAllSection: View {
                         get: { composer.settings.playlistIDs.contains(playlist.id) },
                         set: { _ in composer.togglePlaylist(playlist.id) })
                 ) {
-                    Label(playlist.title, systemImage: playlist.isPublic ? "list.bullet" : "lock")
+                    Label(playlist.displayTitle(l10n.language), systemImage: playlist.isPublic ? "list.bullet" : "lock")
                 }
                 .accessibilityIdentifier("upload-playlist-\(playlist.id)")
             }

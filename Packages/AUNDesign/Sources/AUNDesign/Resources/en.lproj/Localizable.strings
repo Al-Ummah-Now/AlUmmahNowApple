@@ -240,3 +240,12 @@
 "studio.analytics.comments" = "Comments";
 "studio.analytics.newSubscribers" = "New subscribers";
 "studio.analytics.lifetime" = "All time: %@ views · %@ subscribers · %@ engagement";
+
+/* Plan refusals and account states (api-videos codes) */
+"studio.plain" = "%@";
+"studio.refusal.invitation" = "Uploads are by invitation. Ask an admin to give your account a creator plan.";
+"studio.refusal.channelLimit" = "You've reached your plan's channel limit.";
+"studio.account.stateTitle" = "Your videos account";
+"studio.account.pendingDeletion" = "Your videos account is scheduled for deletion. Contact support.";
+"studio.account.banned" = "Your videos account can't make changes. Contact support.";
+"studio.playlists.emptyMessage" = "This channel has no playlists yet.";

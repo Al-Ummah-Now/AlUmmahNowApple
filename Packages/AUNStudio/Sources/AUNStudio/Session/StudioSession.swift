@@ -10,13 +10,8 @@ public struct StudioNotice: Identifiable, Hashable, Sendable {
     public init(_ key: String) { self.key = key }
 
     static func from(_ error: any Error) -> StudioNotice? {
-        switch error as? CoreError {
-        case .cancelled: nil
-        case .offline: StudioNotice("studio.error.offline")
-        case .signInRequired: StudioNotice("studio.error.signIn")
-        case .forbidden: StudioNotice("studio.error.forbidden")
-        default: StudioNotice("studio.error.generic")
-        }
+        if (error as? CoreError) == .cancelled { return nil }
+        return StudioNotice(StudioFailure.message(error).key)
     }
 }
 
@@ -35,6 +30,11 @@ public final class StudioSession {
     public private(set) var channel: StudioChannel?
     public private(set) var isSigningIn = false
     public var notice: StudioNotice?
+    /// What the account may do as a creator; nil until read (or when the server cannot say).
+    public private(set) var creator: CreatorAccess?
+    /// A refusal that applies to the whole videos account (`videos_account_pending_deletion`, `videos_banned`).
+    /// Studio shows it once, as a banner, instead of one error per action.
+    public private(set) var accountState: Refusal?
 
     public let services: StudioServices
     /// Uploads of every account on this device; only the active account's run.
@@ -47,6 +47,7 @@ public final class StudioSession {
         uploads = UploadQueue(services: services)
         self.authenticator = authenticator
         self.defaults = defaults
+        uploads.onAccountState = { [weak self] in self?.accountState = $0 }
     }
 
     /// Channels the person may upload to: the picker's list.
@@ -103,6 +104,8 @@ public final class StudioSession {
         } else {
             account = nil
             uploads.accountID = nil
+            creator = nil
+            accountState = nil
             allChannels = []
             channel = nil
             channelsState = .idle
@@ -120,12 +123,36 @@ public final class StudioSession {
         }
     }
 
+    /// Reads `GET /api/me/creator`. Called after sign-in and whenever the app comes back to the foreground, so a
+    /// restore by an admin lifts the account state without a relaunch.
+    public func refreshCreatorAccess() async {
+        guard account != nil else { return }
+        do {
+            let access = try await services.studio.creatorAccess()
+            creator = access
+            if access.pendingDeletion {
+                accountState = Refusal(code: Refusal.accountPendingDeletion)
+            } else if accountState?.code == Refusal.accountPendingDeletion {
+                accountState = nil
+                uploads.unblock()
+            }
+        } catch {
+            AUNLog.studio.error("Reading creator access failed: \(error)")
+        }
+    }
+
+    /// Records an account-wide refusal from any call; other errors are left to the screen that made the call.
+    func note(_ error: any Error) {
+        if let refusal = StudioFailure.accountState(error) { accountState = refusal }
+    }
+
     public func loadChannels() async {
         channelsState = .loading
         do {
             allChannels = try await services.studio.channels()
             channelsState = .loaded
             channel = preferredChannel()
+            await refreshCreatorAccess()
         } catch {
             AUNLog.studio.error("Loading channels failed: \(error)")
             channelsState = .failed
@@ -140,6 +167,9 @@ public final class StudioSession {
         phase = .signedIn
         allChannels = []
         channel = nil
+        creator = nil
+        accountState = nil
+        uploads.unblock()
         await loadChannels()
     }
 

@@ -67,6 +67,40 @@ extension View {
     }
 #endif
 
+/// The account's state, once, above every Studio screen: writes are refused until an admin acts. The app reads
+/// `GET /api/me/creator` again when it comes to the foreground, so a restore lifts it.
+struct AccountStateBanner: View {
+    @Environment(\.l10n) private var l10n
+    @Environment(\.scenePhase) private var scenePhase
+    let session: StudioSession
+
+    var body: some View {
+        Group {
+            if let state = session.accountState {
+                Label {
+                    VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
+                        Text(l10n("studio.account.stateTitle")).fanousFont(.label).foregroundStyle(Fanous.textPrimary)
+                        Text(l10n(StudioFailure.refusalMessage(state).key)).fanousFont(.body)
+                            .foregroundStyle(Fanous.textSecondary)
+                    }
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle").foregroundStyle(Fanous.errorText)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(FanousScale.spacingMd)
+                .fanousMaterial(.raised) { .rounded($0.md) }
+                .padding(.horizontal, FanousScale.spacingLg)
+                .padding(.vertical, FanousScale.spacingSm)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("account-state")
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await session.refreshCreatorAccess() } }
+        }
+    }
+}
+
 /// Shows a channel's screen, rebuilt when the channel changes, or the "no channel" state.
 struct ChannelGate<Content: View>: View {
     @Environment(\.l10n) private var l10n
@@ -89,7 +123,9 @@ struct ChannelGate<Content: View>: View {
         @State private var showingAccounts = false
 
         var body: some View {
-            tabs.sheet(isPresented: $showingAccounts) { AccountsView(session: session) }
+            tabs
+                .safeAreaInset(edge: .top, spacing: 0) { AccountStateBanner(session: session) }
+                .sheet(isPresented: $showingAccounts) { AccountsView(session: session) }
         }
 
         private func screen(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
@@ -156,6 +192,7 @@ struct ChannelGate<Content: View>: View {
                         }
                     }
                     .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
+                    .safeAreaInset(edge: .top, spacing: 0) { AccountStateBanner(session: session) }
                 }
             }
             .frame(minWidth: 960, minHeight: 600)

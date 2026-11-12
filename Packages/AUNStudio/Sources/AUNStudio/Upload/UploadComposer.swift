@@ -37,6 +37,7 @@ public final class UploadComposer {
     public var tagsText = ""
     public private(set) var playlists: [StudioPlaylist] = []
     public private(set) var playlistsFailed = false
+    public private(set) var playlistsLoading = false
     /// The server refuses a publish time less than 5 minutes ahead; the form asks for 10.
     public static let minimumLead: TimeInterval = 10 * 60
 
@@ -59,6 +60,8 @@ public final class UploadComposer {
     }
 
     public func loadPlaylists(channelID: String, studio: any StudioServicing) async {
+        playlistsLoading = true
+        defer { playlistsLoading = false }
         do {
             playlists = try await studio.playlists(channelID: channelID)
             playlistsFailed = false

@@ -18,13 +18,15 @@ public enum StudioBootstrap {
         defaults.bool(forKey: "AUNUseFixtures")
     }
 
-    /// The Studio services for this build. `-AUNUseFixtures YES` selects hermetic data for UI tests, and
-    /// `-AUNFixtureSignedIn YES` starts them signed in.
+    /// The Studio services for this build. `-AUNUseFixtures YES` selects hermetic data for UI tests,
+    /// `-AUNFixtureSignedIn YES` starts them signed in, and `-AUNFixtureAccountState invitation|pendingDeletion` starts
+    /// the account without a creator tier or with its videos data pending deletion.
     public static func services(
         defaults: UserDefaults = .standard, bundle: Bundle = .main
     ) -> StudioServices {
         if defaults.bool(forKey: "AUNUseFixtures") {
-            return .fixtures(signedIn: defaults.bool(forKey: "AUNFixtureSignedIn"))
+            let state = defaults.string(forKey: "AUNFixtureAccountState").flatMap(FixtureStudioService.AccountState.init)
+            return .fixtures(signedIn: defaults.bool(forKey: "AUNFixtureSignedIn"), accountState: state ?? .creator)
         }
         let environment = AppEnvironment.fromInfoDictionary(bundle.infoDictionary)
         do {

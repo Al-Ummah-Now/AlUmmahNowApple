@@ -18,7 +18,7 @@ public struct LocalizedText: Codable, Hashable, Sendable {
     }
 
     public func value(for language: AppLanguage, fallback: String) -> String {
-        let preferred = language == .ar ? ar : en
+        let preferred = (language == .ar ? ar : en)?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let preferred, !preferred.isEmpty { return preferred }
         return fallback
     }

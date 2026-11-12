@@ -21,12 +21,15 @@ public struct StudioServices: Sendable {
         self.search = search
     }
 
-    /// Hermetic services. `signedIn` starts with the fixture creator already signed in.
-    public static func fixtures(signedIn: Bool = false) -> StudioServices {
+    /// Hermetic services. `signedIn` starts with the fixture creator already signed in, in `accountState`.
+    public static func fixtures(
+        signedIn: Bool = false, accountState: FixtureStudioService.AccountState = .creator
+    ) -> StudioServices {
         var services = StudioServices(
             environment: .qa,
             accounts: FixtureAccountService(signedIn: signedIn ? [FixtureAccountService.creator] : []),
-            studio: FixtureStudioService(), transfer: FixtureTUSTransfer(), search: FixtureSearchService())
+            studio: FixtureStudioService(accountState: accountState), transfer: FixtureTUSTransfer(),
+            search: FixtureSearchService())
         services.persistsUploads = false
         return services
     }
