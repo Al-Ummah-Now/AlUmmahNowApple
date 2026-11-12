@@ -4,11 +4,17 @@ import Foundation
 public enum AnalyticsRange: Int, CaseIterable, Sendable, Hashable {
     case days7 = 7, days28 = 28, days90 = 90, days365 = 365
 
-    /// The current period and the one before it, ending now.
+    /// "Last N days": today (UTC) and the N−1 days before it, as the API counts both ends; then the N days before that.
     public func periods(now: Date = Date()) -> (current: DateInterval, previous: DateInterval) {
-        let length = TimeInterval(rawValue) * 24 * 60 * 60
-        let start = now.addingTimeInterval(-length)
-        return (DateInterval(start: start, end: now), DateInterval(start: start.addingTimeInterval(-length), end: start))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .gmt
+        let today = calendar.startOfDay(for: now)
+        let start = calendar.date(byAdding: .day, value: -(rawValue - 1), to: today) ?? today
+        let previousStart = calendar.date(byAdding: .day, value: -rawValue, to: start) ?? start
+        return (
+            DateInterval(start: start, end: max(start, now)),
+            DateInterval(start: previousStart, end: start.addingTimeInterval(-1))
+        )
     }
 }
 
@@ -66,12 +72,28 @@ public struct VideoStats: Hashable, Sendable, Decodable, Identifiable {
     /// Percent.
     public var engagementRate: Double
     public var thumbnailURL: URL?
+    /// Views, likes and comments in the requested range; nil from servers that only send lifetime numbers.
+    public var rangeViews: Int?
+    public var rangeLikes: Int?
+    public var rangeComments: Int?
+    /// One zero-filled UTC day per entry in the range (`recentMetrics`).
+    public var daily: [DailyMetric]
     public var id: String { videoID }
+
+    /// The range's numbers when the server sends them, else the plain ones.
+    public var periodViews: Int { rangeViews ?? views }
+    public var periodLikes: Int { rangeLikes ?? likes }
+    public var periodComments: Int { rangeComments ?? comments }
 
     public init(
         videoID: String, title: String, views: Int, likes: Int = 0, comments: Int = 0, shares: Int = 0,
-        watchTime: Double = 0, averageViewDuration: Double = 0, engagementRate: Double = 0, thumbnailURL: URL? = nil
+        watchTime: Double = 0, averageViewDuration: Double = 0, engagementRate: Double = 0, thumbnailURL: URL? = nil,
+        rangeViews: Int? = nil, rangeLikes: Int? = nil, rangeComments: Int? = nil, daily: [DailyMetric] = []
     ) {
+        self.rangeViews = rangeViews
+        self.rangeLikes = rangeLikes
+        self.rangeComments = rangeComments
+        self.daily = daily
         self.videoID = videoID
         self.title = title
         self.views = views
@@ -88,6 +110,8 @@ public struct VideoStats: Hashable, Sendable, Decodable, Identifiable {
         case videoID = "videoId", title, views, likes, comments, shares, watchTime, engagementRate
         case averageViewDuration = "avgViewDuration"
         case thumbnailURL = "thumbnailUrl"
+        case rangeViews, rangeLikes, rangeComments
+        case daily = "recentMetrics"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -102,6 +126,13 @@ public struct VideoStats: Hashable, Sendable, Decodable, Identifiable {
         averageViewDuration = try c.decodeIfPresent(Double.self, forKey: .averageViewDuration) ?? 0
         engagementRate = try c.decodeIfPresent(Double.self, forKey: .engagementRate) ?? 0
         thumbnailURL = try? c.decodeIfPresent(URL.self, forKey: .thumbnailURL)
+        func optionalInt(_ key: CodingKeys) -> Int? {
+            (try? c.decodeIfPresent(Double.self, forKey: key)).flatMap { $0 }.map { Int($0) }
+        }
+        rangeViews = optionalInt(.rangeViews)
+        rangeLikes = optionalInt(.rangeLikes)
+        rangeComments = optionalInt(.rangeComments)
+        daily = (try? c.decodeIfPresent([DailyMetric].self, forKey: .daily)) ?? []
     }
 }
 

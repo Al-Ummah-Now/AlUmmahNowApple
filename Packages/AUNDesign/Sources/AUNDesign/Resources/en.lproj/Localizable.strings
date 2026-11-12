@@ -229,8 +229,6 @@
 "studio.analytics.range" = "Period";
 "studio.analytics.days" = "%@ days";
 "studio.analytics.views" = "Views";
-"studio.analytics.watchHours" = "Watch time (hours)";
-"studio.analytics.dailyViews" = "Views per day";
 "studio.analytics.day" = "Day";
 "studio.analytics.topVideos" = "Top videos";
 "studio.analytics.noVideos" = "No views in this period.";
@@ -249,3 +247,15 @@
 "studio.account.pendingDeletion" = "Your videos account is scheduled for deletion. Contact support.";
 "studio.account.banned" = "Your videos account can't make changes. Contact support.";
 "studio.playlists.emptyMessage" = "This channel has no playlists yet.";
+"studio.analytics.watchTime" = "Watch time";
+"studio.analytics.daily" = "Per day";
+"studio.analytics.metric" = "Show";
+"studio.analytics.metric.views" = "Views";
+"studio.analytics.metric.watchTime" = "Watch time";
+"studio.analytics.metric.subscribers" = "New subscribers";
+"studio.analytics.empty.views" = "No views in this period.";
+"studio.analytics.empty.watchTime" = "No watch time in this period.";
+"studio.analytics.empty.subscribers" = "No new subscribers in this period.";
+"studio.analytics.summary" = "%@ from %@ to %@. Highest: %@ on %@.";
+"studio.analytics.summaryEmpty" = "%@ from %@ to %@: none.";
+"studio.analytics.table" = "Show as a table";

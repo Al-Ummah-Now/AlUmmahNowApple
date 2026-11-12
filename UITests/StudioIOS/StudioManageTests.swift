@@ -133,6 +133,10 @@ final class StudioManageTests: XCTestCase {
         tab(app, "الإحصاءات")
         XCTAssertTrue(app.descendants(matching: .any)["analytics-chart"].firstMatch.waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["أبرز المقاطع"].exists)
+        // The chart reads as one element with a summary, and the same numbers are offered as a table.
+        let chart = app.descendants(matching: .any)["analytics-chart"].firstMatch
+        XCTAssertTrue(chart.label.contains("المشاهدات"), chart.label)
+        XCTAssertTrue(app.descendants(matching: .any)["analytics-table"].firstMatch.exists)
         keep("analytics-ar")
     }
 }

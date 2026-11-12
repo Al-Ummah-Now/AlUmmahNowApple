@@ -583,12 +583,7 @@ public struct FixtureStudioService: StudioServicing {
     public func purgeVideos(_ ids: [String]) async throws -> BulkResult { await store.purge(ids) }
 
     public func channelStats(channelID: String, period: DateInterval) async throws -> ChannelStats {
-        let days = max(1, Int(period.duration / 86_400))
-        let daily = (0..<min(days, 28)).map { day in
-            DailyMetric(
-                date: period.start.addingTimeInterval(Double(day) * 86_400).ISO8601Format().prefix(10).description,
-                views: 40 + (day * 7) % 30, likes: 3, comments: 1, subscribers: day % 3, watchTime: Double(3600 + day * 120))
-        }
+        let daily = Self.fixtureDays(period)
         let videos = await store.videos.filter { $0.studioStatus == .published }
         return ChannelStats(
             totalViews: daily.reduce(0) { $0 + $1.views }, totalVideos: videos.count, totalSubscribers: 120, totalLikes: 90,
@@ -602,6 +597,17 @@ public struct FixtureStudioService: StudioServicing {
         let video = await store.videos.first { $0.id == videoID }
         return VideoStats(
             videoID: videoID, title: video?.title ?? "", views: (video?.views ?? 0) / 4, likes: 12, comments: 3, shares: 2,
-            watchTime: 7200, averageViewDuration: 310, engagementRate: 5.1)
+            watchTime: 7200, averageViewDuration: 310, engagementRate: 5.1, rangeViews: (video?.views ?? 0) / 8,
+            rangeLikes: 6, rangeComments: 2, daily: Self.fixtureDays(period))
+    }
+
+    /// One UTC day per day of `period`, both ends counted, as the API answers.
+    static func fixtureDays(_ period: DateInterval) -> [DailyMetric] {
+        let days = max(1, Int((period.duration / 86_400).rounded(.up)))
+        return (0..<min(days, 28)).map { day in
+            DailyMetric(
+                date: period.start.addingTimeInterval(Double(day) * 86_400).ISO8601Format().prefix(10).description,
+                views: 40 + (day * 7) % 30, likes: 3, comments: 1, subscribers: day % 3, watchTime: Double(3600 + day * 120))
+        }
     }
 }
