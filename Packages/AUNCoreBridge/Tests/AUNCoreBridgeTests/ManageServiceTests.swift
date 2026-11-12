@@ -95,7 +95,8 @@ struct ManageServiceTests {
         let cases: [(Int, String, Refusal)] = [
             (
                 403,
-                #"{"success":false,"code":"videos_account_pending_deletion","error":"Your videos account is scheduled for deletion. Contact support.","deletion":{"deletedAt":"2026-11-11T10:00:00.000Z"}}"#,
+                #"{"success":false,"code":"videos_account_pending_deletion","error":"Scheduled for deletion.","#
+                    + #""deletion":{"deletedAt":"2026-11-11T10:00:00.000Z"}}"#,
                 Refusal(code: Refusal.accountPendingDeletion)
             ),
             (
