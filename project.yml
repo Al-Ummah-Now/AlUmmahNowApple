@@ -30,6 +30,7 @@ packages:
   AUNFeatures: {path: Packages/AUNFeatures}
   AUNStudio: {path: Packages/AUNStudio}
   AUNCoreKit: {path: Packages/AUNCoreKit}
+  AUNAdmin: {path: Packages/AUNAdmin}
 
 targetTemplates:
   App:
@@ -172,6 +173,89 @@ targets:
         - StudioMacUITests
         - package: AUNCoreKit/AUNCoreKitTests
 
+  # Al Ummah Now Admin (wiki AUN-ADMIN-NATIVE): staff only, TestFlight internal only, never a public download.
+  # Debug builds (simulator, CI, ad hoc Mac UI tests) carry no push entitlements; QA and Release add APNs and Time
+  # Sensitive, which need the owner's provisioning (docs/RELEASING.md, Admin).
+  AdminIOS:
+    templates: [App]
+    platform: iOS
+    supportedDestinations: [iOS]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.admin$(AUN_BUNDLE_SUFFIX)
+        AUN_APP_NAME: Al Ummah Now Admin
+        AUN_OAUTH_CLIENT_ID: $(AUN_ADMIN_CLIENT_ID_IOS)
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: Apps/AdminIOS/AdminIOS.entitlements
+      configs:
+        Debug: {CODE_SIGN_ENTITLEMENTS: Apps/AdminIOS/AdminIOS.debug.entitlements}
+    info:
+      path: Apps/AdminIOS/Info.plist
+      properties:
+        CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
+        CFBundleLocalizations: [en, ar]
+        AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
+        AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
+        AUNEnvironment: "$(AUN_ENVIRONMENT)"
+        AUNAuthIssuer: "$(AUN_AUTH_ISSUER)"
+        AUNOAuthClientID: "$(AUN_OAUTH_CLIENT_ID)"
+        UILaunchScreen: {}
+        UIBackgroundModes: [remote-notification]
+        NSFaceIDUsageDescription: "Unlock Al Ummah Now Admin with Face ID."
+        CFBundleURLTypes:
+          - CFBundleURLName: net.alummahnow.admin
+            CFBundleURLSchemes: [alummahnow-admin]
+        ITSAppUsesNonExemptEncryption: false
+    dependencies:
+      - package: AUNAdmin
+      - package: AUNDesign
+      - package: AUNCoreBridge
+      - package: AUNCoreKit
+      - package: AUNStudio
+    scheme:
+      testTargets:
+        - AdminIOSUITests
+        - package: AUNAdmin/AUNAdminTests
+        - package: AUNCoreBridge/AUNCoreBridgeTests
+        - package: AUNCoreKit/AUNCoreKitTests
+
+  AdminMac:
+    templates: [App]
+    platform: macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.admin.mac$(AUN_BUNDLE_SUFFIX)
+        AUN_APP_NAME: Al Ummah Now Admin
+        AUN_OAUTH_CLIENT_ID: $(AUN_ADMIN_CLIENT_ID_MAC)
+        CODE_SIGN_ENTITLEMENTS: Apps/AdminMac/AdminMac.entitlements
+      configs:
+        Debug: {CODE_SIGN_ENTITLEMENTS: Apps/AdminMac/AdminMac.debug.entitlements}
+    info:
+      path: Apps/AdminMac/Info.plist
+      properties:
+        CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
+        CFBundleLocalizations: [en, ar]
+        AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
+        AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
+        AUNEnvironment: "$(AUN_ENVIRONMENT)"
+        AUNAuthIssuer: "$(AUN_AUTH_ISSUER)"
+        AUNOAuthClientID: "$(AUN_OAUTH_CLIENT_ID)"
+        LSApplicationCategoryType: public.app-category.productivity
+        CFBundleURLTypes:
+          - CFBundleURLName: net.alummahnow.admin.mac
+            CFBundleURLSchemes: [alummahnow-admin]
+        ITSAppUsesNonExemptEncryption: false
+    dependencies:
+      - package: AUNAdmin
+      - package: AUNDesign
+      - package: AUNCoreBridge
+      - package: AUNCoreKit
+      - package: AUNStudio
+    scheme:
+      testTargets:
+        - AdminMacUITests
+        - package: AUNAdmin/AUNAdminTests
+
   ViewerIOSUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -202,3 +286,15 @@ targets:
     sources: [UITests/StudioMac]
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: StudioMac}}
     dependencies: [{target: StudioMac}]
+  AdminIOSUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests/AdminIOS]
+    settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: AdminIOS, TARGETED_DEVICE_FAMILY: "1,2"}}
+    dependencies: [{target: AdminIOS}]
+  AdminMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [UITests/AdminMac]
+    settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: AdminMac}}
+    dependencies: [{target: AdminMac}]

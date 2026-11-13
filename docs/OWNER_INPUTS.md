@@ -13,10 +13,16 @@ role (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`); optionally a Developer ID Ap
 `net.alummahnow.viewer`, `net.alummahnow.viewer.tv`, `net.alummahnow.viewer.mac`, `net.alummahnow.studio`,
 `net.alummahnow.studio.mac`, plus the same IDs with `.qa`.
 
+Admin (staff only, TestFlight internal): `net.alummahnow.admin`, `net.alummahnow.admin.mac` and the `.qa` ids, each
+with Push Notifications and Time Sensitive Notifications, App Store Connect records and an APNs `.p8` key. Full list:
+`docs/RELEASING.md`, "Releasing Al Ummah Now Admin".
+
 ## Native OAuth clients (Epic 9): done
 
 Registered in AlUmmahNowAuth migration `0013_native_clients` (public PKCE clients, not secrets). Studio uses
 `alummahnow-studio://auth/callback`; the client ids per environment and platform are in `Configs/*.xcconfig`.
+The Admin app's "Admin (iOS)" and "Admin (macOS)" clients (`alummahnow-admin://auth/callback`) are in AlUmmahNowAuth
+migration `0036_admin_native_clients`.
 
 ## Decisions that block later work
 

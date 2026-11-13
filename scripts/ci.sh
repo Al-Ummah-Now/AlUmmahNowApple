@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One entry point shared by CI and local runs: scripts/ci.sh lint|ios|ipad|tvos|mac|studio|live-qa
+# One entry point shared by CI and local runs: scripts/ci.sh lint|ios|ipad|tvos|mac|studio|admin|admin-mac|live-qa
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -36,6 +36,16 @@ case "${1:-}" in
       -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${UNSIGNED[@]}"
     xcodebuild test "${COMMON[@]}" -scheme StudioMac -destination "platform=macOS" "${ADHOC[@]}"
     ;;
+  admin)
+    # The Admin app on fixtures (no network, no pushes, no AI): unit tests and UI flows on iPhone, then iPad UI flows.
+    xcodebuild test "${COMMON[@]}" -scheme AdminIOS \
+      -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${UNSIGNED[@]}"
+    xcodebuild test "${COMMON[@]}" -scheme AdminIOS -only-testing:AdminIOSUITests \
+      -destination "platform=iOS Simulator,name=iPad Pro 11-inch (M5),OS=$IOS_OS" "${UNSIGNED[@]}"
+    ;;
+  admin-mac)
+    xcodebuild test "${COMMON[@]}" -scheme AdminMac -destination "platform=macOS" "${ADHOC[@]}"
+    ;;
   live-qa)
     # Real sign-in, upload and manage against auth.qa and videos.api.qa, as the QA creator. Signed to run locally
     # (ad hoc), because the Keychain needs entitlements. Upload runs first; manage then cleans up its uploads.
@@ -48,5 +58,5 @@ case "${1:-}" in
         -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${ADHOC[@]}"
     done
     ;;
-  *) echo "usage: $0 lint|ios|ipad|tvos|mac|studio|live-qa" >&2; exit 2 ;;
+  *) echo "usage: $0 lint|ios|ipad|tvos|mac|studio|admin|admin-mac|live-qa" >&2; exit 2 ;;
 esac

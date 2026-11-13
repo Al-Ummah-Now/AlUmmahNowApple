@@ -4,27 +4,35 @@ import Foundation
 
 /// `AccountServicing` on aun-auth: PKCE sign-in, several accounts per device, tokens in the Keychain.
 public final class CoreAccountService: AccountServicing, @unchecked Sendable {
+    /// Studio's scheme; the Admin app passes `alummahnow-admin`.
     public static let callbackScheme = "alummahnow-studio"
     public static let redirectURI = "\(callbackScheme)://auth/callback"
     static let scopes = ["openid", "profile", "email", "offline_access"]
 
     let manager: AuthManager
+    let callbackScheme: String
 
-    public init(issuer: URL, clientID: String, storage: SecureStorage) throws {
+    public init(
+        issuer: URL, clientID: String, storage: SecureStorage, callbackScheme: String = CoreAccountService.callbackScheme
+    ) throws {
+        self.callbackScheme = callbackScheme
         let issuer = issuer.absoluteString.hasSuffix("/") ? String(issuer.absoluteString.dropLast()) : issuer.absoluteString
         manager = try AuthManager(
             config: AuthConfig(
-                issuer: issuer, clientId: clientID, redirectUri: Self.redirectURI, scopes: Self.scopes,
+                issuer: issuer, clientId: clientID, redirectUri: "\(callbackScheme)://auth/callback", scopes: Self.scopes,
                 authorizationEndpoint: "\(issuer)/authorize", tokenEndpoint: "\(issuer)/token",
                 deviceAuthorizationEndpoint: nil),
             storage: storage)
     }
 
     /// The service for an app build: its issuer and client from Info.plist, its Keychain service from the bundle id.
-    public static func live(environment: AppEnvironment, bundleID: String) throws -> CoreAccountService {
+    public static func live(
+        environment: AppEnvironment, bundleID: String, callbackScheme: String = CoreAccountService.callbackScheme
+    ) throws -> CoreAccountService {
         guard let client = environment.oauthClientID else { throw CoreError.signInRequired }
         return try CoreAccountService(
-            issuer: environment.authIssuer, clientID: client, storage: KeychainStorage(service: "\(bundleID).accounts"))
+            issuer: environment.authIssuer, clientID: client, storage: KeychainStorage(service: "\(bundleID).accounts"),
+            callbackScheme: callbackScheme)
     }
 
     public func accounts() async throws -> [StudioAccount] {
@@ -38,9 +46,19 @@ public final class CoreAccountService: AccountServicing, @unchecked Sendable {
     public func beginSignIn(_ prompt: SignInPrompt) async throws -> SignInRequest {
         // The web session is ephemeral (no shared cookies), so every sign-in shows the form and adding an account
         // needs no `prompt=login`.
-        let request = try map { try manager.beginLogin() }
-        guard let url = URL(string: request.url) else { throw CoreError.signInRequired }
-        return SignInRequest(url: url, callbackScheme: Self.callbackScheme)
+        guard case .stepUp(let maxAge) = prompt else {
+            let request = try map { try manager.beginLogin() }
+            guard let url = URL(string: request.url) else { throw CoreError.signInRequired }
+            return SignInRequest(url: url, callbackScheme: callbackScheme)
+        }
+        // Step-up: always the form, and the issuer must have authenticated the person within `maxAge` seconds.
+        let request = try map { try manager.beginLoginWithPrompt(prompt: .login) }
+        guard var components = URLComponents(string: request.url) else { throw CoreError.signInRequired }
+        components.queryItems =
+            (components.queryItems ?? []).filter { $0.name != "max_age" }
+            + [URLQueryItem(name: "max_age", value: String(maxAge))]
+        guard let url = components.url else { throw CoreError.signInRequired }
+        return SignInRequest(url: url, callbackScheme: callbackScheme)
     }
 
     public func completeSignIn(redirect: URL) async throws -> StudioAccount {
