@@ -40,6 +40,18 @@ struct ReviewServiceTests {
         #expect(page.items[0].slaDueAt != nil)
     }
 
+    @Test func anIdFromALinkOrPushNeverReachesAnotherRoute() async throws {
+        let service = service { request in
+            Issue.record("unexpected request \(request.url?.absoluteString ?? "")")
+            return (200, [:], Data())
+        }
+        for id in ["../users", "r1/claim", "%2e%2e", "r1?x=1", "r1#x", "", String(repeating: "a", count: 65), "رقم"] {
+            #expect(!ReviewID.isValid(id))
+            await #expect(throws: CoreError.self) { try await service.claim(id) }
+        }
+        #expect(ReviewID.isValid("fx-minor_2"))
+    }
+
     @Test func aConflictSaysWhoDecided() async throws {
         let service = service { _ in
             (

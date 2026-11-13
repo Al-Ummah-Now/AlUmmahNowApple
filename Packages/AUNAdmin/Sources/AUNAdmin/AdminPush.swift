@@ -83,7 +83,7 @@ public final class AdminPush: NSObject {
 
     /// A tap on an alert or one of its buttons.
     public func handle(actionIdentifier: String, userInfo: [AnyHashable: Any]) async {
-        guard let reviewID = userInfo["reviewId"] as? String else { return }
+        guard let reviewID = userInfo["reviewId"] as? String, ReviewID.isValid(reviewID) else { return }
         if actionIdentifier == Self.claimAction, let session, session.phase == .ready {
             try? await session.services.review.claim(reviewID)
         }
