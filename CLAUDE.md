@@ -27,6 +27,11 @@ Product spec: `docs/native-apps/EPICS.md` in https://github.com/Al-Ummah-Now/AlU
 - **APIs must exist in the CI SDK** (Xcode 26.6, macos-26 runner). Local Xcode may be newer.
 - **Never upload to TestFlight or the App Store by hand.** Releases are tag-triggered from `main` only (`docs/RELEASING.md`).
 - Every feature is tier-aware once Epic 27 entitlements land; never hard-code plans. Never use Stripe.
+- **UI copy tone (en + ar):** Al Ummah Now is a content-sharing site, not a lectures library. Use YouTube's neutral
+  words (videos, Shorts, live streams, posts, playlists, channels, creators, the community; watch, upload, share,
+  subscribe, save, explore). Never describe the platform as lessons, lectures, courses, a library or "beneficial
+  knowledge" («دروس، محاضرات، مكتبة، العلم النافع»), and no entertainment or hype words. Content categories keep
+  their names. Arabic "video" is «مرئي / مرئيات». Full guide: wiki page "Copy Tone Guide".
 
 ## Layout
 `Packages/AUNCoreBridge` models, protocols, temporary native services · `AUNDesign` Fanous tokens, L10n, components ·
