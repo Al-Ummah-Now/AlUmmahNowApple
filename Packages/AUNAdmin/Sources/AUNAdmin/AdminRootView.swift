@@ -254,7 +254,7 @@ struct AdminShell: View {
     private func open(_ url: URL) {
         guard url.scheme == "alummahnow-admin", url.host != "auth" else { return }
         let parts = url.pathComponents.filter { $0 != "/" }
-        if url.host == "review", let id = parts.first {
+        if url.host == "review", let id = parts.first, ReviewID.isValid(id) {
             selection = id
         } else if url.host == "queue" {
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []

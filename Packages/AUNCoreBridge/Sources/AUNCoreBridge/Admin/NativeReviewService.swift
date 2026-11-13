@@ -42,6 +42,12 @@ public struct NativeReviewService: ReviewServicing, PushRegistering {
 
     // MARK: Transport
 
+    /// `/api/review/<id><suffix>`, refusing any id that is not a plain id (`ReviewID`).
+    func reviewPath(_ id: String, _ suffix: String = "") throws -> String {
+        guard ReviewID.isValid(id) else { throw CoreError.notFound }
+        return "/api/review/\(id)\(suffix)"
+    }
+
     func send(
         _ method: String, _ base: URL, _ path: String, query: [URLQueryItem] = [], body: [String: Any]? = nil
     ) async throws -> Data {
@@ -155,7 +161,7 @@ public struct NativeReviewService: ReviewServicing, PushRegistering {
     }
 
     public func detail(_ id: String) async throws -> ReviewDetail {
-        let result = try decode(DetailResult.self, try await send("GET", adminAPI, "/api/review/\(id)"))
+        let result = try decode(DetailResult.self, try await send("GET", adminAPI, try reviewPath(id)))
         let findings = result.findings ?? []
         let manifest = (result.manifest?.frames ?? []).map { ReviewFrame(key: $0.key, atMs: $0.atMs, flagged: false) }
         var item = result.review
@@ -167,11 +173,11 @@ public struct NativeReviewService: ReviewServicing, PushRegistering {
     }
 
     public func claim(_ id: String) async throws {
-        _ = try await send("POST", adminAPI, "/api/review/\(id)/claim", body: [:])
+        _ = try await send("POST", adminAPI, try reviewPath(id, "/claim"), body: [:])
     }
 
     public func reveal(_ id: String, target: String) async throws {
-        _ = try await send("POST", adminAPI, "/api/review/\(id)/reveal", body: ["target": target])
+        _ = try await send("POST", adminAPI, try reviewPath(id, "/reveal"), body: ["target": target])
     }
 
     struct DecisionBody: Decodable { let review: ReviewItem }
@@ -183,12 +189,12 @@ public struct NativeReviewService: ReviewServicing, PushRegistering {
         if let reason { body["reasonCode"] = reason.rawValue }
         if let note, !note.isEmpty { body["note"] = String(note.prefix(1000)) }
         if let version { body["version"] = version }
-        let result = try decode(DecisionBody.self, try await send("POST", adminAPI, "/api/review/\(id)/decision", body: body))
+        let result = try decode(DecisionBody.self, try await send("POST", adminAPI, try reviewPath(id, "/decision"), body: body))
         return DecisionResult(item: result.review)
     }
 
     public func media(_ id: String, key: String) async throws -> Data {
-        try await send("GET", adminAPI, "/api/review/\(id)/media", query: [URLQueryItem(name: "key", value: key)])
+        try await send("GET", adminAPI, try reviewPath(id, "/media"), query: [URLQueryItem(name: "key", value: key)])
     }
 
     public func recordCapture(_ event: CaptureEvent, reviewID: String?, installID: String) async throws {
@@ -199,15 +205,20 @@ public struct NativeReviewService: ReviewServicing, PushRegistering {
 
     // MARK: PushRegistering
 
+    func devicePath(_ installID: String) throws -> String {
+        guard ReviewID.isValid(installID) else { throw CoreError.notFound }
+        return "/api/v1/devices/\(installID)"
+    }
+
     public func register(installID: String, token: String, platform: String, locale: String, appVersion: String) async throws {
         let body: [String: Any] = [
             "app": "admin", "platform": platform, "provider": "apns", "token": token, "locale": locale,
             "appVersion": String(appVersion.prefix(32)),
         ]
-        _ = try await send("PUT", videosAPI, "/api/v1/devices/\(installID)", body: body)
+        _ = try await send("PUT", videosAPI, try devicePath(installID), body: body)
     }
 
     public func unregister(installID: String) async throws {
-        _ = try await send("DELETE", videosAPI, "/api/v1/devices/\(installID)")
+        _ = try await send("DELETE", videosAPI, try devicePath(installID))
     }
 }

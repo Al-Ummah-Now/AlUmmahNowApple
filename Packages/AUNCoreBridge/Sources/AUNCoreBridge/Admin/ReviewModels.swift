@@ -422,3 +422,12 @@ public struct AdminServices: Sendable {
         self.push = push
     }
 }
+
+/// Review and install ids become admin-api path segments, and they arrive from deep links and push payloads: only
+/// plain ids pass (no `/`, `.`, `%`, `?` or `#`), so nothing can reach another route.
+public enum ReviewID {
+    public static func isValid(_ id: String) -> Bool {
+        (1...64).contains(id.utf8.count)
+            && id.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_") }
+    }
+}
