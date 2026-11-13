@@ -64,7 +64,8 @@ struct NoticeView: View {
 }
 
 /// A destructive action explained in the app, with Cancel focused (for keyboard, Full Keyboard Access and VoiceOver).
-struct ConfirmSheet: View {
+/// Shared with the Admin app (ban, remove, suspend, sign out).
+public struct ConfirmSheet: View {
     @Environment(\.l10n) private var l10n
     @Environment(\.dismiss) private var dismiss
     @FocusState private var cancelFocused: Bool
@@ -75,7 +76,14 @@ struct ConfirmSheet: View {
     let actionTitle: String
     let action: () -> Void
 
-    var body: some View {
+    public init(title: String, message: String, actionTitle: String, action: @escaping () -> Void) {
+        self.title = title
+        self.message = message
+        self.actionTitle = actionTitle
+        self.action = action
+    }
+
+    public var body: some View {
         ScrollView {
             VStack(spacing: FanousScale.spacingLg) {
                 Image(systemName: "exclamationmark.triangle").font(.title).foregroundStyle(Fanous.errorText)

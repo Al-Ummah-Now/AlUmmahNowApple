@@ -6,6 +6,9 @@ AUN_AUTH_ISSUER = https:$(SLASH)$(SLASH)auth.alummahnow.net
 // Public PKCE clients registered in AlUmmahNowAuth migration 0013_native_clients (not secrets).
 AUN_STUDIO_CLIENT_ID_IOS = 6f8073c6-754b-4d63-bf80-0546214e0d62
 AUN_STUDIO_CLIENT_ID_MAC = 950e2b3b-6353-4472-affe-7c1f57f4e6a4
+// Admin app clients: AlUmmahNowAuth migration 0036_admin_native_clients (public PKCE, not secrets).
+AUN_ADMIN_CLIENT_ID_IOS = 95adb86e-fdfb-4955-984b-347aa16a5023
+AUN_ADMIN_CLIENT_ID_MAC = 6a65d365-1352-4ffa-922f-4053d461ac3a
 AUN_ENVIRONMENT = prod
 AUN_BUNDLE_SUFFIX =
 AUN_DISPLAY_SUFFIX =

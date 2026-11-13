@@ -40,6 +40,20 @@ struct CoreAccountServiceTests {
         #expect(items["prompt"] == nil)
     }
 
+    @Test func theAdminAppUsesItsOwnSchemeAndStepUpAsksForARecentSignIn() async throws {
+        let admin = try CoreAccountService(
+            issuer: URL(string: "https://auth.qa.alummahnow.net")!, clientID: "admin-client", storage: MemoryStorage(),
+            callbackScheme: "alummahnow-admin")
+        let standard = try await admin.beginSignIn(.standard)
+        #expect(standard.callbackScheme == "alummahnow-admin")
+        #expect(query(standard.url)["redirect_uri"] == "alummahnow-admin://auth/callback")
+        #expect(query(standard.url)["max_age"] == nil)
+        let stepUp = try await admin.beginSignIn(.stepUp(maxAge: 900))
+        #expect(query(stepUp.url)["prompt"] == "login")
+        #expect(query(stepUp.url)["max_age"] == "900")
+        #expect(query(stepUp.url)["code_challenge_method"] == "S256")
+    }
+
     @Test func addAccountUsesTheSameFreshSignIn() async throws {
         let service = try service()
         let first = try await service.beginSignIn(.addAccount)

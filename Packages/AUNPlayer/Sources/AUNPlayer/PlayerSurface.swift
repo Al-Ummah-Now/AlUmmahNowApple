@@ -18,8 +18,8 @@ import SwiftUI
             view.speeds = []
             #if os(iOS)
                 view.updatesNowPlayingInfoCenter = false
-                view.allowsPictureInPicturePlayback = true
-                view.canStartPictureInPictureAutomaticallyFromInline = true
+                view.allowsPictureInPicturePlayback = !controller.isPrivateMedia
+                view.canStartPictureInPictureAutomaticallyFromInline = !controller.isPrivateMedia
                 view.delegate = context.coordinator
                 context.coordinator.attach(view)
             #endif
@@ -111,7 +111,7 @@ import SwiftUI
 
         public var body: some View {
             ZStack {
-                PlayerViewBridge(player: controller.player)
+                PlayerViewBridge(player: controller.player, isPrivate: controller.isPrivateMedia)
                 SubtitleOverlay(controller: controller)
             }
         }
@@ -119,12 +119,15 @@ import SwiftUI
 
     private struct PlayerViewBridge: NSViewRepresentable {
         let player: AVPlayer
+        let isPrivate: Bool
 
         func makeNSView(context: Context) -> AVPlayerView {
             let view = AVPlayerView()
             view.player = player
             view.controlsStyle = .floating
-            view.allowsPictureInPicturePlayback = true
+            view.allowsPictureInPicturePlayback = !isPrivate
+            // Private media never offers the share menu (save, AirDrop, Messages).
+            if isPrivate { view.showsSharingServiceButton = false }
             view.speeds = []
             return view
         }

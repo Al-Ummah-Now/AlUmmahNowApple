@@ -36,6 +36,9 @@ public enum SignInPrompt: Sendable, Hashable {
     case standard
     /// Always shows the form, to add a second account.
     case addAccount
+    /// A fresh sign-in of the same person (`prompt=login&max_age=<seconds>`) before a high-risk action; the server
+    /// checks `auth_time`.
+    case stepUp(maxAge: Int)
 }
 
 /// A pending browser sign-in: open `url`, then hand the redirect back to `completeSignIn`.
@@ -70,6 +73,7 @@ public actor FixtureAccountService: AccountServicing {
     private var stored: [StudioAccount]
     private var active: String?
     private var next = 1
+    private var lastPrompt: SignInPrompt = .standard
 
     public init(signedIn: [StudioAccount] = []) {
         stored = signedIn
@@ -83,10 +87,13 @@ public actor FixtureAccountService: AccountServicing {
     public func activeAccount() -> StudioAccount? { stored.first { $0.id == active } }
 
     public func beginSignIn(_ prompt: SignInPrompt) -> SignInRequest {
-        SignInRequest(url: URL(string: "https://auth.fixtures.invalid/authorize")!, callbackScheme: Self.callbackScheme)
+        lastPrompt = prompt
+        return SignInRequest(url: URL(string: "https://auth.fixtures.invalid/authorize")!, callbackScheme: Self.callbackScheme)
     }
 
     public func completeSignIn(redirect: URL) throws -> StudioAccount {
+        // A step-up signs the same person in again.
+        if case .stepUp = lastPrompt, let current = activeAccount() { return current }
         let account =
             stored.isEmpty
             ? Self.creator

@@ -13,6 +13,12 @@ custom_rules:
     regex: "^\\s*(print|NSLog|debugPrint)\\("
     message: "Use os.Logger via AUNLog."
     severity: error
+  admin_media_never_stored:
+    name: "Admin media is never cached, downloaded or shared"
+    included: ["Packages/AUNAdmin/Sources/.*\\.swift", "Apps/Admin.*/.*\\.swift", "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Admin/.*\\.swift"]
+    regex: "\\b(AsyncImage|URLSession\\.shared|URLCache\\.shared|AVAssetDownload\\w*|ShareLink|fileExporter|onDrag|draggable|UIImageWriteToSavedPhotosAlbum|PHPhotoLibrary|UIPasteboard|NSPasteboard|UNNotificationAttachment)\\b"
+    message: "Owner rule: the Admin app never caches, downloads or shares media. Use PrivateMediaSession and PrivateImage."
+    severity: error
 line_length: {warning: 180, error: 200}
 file_length: {warning: 600, error: 900}
 type_body_length: {warning: 400, error: 600}

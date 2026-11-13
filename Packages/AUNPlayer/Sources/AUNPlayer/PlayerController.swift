@@ -76,8 +76,19 @@ public final class PlayerController {
         @ObservationIgnored private lazy var nowPlaying = NowPlayingCoordinator(controller: self)
     #endif
 
-    public init(subtitleLoader: @escaping @Sendable (URL) async throws -> String) {
+    /// Private media (the Admin app's review videos): no Now Playing info, no AirPlay or external playback and no
+    /// picture in picture, so nothing about the item leaves this window.
+    public let isPrivateMedia: Bool
+
+    public init(subtitleLoader: @escaping @Sendable (URL) async throws -> String, privateMedia: Bool = false) {
         self.subtitleLoader = subtitleLoader
+        isPrivateMedia = privateMedia
+        if privateMedia {
+            player.allowsExternalPlayback = false
+            #if os(iOS)
+                player.usesExternalPlaybackWhileExternalScreenIsActive = false
+            #endif
+        }
     }
 
     public func load(_ newItem: PlaybackItem, autoplay: Bool = true) {
@@ -98,7 +109,7 @@ public final class PlayerController {
         observe(playerItem)
         configureAudioSession()
         #if os(iOS) || os(macOS)
-            nowPlaying.activate()
+            if !isPrivateMedia { nowPlaying.activate() }
         #endif
         if autoplay { play() }
     }
@@ -158,7 +169,7 @@ public final class PlayerController {
         item = nil
         isPlaying = false
         #if os(iOS) || os(macOS)
-            nowPlaying.deactivate()
+            if !isPrivateMedia { nowPlaying.deactivate() }
         #endif
     }
 
@@ -204,7 +215,7 @@ public final class PlayerController {
     private func handle(timeControl status: AVPlayer.TimeControlStatus) {
         isPlaying = status != .paused
         #if os(iOS) || os(macOS)
-            nowPlaying.update()
+            if !isPrivateMedia { nowPlaying.update() }
         #endif
     }
 

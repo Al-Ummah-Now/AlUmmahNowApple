@@ -5,6 +5,8 @@ public enum AUNLog {
     public static let network = Logger(subsystem: "net.alummahnow", category: "network")
     public static let player = Logger(subsystem: "net.alummahnow", category: "player")
     public static let studio = Logger(subsystem: "net.alummahnow", category: "studio")
+    /// The Admin app. Never log a URL, a token or a review's content here.
+    public static let admin = Logger(subsystem: "net.alummahnow", category: "admin")
 }
 
 public struct AppEnvironment: Hashable, Sendable {

@@ -82,6 +82,12 @@ allowed. Without the owner's Apple secrets it builds unsigned artifacts. `docs/R
 6. Studio macOS: batch upload (TUS), VideoToolbox encode queue, AppKit/Metal timeline spike.
 7. Studio iOS: AVFoundation edit spike, live-broadcast research behind an interface.
 
+8. Al Ummah Now Admin (wiki `AUN-ADMIN-NATIVE`), phase 1: `Apps/AdminIOS`, `Apps/AdminMac` and `Packages/AUNAdmin`.
+   SSO with PKCE on `alummahnow-admin://`, the server's staff check, device unlock, step-up for high-risk actions, the
+   video review queue, media that is only ever streamed (`PrivateMediaSession`, the `admin_media_never_stored` lint
+   rule and a disk-cache test), APNs registration as `app: "admin"`. UI tests run on fixtures (`scripts/ci.sh admin`,
+   `admin-mac`); releases go to TestFlight internal only.
+
 Later stories (accounts, library, offline, Listen, CarPlay, Kids, Islamic layer, notifications) follow the epics and
 need Epic 9 sign-in.
 

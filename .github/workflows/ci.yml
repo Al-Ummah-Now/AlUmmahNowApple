@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job: [ios, ipad, tvos, mac, studio]
+        job: [ios, ipad, tvos, mac, studio, admin, admin-mac]
     steps:
       - uses: actions/checkout@v5
       - run: brew install xcodegen

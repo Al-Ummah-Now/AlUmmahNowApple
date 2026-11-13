@@ -33,3 +33,39 @@ keychain that is deleted too. Nothing is committed.
 - A TestFlight internal group with the testers. External testers need Beta App Review for the first build.
 - The Mac app is distributed directly (Developer ID), so it needs no App Store record. TestFlight for Mac would need
   its own record (`net.alummahnow.studio.mac`) and a Mac App Store export; it is not set up.
+
+# Releasing Al Ummah Now Admin (staff only)
+
+The Admin app (wiki `AUN-ADMIN-NATIVE`, AD10) is **internal**: TestFlight internal testing only, for iPhone, iPad and
+Mac. There is no public download anywhere: no GitHub Release, no workflow artifact, no `.dmg` (this repo is public).
+`.github/workflows/admin-release.yml` builds from an `admin-vX.Y.Z` tag on `main`:
+
+```sh
+git fetch origin && git tag -a admin-v0.1.0 -m "Admin v0.1.0" origin/main && git push origin admin-v0.1.0
+```
+
+| Build | With the secrets | Without |
+|---|---|---|
+| Admin iPhone + iPad (`AdminIOS`), production and QA | archived, signed (automatic) and uploaded to App Store Connect, internal testing only | unsigned archive, discarded |
+| Admin Mac (`AdminMac`), production and QA | archived, signed for the Mac App Store and uploaded to App Store Connect (TestFlight for Mac), internal only | unsigned archive, discarded |
+
+`workflow_dispatch` builds the same matrix and never uploads. TestFlight builds expire after 90 days: release at least
+every 60 days.
+
+## What the owner sets up for Admin (once)
+
+- **Secrets** (same as Studio): `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` (App Store Connect team
+  key, role Admin, so `-allowProvisioningUpdates` can create the App IDs, profiles and capabilities).
+- **Bundle ids** (App IDs): `net.alummahnow.admin`, `net.alummahnow.admin.qa` (iOS + iPadOS) and
+  `net.alummahnow.admin.mac`, `net.alummahnow.admin.mac.qa` (macOS).
+- **Capabilities on each App ID**: Push Notifications and **Time Sensitive Notifications**
+  (`com.apple.developer.usernotifications.time-sensitive`). The Mac ones also need App Sandbox with outgoing network.
+  Critical Alerts are not used.
+- **Provisioning**: App Store distribution profiles for the four ids (created by Xcode through the API key, or by hand
+  in the developer portal if the key's role cannot).
+- **App Store Connect records**: "Al Ummah Now Admin" and "Al Ummah Now Admin QA" for iOS, and the same two for macOS,
+  with an internal testing group of staff (up to 100 App Store Connect users). Never submitted for review or external
+  testing.
+- **APNs**: one token-based `.p8` key (Key ID + Team ID) for the processor's direct APNs sender, through the secrets
+  flow, never in chat. Topics are the four bundle ids above.
+- Debug builds (CI, simulator, ad hoc Mac UI tests) carry no push entitlements, so CI needs none of this.
