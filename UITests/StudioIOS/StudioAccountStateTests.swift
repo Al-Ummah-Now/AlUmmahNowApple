@@ -48,7 +48,7 @@ final class StudioAccountStateTests: XCTestCase {
         let app = launch("ar", state: "pendingDeletion")
         let banner = app.descendants(matching: .any)["account-state"].firstMatch
         XCTAssertTrue(banner.waitForExistence(timeout: 30))
-        XCTAssertTrue(banner.label.contains("حسابك في الفيديوهات مجدول للحذف. تواصل مع الدعم."))
+        XCTAssertTrue(banner.label.contains("حسابك في المرئيات مجدول للحذف. تواصل مع الدعم."))
         keep("pending-deletion-ar")
     }
 
