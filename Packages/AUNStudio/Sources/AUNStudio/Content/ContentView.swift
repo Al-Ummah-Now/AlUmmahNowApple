@@ -295,15 +295,18 @@ struct MessageBanner: View {
                 .accessibilityIdentifier("message")
                 .foregroundStyle(isError(message.key) ? Fanous.errorText : Fanous.textPrimary)
                 .accessibilityHint(l10n("common.dismiss"))
-                // Success messages leave after 5 s; errors stay until dismissed, so they are never missed.
+                // Success messages leave after 5 s; errors stay until dismissed, so they are never missed. On fixtures
+                // (UI tests) success messages stay too: a slow CI simulator can take longer than 5 s to look.
                 .task(id: message.key + message.values.joined()) {
-                    guard !isError(message.key) else { return }
+                    guard !isError(message.key), !Self.holdsMessages else { return }
                     try? await Task.sleep(for: .seconds(5))
                     self.message = nil
                 }
                 .onTapGesture { self.message = nil }
         }
     }
+
+    private static let holdsMessages = UserDefaults.standard.bool(forKey: "AUNUseFixtures")
 
     private func isError(_ key: String) -> Bool {
         key.hasPrefix("studio.error.") || key.hasPrefix("studio.refusal.") || key.hasPrefix("studio.account.")
