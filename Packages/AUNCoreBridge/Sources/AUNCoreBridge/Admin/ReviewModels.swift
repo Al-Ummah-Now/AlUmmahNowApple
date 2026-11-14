@@ -415,11 +415,19 @@ public struct AdminServices: Sendable {
     public var accounts: any AccountServicing
     public var review: any ReviewServicing
     public var push: any PushRegistering
+    /// The auth server's native passkey endpoints, and the issuer they live on.
+    public var passkeys: any PasskeyServicing
+    public var authIssuer: URL
 
-    public init(accounts: any AccountServicing, review: any ReviewServicing, push: any PushRegistering) {
+    public init(
+        accounts: any AccountServicing, review: any ReviewServicing, push: any PushRegistering,
+        passkeys: any PasskeyServicing = NativePasskeyService(), authIssuer: URL = AppEnvironment.qaAuthIssuer
+    ) {
         self.accounts = accounts
         self.review = review
         self.push = push
+        self.passkeys = passkeys
+        self.authIssuer = authIssuer
     }
 }
 

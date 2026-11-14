@@ -39,6 +39,10 @@ public struct AdminRootView: View {
         }
         .fanousPage()
         .adminPrivacy(capture)
+        .sheet(item: $session.passkeyDialog) { dialog in
+            PasskeyDialogSheet(dialog: dialog) { action in Task { await session.perform(action) } }
+                .adminPrivacy(capture)
+        }
         .task { await session.start() }
         .onAppear {
             LaunchClock.mark("root appeared")
@@ -73,13 +77,11 @@ struct AdminSignInView: View {
             if session.isSigningIn {
                 ProgressView(l10n("admin.signIn.progress")).accessibilityIdentifier("sign-in-progress")
             } else {
-                Button {
+                PasskeySignInButtons {
+                    Task { await session.signInWithPasskey() }
+                } onAnotherWay: {
                     Task { await session.signIn() }
-                } label: {
-                    Label(l10n("admin.signIn.button"), systemImage: "person.badge.key").frame(maxWidth: 280)
                 }
-                .buttonStyle(FanousButtonStyle(.primary))
-                .accessibilityIdentifier("sign-in")
             }
             NoticeLine(key: session.notice)
         }
@@ -286,6 +288,14 @@ struct AccountMenu: View {
                 Text(l10n("theme.light")).tag(AppTheme.light)
                 Text(l10n("theme.dark")).tag(AppTheme.dark)
             }
+            Divider()
+            Button {
+                Task { await session.addPasskey() }
+            } label: {
+                Label(l10n("passkey.add"), systemImage: "person.badge.key")
+            }
+            .disabled(session.isAddingPasskey)
+            .accessibilityIdentifier("account-add-passkey")
             Divider()
             Button(l10n("admin.signOut"), role: .destructive) { confirmSignOut = true }
                 .accessibilityIdentifier("sign-out")

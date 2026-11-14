@@ -41,13 +41,14 @@ app claims `webcredentials:$(AUN_PASSKEY_RP_DOMAIN)` (`qa.alummahnow.net` in Deb
 Release; set in `Configs/*.xcconfig`), and the RP domain serves `/.well-known/apple-app-site-association` with
 `<APPLE_TEAM_ID>.<bundle id>` under `webcredentials.apps`.
 
-- The App IDs `net.alummahnow.studio(.qa)` and `net.alummahnow.studio.mac(.qa)` need the **Associated Domains**
-  capability. The cloud-managed signing path (`-allowProvisioningUpdates` with the API key) turns it on and makes
+- The App IDs `net.alummahnow.studio(.qa)`, `net.alummahnow.studio.mac(.qa)`, `net.alummahnow.admin(.qa)` and
+  `net.alummahnow.admin.mac(.qa)` need the **Associated Domains** capability. The cloud-managed signing path (`-allowProvisioningUpdates` with the API key) turns it on and makes
   matching profiles by itself.
 - The `DEVELOPER_ID_P12` Mac path signs by hand without a profile, so it builds with
   `AUN_MAC_ENTITLEMENTS_VARIANT=.adhoc` (no Associated Domains). That build has no native passkeys; "Sign in another
   way" still works. CI test builds (ad hoc) use the same variant, because macOS will not launch an app that claims a
-  restricted entitlement without a profile.
+  restricted entitlement without a profile. Admin's Mac Debug entitlements leave it out for the same reason; its
+  QA and Release entitlements (and the iOS ones) carry it.
 
 # Releasing Al Ummah Now Admin (staff only)
 

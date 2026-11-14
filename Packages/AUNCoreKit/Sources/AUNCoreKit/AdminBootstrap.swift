@@ -3,7 +3,8 @@ import Foundation
 
 /// The Admin app's services. `-AUNUseFixtures YES` selects the in-memory queue (UI tests); `-AUNFixtureRole
 /// reviewer|senior|viewer` picks who is signed in, `-AUNFixtureSignedIn YES` starts signed in and
-/// `-AUNFixtureOffline YES` starts with the device offline.
+/// `-AUNFixtureOffline YES` starts with the device offline, `-AUNFixturePasskey success|cancel|noCredential|stepUp|rateLimited`
+/// picks how passkey calls answer.
 public enum AdminBootstrap {
     public static let callbackScheme = "alummahnow-admin"
 
@@ -20,7 +21,10 @@ public enum AdminBootstrap {
                 id: role == .senior ? "fx-senior" : "fx-reviewer", email: "reviewer@example.org",
                 displayName: role == .senior ? "Fixture Senior" : "Fixture Reviewer")
             let accounts = FixtureAccountService(signedIn: defaults.bool(forKey: "AUNFixtureSignedIn") ? [account] : [])
-            return AdminServices(accounts: accounts, review: review, push: review)
+            let passkey = defaults.string(forKey: "AUNFixturePasskey").flatMap(FixturePasskeyService.Outcome.init)
+            return AdminServices(
+                accounts: accounts, review: review, push: review,
+                passkeys: FixturePasskeyService(outcome: passkey ?? .success))
         }
         let environment = AppEnvironment.fromInfoDictionary(bundle.infoDictionary)
         let accounts: any AccountServicing
@@ -34,7 +38,9 @@ public enum AdminBootstrap {
         }
         let native = NativeReviewService(
             adminAPI: environment.adminAPIBaseURL, videosAPI: environment.apiBaseURL, accounts: accounts)
-        return AdminServices(accounts: accounts, review: native, push: native)
+        return AdminServices(
+            accounts: accounts, review: native, push: native, passkeys: NativePasskeyService(),
+            authIssuer: environment.authIssuer)
     }
 
     /// A stable id for this install (the push registry key): 8–64 of [A-Za-z0-9_-].
