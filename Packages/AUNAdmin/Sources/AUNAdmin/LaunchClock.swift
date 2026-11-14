@@ -2,15 +2,27 @@ import AUNCoreBridge
 import Darwin
 import Foundation
 
-/// Seconds since the kernel started this process (before dyld), for the launch log and for the UI test that keeps
-/// the queue quick to show. Measured in the app, so simulator spawn and XCUITest session setup are not counted.
+/// Launch timing for the log and for the UI test that keeps the queue quick to show. The log counts from the moment
+/// the kernel started the process; the UI test's number counts from the app's own first line (`App.init`), because
+/// process spawn, dyld and runtime set-up before it took 2.8-5.6 s on a 3-vCPU CI runner and are not the app's code.
 @MainActor
-enum LaunchClock {
+public enum LaunchClock {
     /// `-AUNReportLaunchTime YES` (UI tests) shows the first queue time as an accessibility element.
     static let reports = UserDefaults.standard.bool(forKey: "AUNReportLaunchTime")
 
-    /// When the first queue row appeared in this process, in seconds since the process started.
+    /// When the app's own code first ran, in seconds since the process started.
+    private(set) static var codeStartedAt: Double?
+
+    /// From the app's first line to the first queue row, in seconds.
     private(set) static var queueShownAfter: Double?
+
+    /// Call first thing in `App.init`.
+    public static func appStarted() {
+        guard codeStartedAt == nil else { return }
+        let value = seconds()
+        codeStartedAt = value
+        AUNLog.admin.notice("Launch: app code started at \(value, format: .fixed(precision: 2)) s")
+    }
 
     static let processStart: Date? = {
         var info = kinfo_proc()
@@ -32,12 +44,16 @@ enum LaunchClock {
         AUNLog.admin.notice("Launch: \(event, privacy: .public) at \(seconds(), format: .fixed(precision: 2)) s")
     }
 
-    /// Records the first time a queue row appears; later calls keep the first value.
+    /// Records the first time a queue row appears, as seconds after the app's code started; later calls keep the
+    /// first value.
     @discardableResult static func queueShown() -> Double {
         if let queueShownAfter { return queueShownAfter }
-        let value = seconds()
+        let now = seconds()
+        let value = now - (codeStartedAt ?? 0)
         queueShownAfter = value
-        AUNLog.admin.notice("Launch: queue shown at \(value, format: .fixed(precision: 2)) s")
+        AUNLog.admin.notice(
+            "Launch: queue shown at \(now, format: .fixed(precision: 2)) s, \(value, format: .fixed(precision: 2)) s after the app code started"
+        )
         return value
     }
 }
