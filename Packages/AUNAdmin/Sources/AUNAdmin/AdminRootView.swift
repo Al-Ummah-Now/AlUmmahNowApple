@@ -41,6 +41,7 @@ public struct AdminRootView: View {
         .adminPrivacy(capture)
         .task { await session.start() }
         .onAppear {
+            LaunchClock.mark("root appeared")
             // Light and Dark only: the first launch follows the device, then the last explicit choice.
             if settings.theme == .system { settings.theme = colorScheme == .dark ? .dark : .light }
         }
@@ -180,7 +181,7 @@ struct AdminShell: View {
         self.session = session
         self.capture = capture
         self.push = push
-        _queue = State(initialValue: QueueModel(service: session.services.review, senior: session.isSenior))
+        _queue = State(initialValue: session.queue ?? QueueModel(service: session.services.review, senior: session.isSenior))
     }
 
     var body: some View {

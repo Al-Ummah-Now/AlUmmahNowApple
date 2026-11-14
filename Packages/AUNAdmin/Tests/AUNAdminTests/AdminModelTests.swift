@@ -39,6 +39,18 @@ struct AdminSessionTests {
         #expect(session.isSenior == false)
     }
 
+    /// The queue is loaded before the shell shows, so its first frame has rows instead of a spinner and a second
+    /// main-thread round trip (seconds on a busy CI simulator).
+    @Test func theQueueIsLoadedBeforeTheShellShows() async {
+        let session = session()
+        await session.start()
+        await session.unlock(reason: "test")
+        #expect(session.phase == .ready)
+        #expect(session.queue?.items.first?.id == "fx-nsfw")
+        await session.signOut()
+        #expect(session.queue == nil)
+    }
+
     @Test func someoneWithoutAStaffRoleIsTurnedAway() async {
         let session = session(role: .viewer)
         await session.start()

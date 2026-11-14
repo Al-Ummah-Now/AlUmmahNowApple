@@ -17,6 +17,9 @@ public final class AdminSession {
     }
     public private(set) var account: StudioAccount?
     public private(set) var profile: StaffProfile?
+    /// The review queue, loaded with the staff check so the screen after it opens with its rows. Loading it from the
+    /// shell instead cost a full main-thread round trip behind the shell's first layout, seconds on a busy CI runner.
+    public private(set) var queue: QueueModel?
     public private(set) var isSigningIn = false
     /// An L10n key to show on the current screen.
     public var notice: String?
@@ -42,6 +45,7 @@ public final class AdminSession {
         self.lock = lock
         self.installID = installID
         self.now = now
+        LaunchClock.mark("session created")
     }
 
     public var isSenior: Bool { profile?.isSeniorReviewer ?? false }
@@ -49,8 +53,10 @@ public final class AdminSession {
     public var isOffline: Bool { !network.isOnline }
 
     public func start() async {
+        LaunchClock.mark("start")
         do {
             account = try await services.accounts.activeAccount()
+            LaunchClock.mark("account read")
         } catch {
             AUNLog.admin.error("Reading the account failed: \(error)")
         }
@@ -106,6 +112,9 @@ public final class AdminSession {
         phase = .checking
         do {
             profile = try await services.review.profile()
+            let queue = QueueModel(service: services.review, senior: isSenior)
+            await queue.load()
+            self.queue = queue
             phase = .ready
         } catch ReviewError.notStaff {
             profile = nil
@@ -127,6 +136,7 @@ public final class AdminSession {
         }
         account = nil
         profile = nil
+        queue = nil
         signedInAt = nil
         phase = .signedOut
     }

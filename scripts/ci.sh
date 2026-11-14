@@ -32,7 +32,24 @@ PY
 
 # Freshly booted simulators run system work for several minutes; on a 3-vCPU runner that starved the Admin app's main
 # thread for 25-30 s (and failed launches outright) on the first UI tests of a pass. Boot early, test once settled.
-boot_early() { local udid; udid=$(sim_udid "$1"); xcrun simctl boot "$udid" 2>/dev/null || true; echo "$udid"; }
+boot_early() { dyld_cache; local udid; udid=$(sim_udid "$1"); xcrun simctl boot "$udid" 2>/dev/null || true; echo "$udid"; }
+# Without the runtime's dyld shared cache every simulator process loads its frameworks one by one, which made app
+# launches several times slower. Build it when the runner image lacks it (a no-op when it exists) and log which.
+dyld_cache() {
+  local runtime waited=0
+  runtime=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; v=sys.argv[1]; print(next(r["identifier"] for r in json.load(sys.stdin)["runtimes"] if r.get("version") == v))' "$IOS_OS")
+  if compgen -G "/Library/Developer/CoreSimulator/Caches/dyld/*/$runtime.*" >/dev/null; then
+    echo "dyld shared cache for $runtime: present"
+    return
+  fi
+  echo "dyld shared cache for $runtime: missing, building"
+  xcrun simctl runtime dyld_shared_cache update "$runtime"
+  until compgen -G "/Library/Developer/CoreSimulator/Caches/dyld/*/$runtime.*" >/dev/null || ((waited >= 900)); do
+    sleep 10
+    waited=$((waited + 10))
+  done
+  echo "dyld shared cache for $runtime: ready after ${waited} s"
+}
 settled() { local udid; udid=$(sim_udid "$1"); xcrun simctl bootstatus "$udid" -b >/dev/null; echo "$udid"; }
 
 case "${1:-}" in
