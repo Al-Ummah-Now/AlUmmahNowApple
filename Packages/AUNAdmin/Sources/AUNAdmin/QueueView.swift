@@ -57,7 +57,7 @@ struct QueueColumn: View {
         }
         .onChange(of: searchText) { _, text in model.search(text) }
         .refreshable { await model.load() }
-        .task { await model.load() }
+        .task { await model.refresh() }
         .overlay(alignment: .bottom) {
             if LaunchClock.reports, let shownAfter {
                 Text(verbatim: "\(Int(shownAfter * 1000))").font(.caption2).opacity(0.02)

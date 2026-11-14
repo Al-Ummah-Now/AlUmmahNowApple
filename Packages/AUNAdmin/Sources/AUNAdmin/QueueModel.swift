@@ -66,6 +66,12 @@ public final class QueueModel {
         }
     }
 
+    /// Loads unless a load finished in the last few seconds: the staff check has just loaded it when the shell opens.
+    public func refresh(within seconds: TimeInterval = 5) async {
+        if let lastUpdated, Date().timeIntervalSince(lastUpdated) < seconds { return }
+        await load()
+    }
+
     /// Live search over titles, channels and reasons, as the person types (250 ms debounce).
     public func search(_ text: String) {
         query = text.trimmingCharacters(in: .whitespacesAndNewlines)
