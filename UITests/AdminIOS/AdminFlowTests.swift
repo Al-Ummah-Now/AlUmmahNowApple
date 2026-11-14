@@ -4,6 +4,19 @@ import XCTest
 final class AdminFlowTests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
+    /// Quit the app at the end of each test and wait until it is gone, so the next launch never has to terminate a
+    /// busy instance (on a slow iPad simulator that terminate can time out and fail an unrelated test).
+    override func tearDown() async throws {
+        await MainActor.run {
+            let app = XCUIApplication()
+            if app.state != .notRunning {
+                app.terminate()
+                _ = app.wait(for: .notRunning, timeout: 30)
+            }
+        }
+        try await super.tearDown()
+    }
+
     @MainActor
     private func launch(
         _ language: String = "en", signedIn: Bool = true, role: String = "reviewer", extra: [String] = []
@@ -29,6 +42,14 @@ final class AdminFlowTests: XCTestCase {
         XCTAssertTrue(item.waitForExistence(timeout: 30), "row \(id)")
         item.tap()
         XCTAssertTrue(app.buttons["approve"].waitForExistence(timeout: 15))
+    }
+
+    /// Scroll until `element` is on screen: lists are lazy, so a row below the fold is not in the hierarchy yet (the
+    /// reasons list is taller than an iPad form sheet).
+    @MainActor
+    private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<8 where !(element.exists && element.isHittable) { app.swipeUp() }
+        XCTAssertTrue(element.isHittable, "\(element) is on screen")
     }
 
     @MainActor
@@ -96,7 +117,9 @@ final class AdminFlowTests: XCTestCase {
         let send = app.buttons["sheet-send"]
         XCTAssertTrue(send.waitForExistence(timeout: 10))
         XCTAssertFalse(send.isEnabled)
-        app.buttons["reason-spam_scam"].tap()
+        let reason = app.buttons["reason-spam_scam"]
+        scrollTo(reason, in: app)
+        reason.tap()
         XCTAssertTrue(send.isEnabled)
         send.tap()
         XCTAssertTrue(app.staticTexts["Rejected “Charity drive update”"].waitForExistence(timeout: 10))
@@ -156,10 +179,13 @@ final class AdminFlowTests: XCTestCase {
         let item = row(app, "fx-risk")
         XCTAssertTrue(item.waitForExistence(timeout: 30))
         XCTAssertTrue(app.buttons["بحاجة إلى إجراء"].exists)
-        // The account menu sits on the trailing edge: the left in Arabic.
+        // The account menu sits on the trailing edge of the queue's bar: the left in Arabic. The queue is the whole
+        // window on iPhone and the sidebar on iPad, so compare with the queue column, not the window.
         let account = app.buttons["account-menu"]
         XCTAssertTrue(account.exists)
-        XCTAssertLessThan(account.frame.midX, app.windows.firstMatch.frame.midX)
+        XCTAssertLessThan(account.frame.midX, item.frame.midX, "account \(account.frame), row \(item.frame)")
+        // In Arabic the queue column starts from the right: the whole window on iPhone, the right-hand sidebar on iPad.
+        XCTAssertGreaterThanOrEqual(item.frame.midX + 1, app.windows.firstMatch.frame.midX)
         item.tap()
         let approve = app.buttons["approve"]
         XCTAssertTrue(approve.waitForExistence(timeout: 15))
