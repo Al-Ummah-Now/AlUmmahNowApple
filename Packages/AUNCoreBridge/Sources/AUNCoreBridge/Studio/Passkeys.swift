@@ -35,9 +35,10 @@ public struct PKCESignIn: Hashable, Sendable {
     /// The redirect the browser flow would have returned, for `AccountServicing.completeSignIn(redirect:)`.
     public func redirect(code: String) -> URL? {
         guard var parts = URLComponents(string: redirectURI) else { return nil }
-        parts.queryItems = (parts.queryItems ?? []) + [
-            URLQueryItem(name: "code", value: code), URLQueryItem(name: "state", value: state),
-        ]
+        parts.queryItems =
+            (parts.queryItems ?? []) + [
+                URLQueryItem(name: "code", value: code), URLQueryItem(name: "state", value: state),
+            ]
         return parts.url
     }
 }

@@ -37,9 +37,10 @@ final class StudioPasskeyTests: XCTestCase {
         let another = app.buttons["sign-in"]
         XCTAssertEqual(another.label, "Sign in another way")
         XCTAssertLessThan(passkey.frame.midY, another.frame.midY)
-        XCTAssertTrue(app.staticTexts[
-            "Sign in without a password, using a passkey saved on this device, in your password manager, on your phone or on a security key."
-        ].exists)
+        XCTAssertTrue(
+            app.staticTexts[
+                "Sign in without a password, using a passkey saved on this device, in your password manager, on your phone or on a security key."
+            ].exists)
     }
 
     @MainActor
