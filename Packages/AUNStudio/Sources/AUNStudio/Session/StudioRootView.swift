@@ -6,10 +6,16 @@ import SwiftUI
 public struct StudioRootView: View {
     @State private var session: StudioSession
 
-    /// `preferences` holds per-device choices such as the last channel per account.
-    public init(services: StudioServices, authenticator: any WebAuthenticating, preferences: UserDefaults = .standard) {
+    /// `preferences` holds per-device choices such as the last channel per account. `passkeyAuthenticator` runs the
+    /// platform passkey sheet (nil: the system one).
+    public init(
+        services: StudioServices, authenticator: any WebAuthenticating,
+        passkeyAuthenticator: (any PasskeyAuthenticating)? = nil, preferences: UserDefaults = .standard
+    ) {
         _session = State(
-            initialValue: StudioSession(services: services, authenticator: authenticator, defaults: preferences))
+            initialValue: StudioSession(
+                services: services, authenticator: authenticator,
+                passkeyAuthenticator: passkeyAuthenticator ?? SystemPasskeyAuthenticator(), defaults: preferences))
     }
 
     public var body: some View {
@@ -20,6 +26,7 @@ public struct StudioRootView: View {
             case .signedIn: StudioShell(session: session)
             }
         }
+        .passkeyDialog(session: session)
         .task { await session.start() }
     }
 }

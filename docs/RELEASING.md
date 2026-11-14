@@ -34,6 +34,21 @@ keychain that is deleted too. Nothing is committed.
 - The Mac app is distributed directly (Developer ID), so it needs no App Store record. TestFlight for Mac would need
   its own record (`net.alummahnow.studio.mac`) and a Mac App Store export; it is not set up.
 
+## Native passkeys (Associated Domains)
+
+"Sign in with a passkey" calls the platform passkey API, which only runs for an app the relying party lists. Each
+app claims `webcredentials:$(AUN_PASSKEY_RP_DOMAIN)` (`qa.alummahnow.net` in Debug and QA, `alummahnow.net` in
+Release; set in `Configs/*.xcconfig`), and the RP domain serves `/.well-known/apple-app-site-association` with
+`<APPLE_TEAM_ID>.<bundle id>` under `webcredentials.apps`.
+
+- The App IDs `net.alummahnow.studio(.qa)` and `net.alummahnow.studio.mac(.qa)` need the **Associated Domains**
+  capability. The cloud-managed signing path (`-allowProvisioningUpdates` with the API key) turns it on and makes
+  matching profiles by itself.
+- The `DEVELOPER_ID_P12` Mac path signs by hand without a profile, so it builds with
+  `AUN_MAC_ENTITLEMENTS_VARIANT=.adhoc` (no Associated Domains). That build has no native passkeys; "Sign in another
+  way" still works. CI test builds (ad hoc) use the same variant, because macOS will not launch an app that claims a
+  restricted entitlement without a profile.
+
 # Releasing Al Ummah Now Admin (staff only)
 
 The Admin app (wiki `AUN-ADMIN-NATIVE`, AD10) is **internal**: TestFlight internal testing only, for iPhone, iPad and

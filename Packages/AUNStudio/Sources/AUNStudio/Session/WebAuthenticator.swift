@@ -2,12 +2,6 @@ import AUNCoreBridge
 import AuthenticationServices
 import Foundation
 
-#if canImport(UIKit)
-    import UIKit
-#elseif canImport(AppKit)
-    import AppKit
-#endif
-
 /// Opens the auth server's sign-in page and returns the redirect URL.
 @MainActor public protocol WebAuthenticating {
     func authenticate(_ request: SignInRequest) async throws -> URL
@@ -45,14 +39,7 @@ public final class SystemWebAuthenticator: NSObject, WebAuthenticating,
     }
 
     nonisolated public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        MainActor.assumeIsolated {
-            #if canImport(UIKit)
-                let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-                return scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()
-            #else
-                return NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? ASPresentationAnchor()
-            #endif
-        }
+        MainActor.assumeIsolated { PresentationAnchor.keyWindow() }
     }
 }
 

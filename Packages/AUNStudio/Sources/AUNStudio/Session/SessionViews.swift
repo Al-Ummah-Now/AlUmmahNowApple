@@ -18,14 +18,11 @@ struct SignInView: View {
                 if session.isSigningIn {
                     ProgressView(l10n("studio.signIn.progress")).accessibilityIdentifier("sign-in-progress")
                 } else {
-                    Button {
+                    PasskeySignInButtons {
+                        Task { await session.signInWithPasskey() }
+                    } onAnotherWay: {
                         Task { await session.signIn() }
-                    } label: {
-                        Label(l10n("studio.signIn.button"), systemImage: "person.crop.circle.badge.checkmark")
-                            .frame(maxWidth: 280)
                     }
-                    .buttonStyle(FanousButtonStyle(.primary))
-                    .accessibilityIdentifier("sign-in")
                 }
                 NoticeView(session: session)
             }
@@ -148,7 +145,21 @@ struct AccountsView: View {
                     ForEach(session.accounts) { account in row(account) }
                 }
                 .studioRows()
+                Section(l10n("passkey.heading")) {
+                    AddPasskeyRow(isBusy: session.isAddingPasskey) { Task { await session.addPasskey() } }
+                }
+                .studioRows()
                 Section {
+                    Button {
+                        Task {
+                            await session.signInWithPasskey(addingAccount: true)
+                            if session.notice == nil, session.passkeyDialog == nil { dismiss() }
+                        }
+                    } label: {
+                        Label(l10n("passkey.addAccount"), systemImage: "person.badge.key")
+                    }
+                    .disabled(session.isSigningIn)
+                    .accessibilityIdentifier("account-add-with-passkey")
                     Button {
                         Task {
                             await session.signIn(addingAccount: true)
@@ -172,6 +183,9 @@ struct AccountsView: View {
                 }
             }
         }
+        .passkeyDialog(session: session, host: .accounts)
+        .onAppear { session.accountsOpen = true }
+        .onDisappear { session.accountsOpen = false }
         .sheet(item: $leaving) { account in
             ConfirmSheet(
                 title: l10n("studio.signOut.title", account.label), message: l10n("studio.signOut.message"),

@@ -10,7 +10,8 @@ DERIVED="${AUN_DERIVED_DATA:-build/DerivedData}"
 COMMON=(-workspace AlUmmahNow.xcworkspace -derivedDataPath "$DERIVED" -configuration Debug
         -skipPackagePluginValidation -skipMacroValidation)
 UNSIGNED=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
-ADHOC=(CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=)
+# Ad hoc Mac builds drop Associated Domains: macOS kills an app claiming it without a provisioning profile.
+ADHOC=(CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= AUN_MAC_ENTITLEMENTS_VARIANT=.adhoc)
 IPHONE="iPhone 17"
 IPAD="iPad Pro 11-inch (M5)"
 

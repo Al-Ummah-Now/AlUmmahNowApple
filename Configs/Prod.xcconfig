@@ -12,3 +12,5 @@ AUN_ADMIN_CLIENT_ID_MAC = 6a65d365-1352-4ffa-922f-4053d461ac3a
 AUN_ENVIRONMENT = prod
 AUN_BUNDLE_SUFFIX =
 AUN_DISPLAY_SUFFIX =
+// WebAuthn relying party for native passkeys: the issuer host without "auth." (Associated Domains webcredentials:).
+AUN_PASSKEY_RP_DOMAIN = alummahnow.net

@@ -62,6 +62,18 @@ struct CoreAccountServiceTests {
         #expect(query(first.url)["code_challenge"] != query(second.url)["code_challenge"])
     }
 
+    /// Passkey sign-in reuses this PKCE sign-in: the code from /native/passkey/verify goes back as the redirect.
+    @Test func passkeySignInReadsThePKCEValuesAndBuildsTheRegisteredRedirect() async throws {
+        let request = try await service().beginSignIn(.standard)
+        let pkce = try #require(request.pkce)
+        #expect(pkce.issuer.absoluteString == "https://auth.qa.alummahnow.net")
+        #expect(pkce.clientID == "studio-client")
+        #expect(pkce.codeChallenge == query(request.url)["code_challenge"])
+        #expect(pkce.redirectURI == CoreAccountService.redirectURI)
+        let redirect = try #require(pkce.redirect(code: "c1"))
+        #expect(redirect.absoluteString == "\(CoreAccountService.redirectURI)?code=c1&state=\(pkce.state)")
+    }
+
     @Test func aRedirectWithAnotherStateIsRefused() async throws {
         let service = try service()
         _ = try await service.beginSignIn(.standard)

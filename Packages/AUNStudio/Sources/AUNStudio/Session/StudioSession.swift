@@ -29,7 +29,12 @@ public final class StudioSession {
     public private(set) var channelsState: ChannelsState = .idle
     public private(set) var channel: StudioChannel?
     public private(set) var isSigningIn = false
+    public private(set) var isAddingPasskey = false
     public var notice: StudioNotice?
+    /// An in-app message about a passkey sign-in or "Add a passkey".
+    public var passkeyDialog: PasskeyDialog?
+    /// The accounts sheet is open, so passkey dialogs present over it.
+    var accountsOpen = false
     /// What the account may do as a creator; nil until read (or when the server cannot say).
     public private(set) var creator: CreatorAccess?
     /// A refusal that applies to the whole videos account (`videos_account_pending_deletion`, `videos_banned`).
@@ -40,12 +45,18 @@ public final class StudioSession {
     /// Uploads of every account on this device; only the active account's run.
     public let uploads: UploadQueue
     private let authenticator: any WebAuthenticating
+    private let passkeyAuthenticator: any PasskeyAuthenticating
     private let defaults: UserDefaults
 
-    public init(services: StudioServices, authenticator: any WebAuthenticating, defaults: UserDefaults = .standard) {
+    public init(
+        services: StudioServices, authenticator: any WebAuthenticating,
+        passkeyAuthenticator: any PasskeyAuthenticating = SystemPasskeyAuthenticator(),
+        defaults: UserDefaults = .standard
+    ) {
         self.services = services
         uploads = UploadQueue(services: services)
         self.authenticator = authenticator
+        self.passkeyAuthenticator = passkeyAuthenticator
         self.defaults = defaults
         uploads.onAccountState = { [weak self] in self?.accountState = $0 }
     }
@@ -77,6 +88,67 @@ public final class StudioSession {
         } catch {
             AUNLog.studio.error("Sign-in failed: \(error)")
             notice = StudioNotice.from(error)
+        }
+    }
+
+    var passkeys: PasskeyFlow {
+        PasskeyFlow(
+            accounts: services.accounts, service: services.passkeys, authenticator: passkeyAuthenticator,
+            web: authenticator, issuer: services.environment.authIssuer)
+    }
+
+    /// Signs in with a passkey from this device, a password manager, a phone or a security key (no browser).
+    public func signInWithPasskey(addingAccount: Bool = false) async {
+        guard !isSigningIn else { return }
+        isSigningIn = true
+        defer { isSigningIn = false }
+        do {
+            await adopt(try await passkeys.signIn(addingAccount ? .addAccount : .standard))
+        } catch {
+            AUNLog.studio.error("Passkey sign-in failed: \(error)")
+            passkeyDialog = PasskeyDialog.signInFailure(error, addingAccount: addingAccount)
+        }
+    }
+
+    /// Adds a passkey to the active account. A sign-in older than the server allows asks to sign in again first.
+    public func addPasskey() async {
+        guard account != nil, !isAddingPasskey else { return }
+        isAddingPasskey = true
+        defer { isAddingPasskey = false }
+        do {
+            _ = try await passkeys.register()
+            passkeyDialog = .added
+        } catch {
+            AUNLog.studio.error("Adding a passkey failed: \(error)")
+            passkeyDialog = PasskeyDialog.registerFailure(error)
+        }
+    }
+
+    /// Runs the follow-up a passkey dialog offered.
+    public func perform(_ action: PasskeyDialog.Action) async {
+        passkeyDialog = nil
+        switch action {
+        case .signInAnotherWay(let adding): await signIn(addingAccount: adding)
+        case .signInAgain: await reauthenticateAndAddPasskey()
+        }
+    }
+
+    private func reauthenticateAndAddPasskey() async {
+        guard let current = account, !isAddingPasskey else { return }
+        isAddingPasskey = true
+        defer { isAddingPasskey = false }
+        do {
+            switch try await passkeys.reauthenticateAndRegister(accountID: current.id) {
+            case .added:
+                accounts = (try? await services.accounts.accounts()) ?? accounts
+                passkeyDialog = .added
+            case .otherAccount(let other):
+                await adopt(other)
+                passkeyDialog = .otherAccount(current.label)
+            }
+        } catch {
+            AUNLog.studio.error("Adding a passkey after signing in again failed: \(error)")
+            passkeyDialog = PasskeyDialog.registerFailure(error)
         }
     }
 
