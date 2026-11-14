@@ -36,9 +36,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job: [ios, ipad, tvos, mac, studio, admin, admin-mac]
+        job: [ios, ipad, tvos, mac, studio, admin, admin-ipad, admin-mac]
     steps:
       - uses: actions/checkout@v5
+      - name: Boot the simulator early, so it settles while the job builds
+        run: scripts/ci.sh boot ${{ matrix.job }}
       - run: brew install xcodegen
       - run: xcodegen generate
       - uses: actions/cache@v4

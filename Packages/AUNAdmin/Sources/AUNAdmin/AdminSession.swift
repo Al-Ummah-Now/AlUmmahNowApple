@@ -12,7 +12,9 @@ public final class AdminSession {
         case unverified
     }
 
-    public private(set) var phase: Phase = .loading
+    public private(set) var phase: Phase = .loading {
+        didSet { if phase != oldValue { LaunchClock.phase(phase) } }
+    }
     public private(set) var account: StudioAccount?
     public private(set) var profile: StaffProfile?
     public private(set) var isSigningIn = false

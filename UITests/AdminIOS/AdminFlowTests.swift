@@ -173,18 +173,23 @@ final class AdminFlowTests: XCTestCase {
         XCTAssertFalse(row(app, "fx-minor").exists)
     }
 
-    /// Switching language re-lays out every line of text. The queue must still be up within a few seconds of launch
-    /// in either direction; it used to take 20 s or more on an iPad simulator (CoreText looked a face up by name for
-    /// every text view, logging each time), and XCUITest waits that long for the app to go idle.
+    /// Switching language re-lays out every line of text. The queue must still be up within a few seconds of the app
+    /// starting, in either direction. The app measures it from its own process start (`-AUNReportLaunchTime`), so the
+    /// simulator spawning the process and XCUITest setting up its session (up to a minute on a busy CI runner) are not
+    /// counted; the launch log has the time of each phase.
     @MainActor
     func testTheQueueShowsQuicklyAfterTheLanguageChanges() {
-        let budget: TimeInterval = 10
+        let budget = 5000
         for (language, id) in [("en", "fx-nsfw"), ("ar", "fx-risk"), ("en", "fx-risk")] {
             let started = Date()
-            let app = launch(language)
+            let app = launch(language, extra: ["-AUNReportLaunchTime", "YES"])
             XCTAssertTrue(row(app, id).waitForExistence(timeout: 30), "\(language) queue")
-            let took = Date().timeIntervalSince(started)
-            XCTAssertLessThan(took, budget, "the \(language) queue took \(Int(took)) s after a language change")
+            let report = app.staticTexts["queue-shown-ms"]
+            XCTAssertTrue(report.waitForExistence(timeout: 10), "\(language) launch time")
+            let shown = Int(report.label) ?? .max
+            let wall = Int(Date().timeIntervalSince(started))
+            XCTContext.runActivity(named: "\(language): queue at \(shown) ms in the app, \(wall) s wall clock") { _ in }
+            XCTAssertLessThan(shown, budget, "the \(language) queue showed \(shown) ms after the app started")
             app.terminate()
             _ = app.wait(for: .notRunning, timeout: 30)
         }
