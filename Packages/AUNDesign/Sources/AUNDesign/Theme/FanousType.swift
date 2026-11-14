@@ -1,5 +1,6 @@
 import CoreText
 import SwiftUI
+import os
 
 /// The type roles of the token scale. Arabic uses its own, larger scale with taller lines.
 public enum FanousTextRole: Sendable, CaseIterable {
@@ -61,11 +62,36 @@ public enum FanousTypeface {
     }
 
     /// Space to add between lines so a line is `size × lineHeight` tall, given the face's own line height.
+    ///
+    /// Every `fanousFont` text asks for this on each body pass, so the answer is computed once per process for each
+    /// family and style. Looking a face up by family name through `CTFontCreateWithName` takes CoreText's slow path
+    /// and logs a performance note per call, which kept the main thread busy for many seconds at launch.
     static func extraLeading(family: String?, style: FanousTypeStyle) -> CGFloat {
+        let key = LeadingKey(family: family, size: style.size, lineHeight: style.lineHeight)
+        if let known = leadings.withLock({ $0[key] }) { return known }
+        let value = measureLeading(family: family, style: style)
+        leadings.withLock { $0[key] = value }
+        return value
+    }
+
+    /// The lookups `extraLeading` has made so far (tests).
+    static var measuredLeadings: Int { leadings.withLock { $0.count } }
+
+    private struct LeadingKey: Hashable {
+        let family: String?
+        let size: Double
+        let lineHeight: Double
+    }
+
+    private static let leadings = OSAllocatedUnfairLock<[LeadingKey: CGFloat]>(initialState: [:])
+
+    private static func measureLeading(family: String?, style: FanousTypeStyle) -> CGFloat {
         register()
-        let font =
-            family.map { CTFontCreateWithName($0 as CFString, style.size, nil) }
-            ?? CTFontCreateUIFontForLanguage(.system, style.size, nil)
+        let font: CTFont? =
+            family.map {
+                let descriptor = CTFontDescriptorCreateWithAttributes([kCTFontFamilyNameAttribute: $0] as CFDictionary)
+                return CTFontCreateWithFontDescriptor(descriptor, style.size, nil)
+            } ?? CTFontCreateUIFontForLanguage(.system, style.size, nil)
         guard let font else { return 0 }
         let natural = CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)
         return max(0, style.size * style.lineHeight - natural)
