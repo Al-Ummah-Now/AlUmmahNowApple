@@ -187,6 +187,7 @@ struct AdminShell: View {
         NavigationSplitView {
             QueueColumn(model: queue, selection: $selection, session: session)
                 .toolbar { toolbar }
+                .onAppear { LaunchClock.mark("queue column appeared") }
         } detail: {
             if let selection {
                 ReviewScreen(model: reviewModel(selection), capture: capture, isOffline: session.isOffline)
@@ -196,6 +197,7 @@ struct AdminShell: View {
             }
         }
         .overlay(alignment: .bottom) { ToastView(center: toasts) }
+        .onAppear { LaunchClock.mark("shell appeared") }
         .sheet(isPresented: $confirmSignOut) {
             ConfirmSheet(
                 title: l10n("admin.signOut.title"), message: l10n("admin.signOut.message"),

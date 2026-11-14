@@ -10,6 +10,7 @@ struct QueueColumn: View {
     @Binding var selection: String?
     let session: AdminSession
     @State private var searchText = ""
+    @State private var shownAfter: Double?
 
     var body: some View {
         List(selection: $selection) {
@@ -30,6 +31,7 @@ struct QueueColumn: View {
                     ForEach(model.items) { item in
                         QueueRow(item: item, tab: model.tab, me: session.profile?.userID)
                             .tag(item.id)
+                            .onAppear { if shownAfter == nil { shownAfter = LaunchClock.queueShown() } }
                             .swipeActions(edge: .trailing) {
                                 if model.tab == .actionNeeded {
                                     Button(l10n("admin.queue.claim")) { claim(item) }.tint(Fanous.accent)
@@ -56,6 +58,12 @@ struct QueueColumn: View {
         .onChange(of: searchText) { _, text in model.search(text) }
         .refreshable { await model.load() }
         .task { await model.load() }
+        .overlay(alignment: .bottom) {
+            if LaunchClock.reports, let shownAfter {
+                Text(verbatim: "\(Int(shownAfter * 1000))").font(.caption2).opacity(0.02)
+                    .accessibilityIdentifier("queue-shown-ms")
+            }
+        }
     }
 
     @ViewBuilder private var emptyState: some View {

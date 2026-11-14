@@ -47,8 +47,10 @@ public final class QueueModel {
         defer { isLoading = false }
         let tab = tab
         let query = query
+        LaunchClock.mark("queue load started")
         do {
             let page = try await service.queue(tab, query: query.isEmpty ? nil : query, cursor: nil)
+            LaunchClock.mark("queue loaded \(page.items.count)")
             guard tab == self.tab, query == self.query else { return }
             items = Self.sorted(page.items, tab: tab, senior: senior)
             if query.isEmpty { loaded[tab] = items }
