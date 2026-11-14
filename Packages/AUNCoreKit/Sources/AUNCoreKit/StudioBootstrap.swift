@@ -20,13 +20,17 @@ public enum StudioBootstrap {
 
     /// The Studio services for this build. `-AUNUseFixtures YES` selects hermetic data for UI tests,
     /// `-AUNFixtureSignedIn YES` starts them signed in, and `-AUNFixtureAccountState invitation|pendingDeletion` starts
-    /// the account without a creator tier or with its videos data pending deletion.
+    /// the account without a creator tier or with its videos data pending deletion, and
+    /// `-AUNFixturePasskey success|cancel|noCredential|stepUp|rateLimited` picks how passkey calls answer.
     public static func services(
         defaults: UserDefaults = .standard, bundle: Bundle = .main
     ) -> StudioServices {
         if defaults.bool(forKey: "AUNUseFixtures") {
             let state = defaults.string(forKey: "AUNFixtureAccountState").flatMap(FixtureStudioService.AccountState.init)
-            return .fixtures(signedIn: defaults.bool(forKey: "AUNFixtureSignedIn"), accountState: state ?? .creator)
+            let passkey = defaults.string(forKey: "AUNFixturePasskey").flatMap(FixturePasskeyService.Outcome.init)
+            return .fixtures(
+                signedIn: defaults.bool(forKey: "AUNFixtureSignedIn"), accountState: state ?? .creator,
+                passkey: passkey ?? .success)
         }
         let environment = AppEnvironment.fromInfoDictionary(bundle.infoDictionary)
         do {

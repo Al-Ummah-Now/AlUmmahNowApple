@@ -137,6 +137,11 @@ targets:
         AUN_APP_NAME: Al Ummah Now Studio
         AUN_OAUTH_CLIENT_ID: $(AUN_STUDIO_CLIENT_ID_IOS)
         TARGETED_DEVICE_FAMILY: "1,2"
+    entitlements:
+      path: Apps/StudioIOS/StudioIOS.entitlements
+      properties:
+        # Native passkeys: the RP domain serves apple-app-site-association with this app id under webcredentials.
+        com.apple.developer.associated-domains: ["webcredentials:$(AUN_PASSKEY_RP_DOMAIN)"]
     dependencies:
       - package: AUNStudio
       - package: AUNDesign
@@ -156,13 +161,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.studio.mac$(AUN_BUNDLE_SUFFIX)
         AUN_APP_NAME: Al Ummah Now Studio
         AUN_OAUTH_CLIENT_ID: $(AUN_STUDIO_CLIENT_ID_MAC)
-    entitlements:
-      path: Apps/StudioMac/StudioMac.entitlements
-      properties:
-        com.apple.security.app-sandbox: true
-        com.apple.security.network.client: true
-        com.apple.security.files.user-selected.read-write: true
-        com.apple.security.files.bookmarks.app-scope: true
+        # StudioMac.entitlements adds Associated Domains (webcredentials:$(AUN_PASSKEY_RP_DOMAIN)) for native
+        # passkeys; StudioMac.adhoc.entitlements is the same without it (see AUN_MAC_ENTITLEMENTS_VARIANT).
+        CODE_SIGN_ENTITLEMENTS: Apps/StudioMac/StudioMac$(AUN_MAC_ENTITLEMENTS_VARIANT).entitlements
     dependencies:
       - package: AUNStudio
       - package: AUNDesign

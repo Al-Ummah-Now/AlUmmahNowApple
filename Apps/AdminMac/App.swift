@@ -63,6 +63,9 @@ struct AdminMacApp: App {
             initialValue: AdminSession(
                 services: AdminBootstrap.services(),
                 authenticator: fixtures ? FixtureWebAuthenticator() as any WebAuthenticating : SystemWebAuthenticator(),
+                passkeyAuthenticator: fixtures
+                    ? FixturePasskeyAuthenticator.fromLaunchArguments() as any PasskeyAuthenticating
+                    : SystemPasskeyAuthenticator(),
                 lock: fixtures
                     ? FixtureDeviceUnlock(passcode: !defaults.bool(forKey: "AUNFixtureNoPasscode")) : SystemDeviceUnlock(),
                 installID: AdminBootstrap.installID(),

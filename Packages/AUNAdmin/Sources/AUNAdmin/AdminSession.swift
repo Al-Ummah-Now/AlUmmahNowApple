@@ -21,6 +21,9 @@ public final class AdminSession {
     /// shell instead cost a full main-thread round trip behind the shell's first layout, seconds on a busy CI runner.
     public private(set) var queue: QueueModel?
     public private(set) var isSigningIn = false
+    public private(set) var isAddingPasskey = false
+    /// An in-app message about a passkey sign-in or "Add a passkey".
+    public var passkeyDialog: PasskeyDialog?
     /// An L10n key to show on the current screen.
     public var notice: String?
     /// The last sign-in or step-up; high-risk actions need one within 15 minutes.
@@ -32,16 +35,19 @@ public final class AdminSession {
     let lock: any DeviceUnlocking
     let policy = LockPolicy()
     private let authenticator: any WebAuthenticating
+    private let passkeyAuthenticator: any PasskeyAuthenticating
     private let now: () -> Date
     private var backgroundedAt: Date?
 
     public init(
-        services: AdminServices, authenticator: any WebAuthenticating, lock: any DeviceUnlocking,
+        services: AdminServices, authenticator: any WebAuthenticating,
+        passkeyAuthenticator: any PasskeyAuthenticating = SystemPasskeyAuthenticator(), lock: any DeviceUnlocking,
         installID: String, network: NetworkMonitor, now: @escaping () -> Date = Date.init
     ) {
         self.services = services
         self.network = network
         self.authenticator = authenticator
+        self.passkeyAuthenticator = passkeyAuthenticator
         self.lock = lock
         self.installID = installID
         self.now = now
@@ -104,6 +110,61 @@ public final class AdminSession {
         } catch {
             if (error as? CoreError) != .cancelled { notice = "admin.signIn.failed" }
             AUNLog.admin.error("Sign-in failed: \(error)")
+        }
+    }
+
+    // MARK: Passkeys
+
+    var passkeys: PasskeyFlow {
+        PasskeyFlow(
+            accounts: services.accounts, service: services.passkeys, authenticator: passkeyAuthenticator,
+            web: authenticator, issuer: services.authIssuer)
+    }
+
+    /// Signs in with a passkey from this device, a password manager, a phone or a security key (no browser).
+    public func signInWithPasskey() async {
+        guard !isSigningIn else { return }
+        guard lock.hasPasscode() else {
+            notice = "admin.signIn.noPasscode"
+            return
+        }
+        isSigningIn = true
+        defer { isSigningIn = false }
+        do {
+            account = try await passkeys.signIn(.standard)
+            signedInAt = now()
+            notice = nil
+            await checkStaff()
+        } catch {
+            AUNLog.admin.error("Passkey sign-in failed: \(error)")
+            passkeyDialog = PasskeyDialog.signInFailure(error)
+        }
+    }
+
+    /// Adds a passkey to the reviewer's account. A sign-in older than 15 minutes is renewed first (the same step-up
+    /// as high-risk actions), then the passkey is added once more.
+    public func addPasskey() async {
+        guard account != nil, !isAddingPasskey else { return }
+        isAddingPasskey = true
+        defer { isAddingPasskey = false }
+        do {
+            _ = try await passkeys.register()
+            passkeyDialog = .added
+        } catch {
+            AUNLog.admin.error("Adding a passkey failed: \(error)")
+            passkeyDialog = PasskeyDialog.registerFailure(error)
+        }
+    }
+
+    /// Runs the follow-up a passkey dialog offered.
+    public func perform(_ action: PasskeyDialog.Action) async {
+        passkeyDialog = nil
+        switch action {
+        case .signInAnotherWay: await signIn()
+        case .signInAgain:
+            guard await requireRecentSignIn(force: true) else { return }
+            await addPasskey()
+            if passkeyDialog?.action == .signInAgain { passkeyDialog = PasskeyDialog.registerFailure(PasskeyError.failed(nil)) }
         }
     }
 

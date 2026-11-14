@@ -62,7 +62,7 @@
 "common.cancel" = "Cancel";
 "common.dismiss" = "Dismiss";
 "studio.signIn.title" = "Sign in to Studio";
-"studio.signIn.message" = "Upload and manage videos for your channels. You sign in on the Al Ummah Now sign-in page.";
+"studio.signIn.message" = "Upload and manage videos for your channels.";
 "studio.signIn.button" = "Sign in";
 "studio.signIn.progress" = "Signing in…";
 "studio.account.title" = "Accounts";
@@ -394,3 +394,24 @@
 "admin.conflict.escalate" = "Already escalated by %@ %@";
 "admin.conflict.request_changes" = "%@ already asked for changes %@";
 "admin.conflict.generic" = "Someone else already decided this item.";
+/* Native passkeys (AUTH-PASSKEYS): the same words as the auth site's sign-in and passkey pages. */
+"passkey.heading" = "Passkeys";
+"passkey.signIn" = "Sign in with a passkey";
+"passkey.signInAnotherWay" = "Sign in another way";
+"passkey.about" = "Sign in without a password, using a passkey saved on this device, in your password manager, on your phone or on a security key.";
+"passkey.addAccount" = "Add account with a passkey";
+"passkey.add" = "Add a passkey";
+"passkey.progress" = "Follow the steps on your device…";
+"passkey.added" = "Passkey added. Next time, choose \"Sign in with a passkey\".";
+"passkey.signInFailed" = "That passkey didn't work. Try again or use your password.";
+"passkey.noCredential" = "We couldn't find an account for this passkey. It may have been removed. Sign in another way.";
+"passkey.notAssociated" = "This app can't use passkeys yet. Sign in another way.";
+"passkey.notAssociated.add" = "This app can't add passkeys yet. Try again after the next update.";
+"passkey.rateLimited" = "Too many tries. Wait a moment, then try again.";
+"passkey.offline" = "You're offline. Check your connection and try again.";
+"passkey.addFailed" = "The passkey wasn't added. Try again.";
+"passkey.exists" = "This device already has a passkey for your account.";
+"passkey.limit" = "You already have 10 passkeys. Remove one in your account first.";
+"passkey.stale" = "For your security, sign in again before adding a passkey.";
+"passkey.signInAgain" = "Sign in again";
+"passkey.otherAccount" = "You signed in with another account. To add a passkey to %@, sign in with that account.";

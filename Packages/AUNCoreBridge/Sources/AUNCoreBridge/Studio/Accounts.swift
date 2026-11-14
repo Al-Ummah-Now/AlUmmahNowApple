@@ -86,9 +86,15 @@ public actor FixtureAccountService: AccountServicing {
     public func accounts() -> [StudioAccount] { stored }
     public func activeAccount() -> StudioAccount? { stored.first { $0.id == active } }
 
+    /// A real-shaped S256 authorize URL, so passkey sign-in can read its PKCE values.
+    public static let authorizeURL = URL(
+        string: "https://auth.fixtures.invalid/authorize?client_id=fixture-client&response_type=code"
+            + "&redirect_uri=\(callbackScheme)%3A%2F%2Fauth%2Fcallback&code_challenge=fixture-challenge"
+            + "&code_challenge_method=S256&state=fixture-state")!
+
     public func beginSignIn(_ prompt: SignInPrompt) -> SignInRequest {
         lastPrompt = prompt
-        return SignInRequest(url: URL(string: "https://auth.fixtures.invalid/authorize")!, callbackScheme: Self.callbackScheme)
+        return SignInRequest(url: Self.authorizeURL, callbackScheme: Self.callbackScheme)
     }
 
     public func completeSignIn(redirect: URL) throws -> StudioAccount {

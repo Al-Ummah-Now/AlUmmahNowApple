@@ -62,7 +62,7 @@
 "common.cancel" = "إلغاء";
 "common.dismiss" = "إغلاق";
 "studio.signIn.title" = "سجّل الدخول إلى الاستوديو";
-"studio.signIn.message" = "ارفع مرئياتك وأدِرها في قنواتك. يتم تسجيل الدخول من صفحة تسجيل الدخول في الأمة الآن.";
+"studio.signIn.message" = "ارفع مرئياتك وأدِرها في قنواتك.";
 "studio.signIn.button" = "تسجيل الدخول";
 "studio.signIn.progress" = "جارٍ تسجيل الدخول…";
 "studio.account.title" = "الحسابات";
@@ -394,3 +394,24 @@
 "admin.conflict.escalate" = "صعّده %@ %@";
 "admin.conflict.request_changes" = "طلب %@ تعديلات %@";
 "admin.conflict.generic" = "سبقك مراجع آخر إلى هذا العنصر.";
+/* Native passkeys (AUTH-PASSKEYS): the same words as the auth site's sign-in and passkey pages. */
+"passkey.heading" = "مفاتيح المرور";
+"passkey.signIn" = "الدخول بمفتاح المرور";
+"passkey.signInAnotherWay" = "تسجيل الدخول بطريقة أخرى";
+"passkey.about" = "سجّل الدخول دون كلمة مرور، بمفتاح مرور محفوظ على هذا الجهاز أو في مدير كلمات المرور أو على هاتفك أو على مفتاح أمان.";
+"passkey.addAccount" = "إضافة حساب بمفتاح مرور";
+"passkey.add" = "إضافة مفتاح مرور";
+"passkey.progress" = "اتبع الخطوات التي يعرضها جهازك…";
+"passkey.added" = "أُضيف مفتاح المرور. في المرة القادمة اختر «الدخول بمفتاح المرور».";
+"passkey.signInFailed" = "لم ينجح مفتاح المرور. حاول مرة أخرى أو استخدم كلمة المرور.";
+"passkey.noCredential" = "لم نجد حسابًا لمفتاح المرور هذا، فربما أُزيل. سجّل الدخول بطريقة أخرى.";
+"passkey.notAssociated" = "لا يستطيع هذا التطبيق استخدام مفاتيح المرور بعد. سجّل الدخول بطريقة أخرى.";
+"passkey.notAssociated.add" = "لا يستطيع هذا التطبيق إضافة مفاتيح المرور بعد. حاول مرة أخرى بعد التحديث القادم.";
+"passkey.rateLimited" = "محاولات كثيرة. انتظر قليلًا ثم حاول مرة أخرى.";
+"passkey.offline" = "أنت غير متصل. تحقّق من اتصالك وحاول مجددًا.";
+"passkey.addFailed" = "لم يُضَف مفتاح المرور. حاول مرة أخرى.";
+"passkey.exists" = "لهذا الجهاز مفتاح مرور لحسابك بالفعل.";
+"passkey.limit" = "لديك 10 مفاتيح مرور بالفعل. أزل واحدًا من حسابك أولًا.";
+"passkey.stale" = "لحماية حسابك، سجّل الدخول مرة أخرى قبل إضافة مفتاح مرور.";
+"passkey.signInAgain" = "تسجيل الدخول مرة أخرى";
+"passkey.otherAccount" = "سجّلت الدخول بحساب آخر. لإضافة مفتاح مرور إلى %@ سجّل الدخول بذلك الحساب.";

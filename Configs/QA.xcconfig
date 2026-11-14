@@ -13,3 +13,5 @@ AUN_ADMIN_CLIENT_ID_MAC = 1c230211-7b90-4d0a-be9d-3068ebd79d5b
 AUN_ENVIRONMENT = qa
 AUN_BUNDLE_SUFFIX = .qa
 AUN_DISPLAY_SUFFIX = " QA"
+// WebAuthn relying party for native passkeys: the issuer host without "auth." (Associated Domains webcredentials:).
+AUN_PASSKEY_RP_DOMAIN = qa.alummahnow.net

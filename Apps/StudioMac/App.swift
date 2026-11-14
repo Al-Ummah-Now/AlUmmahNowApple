@@ -16,6 +16,7 @@ struct StudioMacApp: App {
                 services: services,
                 authenticator: StudioBootstrap.usesFixtures()
                     ? FixtureWebAuthenticator() as any WebAuthenticating : SystemWebAuthenticator(),
+                passkeyAuthenticator: StudioBootstrap.usesFixtures() ? FixturePasskeyAuthenticator.fromLaunchArguments() : nil,
                 preferences: preferences
             )
             .fanousRoot(settings, siteTheme: siteTheme)

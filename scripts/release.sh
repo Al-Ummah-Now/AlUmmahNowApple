@@ -60,7 +60,9 @@ case "$PLATFORM" in
     ARCHIVE="$WORK/StudioMac.xcarchive"
     NAME="AlUmmahNowStudio$SUFFIX-$VERSION-macOS"
     if [[ $SIGNED == 1 && -n "${DEVELOPER_ID_P12:-}" ]]; then
-      # A Developer ID Application certificate exported by the account holder, in a throwaway keychain.
+      # A Developer ID Application certificate exported by the account holder, in a throwaway keychain. Manual
+      # signing has no provisioning profile, so this build leaves out Associated Domains (no native passkeys; the
+      # "Sign in another way" browser flow still works). The cloud-managed path below keeps them.
       printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$WORK/developer-id.p12"
       KEYCHAIN_PASSWORD=$(uuidgen)
       security create-keychain -p "$KEYCHAIN_PASSWORD" "$WORK/release.keychain-db"
@@ -72,7 +74,8 @@ case "$PLATFORM" in
       security list-keychains -d user -s "$WORK/release.keychain-db" $(security list-keychains -d user | tr -d '"')
       xcodebuild archive "${COMMON[@]}" -scheme StudioMac -destination "generic/platform=macOS" \
         -archivePath "$ARCHIVE" DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Manual \
-        CODE_SIGN_IDENTITY="Developer ID Application" OTHER_CODE_SIGN_FLAGS="--timestamp" ENABLE_HARDENED_RUNTIME=YES
+        CODE_SIGN_IDENTITY="Developer ID Application" OTHER_CODE_SIGN_FLAGS="--timestamp" ENABLE_HARDENED_RUNTIME=YES \
+        AUN_MAC_ENTITLEMENTS_VARIANT=.adhoc
       APP="$ARCHIVE/Products/Applications/$(ls "$ARCHIVE/Products/Applications" | head -1)"
     elif [[ $SIGNED == 1 ]]; then
       # Cloud-managed Developer ID signing through the API key (needs a key allowed to use it).
@@ -92,7 +95,8 @@ case "$PLATFORM" in
     else
       # Ad hoc: runs on the machine that builds it; other Macs need a right-click Open (Gatekeeper).
       xcodebuild archive "${COMMON[@]}" -scheme StudioMac -destination "generic/platform=macOS" \
-        -archivePath "$ARCHIVE" CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=
+        -archivePath "$ARCHIVE" CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \
+        AUN_MAC_ENTITLEMENTS_VARIANT=.adhoc
       APP="$ARCHIVE/Products/Applications/$(ls "$ARCHIVE/Products/Applications" | head -1)"
       NAME="$NAME-unsigned"
     fi
