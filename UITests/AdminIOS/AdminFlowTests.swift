@@ -173,6 +173,23 @@ final class AdminFlowTests: XCTestCase {
         XCTAssertFalse(row(app, "fx-minor").exists)
     }
 
+    /// Switching language re-lays out every line of text. The queue must still be up within a few seconds of launch
+    /// in either direction; it used to take 20 s or more on an iPad simulator (CoreText looked a face up by name for
+    /// every text view, logging each time), and XCUITest waits that long for the app to go idle.
+    @MainActor
+    func testTheQueueShowsQuicklyAfterTheLanguageChanges() {
+        let budget: TimeInterval = 10
+        for (language, id) in [("en", "fx-nsfw"), ("ar", "fx-risk"), ("en", "fx-risk")] {
+            let started = Date()
+            let app = launch(language)
+            XCTAssertTrue(row(app, id).waitForExistence(timeout: 30), "\(language) queue")
+            let took = Date().timeIntervalSince(started)
+            XCTAssertLessThan(took, budget, "the \(language) queue took \(Int(took)) s after a language change")
+            app.terminate()
+            _ = app.wait(for: .notRunning, timeout: 30)
+        }
+    }
+
     @MainActor
     func testArabicIsRightToLeftAndSaysMarai() {
         let app = launch("ar")

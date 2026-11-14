@@ -1,4 +1,5 @@
 import AUNCoreBridge
+import CoreText
 import Foundation
 import Testing
 
@@ -72,6 +73,26 @@ import Testing
         FanousTypeface.register()
         let urls = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
         #expect(urls.count == 5)
+    }
+
+    /// Text views ask for their line spacing on every body pass; the font lookup behind it must run once per style,
+    /// or a screen of text keeps the main thread busy for seconds at launch and after a language change.
+    @Test(.serialized, arguments: [nil, "Source Serif 4", "Amiri", "Noto Kufi Arabic", "Inter"] as [String?])
+    func lineSpacingIsMeasuredOncePerStyle(_ family: String?) {
+        let style = FanousTypeStyle(size: 17.25, weight: 400, lineHeight: 1.61, letterSpacing: 0)
+        let first = FanousTypeface.extraLeading(family: family, style: style)
+        let measured = FanousTypeface.measuredLeadings
+        for _ in 0..<500 { #expect(FanousTypeface.extraLeading(family: family, style: style) == first) }
+        #expect(FanousTypeface.measuredLeadings == measured)
+        #expect(first >= 0 && first < style.size)
+    }
+
+    @Test(arguments: ["Source Serif 4", "Amiri", "Noto Kufi Arabic", "Inter"])
+    func lineSpacingUsesTheBundledFace(_ family: String) {
+        FanousTypeface.register()
+        let descriptor = CTFontDescriptorCreateWithAttributes([kCTFontFamilyNameAttribute: family] as CFDictionary)
+        let font = CTFontCreateWithFontDescriptor(descriptor, 17, nil)
+        #expect(CTFontCopyFamilyName(font) as String == family)
     }
 
     @Test func linearGradientsFollowTheCSSGradientLine() {
