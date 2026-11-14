@@ -59,6 +59,7 @@ struct AdminIOSApp: App {
     @State private var session: AdminSession
 
     init() {
+        MainActor.assumeIsolated { LaunchClock.appStarted() }
         let fixtures = AdminBootstrap.usesFixtures()
         let defaults = UserDefaults.standard
         let push = AdminPush(center: fixtures ? nil : .current())
