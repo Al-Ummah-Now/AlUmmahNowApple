@@ -21,9 +21,9 @@ public struct FixtureCatalogService: CatalogServicing {
     public static let videos: [Video] = (1...8).map { index in
         Video(
             id: "fixture-\(index)",
-            title: "Lecture \(index): Introduction to Tafsir",
+            title: "Introduction to Tafsir, part \(index)",
             titleLocalized: LocalizedText(
-                en: "Lecture \(index): Introduction to Tafsir", ar: "المحاضرة \(index): مقدمة في التفسير"),
+                en: "Introduction to Tafsir, part \(index)", ar: "مقدمة في التفسير، الجزء \(index)"),
             description: "An introduction to the sources of tafsir.",
             descriptionLocalized: LocalizedText(
                 en: "An introduction to the sources of tafsir.", ar: "مقدمة في مصادر التفسير."),
