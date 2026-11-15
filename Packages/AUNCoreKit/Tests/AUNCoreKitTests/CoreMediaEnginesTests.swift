@@ -65,9 +65,9 @@ struct CoreEDLEditingTests {
     /// The title ops as the Mac editor sends them (Core 0.4.0-rc.2): add to a title track, move/reword via setTitle,
     /// remove; the flattened titles carry the style back.
     @Test func titlesAddSetAndRemove() throws {
-        var project = try edl.apply(project: Self.project, op: Self.appendA)
-        project = project.replacingOccurrences(
-            of: #"{"id":"v1""#, with: #"{"id":"titles","kind":"title"},{"id":"v1""#)
+        let withTitles = Self.project.replacingOccurrences(
+            of: #""tracks":["#, with: #""tracks":[{"id":"titles","kind":"title"},"#)
+        var project = try edl.apply(project: withTitles, op: Self.appendA)
         let title = """
             {"id":"t-1","startMs":1000,"durationMs":4000,"text":{"ar":"الأمة الآن","en":"Al Ummah Now"},
              "style":{"fontFamily":"Noto Sans Arabic","sizePt":28,"color":"#f7f1e8","background":"#093041","position":"lowerThird"}}
