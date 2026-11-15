@@ -16,7 +16,9 @@ public struct StudioServices: Sendable {
     /// Pre-encoded renditions (D11).
     public var renditions: any RenditionsServicing
     /// Core's media engines; nil until the Studio build links a Core release that has them.
-    public var media: StudioMediaEngines?
+    public var renditionPackaging: (any RenditionPackaging)?
+    public var edl: (any EDLEditing)?
+    public var transcription: (any OnDeviceTranscribing)?
     /// False for fixtures: their upload queue lives in a temporary file.
     public var persistsUploads = true
 
@@ -47,6 +49,7 @@ public struct StudioServices: Sendable {
             studio: FixtureStudioService(accountState: accountState), transfer: FixtureTUSTransfer(),
             search: FixtureSearchService())
         services.persistsUploads = false
+        services.transcription = FixtureTranscriber()
         return services
     }
 }

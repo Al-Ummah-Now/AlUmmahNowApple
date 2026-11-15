@@ -25,6 +25,13 @@ public struct SnapshotHistory<State: Equatable & Sendable>: Sendable {
         current = state
     }
 
+    /// Replaces the current state without a new undo step (typing in the same field keeps one step).
+    public mutating func amend(_ state: State) {
+        guard canUndo else { return record(state) }
+        current = state
+        redoStack.removeAll()
+    }
+
     @discardableResult
     public mutating func undo() -> State? {
         guard let previous = undoStack.popLast() else { return nil }

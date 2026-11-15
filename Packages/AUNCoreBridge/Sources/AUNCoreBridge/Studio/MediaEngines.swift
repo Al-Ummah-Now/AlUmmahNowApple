@@ -187,15 +187,22 @@ public protocol OnDeviceTranscribing: Sendable {
     ) async throws -> [TranscriptSegment]
 }
 
-/// The Core media engines, present once the Studio build links a Core release that has them.
-public struct StudioMediaEngines: Sendable {
-    public var renditions: any RenditionPackaging
-    public var edl: any EDLEditing
-    public var transcription: any OnDeviceTranscribing
-
-    public init(renditions: any RenditionPackaging, edl: any EDLEditing, transcription: any OnDeviceTranscribing) {
-        self.renditions = renditions
-        self.edl = edl
-        self.transcription = transcription
+/// A transcriber for UI tests and previews: a fixed transcript after a short pretend run. Never used live.
+public struct FixtureTranscriber: OnDeviceTranscribing {
+    public init() {}
+    public var isAvailable: Bool { true }
+    public func models() throws -> [TranscriptionModel] {
+        [
+            TranscriptionModel(id: "base-q5_1", installed: true, sizeBytes: 59_700_000),
+            TranscriptionModel(id: "large-v3-turbo-q5_0", installed: false, sizeBytes: 574_000_000),
+        ]
+    }
+    public func download(model: String, progress: @escaping @Sendable (Double) -> Void) async throws { progress(1) }
+    public func deleteModel(_ id: String) throws {}
+    public func transcribe(
+        model: String, media: URL, language: String?, progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> [TranscriptSegment] {
+        progress(1)
+        return [TranscriptSegment(startMs: 0, endMs: 2_000, text: "بسم الله")]
     }
 }
