@@ -75,7 +75,10 @@ case "${1:-}" in
   studio)
     xcodebuild test "${COMMON[@]}" -scheme StudioIOS \
       -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${UNSIGNED[@]}"
-    xcodebuild test "${COMMON[@]}" -scheme StudioMac -destination "platform=macOS" "${ADHOC[@]}"
+    # A UI test that hangs fails after its allowance (with a hang report) instead of using up the job.
+    xcodebuild test "${COMMON[@]}" -scheme StudioMac -destination "platform=macOS" \
+      -test-timeouts-enabled YES -default-test-execution-time-allowance 600 -maximum-test-execution-time-allowance 900 \
+      "${ADHOC[@]}"
     ;;
   boot)
     # CI runs this first, so the simulator settles while the job installs tools and builds.
