@@ -5,7 +5,7 @@
     import UniformTypeIdentifiers
 
     enum StudioSection: String, CaseIterable, Identifiable {
-        case home, content, deleted, upload, captions, analytics, encode, editor
+        case home, channels, content, deleted, upload, captions, analytics, brand, assets, encode, editor
         var id: String { rawValue }
         var titleKey: String { "studio.\(rawValue).title" }
 
@@ -17,11 +17,14 @@
         var icon: String {
             switch self {
             case .home: "square.grid.2x2"
+            case .channels: "rectangle.stack.person.crop"
             case .content: "film.stack"
             case .deleted: "trash"
             case .upload: "square.and.arrow.up.on.square"
             case .captions: "captions.bubble"
             case .analytics: "chart.bar"
+            case .brand: "paintpalette"
+            case .assets: "photo.on.rectangle.angled"
             case .encode: "cpu"
             case .editor: "timeline.selection"
             }

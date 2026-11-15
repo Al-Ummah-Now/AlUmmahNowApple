@@ -8,29 +8,40 @@ struct AnalyticsView: View {
     @Environment(\.l10n) private var l10n
     let services: StudioServices
     let channelID: String
-    @State private var range: AnalyticsRange = .days28
+    @State private var period = AnalyticsPeriod.preset(.days28)
     @State private var current: ChannelStats?
     @State private var previous: ChannelStats?
+    @State private var summary: AnalyticsSummary?
     @State private var failed = false
     @State private var opened: VideoStats?
     @State private var metric: ChartMetric = .views
+    @State private var export: CSVExport?
+    @State private var message: StudioMessage?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-                Picker(l10n("studio.analytics.range"), selection: $range) {
-                    ForEach(AnalyticsRange.allCases, id: \.self) {
-                        Text(l10n("studio.analytics.days", $0.rawValue.formatted(.number.locale(l10n.language.locale)))).tag($0)
+                HStack(alignment: .top, spacing: FanousScale.spacingMd) {
+                    AnalyticsPeriodPicker(period: $period)
+                    Menu {
+                        Button(l10n("studio.analytics.export.daily")) { exportDaily() }
+                            .accessibilityIdentifier("analytics-export-daily")
+                        Button(l10n("studio.analytics.export.videos")) { exportVideos() }
+                            .accessibilityIdentifier("analytics-export-videos")
+                    } label: {
+                        Label(l10n("studio.analytics.export"), systemImage: "square.and.arrow.down")
                     }
+                    .fixedSize()
+                    .disabled(current == nil)
+                    .accessibilityIdentifier("analytics-export")
                 }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("analytics-range")
                 if failed {
                     ErrorStateView { Task { await load() } }
                 } else if let current {
                     tiles(current)
                     chart(current)
                     topVideos(current)
+                    if let summary { AllTimeCard(summary: summary) }
                 } else {
                     ThemeLoader().frame(maxWidth: .infinity, minHeight: 200)
                 }
@@ -41,26 +52,42 @@ struct AnalyticsView: View {
         }
         .fanousPage()
         .navigationTitle(l10n("studio.analytics.title"))
-        .task(id: range) { await load() }
+        .task(id: period) { await load() }
+        .task { summary = try? await retryingRebuild { try await services.insights.analyticsSummary(channelID: channelID) } }
+        .csvExporter($export) { error in
+            AUNLog.studio.error("Saving the CSV failed: \(error)")
+            message = ("studio.analytics.export.failed", [])
+        }
+        .overlay(alignment: .bottom) { MessageBanner(message: $message) }
         .sheet(item: $opened) { video in
             NavigationStack {
-                Form { VideoStatsView(services: services, videoID: video.videoID).studioRows() }
-                    .formStyle(.grouped)
-                    .scrollContentBackground(.hidden)
-                    .fanousPage()
-                    .navigationTitle(video.title)
+                VideoDeepDiveView(services: services, video: video, period: period)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(l10n("common.dismiss")) { opened = nil } }
                     }
             }
             #if os(macOS)
-                .frame(minWidth: 420, minHeight: 360)
+                .frame(minWidth: 640, minHeight: 560)
             #endif
         }
     }
 
+    private func exportDaily() {
+        guard let current else { return }
+        export = CSVExport(
+            file: CSVFile(AnalyticsCSV.daily(current.daily, header: AnalyticsCSVHeaders.daily(l10n))),
+            name: "\(l10n("studio.analytics.export.dailyFile"))-\(period.fileStem()).csv")
+    }
+
+    private func exportVideos() {
+        guard let current else { return }
+        export = CSVExport(
+            file: CSVFile(AnalyticsCSV.videos(current.topVideos, header: AnalyticsCSVHeaders.videos(l10n))),
+            name: "\(l10n("studio.analytics.export.videosFile"))-\(period.fileStem()).csv")
+    }
+
     private func load() async {
-        let periods = range.periods()
+        let periods = period.periods()
         do {
             async let now = retryingRebuild {
                 try await services.studio.channelStats(channelID: channelID, period: periods.current)

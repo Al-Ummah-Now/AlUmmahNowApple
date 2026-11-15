@@ -207,6 +207,7 @@ struct ChannelGate<Content: View>: View {
                     Group {
                         switch section ?? .home {
                         case .home: StudioHomeView(session: session)
+                        case .channels: AllChannelsView(session: session)
                         case .content:
                             ChannelGate(session: session) { ContentView(session: session, channelID: $0) }
                         case .deleted:
@@ -216,6 +217,10 @@ struct ChannelGate<Content: View>: View {
                             ChannelGate(session: session) { CaptionsView(services: session.services, channelID: $0) }
                         case .analytics:
                             ChannelGate(session: session) { AnalyticsView(services: session.services, channelID: $0) }
+                        case .brand:
+                            ChannelGate(session: session) { BrandKitView(services: session.services, channelID: $0) }
+                        case .assets:
+                            ChannelGate(session: session) { AssetLibraryView(services: session.services, channelID: $0) }
                         case .encode: EncodeQueueView(queue: encodes)
                         case .editor: EditorView()
                         }
