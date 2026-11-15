@@ -67,17 +67,17 @@ struct CoreEDLEditingTests {
     @Test func titlesAddSetAndRemove() throws {
         var project = try edl.apply(project: Self.project, op: Self.appendA)
         project = project.replacingOccurrences(
-            of: #"{"id":"v1""#, with: #"{"id":"t1","kind":"title"},{"id":"v1""#)
+            of: #"{"id":"v1""#, with: #"{"id":"titles","kind":"title"},{"id":"v1""#)
         let title = """
             {"id":"t-1","startMs":1000,"durationMs":4000,"text":{"ar":"الأمة الآن","en":"Al Ummah Now"},
-             "style":{"fontFamily":"system","sizePt":44,"color":"#f7f1e8","background":"#093041","position":"lowerThird"}}
+             "style":{"fontFamily":"Noto Sans Arabic","sizePt":28,"color":"#f7f1e8","background":"#093041","position":"lowerThird"}}
             """
-        project = try edl.apply(project: project, op: #"{"op":"addTitle","trackId":"t1","title":\#(title)}"#)
+        project = try edl.apply(project: project, op: #"{"op":"addTitle","trackId":"titles","title":\#(title)}"#)
         var flat = try edl.flatten(project: project)
         let added = try #require(flat.titles.first)
-        #expect(added.titleID == "t-1" && added.trackID == "t1" && added.startMs == 1000 && added.durationMs == 4000)
+        #expect(added.titleID == "t-1" && added.trackID == "titles" && added.startMs == 1000 && added.durationMs == 4000)
         #expect(added.text["ar"] == "الأمة الآن")
-        #expect(added.style.position == .lowerThird && added.style.background == "#093041" && added.style.sizePt == 44)
+        #expect(added.style.position == .lowerThird && added.style.background == "#093041" && added.style.sizePt == 28)
         #expect(flat.durationMs == 10000)
 
         let moved = title.replacingOccurrences(of: #""startMs":1000"#, with: #""startMs":3000"#)

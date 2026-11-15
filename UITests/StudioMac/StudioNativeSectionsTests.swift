@@ -203,7 +203,7 @@ final class StudioNativeSectionsTests: XCTestCase {
                 XCTAssertTrue(element(app, "title-0").exists)
                 lowerThird.click()
                 XCTAssertTrue(element(app, "title-edit-text").waitForExistence(timeout: 10))
-                XCTAssertTrue(element(app, "title-position").exists)
+                XCTAssertTrue(element(app, "title-kind").exists)
                 Thread.sleep(forTimeInterval: 0.5)
                 keep(app, "editor-titles-\(language)-\(theme)")
                 app.terminate()
@@ -216,7 +216,14 @@ final class StudioNativeSectionsTests: XCTestCase {
     func testEditorTitleEditsAndUndoInArabic() {
         let app = launch("editor", "ar", "dark")
         XCTAssertTrue(element(app, "title-1").waitForExistence(timeout: 60))
-        element(app, "editor-add-lower-third").click()
+        // The playhead starts on the lower third, where a new title has no room: move it to 12.5 s (48 pt a second).
+        let add = element(app, "editor-add-lower-third")
+        XCTAssertFalse(add.isEnabled)
+        element(app, "editor-ruler").coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(
+            CGVector(dx: 600, dy: 0)
+        ).click()
+        XCTAssertTrue(add.isEnabled)
+        add.click()
         let english = element(app, "title-text-en")
         XCTAssertTrue(english.waitForExistence(timeout: 10))
         keep(app, "editor-title-text-ar-dark")

@@ -6,7 +6,8 @@ import Testing
 
 @testable import AUNStudio
 
-/// Titles and lower thirds (E19 19.5 + 19.9): the ops the model sends, undo, the kit's style, and the renderer.
+/// Titles and lower thirds (E19 19.5 + 19.9): the ops the model sends, the rules shared with Desktop, undo, the kit's
+/// style, and the renderer.
 @MainActor
 struct EditorTitlesTests {
     private let media = EditorSourceMedia(durationMs: 10_000, width: 1920, height: 1080, fps: 30, videoCodec: "avc1")
@@ -29,22 +30,24 @@ struct EditorTitlesTests {
         let edl = FakeEDL()
         let model = editor(edl)
         model.playheadMs = 2_000
-        model.addTitle(
-            position: .lowerThird, text: ["en": "Al Ummah Now", "ar": "الأمة الآن", "fr": " "], brand: TitleBrand(kit: kit))
+        model.addTitle(.lowerThird, text: ["en": " Al Ummah Now ", "ar": "الأمة الآن", "fr": " "], brand: TitleBrand(kit: kit))
         let op = try #require(edl.lastOp)
         #expect(op["op"] as? String == "addTitle")
-        #expect(op["trackId"] as? String == EditorModel.titleTrack)
+        #expect(op["trackId"] as? String == "titles")
         let title = try #require(op["title"] as? [String: Any])
+        #expect(title["id"] as? String == "title-3")
         #expect(title["startMs"] as? Int == 2_000)
-        #expect(title["durationMs"] as? Int == EditorModel.titleDurationMs)
+        #expect(title["durationMs"] as? Int == 4_000)
         #expect(title["text"] as? [String: String] == ["en": "Al Ummah Now", "ar": "الأمة الآن"])
         let style = try #require(title["style"] as? [String: Any])
         #expect(style["position"] as? String == "lowerThird")
         #expect(style["background"] as? String == "#093041")
-        #expect(style["fontFamily"] as? String == TitleBrand.systemFont)
+        #expect(style["color"] as? String == "#f7f1e8")
+        #expect(style["fontFamily"] as? String == "Noto Sans Arabic")
+        #expect(style["sizePt"] as? Double == 28)
         let tracks = EditorModel.object(model.project)?["tracks"] as? [[String: Any]]
         #expect(tracks?.map { $0["kind"] as? String } == ["video", "title"])
-        #expect(model.selectedTitle?.titleID == "t-3")
+        #expect(model.selectedTitle?.titleID == "title-3")
         #expect(model.titles(at: 3_000).count == 1)
         #expect(model.titles(at: 6_000).isEmpty)
 
@@ -54,67 +57,104 @@ struct EditorTitlesTests {
         // The track went with the undo: it was added in the same step.
         #expect((EditorModel.object(model.project)?["tracks"] as? [[String: Any]])?.count == 1)
         model.redo()
-        #expect(model.titles.map(\.titleID) == ["t-3"])
+        #expect(model.titles.map(\.titleID) == ["title-3"])
     }
 
-    @Test func aSecondTitleReusesTheTrackAndStaysInsideTheTimeline() throws {
+    @Test func aNewTitleStopsAtTheNextTitleAndTheEndOfTheVideo() throws {
         let edl = FakeEDL()
         let model = editor(edl)
-        model.addTitle(position: .center, text: ["en": "One"], brand: TitleBrand())
-        model.playheadMs = 9_000
-        model.addTitle(position: .center, text: ["ar": "اثنان"], brand: TitleBrand())
+        model.playheadMs = 3_000
+        model.addTitle(.title, text: ["en": "One"], brand: TitleBrand())
+        model.playheadMs = 1_000
+        #expect(model.canAddTitle)
+        model.addTitle(.title, text: ["ar": "اثنان"], brand: TitleBrand())
+        #expect(model.selectedTitle?.durationMs == 2_000)
+        model.playheadMs = 9_500
+        model.addTitle(.title, text: ["en": "Three"], brand: TitleBrand())
+        #expect(model.selectedTitle?.durationMs == 500)
+        #expect(model.selectedTitle?.style.background == nil)
+        #expect(model.selectedTitle?.style.position == .center)
+        #expect(model.selectedTitle?.style.sizePt == 44)
         let tracks = EditorModel.object(model.project)?["tracks"] as? [[String: Any]]
         #expect(tracks?.filter { $0["kind"] as? String == "title" }.count == 1)
-        let last = try #require(model.titles.last)
-        #expect(last.startMs == 9_000)
-        #expect(last.durationMs == 1_000)
-        #expect(last.style.background == nil)
-        #expect(last.style.sizePt == TitleBrand.titleSizePt)
+
+        // No room: on a title, or less than 0.1 s of video left.
+        model.playheadMs = 4_000
+        #expect(!model.canAddTitle)
+        model.addTitle(.title, text: ["en": "Four"], brand: TitleBrand())
+        #expect(model.problem == "studio.editor.titles.error.room")
+        model.playheadMs = 9_950
+        model.addTitle(.title, text: ["en": "Five"], brand: TitleBrand())
+        #expect(model.titles.count == 3)
     }
 
     @Test func titlesNeedAClipAndText() {
         let edl = FakeEDL()
         let empty = EditorModel(edl: edl, store: nil)
-        empty.addTitle(position: .center, text: ["en": "Hi"], brand: TitleBrand())
-        #expect(empty.titles.isEmpty)
+        empty.addTitle(.title, text: ["en": "Hi"], brand: TitleBrand())
+        #expect(empty.titles.isEmpty && !empty.canAddTitle)
         let model = editor(edl)
-        model.addTitle(position: .center, text: ["en": "  "], brand: TitleBrand())
+        model.addTitle(.title, text: ["en": "  "], brand: TitleBrand())
         #expect(model.problem == "studio.editor.titles.error.text")
         #expect(!edl.ops.contains("addTitle"))
     }
 
-    @Test func moveRetimeRewordAndRemoveGoThroughSetTitle() throws {
+    @Test func moveAndRetimeStayInsideTheVideoAndNeverOverlap() throws {
         let edl = FakeEDL()
         let model = editor(edl)
-        model.addTitle(position: .lowerThird, text: ["en": "Name"], brand: TitleBrand(kit: kit))
+        model.addTitle(.lowerThird, text: ["en": "Name"], brand: TitleBrand(kit: kit))
         let id = try #require(model.selection)
 
         model.nudge(id, by: 1_000)
         #expect(edl.lastOp?["op"] as? String == "setTitle")
         #expect(model.selectedTitle?.startMs == 1_000)
-
         model.moveTitle(id, toMs: -500)
         #expect(model.selectedTitle?.startMs == 0)
+        model.moveTitle(id, toMs: 9_000)
+        #expect(model.selectedTitle?.startMs == 6_000)
+        #expect(model.selectedTitle?.endMs == 10_000)
 
-        model.retimeTitle(id, startMs: 2_000, durationMs: 100)
-        #expect(model.selectedTitle?.startMs == 2_000)
-        #expect(model.selectedTitle?.durationMs == EditorModel.minTitleMs)
-        model.resizeTitle(id, by: 1_500)
-        #expect(model.selectedTitle?.durationMs == 2_000)
+        model.retimeTitle(id, startMs: 5_000, endMs: 12_000)
+        #expect(model.selectedTitle?.startMs == 5_000 && model.selectedTitle?.endMs == 10_000)
+        model.retimeTitle(id, startMs: 5_000, endMs: 5_050)
+        #expect(model.problem == "studio.editor.titles.error.length")
 
-        model.setTitleText(id, text: ["en": "", "ar": "اسم"])
-        #expect(model.selectedTitle?.text == ["ar": "اسم"])
-        model.setTitleText(id, text: ["en": " ", "ar": ""])
+        model.playheadMs = 1_000
+        model.addTitle(.title, text: ["en": "Other"], brand: TitleBrand())
+        let other = try #require(model.selection)
+        model.moveTitle(other, toMs: 4_000)
+        #expect(model.problem == "studio.editor.titles.error.overlap")
+        #expect(model.selectedTitle?.startMs == 1_000)
+
+        model.selection = id
+        model.playheadMs = 7_000
+        model.titleEdgeToPlayhead(id, start: false)
+        #expect(model.selectedTitle?.startMs == 5_000 && model.selectedTitle?.endMs == 7_000)
+        model.playheadMs = 6_000
+        model.titleEdgeToPlayhead(id, start: true)
+        #expect(model.selectedTitle?.startMs == 6_000 && model.selectedTitle?.endMs == 7_000)
+    }
+
+    @Test func rewordChangeKindAndRemove() throws {
+        let edl = FakeEDL()
+        let model = editor(edl)
+        model.addTitle(.lowerThird, text: ["en": "Name", "fr": "Nom"], brand: TitleBrand(kit: kit))
+        let id = try #require(model.selection)
+
+        model.setTitleText(id, text: ["en": "", "ar": " اسم "])
+        // Other languages the title carries stay.
+        #expect(model.selectedTitle?.text == ["ar": "اسم", "fr": "Nom"])
+        model.setTitleText(id, text: ["ar": " ", "fr": ""])
         #expect(model.problem == "studio.editor.titles.error.text")
-        #expect(model.selectedTitle?.text == ["ar": "اسم"])
+        #expect(model.selectedTitle?.text == ["ar": "اسم", "fr": "Nom"])
 
-        model.setTitlePosition(id, .top, brand: TitleBrand(kit: kit))
-        #expect(model.selectedTitle?.style.position == .top)
+        model.setTitleKind(id, .title, brand: TitleBrand(kit: kit))
+        #expect(model.selectedTitle?.kind == .title)
         #expect(model.selectedTitle?.style.background == nil)
 
         let steps = edl.ops.count
         model.undo()
-        #expect(model.selectedTitle?.style.position == .lowerThird)
+        #expect(model.selectedTitle?.kind == .lowerThird)
         model.redo()
         #expect(edl.ops.count == steps)
 
@@ -123,51 +163,50 @@ struct EditorTitlesTests {
         #expect(edl.lastOp?["titleId"] as? String == id)
         #expect(model.titles.isEmpty)
         #expect(model.selection == nil)
-        // Deleting a title never ripples the clips.
         #expect(model.clips.count == 1)
+    }
+
+    @Test func deletingAClipWithTitlesCutsItsSpanFromEveryTrack() throws {
+        let edl = FakeEDL()
+        let model = editor(edl)
+        model.addTitle(.title, text: ["en": "One"], brand: TitleBrand())
+        model.selection = "c-2"
+        model.rippleDelete()
+        #expect(edl.lastOp?["op"] as? String == "rippleDeleteRange")
+        #expect(edl.lastOp?["startMs"] as? Int == 0)
+        #expect(edl.lastOp?["endMs"] as? Int == 10_000)
     }
 
     @Test func aRefusedTitleEditLeavesTheProject() throws {
         let edl = FakeEDL()
         let model = editor(edl)
-        model.addTitle(position: .center, text: ["en": "One"], brand: TitleBrand())
+        model.addTitle(.title, text: ["en": "One"], brand: TitleBrand())
         let before = model.project
         edl.refuse = ["setTitle"]
-        model.resizeTitle(try #require(model.selection), by: 1_000)
+        model.moveTitle(try #require(model.selection), toMs: 2_000)
         #expect(model.project == before)
         #expect(model.problem == "studio.editor.error.refused")
     }
 
-    @Test func applyBrandRestylesFromTheCurrentKit() throws {
-        let edl = FakeEDL()
-        let model = editor(edl)
-        model.addTitle(position: .lowerThird, text: ["en": "Name"], brand: TitleBrand(kit: kit))
-        let id = try #require(model.selection)
-        var boxed = kit
-        boxed.lowerThird.style = .box
-        model.applyBrand(id, brand: TitleBrand(kit: boxed))
-        #expect(model.selectedTitle?.style.background == "#ffa037")
-        // Parchment text is unreadable on the lantern orange, so the kit's dark teal is used.
-        #expect(model.selectedTitle?.style.color == "#093041")
-        let count = edl.ops.count
-        model.applyBrand(id, brand: TitleBrand(kit: boxed))
-        #expect(edl.ops.count == count)
-    }
-
-    @Test func minimalLowerThirdsHaveNoBox() {
+    @Test func kitTemplatesMatchDesktop() {
+        var box = kit
+        box.lowerThird.style = .box
+        #expect(TitleBrand(kit: box).style(for: .lowerThird).background == "#ffa037")
         var minimal = kit
         minimal.lowerThird.style = .minimal
-        let style = TitleBrand(kit: minimal).style(for: .lowerThird)
-        #expect(style.background == nil)
-        #expect(style.color == kit.colors.text)
+        #expect(TitleBrand(kit: minimal).style(for: .lowerThird).background == nil)
+        var broken = kit
+        broken.colors.text = "nope"
+        #expect(TitleBrand(kit: broken).style(for: .title).color == BrandKit.defaultColors.text)
     }
 
     @Test func linesAreArabicThenEnglishOnEveryApp() {
         let title = FlattenedTimeline.Title(
-            titleID: "t", trackID: "t1", startMs: 0, durationMs: 1_000,
-            text: ["en": "Name", "fr": "Nom", "ar": "اسم", "de": ""],
-            style: TitleBrand().style(for: .lowerThird))
+            titleID: "t", trackID: "titles", startMs: 0, durationMs: 1_000,
+            text: ["en": "Name", "fr": "Nom", "ar": "اسم", "de": ""], style: TitleBrand().style(for: .lowerThird))
         #expect(title.lines.map(\.locale) == ["ar", "en", "fr"])
+        #expect(TitleRenderer.isRightToLeft("  «اسم» Name"))
+        #expect(!TitleRenderer.isRightToLeft("1. Name اسم"))
     }
 
     @Test func theFlattenedTitlesDecodeFromCoresShape() throws {
@@ -182,19 +221,17 @@ struct EditorTitlesTests {
     }
 }
 
-/// The renderer the preview and the export share.
+/// The renderer the preview and the export share; geometry as Desktop's `TitleLayout`.
 struct TitleRendererTests {
     private let canvas = CGSize(width: 1280, height: 720)
     private let kit = BrandKit(
         name: BrandKit.Name(en: "Al Ummah Now", ar: "الأمة الآن"),
         colors: BrandKit.Colors(primary: "#ffa037", secondary: "#093041", text: "#f7f1e8", background: "#093041"))
 
-    private func title(_ text: [String: String], _ position: FlattenedTimeline.TitleStyle.Position, kit: BrandKit)
-        -> FlattenedTimeline.Title
-    {
+    private func title(_ text: [String: String], _ kind: EditorTitleKind, kit: BrandKit) -> FlattenedTimeline.Title {
         FlattenedTimeline.Title(
-            titleID: "t", trackID: "t1", startMs: 0, durationMs: 1_000, text: text,
-            style: TitleBrand(kit: kit).style(for: position))
+            titleID: "t", trackID: "titles", startMs: 0, durationMs: 1_000, text: text,
+            style: TitleBrand(kit: kit).style(for: kind))
     }
 
     @Test func lowerThirdsStartOnTheTitlesOwnReadingSide() throws {
@@ -203,9 +240,11 @@ struct TitleRendererTests {
             TitleRenderer.layout(title(["en": "Al Ummah Now"], .lowerThird, kit: kit), brand: brand, canvas: canvas))
         let arabic = try #require(
             TitleRenderer.layout(title(["ar": "الأمة الآن"], .lowerThird, kit: kit), brand: brand, canvas: canvas))
-        #expect(!english.rightToLeft && english.box.minX < canvas.width / 2 && english.box.maxX < canvas.width * 0.8)
-        #expect(arabic.rightToLeft && arabic.box.maxX > canvas.width / 2 && arabic.box.minX > canvas.width * 0.2)
-        #expect(english.box.maxY < canvas.height * 0.9 && english.box.minY > canvas.height * 0.6)
+        // 5% safe margin on the start side; 8% from the bottom; the bar is at least 45% wide.
+        #expect(!english.rightToLeft && abs(english.box.minX - 64) < 0.5)
+        #expect(arabic.rightToLeft && abs(arabic.box.maxX - (1280 - 64)) < 0.5)
+        #expect(abs(english.box.maxY - 720 * 0.92) < 0.5)
+        #expect(english.box.width >= 1280 * 0.45 - 0.5)
 
         var centred = kit
         centred.lowerThird.position = .center
@@ -213,23 +252,30 @@ struct TitleRendererTests {
             TitleRenderer.layout(
                 title(["ar": "الأمة الآن"], .lowerThird, kit: centred), brand: TitleBrand(kit: centred), canvas: canvas))
         #expect(abs(middle.box.midX - canvas.width / 2) < 1)
+        var end = kit
+        end.lowerThird.position = .end
+        let englishAtEnd = try #require(
+            TitleRenderer.layout(title(["en": "Name"], .lowerThird, kit: end), brand: TitleBrand(kit: end), canvas: canvas))
+        #expect(abs(englishAtEnd.box.maxX - (1280 - 64)) < 0.5)
     }
 
-    @Test func titlesSitWhereTheirPositionSays() throws {
+    @Test func titlesSitWhereTheirKindSays() throws {
         let brand = TitleBrand(kit: kit)
-        let top = try #require(TitleRenderer.layout(title(["en": "Top"], .top, kit: kit), brand: brand, canvas: canvas))
-        let centre = try #require(TitleRenderer.layout(title(["en": "Centre"], .center, kit: kit), brand: brand, canvas: canvas))
-        #expect(top.box.maxY < canvas.height / 3)
+        let centre = try #require(TitleRenderer.layout(title(["en": "Centre"], .title, kit: kit), brand: brand, canvas: canvas))
         #expect(abs(centre.box.midY - canvas.height / 2) < 1)
         #expect(abs(centre.box.midX - canvas.width / 2) < 1)
-        #expect(TitleRenderer.layout(title(["en": " "], .center, kit: kit), brand: brand, canvas: canvas) == nil)
+        #expect(!centre.hasBox)
+        #expect(TitleRenderer.layout(title(["en": " "], .title, kit: kit), brand: brand, canvas: canvas) == nil)
+        // 28 pt on a 720-line picture is 37.3 px, as on Desktop.
+        #expect(abs(TitleRenderer.fontPixels(28, height: 720) - 37.333) < 0.01)
     }
 
-    @Test func aLongLineIsCutToTheFrame() throws {
-        let long = String(repeating: "الأمة الآن ", count: 40)
+    @Test func aLongLowerThirdWrapsInsideItsShare() throws {
+        let long = String(repeating: "الأمة الآن ", count: 30)
         let layout = try #require(
             TitleRenderer.layout(title(["ar": long], .lowerThird, kit: kit), brand: TitleBrand(kit: kit), canvas: canvas))
-        #expect(layout.box.width <= canvas.width * 0.9)
+        #expect(layout.box.width <= canvas.width * 0.62 + 1)
+        #expect(layout.box.height > TitleRenderer.fontPixels(28, height: 720) * 2)
     }
 
     @Test func drawsTheBoxInTheKitColourAndLeavesTheRestClear() throws {
@@ -238,14 +284,23 @@ struct TitleRendererTests {
         let image = try #require(TitleRenderer.image(lower, brand: brand, canvas: canvas))
         let layout = try #require(TitleRenderer.layout(lower, brand: brand, canvas: canvas))
         let pixels = try Pixels(image)
-        // Inside the box, just in from its end edge (no text there): the kit's secondary colour.
+        // Inside the bar, near its end edge (no text there): the kit's secondary colour.
         let inside = pixels.rgba(x: Int(layout.box.maxX) - 4, y: Int(layout.box.midY))
         #expect(abs(Int(inside.r) - 0x09) < 12 && abs(Int(inside.g) - 0x30) < 12 && abs(Int(inside.b) - 0x41) < 12)
         #expect(inside.a > 200)
-        // The bar style's accent stripe sits on the start edge.
+        // The bar's accent stripe sits on the start edge.
         let stripe = pixels.rgba(x: Int(layout.box.minX) + 1, y: Int(layout.box.midY))
         #expect(stripe.r > 200 && stripe.g > 120)
         #expect(pixels.rgba(x: 10, y: 10).a == 0)
+    }
+
+    @Test func anArabicLowerThirdHasItsStripeOnTheRight() throws {
+        let brand = TitleBrand(kit: kit)
+        let lower = title(["ar": "الأمة الآن", "en": "Al Ummah Now"], .lowerThird, kit: kit)
+        let pixels = try Pixels(try #require(TitleRenderer.image(lower, brand: brand, canvas: canvas)))
+        let layout = try #require(TitleRenderer.layout(lower, brand: brand, canvas: canvas))
+        let stripe = pixels.rgba(x: Int(layout.box.maxX) - 2, y: Int(layout.box.midY))
+        #expect(stripe.r > 200 && stripe.g > 120)
     }
 }
 
@@ -260,7 +315,7 @@ struct TitleExportTests {
         let title = FlattenedTimeline.Title(
             titleID: "t", trackID: "t1", startMs: 1_000, durationMs: 1_000, text: ["en": "W"],
             style: .init(
-                fontFamily: TitleBrand.systemFont, sizePt: 600, color: "#000000", background: "#ffffff", position: .center))
+                fontFamily: TitleBrand.fontFamily, sizePt: 600, color: "#000000", background: "#ffffff", position: .center))
         let timeline = FlattenedTimeline(
             durationMs: 2_000,
             tracks: [

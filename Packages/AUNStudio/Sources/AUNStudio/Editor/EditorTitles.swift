@@ -1,8 +1,9 @@
 import AUNCoreBridge
 import Foundation
 
-/// What the brand kit gives titles (E19 19.9): colours, the lower third's shape and side, and the logo. The EDL keeps
-/// each title's colours and size; the shape, side and logo come from the kit when the title is drawn.
+/// What the brand kit gives titles (E19 19.9): colours for new titles, and when drawing, the lower third's template
+/// (bar, box or minimal), its side and the logo. Mirrors Desktop's `TitleTemplates` and `TitleDecor`, so the same
+/// project gets the same titles in every app.
 public struct TitleBrand: Hashable, Sendable {
     public var kit: BrandKit
     /// The logo image's bytes (PNG/JPEG/…), when the kit has one and it loaded.
@@ -16,44 +17,32 @@ public struct TitleBrand: Hashable, Sendable {
         self.fromKit = fromKit
     }
 
-    /// The platform's interface font (SF Pro, with SF Arabic for Arabic). Brand kits have no font yet.
-    public static let systemFont = "system"
-    /// Sizes on a 1080-line frame.
-    public static let lowerThirdSizePt = 44.0
-    public static let titleSizePt = 72.0
+    /// A family with Arabic and Latin. Brand kits have no font yet; where it isn't installed each app uses its own
+    /// interface font (SF Pro and SF Arabic on Apple).
+    public static let fontFamily = "Noto Sans Arabic"
+    public static let titleSizePt = 44.0
+    public static let lowerThirdSizePt = 28.0
 
-    /// A new title's style from the kit: kit text colour (or the kit colour that reads best on the box), and for lower
-    /// thirds the kit's bar or box behind the text.
-    public func style(for position: FlattenedTimeline.TitleStyle.Position) -> FlattenedTimeline.TitleStyle {
+    /// A new title's style from the kit: the kit's text colour, and for lower thirds the bar (secondary colour) or box
+    /// (primary colour) behind it; minimal has none.
+    public func style(for kind: EditorTitleKind) -> FlattenedTimeline.TitleStyle {
         let colors = kit.colors
-        let background: String? =
-            switch (position, kit.lowerThird.style) {
-            case (.lowerThird, .bar): colors.secondary
-            case (.lowerThird, .box): colors.primary
-            default: nil
-            }
-        let color = background.map { Self.readable(on: $0, candidates: [colors.text, colors.secondary, colors.background]) }
-        return FlattenedTimeline.TitleStyle(
-            fontFamily: Self.systemFont, sizePt: position == .lowerThird ? Self.lowerThirdSizePt : Self.titleSizePt,
-            color: color ?? colors.text, background: background, position: position)
-    }
-
-    /// The candidate with the highest WCAG contrast against `background`.
-    static func readable(on background: String, candidates: [String]) -> String {
-        candidates.filter(BrandKit.isValidColor).max { contrast($0, background) < contrast($1, background) } ?? "#ffffff"
-    }
-
-    static func contrast(_ a: String, _ b: String) -> Double {
-        let (la, lb) = (luminance(a), luminance(b))
-        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
-    }
-
-    static func luminance(_ hex: String) -> Double {
-        guard let rgb = rgb(hex) else { return 0 }
-        func channel(_ value: Double) -> Double {
-            value <= 0.039_28 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        func valid(_ value: String, _ fallback: String) -> String {
+            BrandKit.isValidColor(value) ? value.lowercased() : fallback
         }
-        return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b)
+        let text = valid(colors.text, BrandKit.defaultColors.text)
+        guard kind == .lowerThird else {
+            return .init(fontFamily: Self.fontFamily, sizePt: Self.titleSizePt, color: text, position: .center)
+        }
+        let background: String? =
+            switch kit.lowerThird.style {
+            case .box: valid(colors.primary, BrandKit.defaultColors.primary)
+            case .minimal: nil
+            case .bar: valid(colors.secondary, BrandKit.defaultColors.secondary)
+            }
+        return .init(
+            fontFamily: Self.fontFamily, sizePt: Self.lowerThirdSizePt, color: text, background: background,
+            position: .lowerThird)
     }
 
     /// `#rrggbb` → components 0…1.
@@ -63,8 +52,16 @@ public struct TitleBrand: Hashable, Sendable {
     }
 }
 
+/// A centred title, or a lower third (a name or caption in the bottom third of the picture).
+public enum EditorTitleKind: String, CaseIterable, Sendable {
+    case title, lowerThird
+
+    public init(_ style: FlattenedTimeline.TitleStyle) { self = style.position == .center ? .title : .lowerThird }
+}
+
 extension FlattenedTimeline.Title {
-    /// The non-empty lines, Arabic first, then English, then any other locale: the same order on every app.
+    /// The non-empty lines, Arabic first, then English, then any other locale: what the picture shows, top to bottom,
+    /// on every app.
     public var lines: [(locale: String, text: String)] {
         let rank = ["ar": 0, "en": 1]
         return text.compactMap { key, value in
@@ -73,6 +70,8 @@ extension FlattenedTimeline.Title {
         }
         .sorted { (rank[$0.locale] ?? 2, $0.locale) < (rank[$1.locale] ?? 2, $1.locale) }
     }
+
+    public var kind: EditorTitleKind { EditorTitleKind(style) }
 
     /// The EDL `TitleClip` JSON object (`addTitle`/`setTitle`).
     var edlObject: [String: Any] {
@@ -86,13 +85,14 @@ extension FlattenedTimeline.Title {
 }
 
 /// Titles and lower thirds (E19 19.5): added, reworded, moved, retimed, restyled and removed through Core's
-/// `addTitle`/`setTitle`/`removeTitle`, each one undo step.
+/// `addTitle`/`setTitle`/`removeTitle`, each one undo step. Same rules as Desktop: titles never overlap, are at least
+/// 0.1 s long and stay inside the video.
 extension EditorModel {
-    /// The title track the editor creates on the first title.
-    public nonisolated static let titleTrack = "t1"
-    /// A new title's length, and the shortest a title gets.
+    /// The title track the editor creates when the project has none (same id as Desktop).
+    public nonisolated static let titleTrack = "titles"
+    /// A new title's length when the video allows it, and the shortest a title gets.
     public nonisolated static let titleDurationMs = 4_000
-    public nonisolated static let minTitleMs = 500
+    public nonisolated static let minTitleMs = 100
 
     public var titles: [FlattenedTimeline.Title] { timeline.titles }
     public var selectedTitle: FlattenedTimeline.Title? { titles.first { $0.titleID == selection } }
@@ -102,21 +102,29 @@ extension EditorModel {
         titles.filter { ms >= $0.startMs && ms < $0.endMs }
     }
 
-    /// Adds a title at the playhead, styled from the kit. `text` maps locale → text; empty lines are dropped.
-    public func addTitle(position: FlattenedTimeline.TitleStyle.Position, text: [String: String], brand: TitleBrand) {
-        let text = text.filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// A title can start at the playhead when there is video after it and no title there already.
+    public var canAddTitle: Bool {
+        !isEmpty && timeline.durationMs - playheadMs >= Self.minTitleMs && titles(at: playheadMs).isEmpty
+    }
+
+    /// Adds a title at the playhead in the kit's look: up to `titleDurationMs`, stopping at the end of the video or the
+    /// next title. `text` maps locale → text; blank lines are left out.
+    public func addTitle(_ kind: EditorTitleKind, text: [String: String], brand: TitleBrand) {
         guard !isEmpty else { return }
+        let text = Self.cleaned(text)
         guard !text.isEmpty else { return fail("studio.editor.titles.error.text") }
-        let end = timeline.durationMs
-        let start = max(0, min(playheadMs, end - Self.minTitleMs))
-        let title = FlattenedTimeline.Title(
-            titleID: "t-\(makeID())", trackID: "", startMs: start,
-            durationMs: max(Self.minTitleMs, min(Self.titleDurationMs, end - start)), text: text,
-            style: brand.style(for: position))
+        let start = playheadMs
+        let next = titles.filter { $0.startMs > start }.map(\.startMs).min() ?? .max
+        let end = min(start + Self.titleDurationMs, timeline.durationMs, next)
+        guard titles(at: start).isEmpty, end - start >= Self.minTitleMs else {
+            return fail("studio.editor.titles.error.room")
+        }
         do {
             let (withTrack, trackID) = try Self.addingTitleTrack(to: project)
-            let op: [String: Any] = ["op": "addTitle", "trackId": trackID, "title": title.edlObject]
-            commit(try edlApply(project: withTrack, op: op))
+            let title = FlattenedTimeline.Title(
+                titleID: "title-\(makeID())", trackID: trackID, startMs: start, durationMs: end - start, text: text,
+                style: brand.style(for: kind))
+            commit(try edlApply(project: withTrack, op: ["op": "addTitle", "trackId": trackID, "title": title.edlObject]))
             selection = title.titleID
         } catch {
             AUNLog.studio.info("Adding a title refused: \(error)")
@@ -126,52 +134,58 @@ extension EditorModel {
 
     /// Replaces a title (same id) through `setTitle`.
     @discardableResult
-    public func setTitle(_ title: FlattenedTimeline.Title, refused: String = "studio.editor.error.refused") -> Bool {
-        apply(["op": "setTitle", "title": title.edlObject], refused: refused)
+    func setTitle(_ title: FlattenedTimeline.Title) -> Bool {
+        apply(["op": "setTitle", "title": title.edlObject], refused: "studio.editor.error.refused")
     }
 
+    /// Moves a title, keeping its length, within the video.
     public func moveTitle(_ id: String, toMs startMs: Int) {
-        guard var title = titles.first(where: { $0.titleID == id }) else { return }
-        title.startMs = max(0, startMs)
-        guard title.startMs != titles.first(where: { $0.titleID == id })?.startMs else { return }
-        setTitle(title)
-    }
-
-    /// Sets a title's start and length (at least `minTitleMs`).
-    public func retimeTitle(_ id: String, startMs: Int, durationMs: Int) {
-        guard var title = titles.first(where: { $0.titleID == id }) else { return }
-        title.startMs = max(0, startMs)
-        title.durationMs = max(Self.minTitleMs, durationMs)
-        setTitle(title)
-    }
-
-    /// Lengthens (positive) or shortens a title from its end.
-    public func resizeTitle(_ id: String, by deltaMs: Int) {
         guard let title = titles.first(where: { $0.titleID == id }) else { return }
-        retimeTitle(id, startMs: title.startMs, durationMs: title.durationMs + deltaMs)
+        let start = min(max(0, startMs), max(0, timeline.durationMs - title.durationMs))
+        retimeTitle(id, startMs: start, endMs: start + title.durationMs)
     }
 
-    /// New wording; a title needs at least one line.
-    public func setTitleText(_ id: String, text: [String: String]) {
+    /// New times (an edge drag, or start/end at the playhead), kept inside the video, at least `minTitleMs`, never
+    /// over another title.
+    public func retimeTitle(_ id: String, startMs: Int, endMs: Int) {
         guard var title = titles.first(where: { $0.titleID == id }) else { return }
-        let text = text.filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let start = max(0, startMs)
+        let end = min(endMs, timeline.durationMs)
+        guard end - start >= Self.minTitleMs else { return fail("studio.editor.titles.error.length") }
+        guard !titles.contains(where: { $0.titleID != id && $0.trackID == title.trackID && start < $0.endMs && $0.startMs < end })
+        else { return fail("studio.editor.titles.error.overlap") }
+        guard start != title.startMs || end != title.endMs else { return }
+        title.startMs = start
+        title.durationMs = end - start
+        setTitle(title)
+    }
+
+    /// Starts the title at the playhead (its end stays), or ends it there (its start stays).
+    public func titleEdgeToPlayhead(_ id: String, start: Bool) {
+        guard let title = titles.first(where: { $0.titleID == id }) else { return }
+        if start {
+            retimeTitle(id, startMs: playheadMs, endMs: title.endMs)
+        } else {
+            retimeTitle(id, startMs: title.startMs, endMs: playheadMs)
+        }
+    }
+
+    /// New wording for the given locales; other languages the title carries stay. A title needs at least one line.
+    public func setTitleText(_ id: String, text changes: [String: String]) {
+        guard var title = titles.first(where: { $0.titleID == id }) else { return }
+        var text = title.text
+        for (locale, value) in changes { text[locale] = value }
+        text = Self.cleaned(text)
         guard !text.isEmpty else { return fail("studio.editor.titles.error.text") }
         guard text != title.text else { return }
         title.text = text
         setTitle(title)
     }
 
-    /// Moves a title to the top, the centre or the lower third, restyled from the kit for that place.
-    public func setTitlePosition(_ id: String, _ position: FlattenedTimeline.TitleStyle.Position, brand: TitleBrand) {
-        guard var title = titles.first(where: { $0.titleID == id }), title.style.position != position else { return }
-        title.style = brand.style(for: position)
-        setTitle(title)
-    }
-
-    /// Restyles a title from the current kit (after the kit changed).
-    public func applyBrand(_ id: String, brand: TitleBrand) {
+    /// Makes a title a centred title or a lower third, restyled from the current kit.
+    public func setTitleKind(_ id: String, _ kind: EditorTitleKind, brand: TitleBrand) {
         guard var title = titles.first(where: { $0.titleID == id }) else { return }
-        let style = brand.style(for: title.style.position)
+        let style = brand.style(for: kind)
         guard style != title.style else { return }
         title.style = style
         setTitle(title)
@@ -189,15 +203,27 @@ extension EditorModel {
         try edl.apply(project: project, op: Self.json(op))
     }
 
-    /// The project's first title track, adding one to the JSON when it has none (Core has no op for tracks).
+    nonisolated static func cleaned(_ text: [String: String]) -> [String: String] {
+        text.compactMapValues {
+            let trimmed = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+    }
+
+    /// The project's first unlocked, unmuted title track (a project from another app may have one), adding
+    /// `titleTrack` when there is none (Core has no op for tracks).
     nonisolated static func addingTitleTrack(to project: String) throws -> (project: String, trackID: String) {
         guard var object = object(project) else { throw CoreError.decoding }
         var tracks = (object["tracks"] as? [[String: Any]]) ?? []
-        if let existing = tracks.first(where: { $0["kind"] as? String == "title" })?["id"] as? String {
+        if let existing = tracks.first(where: {
+            $0["kind"] as? String == "title" && $0["locked"] as? Bool != true && $0["muted"] as? Bool != true
+        })?["id"] as? String, !existing.isEmpty {
             return (project, existing)
         }
-        tracks.append(["id": titleTrack, "kind": "title"])
+        var trackID = titleTrack
+        while tracks.contains(where: { $0["id"] as? String == trackID }) { trackID += "_" }
+        tracks.append(["id": trackID, "kind": "title"])
         object["tracks"] = tracks
-        return (try json(object), titleTrack)
+        return (try json(object), trackID)
     }
 }

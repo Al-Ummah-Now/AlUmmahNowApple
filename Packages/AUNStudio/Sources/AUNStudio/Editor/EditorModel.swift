@@ -196,10 +196,19 @@ public final class EditorModel {
     }
 
     /// Removes the selected title, or the selected clip and closes the gap.
+    /// With titles, the clip's span is cut from every track, so titles move back with their video (one across the cut
+    /// is trimmed, one inside it goes with the clip), as on Desktop.
     public func rippleDelete() {
         if let title = selectedTitle { return removeTitle(title.titleID) }
         guard let clip = selectedClip else { return }
-        if apply(["op": "rippleDeleteClip", "clipId": clip.clipID], refused: "studio.editor.error.refused") {
+        let op: [String: Any] =
+            titles.isEmpty
+            ? ["op": "rippleDeleteClip", "clipId": clip.clipID]
+            : [
+                "op": "rippleDeleteRange", "startMs": clip.timelineStartMs,
+                "endMs": clip.timelineStartMs + clip.timelineDurationMs,
+            ]
+        if apply(op, refused: "studio.editor.error.refused") {
             selection = nil
             playheadMs = min(playheadMs, timeline.durationMs)
         }

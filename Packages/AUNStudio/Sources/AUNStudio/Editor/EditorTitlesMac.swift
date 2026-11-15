@@ -5,7 +5,6 @@
     import SwiftUI
 
     typealias EditorTitle = FlattenedTimeline.Title
-    typealias TitlePosition = FlattenedTimeline.TitleStyle.Position
 
     /// Rendered title images, so the preview redraws a title only when it or the kit changes.
     @MainActor
@@ -49,17 +48,16 @@
         }
     }
 
-    extension TitlePosition {
+    extension EditorTitleKind {
         var labelKey: String {
             switch self {
-            case .top: "studio.editor.titles.position.top"
-            case .center: "studio.editor.titles.position.center"
-            case .lowerThird: "studio.editor.titles.position.lowerThird"
+            case .title: "studio.editor.titles.title"
+            case .lowerThird: "studio.editor.titles.lowerThird"
             }
         }
     }
 
-    /// The selected title's text, place, timing and kit style.
+    /// The selected title's text, type and timing.
     struct TitleInspector: View {
         @Environment(\.l10n) private var l10n
         let model: EditorModel
@@ -69,45 +67,41 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
-                Text(l10n(title.style.position == .lowerThird ? "studio.editor.titles.lowerThird" : "studio.editor.titles.title"))
+                Text(l10n(title.kind.labelKey))
                     .fanousFont(.label).foregroundStyle(Fanous.textSecondary)
                     .accessibilityAddTraits(.isHeader)
                 ForEach(title.lines, id: \.locale) { line in
                     Text(line.text)
                         .fanousFont(.headline).foregroundStyle(Fanous.textPrimary).lineLimit(2)
-                        .environment(\.layoutDirection, TitleRenderer.isRightToLeft(line.locale) ? .rightToLeft : .leftToRight)
+                        .environment(\.layoutDirection, TitleRenderer.isRightToLeft(line.text) ? .rightToLeft : .leftToRight)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Button(l10n("studio.editor.titles.editText"), action: onEditText)
                     .accessibilityIdentifier("title-edit-text")
                 Picker(
-                    l10n("studio.editor.titles.position"),
+                    l10n("studio.editor.titles.kind"),
                     selection: Binding(
-                        get: { title.style.position },
-                        set: { model.setTitlePosition(title.titleID, $0, brand: model.brand) })
+                        get: { title.kind },
+                        set: { model.setTitleKind(title.titleID, $0, brand: model.brand) })
                 ) {
-                    ForEach(TitlePosition.allCases, id: \.self) { Text(l10n($0.labelKey)).tag($0) }
+                    ForEach(EditorTitleKind.allCases, id: \.self) { Text(l10n($0.labelKey)).tag($0) }
                 }
-                .accessibilityIdentifier("title-position")
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("title-kind")
                 Label(l10n("studio.editor.position", clock(title.startMs)), systemImage: "clock")
                 Label(l10n("studio.editor.length", clock(title.durationMs)), systemImage: "timer")
+                Button(l10n("studio.editor.titles.moveToPlayhead")) { model.moveTitle(title.titleID, toMs: model.playheadMs) }
+                    .accessibilityIdentifier("title-move-to-playhead")
                 HStack(spacing: FanousScale.spacingXs) {
-                    Button(l10n("studio.editor.titles.shorter")) {
-                        model.resizeTitle(title.titleID, by: -EditorModel.nudgeMs / 2)
+                    Button(l10n("studio.editor.titles.startAtPlayhead")) {
+                        model.titleEdgeToPlayhead(title.titleID, start: true)
                     }
-                    .disabled(title.durationMs <= EditorModel.minTitleMs)
-                    .accessibilityIdentifier("title-shorter")
-                    Button(l10n("studio.editor.titles.longer")) {
-                        model.resizeTitle(title.titleID, by: EditorModel.nudgeMs / 2)
+                    .accessibilityIdentifier("title-start-at-playhead")
+                    Button(l10n("studio.editor.titles.endAtPlayhead")) {
+                        model.titleEdgeToPlayhead(title.titleID, start: false)
                     }
-                    .accessibilityIdentifier("title-longer")
+                    .accessibilityIdentifier("title-end-at-playhead")
                 }
-                Button(l10n("studio.editor.titles.toPlayhead")) { model.moveTitle(title.titleID, toMs: model.playheadMs) }
-                    .accessibilityIdentifier("title-to-playhead")
-                Button(l10n("studio.editor.titles.applyBrand")) { model.applyBrand(title.titleID, brand: model.brand) }
-                    .disabled(model.brand.style(for: title.style.position) == title.style)
-                    .help(l10n("studio.editor.titles.applyBrand.help"))
-                    .accessibilityIdentifier("title-apply-brand")
                 Text(l10n(model.brand.fromKit ? "studio.editor.titles.styledByKit" : "studio.editor.titles.styledByDefault"))
                     .fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -189,8 +183,8 @@
 
     /// Default text for a new title: the kit's name on a lower third, else a placeholder in the app language.
     @MainActor
-    func defaultTitleText(_ position: TitlePosition, brand: TitleBrand, l10n: L10n) -> [String: String] {
-        if position == .lowerThird {
+    func defaultTitleText(_ kind: EditorTitleKind, brand: TitleBrand, l10n: L10n) -> [String: String] {
+        if kind == .lowerThird {
             let names = ["en": brand.kit.name.en ?? "", "ar": brand.kit.name.ar ?? ""]
                 .filter { !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
             if !names.isEmpty { return names }

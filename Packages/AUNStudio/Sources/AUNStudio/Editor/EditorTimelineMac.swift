@@ -274,15 +274,14 @@
             let selected = model.selection == title.titleID
             let frame = titleFrame(title)
             let text = title.lines.first?.text ?? ""
-            let kind = l10n(
-                title.style.position == .lowerThird ? "studio.editor.titles.lowerThird" : "studio.editor.titles.title")
+            let kind = l10n(title.kind.labelKey)
             return HStack(spacing: FanousScale.spacingXs) {
                 Image(systemName: title.style.position == .lowerThird ? "rectangle.bottomthird.inset.filled" : "textformat")
                     .font(.system(size: 11)).accessibilityHidden(true)
                 Text(text).fanousFont(.label).lineLimit(1)
                     .environment(
                         \.layoutDirection,
-                        TitleRenderer.isRightToLeft(title.lines.first?.locale ?? "en") ? .rightToLeft : .leftToRight)
+                        TitleRenderer.isRightToLeft(text) ? .rightToLeft : .leftToRight)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(selected ? Fanous.onPrimary : Fanous.textPrimary)
@@ -331,11 +330,11 @@
             }
             .accessibilityAction(named: l10n("studio.editor.earlier")) { model.nudge(title.titleID, by: -EditorModel.nudgeMs) }
             .accessibilityAction(named: l10n("studio.editor.later")) { model.nudge(title.titleID, by: EditorModel.nudgeMs) }
-            .accessibilityAction(named: l10n("studio.editor.titles.shorter")) {
-                model.resizeTitle(title.titleID, by: -EditorModel.nudgeMs / 2)
+            .accessibilityAction(named: l10n("studio.editor.titles.startAtPlayhead")) {
+                model.titleEdgeToPlayhead(title.titleID, start: true)
             }
-            .accessibilityAction(named: l10n("studio.editor.titles.longer")) {
-                model.resizeTitle(title.titleID, by: EditorModel.nudgeMs / 2)
+            .accessibilityAction(named: l10n("studio.editor.titles.endAtPlayhead")) {
+                model.titleEdgeToPlayhead(title.titleID, start: false)
             }
             .accessibilityIdentifier("title-\(index)")
         }
@@ -362,7 +361,7 @@
                         .onEnded { _ in
                             if let drag, drag.clipID == title.titleID {
                                 let next = TimelineGeometry.retimed(title, kind: drag.kind, deltaMs: drag.deltaMs)
-                                model.retimeTitle(title.titleID, startMs: next.startMs, durationMs: next.durationMs)
+                                model.retimeTitle(title.titleID, startMs: next.startMs, endMs: next.startMs + next.durationMs)
                             }
                             drag = nil
                         }
