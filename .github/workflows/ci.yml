@@ -59,9 +59,11 @@ jobs:
         with:
           path: build/DerivedData/SourcePackages
           key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+      # A step limit under the job's, so a hung test still leaves its logs and results below.
       - run: scripts/ci.sh ${{ matrix.job }}
+        timeout-minutes: 50
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: failure() || cancelled()
         with:
           name: results-${{ matrix.job }}
           path: build/DerivedData/Logs/Test/*.xcresult

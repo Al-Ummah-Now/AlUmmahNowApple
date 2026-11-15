@@ -6,12 +6,13 @@ final class StudioNativeSectionsTests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
     @MainActor
-    private func launch(_ section: String, _ language: String, _ theme: String) -> XCUIApplication {
+    private func launch(_ section: String, _ language: String, _ theme: String, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = [
-            "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNLanguage", language, "-AUNTheme", theme,
-            "-AUNStudioSection", section, "-ApplePersistenceIgnoreState", "YES",
-        ]
+        app.launchArguments =
+            [
+                "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNLanguage", language, "-AUNTheme", theme,
+                "-AUNStudioSection", section, "-ApplePersistenceIgnoreState", "YES",
+            ] + extra
         app.launch()
         return app
     }
@@ -35,13 +36,32 @@ final class StudioNativeSectionsTests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
+    /// Scrolls the form until `target` is on screen; the CI runner's window is shorter than a desktop one. The
+    /// scroll lands in the middle of the window, in the target's column, so the sidebar list is never the one moved.
+    @MainActor
+    private func reveal(_ target: XCUIElement, in app: XCUIApplication) {
+        let window = app.windows.firstMatch
+        let frame = window.frame
+        guard frame.width > 0, frame.height > 0 else { return }
+        let column = (target.frame.midX - frame.minX) / frame.width
+        let point = window.coordinate(withNormalizedOffset: CGVector(dx: column, dy: 0.5))
+        // Hittable alone is true for a button that only peeks in at the bottom, so ask for all of it.
+        let visible = frame.insetBy(dx: 0, dy: 8)
+        for delta in Array(repeating: -200.0, count: 8) + Array(repeating: 200.0, count: 16)
+        where !(target.isHittable && visible.contains(target.frame)) {
+            point.scroll(byDeltaX: 0, deltaY: delta)
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+    }
+
     @MainActor
     func testCaptionsInEveryLanguageAndTheme() {
         for language in ["en", "ar"] {
             for theme in ["dark", "light"] {
                 let app = launch("captions", language, theme)
                 XCTAssertTrue(element(app, "draft-ar").waitForExistence(timeout: 30))
-                XCTAssertTrue(element(app, "captions-minutes").exists)
+                // The minutes meter loads after the drafts (its own request), so wait for it too.
+                XCTAssertTrue(element(app, "captions-minutes").waitForExistence(timeout: 20))
                 keep(app, "captions-\(language)-\(theme)")
                 app.terminate()
             }
@@ -133,5 +153,121 @@ final class StudioNativeSectionsTests: XCTestCase {
         XCTAssertFalse(element(app, "brand-save").exists)
         keep(app, "brand-team-ar-dark")
         app.terminate()
+    }
+
+    /// The editor timeline (19.5) on fixtures: three sample clips, the first cut in two by Core.
+    @MainActor
+    func testEditorInEveryLanguageAndTheme() {
+        for language in ["en", "ar"] {
+            for theme in ["dark", "light"] {
+                let app = launch("editor", language, theme)
+                XCTAssertTrue(element(app, "clip-3").waitForExistence(timeout: 60))
+                XCTAssertTrue(element(app, "editor-inspector").exists)
+                keep(app, "editor-\(language)-\(theme)")
+                app.terminate()
+            }
+        }
+    }
+
+    /// Every edit goes through Core and can be undone: split, undo, redo, join and delete from the edit bar.
+    @MainActor
+    func testEditorEditsAndUndoInArabic() {
+        let app = launch("editor", "ar", "dark")
+        XCTAssertTrue(element(app, "clip-3").waitForExistence(timeout: 60))
+        element(app, "clip-0").click()
+        element(app, "editor-join").click()
+        XCTAssertTrue(element(app, "clip-2").waitForExistence(timeout: 10))
+        XCTAssertFalse(element(app, "clip-3").exists)
+        element(app, "editor-undo").click()
+        XCTAssertTrue(element(app, "clip-3").waitForExistence(timeout: 10))
+        element(app, "editor-redo").click()
+        XCTAssertTrue(element(app, "clip-3").waitForNonExistence(timeout: 10))
+        element(app, "clip-1").click()
+        element(app, "editor-later").click()
+        XCTAssertTrue(element(app, "editor-problem").waitForExistence(timeout: 10))
+        keep(app, "editor-refused-ar-dark")
+        element(app, "editor-delete").click()
+        XCTAssertTrue(element(app, "clip-1").waitForExistence(timeout: 10))
+        XCTAssertFalse(element(app, "clip-2").exists)
+        app.terminate()
+    }
+
+    /// Titles and lower thirds (19.5 + 19.9): the fixture project has a title and the brand kit's lower third under the
+    /// playhead; selecting the lower third shows its text, place, timing and kit style.
+    @MainActor
+    func testEditorTitlesInEveryLanguageAndTheme() {
+        for language in ["en", "ar"] {
+            for theme in ["dark", "light"] {
+                let app = launch("editor", language, theme)
+                let lowerThird = element(app, "title-1")
+                XCTAssertTrue(lowerThird.waitForExistence(timeout: 60))
+                XCTAssertTrue(element(app, "title-0").exists)
+                lowerThird.click()
+                XCTAssertTrue(element(app, "title-edit-text").waitForExistence(timeout: 10))
+                XCTAssertTrue(element(app, "title-kind").exists)
+                Thread.sleep(forTimeInterval: 0.5)
+                keep(app, "editor-titles-\(language)-\(theme)")
+                app.terminate()
+            }
+        }
+    }
+
+    /// Adding a lower third opens its text; saving, undo and redo go through Core, and delete removes only the title.
+    @MainActor
+    func testEditorTitleEditsAndUndoInArabic() {
+        let app = launch("editor", "ar", "dark")
+        XCTAssertTrue(element(app, "title-1").waitForExistence(timeout: 60))
+        // The playhead starts on the lower third, where a new title has no room: move it to 12.5 s (48 pt a second).
+        let add = element(app, "editor-add-lower-third")
+        XCTAssertFalse(add.isEnabled)
+        element(app, "editor-ruler").coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(
+            CGVector(dx: 600, dy: 0)
+        ).click()
+        XCTAssertTrue(add.isEnabled)
+        add.click()
+        let english = element(app, "title-text-en")
+        XCTAssertTrue(english.waitForExistence(timeout: 10))
+        keep(app, "editor-title-text-ar-dark")
+        english.click()
+        english.typeKey("a", modifierFlags: .command)
+        english.typeText("Second line")
+        element(app, "title-save").click()
+        XCTAssertTrue(element(app, "title-2").waitForExistence(timeout: 10))
+        XCTAssertTrue(english.waitForNonExistence(timeout: 10))
+        element(app, "editor-undo").click()
+        element(app, "editor-undo").click()
+        XCTAssertTrue(element(app, "title-2").waitForNonExistence(timeout: 10))
+        element(app, "editor-redo").click()
+        XCTAssertTrue(element(app, "title-2").waitForExistence(timeout: 10))
+        element(app, "title-0").click()
+        element(app, "editor-delete").click()
+        XCTAssertTrue(element(app, "title-2").waitForNonExistence(timeout: 10))
+        XCTAssertTrue(element(app, "clip-3").exists)
+        app.terminate()
+    }
+
+    /// Pre-encode renditions (19.3) is offered at upload, off by default, and shows its state per file.
+    @MainActor
+    func testPreEncodeAtUploadInEveryLanguageAndTheme() {
+        for language in ["en", "ar"] {
+            for theme in ["dark", "light"] {
+                let app = launch("upload", language, theme, extra: ["-AUNSampleVideos", "1"])
+                let toggle = element(app, "upload-preencode")
+                XCTAssertTrue(toggle.waitForExistence(timeout: 60))
+                XCTAssertEqual(toggle.value as? Int, 0)
+                reveal(toggle, in: app)
+                toggle.click()
+                let switchedOn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 1"), object: toggle)
+                XCTAssertEqual(XCTWaiter().wait(for: [switchedOn], timeout: 10), .completed)
+                Thread.sleep(forTimeInterval: 0.5)
+                keep(app, "preencode-form-\(language)-\(theme)")
+                let send = element(app, "upload-send")
+                reveal(send, in: app)
+                send.click()
+                XCTAssertTrue(element(app, "upload-preencode-0").waitForExistence(timeout: 60))
+                keep(app, "preencode-queue-\(language)-\(theme)")
+                app.terminate()
+            }
+        }
     }
 }

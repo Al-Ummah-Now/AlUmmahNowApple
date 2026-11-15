@@ -62,6 +62,41 @@ struct CoreEDLEditingTests {
         }
     }
 
+    /// The title ops as the Mac editor sends them (Core 0.4.0-rc.2): add to a title track, move/reword via setTitle,
+    /// remove; the flattened titles carry the style back.
+    @Test func titlesAddSetAndRemove() throws {
+        let withTitles = Self.project.replacingOccurrences(
+            of: #""tracks":["#, with: #""tracks":[{"id":"titles","kind":"title"},"#)
+        var project = try edl.apply(project: withTitles, op: Self.appendA)
+        let title = """
+            {"id":"t-1","startMs":1000,"durationMs":4000,"text":{"ar":"الأمة الآن","en":"Al Ummah Now"},
+             "style":{"fontFamily":"Noto Sans Arabic","sizePt":28,"color":"#f7f1e8","background":"#093041","position":"lowerThird"}}
+            """
+        project = try edl.apply(project: project, op: #"{"op":"addTitle","trackId":"titles","title":\#(title)}"#)
+        var flat = try edl.flatten(project: project)
+        let added = try #require(flat.titles.first)
+        #expect(added.titleID == "t-1" && added.trackID == "titles" && added.startMs == 1000 && added.durationMs == 4000)
+        #expect(added.text["ar"] == "الأمة الآن")
+        #expect(added.style.position == .lowerThird && added.style.background == "#093041" && added.style.sizePt == 28)
+        #expect(flat.durationMs == 10000)
+
+        let moved = title.replacingOccurrences(of: #""startMs":1000"#, with: #""startMs":3000"#)
+        project = try edl.apply(project: project, op: #"{"op":"setTitle","title":\#(moved)}"#)
+        flat = try edl.flatten(project: project)
+        #expect(flat.titles.map(\.startMs) == [3000])
+
+        #expect(throws: CoreError.self) {
+            _ = try edl.apply(project: project, op: #"{"op":"addTitle","trackId":"v1","title":\#(title)}"#)
+        }
+        let blank = title.replacingOccurrences(of: #""ar":"الأمة الآن","en":"Al Ummah Now""#, with: #""en":"""#)
+        #expect(throws: CoreError.self) {
+            _ = try edl.apply(project: project, op: #"{"op":"setTitle","title":\#(blank)}"#)
+        }
+
+        project = try edl.apply(project: project, op: #"{"op":"removeTitle","titleId":"t-1"}"#)
+        #expect(try edl.flatten(project: project).titles.isEmpty)
+    }
+
     @Test func loadKeepsTheProject() throws {
         let loaded = try edl.load(project: Self.project)
         #expect(try edl.flatten(project: loaded).tracks.map(\.id) == ["v1"])
