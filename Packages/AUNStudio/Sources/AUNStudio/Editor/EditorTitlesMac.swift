@@ -92,7 +92,7 @@
                 Label(l10n("studio.editor.length", clock(title.durationMs)), systemImage: "timer")
                 Button(l10n("studio.editor.titles.moveToPlayhead")) { model.moveTitle(title.titleID, toMs: model.playheadMs) }
                     .accessibilityIdentifier("title-move-to-playhead")
-                HStack(spacing: FanousScale.spacingXs) {
+                VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
                     Button(l10n("studio.editor.titles.startAtPlayhead")) {
                         model.titleEdgeToPlayhead(title.titleID, start: true)
                     }

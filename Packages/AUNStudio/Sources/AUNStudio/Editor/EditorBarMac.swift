@@ -11,7 +11,15 @@
         @Binding var pointsPerSecond: CGFloat
         let onAddTitle: (EditorTitleKind) -> Void
 
+        /// Titles beside the icons when they all fit; icons alone (with their tooltips and spoken labels) when not.
         var body: some View {
+            ViewThatFits(in: .horizontal) {
+                bar.labelStyle(.titleAndIcon)
+                bar.labelStyle(.iconOnly)
+            }
+        }
+
+        private var bar: some View {
             HStack(spacing: FanousScale.spacingXs) {
                 tool("studio.editor.split", "scissors", "editor-split", key: "s") { model.split() }
                     .disabled(model.clipAtPlayhead == nil)
