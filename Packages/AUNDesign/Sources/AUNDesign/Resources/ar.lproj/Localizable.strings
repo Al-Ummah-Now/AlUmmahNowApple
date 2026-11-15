@@ -646,7 +646,7 @@
 "studio.editor.time" = "%1$@ / %2$@";
 "studio.editor.clip.label" = "المقطع %1$@: %2$@، يبدأ عند %3$@، مدته %4$@";
 "studio.editor.selected" = "المقطع المحدد";
-"studio.editor.range" = "يستخدم %1$@–%2$@ من الملف";
+"studio.editor.range" = "يستخدم ⁦%1$@–%2$@⁩ من الملف";
 "studio.editor.position" = "يبدأ عند %@";
 "studio.editor.length" = "المدة %@";
 "studio.editor.noSelection" = "حدّد مقطعًا على الخط الزمني لقصّه أو دمجه أو نقله.";
