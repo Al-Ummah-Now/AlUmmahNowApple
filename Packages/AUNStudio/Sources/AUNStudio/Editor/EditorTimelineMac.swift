@@ -302,7 +302,9 @@
                 model.selection = title.titleID
                 onEditTitle(title.titleID)
             }
-            .onTapGesture { model.selection = title.titleID }
+            // Selects on the first click, at once. A plain `onTapGesture` after the double-click one waits out the
+            // double-click interval (about 0.5 s) first, so a click then Delete removed nothing.
+            .simultaneousGesture(TapGesture().onEnded { model.selection = title.titleID })
             .gesture(
                 DragGesture(minimumDistance: 3)
                     .onChanged { value in
