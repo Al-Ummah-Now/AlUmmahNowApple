@@ -46,27 +46,55 @@ print(subprocess.check_output(["xcrun", "simctl", "create", name, kind, runtime[
 PY
 }
 
+# Without the runtime's dyld shared cache every simulator process loads its frameworks one by one, which makes app
+# launches several times slower (see scripts/ci.sh). Built once per run when the runner image lacks it.
+dyld_cache() { # platform version
+  local runtime waited=0
+  runtime=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; p,v=sys.argv[1:]; print(next(r["identifier"] for r in json.load(sys.stdin)["runtimes"] if r.get("platform") == p and r.get("version","").startswith(v)))' "$1" "$2")
+  if compgen -G "/Library/Developer/CoreSimulator/Caches/dyld/*/$runtime.*" >/dev/null; then
+    echo "dyld shared cache for $runtime: present"
+    return
+  fi
+  echo "dyld shared cache for $runtime: missing, building"
+  xcrun simctl runtime dyld_shared_cache update "$runtime"
+  until compgen -G "/Library/Developer/CoreSimulator/Caches/dyld/*/$runtime.*" >/dev/null || ((waited >= 900)); do
+    sleep 10
+    waited=$((waited + 10))
+  done
+  echo "dyld shared cache for $runtime: ready after ${waited} s"
+}
+
 # Runs one target's StoreScreenshots test and files its attachments as <app>/<locale>/<device>-….png.
+# On a simulator: only that simulator runs (the previous pass's one is shut down), it boots before the build so its
+# first-boot system work settles while xcodebuild compiles, and the test starts once it has finished booting.
+# Two simulators, or a freshly booted one, on the 3-vCPU runner timed out the iPad pass ("Timed out waiting for AX
+# loaded notification", "Timed out while requesting screenshot"; #47).
 shoot() { # app scheme destination device themes [udid]
   local app="$1" scheme="$2" destination="$3" device="$4" themes="$5" udid="${6:-}"
   local bundle="$RESULTS/$app-$device.xcresult"
   rm -rf "$bundle" "$RESULTS/$app-$device"
+  local signing=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
+  [[ "$destination" == "platform=macOS" ]] && signing=(CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=)
   if [[ -n "$udid" ]]; then
+    xcrun simctl shutdown all 2>/dev/null || true
     xcrun simctl boot "$udid" 2>/dev/null || true
+  fi
+  xcodebuild build-for-testing "${COMMON[@]}" -scheme "$scheme" -destination "$destination" "${signing[@]}"
+  if [[ -n "$udid" ]]; then
     xcrun simctl bootstatus "$udid" -b >/dev/null
     xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
       --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 2>/dev/null || true
   fi
-  local signing=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
-  [[ "$destination" == "platform=macOS" ]] && signing=(CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=)
   TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
-    xcodebuild test "${COMMON[@]}" -scheme "$scheme" -destination "$destination" \
+    xcodebuild test-without-building "${COMMON[@]}" -scheme "$scheme" -destination "$destination" \
     -only-testing:"${scheme}UITests/StoreScreenshots" -resultBundlePath "$bundle" "${signing[@]}"
+  [[ -n "$udid" ]] && { xcrun simctl shutdown "$udid" 2>/dev/null || true; }
   xcrun xcresulttool export attachments --path "$bundle" --output-path "$RESULTS/$app-$device" >/dev/null
   python3 scripts/file-screenshots.py "$RESULTS/$app-$device" "$OUT/$app" "$device"
 }
 
 viewer_ios() {
+  dyld_cache iOS "$IOS_OS"
   shoot viewer-ios ViewerIOS "platform=iOS Simulator,id=$(simulator "$IPHONE" iOS "$IOS_OS")" iphone "dark,light" \
     "$(simulator "$IPHONE" iOS "$IOS_OS")"
   shoot viewer-ios ViewerIOS "platform=iOS Simulator,id=$(simulator "$IPAD" iOS "$IOS_OS")" ipad dark \
@@ -74,11 +102,13 @@ viewer_ios() {
 }
 viewer_tv() {
   local udid
+  dyld_cache tvOS "$TVOS_OS"
   udid=$(simulator "$TV" tvOS "$TVOS_OS")
   shoot viewer-tv ViewerTV "platform=tvOS Simulator,id=$udid" tv dark "$udid"
 }
 viewer_mac() { shoot viewer-mac ViewerMac "platform=macOS" mac dark; }
 studio_ios() {
+  dyld_cache iOS "$IOS_OS"
   shoot studio-ios StudioIOS "platform=iOS Simulator,id=$(simulator "$IPHONE" iOS "$IOS_OS")" iphone "dark,light" \
     "$(simulator "$IPHONE" iOS "$IOS_OS")"
   shoot studio-ios StudioIOS "platform=iOS Simulator,id=$(simulator "$IPAD" iOS "$IOS_OS")" ipad dark \
