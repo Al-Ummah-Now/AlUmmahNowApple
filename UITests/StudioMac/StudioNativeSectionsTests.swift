@@ -36,6 +36,14 @@ final class StudioNativeSectionsTests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
+    /// Scrolls the form until `target` is on screen; the CI runner's window is shorter than a desktop one.
+    private func reveal(_ target: XCUIElement, in app: XCUIApplication) {
+        let scroller = app.scrollViews.firstMatch
+        for delta in Array(repeating: -200.0, count: 8) + Array(repeating: 200.0, count: 16) where !target.isHittable {
+            scroller.scroll(byDeltaX: 0, deltaY: delta)
+        }
+    }
+
     @MainActor
     func testCaptionsInEveryLanguageAndTheme() {
         for language in ["en", "ar"] {
@@ -182,9 +190,12 @@ final class StudioNativeSectionsTests: XCTestCase {
                 let toggle = element(app, "upload-preencode")
                 XCTAssertTrue(toggle.waitForExistence(timeout: 60))
                 XCTAssertEqual(toggle.value as? Int, 0)
+                reveal(toggle, in: app)
                 toggle.click()
                 keep(app, "preencode-form-\(language)-\(theme)")
-                element(app, "upload-send").click()
+                let send = element(app, "upload-send")
+                reveal(send, in: app)
+                send.click()
                 XCTAssertTrue(element(app, "upload-preencode-0").waitForExistence(timeout: 60))
                 keep(app, "preencode-queue-\(language)-\(theme)")
                 app.terminate()
