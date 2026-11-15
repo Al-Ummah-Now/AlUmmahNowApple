@@ -73,11 +73,9 @@
                     EditorInspector(model: model, clock: clock) { editingTitle = $0 }.frame(width: 280)
                 }
                 .frame(maxHeight: .infinity)
-                EditBar(model: model, pointsPerSecond: $pointsPerSecond) { position in
+                EditBar(model: model, pointsPerSecond: $pointsPerSecond) { kind in
                     pause()
-                    model.addTitle(
-                        position: position, text: defaultTitleText(position, brand: model.brand, l10n: l10n),
-                        brand: model.brand)
+                    model.addTitle(kind, text: defaultTitleText(kind, brand: model.brand, l10n: l10n), brand: model.brand)
                     if let title = model.selectedTitle { editingTitle = title.titleID }
                 }
                 if let problem = model.problem { problemBanner(problem) }
@@ -399,10 +397,9 @@
             model.split()
             let cut = model.selection
             await loadBrand()
-            for (position, at) in [(TitlePosition.center, 1_000), (.lowerThird, 7_000)] {
+            for (kind, at) in [(EditorTitleKind.title, 1_000), (.lowerThird, 7_000)] {
                 model.playheadMs = at
-                model.addTitle(
-                    position: position, text: defaultTitleText(position, brand: model.brand, l10n: l10n), brand: model.brand)
+                model.addTitle(kind, text: defaultTitleText(kind, brand: model.brand, l10n: l10n), brand: model.brand)
             }
             model.selection = cut
             model.playheadMs = 8_000

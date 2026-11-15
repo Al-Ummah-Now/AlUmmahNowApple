@@ -9,7 +9,7 @@
         @Environment(\.l10n) private var l10n
         let model: EditorModel
         @Binding var pointsPerSecond: CGFloat
-        let onAddTitle: (FlattenedTimeline.TitleStyle.Position) -> Void
+        let onAddTitle: (EditorTitleKind) -> Void
 
         var body: some View {
             HStack(spacing: FanousScale.spacingXs) {
@@ -42,14 +42,16 @@
                 .disabled(!hasSelection)
                 Divider().frame(height: 20)
                 tool("studio.editor.titles.addTitle", "textformat", "editor-add-title", key: "t") {
-                    onAddTitle(.center)
+                    onAddTitle(.title)
                 }
+                .disabled(!model.canAddTitle)
                 tool(
                     "studio.editor.titles.addLowerThird", "rectangle.bottomthird.inset.filled", "editor-add-lower-third",
                     key: "l"
                 ) {
                     onAddTitle(.lowerThird)
                 }
+                .disabled(!model.canAddTitle)
                 Spacer()
                 Button {
                     pointsPerSecond = max(12, pointsPerSecond / 1.5)
