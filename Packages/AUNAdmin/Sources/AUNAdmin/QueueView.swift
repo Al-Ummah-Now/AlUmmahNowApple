@@ -60,8 +60,12 @@ struct QueueColumn: View {
         .task { await model.refresh() }
         .overlay(alignment: .bottom) {
             if LaunchClock.reports, let shownAfter {
-                Text(verbatim: "\(Int(shownAfter * 1000))").font(.caption2).opacity(0.02)
-                    .accessibilityIdentifier("queue-shown-ms")
+                VStack {
+                    Text(verbatim: "\(Int(shownAfter * 1000))").accessibilityIdentifier("queue-shown-ms")
+                    Text(verbatim: "\(Int((LaunchClock.firstFrameAfter ?? -1) * 1000))")
+                        .accessibilityIdentifier("first-frame-ms")
+                }
+                .font(.caption2).opacity(0.02)
             }
         }
     }
