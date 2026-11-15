@@ -10,7 +10,7 @@ actor FixtureContentStore {
             ("Tafsir of Surah Al-Kahf, part 1", "تفسير سورة الكهف، الجزء الأول", .published, true),
             ("Tafsir of Surah Al-Kahf, part 2", "تفسير سورة الكهف، الجزء الثاني", .published, true),
             ("Friday khutbah: patience", "خطبة الجمعة: الصبر", .published, false),
-            ("Seerah lesson 4", "درس السيرة الرابع", .scheduled, false),
+            ("Seerah, part 4", "السيرة النبوية، الجزء الرابع", .scheduled, false),
             ("Fiqh of fasting (draft)", "فقه الصيام (مسودة)", .drafts, false),
         ]
         videos = titles.enumerated().map { index, item in
