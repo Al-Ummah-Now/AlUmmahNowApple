@@ -9,6 +9,7 @@
         @Environment(\.l10n) private var l10n
         let model: EditorModel
         @Binding var pointsPerSecond: CGFloat
+        let onAddTitle: (FlattenedTimeline.TitleStyle.Position) -> Void
 
         var body: some View {
             HStack(spacing: FanousScale.spacingXs) {
@@ -29,16 +30,26 @@
                 tool("studio.editor.delete", "delete.left", "editor-delete", key: .delete) {
                     model.rippleDelete()
                 }
-                .disabled(model.selectedClip == nil)
+                .disabled(!hasSelection)
                 Divider().frame(height: 20)
                 tool("studio.editor.earlier", "chevron.left.2", "editor-earlier", key: .leftArrow, modifiers: .option) {
                     if let id = model.selection { model.nudge(id, by: -EditorModel.nudgeMs) }
                 }
-                .disabled(model.selectedClip == nil)
+                .disabled(!hasSelection)
                 tool("studio.editor.later", "chevron.right.2", "editor-later", key: .rightArrow, modifiers: .option) {
                     if let id = model.selection { model.nudge(id, by: EditorModel.nudgeMs) }
                 }
-                .disabled(model.selectedClip == nil)
+                .disabled(!hasSelection)
+                Divider().frame(height: 20)
+                tool("studio.editor.titles.addTitle", "textformat", "editor-add-title", key: "t") {
+                    onAddTitle(.center)
+                }
+                tool(
+                    "studio.editor.titles.addLowerThird", "rectangle.bottomthird.inset.filled", "editor-add-lower-third",
+                    key: "l"
+                ) {
+                    onAddTitle(.lowerThird)
+                }
                 Spacer()
                 Button {
                     pointsPerSecond = max(12, pointsPerSecond / 1.5)
@@ -61,9 +72,12 @@
             .disabled(model.isEmpty)
         }
 
+        private var hasSelection: Bool { model.selectedClip != nil || model.selectedTitle != nil }
+
         /// Tools whose tooltip says more than their title.
         static let withHelp: Set = [
             "studio.editor.trimStart", "studio.editor.trimEnd", "studio.editor.join", "studio.editor.delete",
+            "studio.editor.titles.addTitle", "studio.editor.titles.addLowerThird",
         ]
 
         private func tool(
@@ -82,8 +96,29 @@
         @Environment(\.l10n) private var l10n
         let model: EditorModel
         let clock: EditorClock
+        var onEditTitle: (String) -> Void = { _ in }
 
         var body: some View {
+            ScrollView {
+                content.frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .padding(FanousScale.spacingMd)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Fanous.surface, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Fanous.outline, lineWidth: 1))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("editor-inspector")
+        }
+
+        @ViewBuilder private var content: some View {
+            if let title = model.selectedTitle {
+                TitleInspector(model: model, title: title, clock: clock) { onEditTitle(title.titleID) }
+            } else {
+                clipFacts
+            }
+        }
+
+        private var clipFacts: some View {
             VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
                 Text(l10n("studio.editor.selected")).fanousFont(.label).foregroundStyle(Fanous.textSecondary)
                     .accessibilityAddTraits(.isHeader)
@@ -97,14 +132,7 @@
                     Text(l10n(model.isEmpty ? "studio.editor.empty" : "studio.editor.noSelection"))
                         .fanousFont(.body).foregroundStyle(Fanous.textSecondary)
                 }
-                Spacer(minLength: 0)
             }
-            .padding(FanousScale.spacingMd)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Fanous.surface, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Fanous.outline, lineWidth: 1))
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("editor-inspector")
         }
 
         private func fact(_ symbol: String, _ text: String) -> some View {

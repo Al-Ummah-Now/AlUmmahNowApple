@@ -143,12 +143,86 @@ public struct FlattenedTimeline: Hashable, Sendable, Decodable {
         }
     }
 
+    /// A title's look (EDL `TitleStyle`). `sizePt` is in points on a 1080-line frame; renderers scale it.
+    public struct TitleStyle: Hashable, Sendable, Codable {
+        public enum Position: String, Hashable, Sendable, Codable, CaseIterable { case top, center, lowerThird }
+
+        public var fontFamily: String
+        public var sizePt: Double
+        /// `#RRGGBB`.
+        public var color: String
+        public var background: String?
+        public var position: Position
+
+        public init(fontFamily: String, sizePt: Double, color: String, background: String? = nil, position: Position) {
+            self.fontFamily = fontFamily
+            self.sizePt = sizePt
+            self.color = color
+            self.background = background
+            self.position = position
+        }
+
+        enum CodingKeys: String, CodingKey { case fontFamily, sizePt, color, background, position }
+
+        public func encode(to encoder: any Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(fontFamily, forKey: .fontFamily)
+            try c.encode(sizePt, forKey: .sizePt)
+            try c.encode(color, forKey: .color)
+            try c.encodeIfPresent(background, forKey: .background)
+            try c.encode(position, forKey: .position)
+        }
+    }
+
+    /// An on-screen title of an unmuted title track, drawn over the picture from `startMs` for `durationMs`.
+    /// `text` maps locale → string (bilingual titles).
+    public struct Title: Hashable, Sendable, Decodable, Identifiable {
+        public var titleID: String
+        public var trackID: String
+        public var startMs: Int
+        public var durationMs: Int
+        public var text: [String: String]
+        public var style: TitleStyle
+
+        public var id: String { titleID }
+        public var endMs: Int { startMs + durationMs }
+
+        public init(
+            titleID: String, trackID: String, startMs: Int, durationMs: Int, text: [String: String], style: TitleStyle
+        ) {
+            self.titleID = titleID
+            self.trackID = trackID
+            self.startMs = startMs
+            self.durationMs = durationMs
+            self.text = text
+            self.style = style
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case titleID = "titleId"
+            case trackID = "trackId"
+            case startMs, durationMs, text, style
+        }
+    }
+
     public var durationMs: Int
     public var tracks: [Track]
+    /// Titles in time order (Core 0.4.0-rc.2); they never lengthen the timeline.
+    public var titles: [Title]
 
-    public init(durationMs: Int, tracks: [Track]) {
+    public init(durationMs: Int, tracks: [Track], titles: [Title] = []) {
         self.durationMs = durationMs
         self.tracks = tracks
+        self.titles = titles
+    }
+
+    enum CodingKeys: String, CodingKey { case durationMs, tracks, titles }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        durationMs = try c.decode(Int.self, forKey: .durationMs)
+        tracks = try c.decode([Track].self, forKey: .tracks)
+        titles = try c.decodeIfPresent([Title].self, forKey: .titles) ?? []
     }
 
     public static func decode(_ json: String) throws -> FlattenedTimeline {

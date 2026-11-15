@@ -6,7 +6,7 @@ import Testing
 
 /// An EDL engine that keeps clips in the project JSON and applies the ops the model sends with simple rules, so the
 /// model's op JSON, undo/redo and refusals can be checked without Core (AUNCoreKit's tests cover Core itself).
-private final class FakeEDL: EDLEditing, @unchecked Sendable {
+final class FakeEDL: EDLEditing, @unchecked Sendable {
     private let lock = NSLock()
     private var sent: [[String: Any]] = []
     var refuse: Set<String> = []
@@ -46,6 +46,31 @@ private final class FakeEDL: EDLEditing, @unchecked Sendable {
             clips.removeAll { $0["id"] as? String == edit["clipId"] as? String }
         case "move", "trim", "join":
             break
+        case "addTitle", "setTitle":
+            guard var title = edit["title"] as? [String: Any] else { throw CoreError.decoding }
+            let tracks = (object["tracks"] as? [[String: Any]]) ?? []
+            var titles = (object["titles"] as? [[String: Any]]) ?? []
+            if name == "addTitle" {
+                guard
+                    tracks.contains(where: {
+                        $0["id"] as? String == edit["trackId"] as? String && $0["kind"] as? String == "title"
+                    })
+                else { throw CoreError.invalid("not a title track") }
+                title["trackId"] = edit["trackId"]
+            } else {
+                guard let old = titles.first(where: { $0["id"] as? String == title["id"] as? String }) else {
+                    throw CoreError.notFound
+                }
+                title["trackId"] = old["trackId"]
+            }
+            titles.removeAll { $0["id"] as? String == title["id"] as? String }
+            titles.append(title)
+            object["titles"] = titles
+        case "removeTitle":
+            var titles = (object["titles"] as? [[String: Any]]) ?? []
+            guard titles.contains(where: { $0["id"] as? String == edit["titleId"] as? String }) else { throw CoreError.notFound }
+            titles.removeAll { $0["id"] as? String == edit["titleId"] as? String }
+            object["titles"] = titles
         default:
             throw CoreError.invalid(name)
         }
@@ -62,7 +87,16 @@ private final class FakeEDL: EDLEditing, @unchecked Sendable {
                 inMs: $0["inMs"] as? Int ?? 0, outMs: $0["outMs"] as? Int ?? 0, timelineStartMs: $0["start"] as? Int ?? 0)
         }
         let end = flat.map { $0.timelineStartMs + $0.timelineDurationMs }.max() ?? 0
-        return FlattenedTimeline(durationMs: end, tracks: [.init(id: EditorModel.videoTrack, kind: "video", clips: flat)])
+        let rawTitles = (EditorModel.object(project)?["titles"] as? [[String: Any]]) ?? []
+        let titles = try rawTitles.map { raw -> FlattenedTimeline.Title in
+            var flat = raw
+            flat["titleId"] = raw["id"]
+            flat.removeValue(forKey: "id")
+            return try JSONDecoder().decode(FlattenedTimeline.Title.self, from: JSONSerialization.data(withJSONObject: flat))
+        }
+        .sorted { $0.startMs < $1.startMs }
+        return FlattenedTimeline(
+            durationMs: end, tracks: [.init(id: EditorModel.videoTrack, kind: "video", clips: flat)], titles: titles)
     }
 }
 

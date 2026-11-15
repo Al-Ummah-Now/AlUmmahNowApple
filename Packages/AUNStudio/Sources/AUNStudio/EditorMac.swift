@@ -12,11 +12,13 @@
     struct EditorView: View {
         @Environment(\.l10n) private var l10n
         let services: StudioServices
+        /// The channel whose brand kit styles titles; nil before a channel is picked (default colours).
+        var channelID: String?
         let onUpload: (URL) -> Void
 
         var body: some View {
             if let edl = services.edl {
-                EditorScreen(edl: edl, onUpload: onUpload)
+                EditorScreen(edl: edl, services: services, channelID: channelID, onUpload: onUpload)
             } else {
                 Text(l10n("studio.editor.unavailable")).foregroundStyle(Fanous.textSecondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity).fanousPage()
@@ -42,10 +44,15 @@
         @State private var importing = false
         @State private var confirmingNew = false
         @State private var observer: Any?
+        @State private var editingTitle: String?
+        let services: StudioServices
+        let channelID: String?
         let onUpload: (URL) -> Void
         private let fixtures: Bool
 
-        init(edl: any EDLEditing, onUpload: @escaping (URL) -> Void) {
+        init(edl: any EDLEditing, services: StudioServices, channelID: String?, onUpload: @escaping (URL) -> Void) {
+            self.services = services
+            self.channelID = channelID
             let fixtures = UserDefaults.standard.bool(forKey: "AUNUseFixtures")
             let store =
                 fixtures
@@ -63,16 +70,26 @@
                 header
                 HStack(alignment: .top, spacing: FanousScale.spacingMd) {
                     previewCard
-                    EditorInspector(model: model, clock: clock).frame(width: 280)
+                    EditorInspector(model: model, clock: clock) { editingTitle = $0 }.frame(width: 280)
                 }
                 .frame(maxHeight: .infinity)
-                EditBar(model: model, pointsPerSecond: $pointsPerSecond)
-                if let problem = model.problem { problemBanner(problem) }
-                TimelineStrip(model: model, pointsPerSecond: pointsPerSecond, clock: clock) { ms in
+                EditBar(model: model, pointsPerSecond: $pointsPerSecond) { position in
                     pause()
-                    model.playheadMs = ms
+                    model.addTitle(
+                        position: position, text: defaultTitleText(position, brand: model.brand, l10n: l10n),
+                        brand: model.brand)
+                    if let title = model.selectedTitle { editingTitle = title.titleID }
                 }
-                .frame(height: 150)
+                if let problem = model.problem { problemBanner(problem) }
+                TimelineStrip(
+                    model: model, pointsPerSecond: pointsPerSecond, clock: clock,
+                    onScrub: { ms in
+                        pause()
+                        model.playheadMs = ms
+                    },
+                    onEditTitle: { editingTitle = $0 }
+                )
+                .frame(height: 196)
                 exportBar
             }
             .padding(FanousScale.spacingLg)
@@ -92,6 +109,14 @@
                 }
                 Button(l10n("common.cancel"), role: .cancel) {}
             }
+            .sheet(
+                isPresented: Binding(get: { editingTitle != nil }, set: { if !$0 { editingTitle = nil } })
+            ) {
+                if let id = editingTitle, let title = model.titles.first(where: { $0.titleID == id }) {
+                    TitleTextSheet(model: model, title: title)
+                }
+            }
+            .task(id: channelID) { await loadBrand() }
             .task {
                 startObserving()
                 if fixtures, model.isEmpty { await seedFixture() }
@@ -178,6 +203,8 @@
                         emptyState
                     } else {
                         PlayerSurface(player: player).accessibilityHidden(true)
+                        TitleOverlay(
+                            titles: model.titles(at: model.playheadMs), brand: model.brand, canvas: model.frameSize)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -331,6 +358,24 @@
             if isPlaying { player.play() }
         }
 
+        // MARK: Brand kit
+
+        /// The channel's kit and logo for new titles and for drawing lower thirds. Without it titles use the server's
+        /// default colours, and the inspector says so.
+        private func loadBrand() async {
+            do {
+                let state = try await services.institution.brandKit(channelID: channelID)
+                var logo: Data?
+                if let id = state.kit.logo {
+                    logo = try? await services.institution.assetData(id: id, channelID: channelID)
+                }
+                model.brand = TitleBrand(kit: state.kit, logo: logo?.isEmpty == false ? logo : nil, fromKit: true)
+            } catch {
+                AUNLog.studio.info("Editor titles use the default colours; the brand kit did not load: \(error)")
+                model.brand = TitleBrand()
+            }
+        }
+
         // MARK: Import
 
         private func importClips(_ urls: [URL]) async {
@@ -345,13 +390,21 @@
             }
         }
 
-        /// Fixture runs (UI tests, screenshots): three sample clips, the first cut in two, the cut's right half
-        /// selected.
+        /// Fixture runs (UI tests, screenshots): three sample clips, the first cut in two, a title and the kit's lower
+        /// third (under the playhead), and the cut's right half selected.
         private func seedFixture() async {
             let urls = await SampleVideos.make(count: 3, seconds: [6, 4, 5])
             await importClips(urls)
             model.playheadMs = 2_500
             model.split()
+            let cut = model.selection
+            await loadBrand()
+            for (position, at) in [(TitlePosition.center, 1_000), (.lowerThird, 7_000)] {
+                model.playheadMs = at
+                model.addTitle(
+                    position: position, text: defaultTitleText(position, brand: model.brand, l10n: l10n), brand: model.brand)
+            }
+            model.selection = cut
             model.playheadMs = 8_000
         }
     }

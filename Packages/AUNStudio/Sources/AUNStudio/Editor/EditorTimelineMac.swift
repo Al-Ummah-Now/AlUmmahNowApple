@@ -29,7 +29,25 @@
         }
     }
 
-    /// The timeline: a ruler, one row per track, the clips and the playhead. Time runs left to right in every
+    extension TimelineGeometry {
+        /// A title after a drag of `deltaMs`: moved, or one edge moved with the other kept and at least
+        /// `EditorModel.minTitleMs` long.
+        static func retimed(
+            _ title: FlattenedTimeline.Title, kind: TimelineStrip.DragKind, deltaMs: Int
+        ) -> (startMs: Int, durationMs: Int) {
+            switch kind {
+            case .move:
+                return (max(0, title.startMs + deltaMs), title.durationMs)
+            case .trimStart:
+                let start = min(max(0, title.startMs + deltaMs), title.endMs - EditorModel.minTitleMs)
+                return (start, title.endMs - start)
+            case .trimEnd:
+                return (title.startMs, max(EditorModel.minTitleMs, title.durationMs + deltaMs))
+            }
+        }
+    }
+
+    /// The timeline: a ruler, the titles lane, one row per track, the clips and the playhead. Time runs left to right in every
     /// language, like the editors creators already use.
     struct TimelineStrip: View {
         @Environment(\.l10n) private var l10n
@@ -37,6 +55,7 @@
         let pointsPerSecond: CGFloat
         let clock: EditorClock
         let onScrub: (Int) -> Void
+        var onEditTitle: (String) -> Void = { _ in }
 
         enum DragKind { case move, trimStart, trimEnd }
         @State private var drag: (clipID: String, kind: DragKind, deltaMs: Int)?
@@ -44,6 +63,7 @@
         private var geometry: TimelineGeometry { TimelineGeometry(pointsPerSecond: pointsPerSecond) }
         private let rulerHeight: CGFloat = 24
         private let rowHeight: CGFloat = 72
+        private let laneHeight: CGFloat = 40
 
         var body: some View {
             GeometryReader { proxy in
@@ -51,6 +71,7 @@
                     let width = max(proxy.size.width, geometry.x(model.timeline.durationMs + 10_000))
                     VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
                         ruler(width: width)
+                        titleLane(width: width)
                         ForEach(tracks) { track in row(track, width: width) }
                     }
                     .frame(width: width, alignment: .leading)
@@ -214,6 +235,134 @@
                             if let drag, drag.clipID == clip.clipID {
                                 let range = trimmedRange(clip, start: start, deltaMs: drag.deltaMs)
                                 model.trim(clip.clipID, inMs: range.inMs, outMs: range.outMs)
+                            }
+                            drag = nil
+                        }
+                )
+                .accessibilityHidden(true)
+        }
+
+        // MARK: Titles
+
+        /// The titles lane above the video: one block per title, dragged to move, edges dragged to retime,
+        /// double-clicked to edit the text.
+        private func titleLane(width: CGFloat) -> some View {
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 6).fill(Fanous.background)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        SpatialTapGesture().onEnded {
+                            model.selection = nil
+                            onScrub(geometry.ms($0.location.x))
+                        })
+                if model.titles.isEmpty {
+                    Label(l10n("studio.editor.track.titles"), systemImage: "textformat").fanousFont(.caption)
+                        .foregroundStyle(Fanous.textMuted).padding(.horizontal, FanousScale.spacingSm)
+                        .frame(height: laneHeight)
+                }
+                ForEach(Array(model.titles.enumerated()), id: \.element.titleID) { index, title in
+                    titleBlock(title, index: index)
+                }
+            }
+            .frame(width: width, height: laneHeight, alignment: .topLeading)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(l10n("studio.editor.track.titles"))
+            .accessibilityIdentifier("editor-title-lane")
+        }
+
+        private func titleBlock(_ title: FlattenedTimeline.Title, index: Int) -> some View {
+            let selected = model.selection == title.titleID
+            let frame = titleFrame(title)
+            let text = title.lines.first?.text ?? ""
+            let kind = l10n(
+                title.style.position == .lowerThird ? "studio.editor.titles.lowerThird" : "studio.editor.titles.title")
+            return HStack(spacing: FanousScale.spacingXs) {
+                Image(systemName: title.style.position == .lowerThird ? "rectangle.bottomthird.inset.filled" : "textformat")
+                    .font(.system(size: 11)).accessibilityHidden(true)
+                Text(text).fanousFont(.label).lineLimit(1)
+                    .environment(
+                        \.layoutDirection,
+                        TitleRenderer.isRightToLeft(title.lines.first?.locale ?? "en") ? .rightToLeft : .leftToRight)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(selected ? Fanous.onPrimary : Fanous.textPrimary)
+            .padding(.horizontal, FanousScale.spacingSm)
+            .frame(width: max(8, geometry.x(frame.durationMs) - 2), height: laneHeight - 8, alignment: .leading)
+            .background(selected ? AnyShapeStyle(Fanous.primary) : AnyShapeStyle(Fanous.surfaceRaised))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(
+                        selected ? AnyShapeStyle(Fanous.focusRing) : AnyShapeStyle(Fanous.accent),
+                        lineWidth: selected ? 2 : 1)
+            )
+            .overlay(alignment: .leading) { titleHandle(title, start: true) }
+            .overlay(alignment: .trailing) { titleHandle(title, start: false) }
+            .offset(x: geometry.x(frame.startMs) + 1, y: 4)
+            .onTapGesture(count: 2) {
+                model.selection = title.titleID
+                onEditTitle(title.titleID)
+            }
+            .onTapGesture { model.selection = title.titleID }
+            .gesture(
+                DragGesture(minimumDistance: 3)
+                    .onChanged { value in
+                        model.selection = title.titleID
+                        drag = (title.titleID, .move, signedMs(value.translation.width))
+                    }
+                    .onEnded { _ in
+                        if let drag, drag.clipID == title.titleID {
+                            model.moveTitle(title.titleID, toMs: title.startMs + drag.deltaMs)
+                        }
+                        drag = nil
+                    }
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                l10n(
+                    "studio.editor.titles.label", kind, (index + 1).formatted(.number.locale(l10n.language.locale)),
+                    title.lines.map(\.text).joined(separator: " · "), clock(title.startMs), clock(title.durationMs))
+            )
+            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction { model.selection = title.titleID }
+            .accessibilityAction(named: l10n("studio.editor.titles.editText")) {
+                model.selection = title.titleID
+                onEditTitle(title.titleID)
+            }
+            .accessibilityAction(named: l10n("studio.editor.earlier")) { model.nudge(title.titleID, by: -EditorModel.nudgeMs) }
+            .accessibilityAction(named: l10n("studio.editor.later")) { model.nudge(title.titleID, by: EditorModel.nudgeMs) }
+            .accessibilityAction(named: l10n("studio.editor.titles.shorter")) {
+                model.resizeTitle(title.titleID, by: -EditorModel.nudgeMs / 2)
+            }
+            .accessibilityAction(named: l10n("studio.editor.titles.longer")) {
+                model.resizeTitle(title.titleID, by: EditorModel.nudgeMs / 2)
+            }
+            .accessibilityIdentifier("title-\(index)")
+        }
+
+        /// Where a title is drawn while it is being dragged or retimed.
+        private func titleFrame(_ title: FlattenedTimeline.Title) -> (startMs: Int, durationMs: Int) {
+            guard let drag, drag.clipID == title.titleID else { return (title.startMs, title.durationMs) }
+            return TimelineGeometry.retimed(title, kind: drag.kind, deltaMs: drag.deltaMs)
+        }
+
+        private func titleHandle(_ title: FlattenedTimeline.Title, start: Bool) -> some View {
+            Rectangle()
+                .fill(Fanous.focusRing.opacity(model.selection == title.titleID ? 0.9 : 0.001))
+                .frame(width: 6)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+                .onHover { inside in inside ? NSCursor.resizeLeftRight.push() : NSCursor.pop() }
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            model.selection = title.titleID
+                            drag = (title.titleID, start ? .trimStart : .trimEnd, signedMs(value.translation.width))
+                        }
+                        .onEnded { _ in
+                            if let drag, drag.clipID == title.titleID {
+                                let next = TimelineGeometry.retimed(title, kind: drag.kind, deltaMs: drag.deltaMs)
+                                model.retimeTitle(title.titleID, startMs: next.startMs, durationMs: next.durationMs)
                             }
                             drag = nil
                         }

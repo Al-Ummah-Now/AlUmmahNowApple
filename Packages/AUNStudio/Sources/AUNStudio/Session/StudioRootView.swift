@@ -223,7 +223,7 @@ struct ChannelGate<Content: View>: View {
                             ChannelGate(session: session) { AssetLibraryView(services: session.services, channelID: $0) }
                         case .encode: EncodeQueueView(queue: encodes)
                         case .editor:
-                            EditorView(services: session.services) { exported in
+                            EditorView(services: session.services, channelID: session.channel?.id) { exported in
                                 session.pendingUploads = [exported]
                                 section = .upload
                             }
