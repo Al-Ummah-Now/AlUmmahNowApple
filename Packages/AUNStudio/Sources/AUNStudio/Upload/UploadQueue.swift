@@ -10,6 +10,10 @@ import Observation
 ///
 /// Steps per file: initiate → language and playlists → TUS chunks through the api-videos proxy → complete →
 /// schedule. Every step is saved, so a later run continues from the first step not done.
+///
+/// A file with `preEncode` (desktop Studio, D11) also encodes the server's renditions on this computer while its bytes
+/// upload. Only the final complete waits for that, and the creator can skip the wait; whatever happens to it, the
+/// upload carries on and the server encodes as usual.
 @MainActor @Observable
 public final class UploadQueue {
     public private(set) var jobs: [UploadJob]
@@ -20,6 +24,9 @@ public final class UploadQueue {
     private let store: UploadStore
     private let maxParallel: Int
     private var tasks: [UUID: Task<Void, Never>] = [:]
+    private let preEncoder: PreEncoder?
+    private let encoderName: String
+    private var preEncodeTasks: [UUID: Task<Void, Never>] = [:]
     /// Only jobs of this account run; the token belongs to the active account.
     public var accountID: String? {
         didSet { if accountID != oldValue { kick() } }
@@ -29,15 +36,22 @@ public final class UploadQueue {
     var onAccountState: ((Refusal) -> Void)?
     private(set) var isBlocked = false
 
-    init(studio: any StudioServicing, transfer: any TUSTransferring, store: UploadStore, maxParallel: Int = 2) {
+    init(
+        studio: any StudioServicing, transfer: any TUSTransferring, store: UploadStore, maxParallel: Int = 2,
+        preEncoder: PreEncoder? = nil, encoderName: String = PreEncoder.encoderName()
+    ) {
         self.studio = studio
         self.transfer = transfer
         self.store = store
         self.maxParallel = maxParallel
+        self.preEncoder = preEncoder
+        self.encoderName = encoderName
         jobs = store.load().map { job in
             var job = job
             if job.isActive { job.state = .waiting }
             job.inFlight = 0
+            // A pre-encode cut short by a relaunch is not resumed: the server encodes that file.
+            if job.preEncode == .running { job.preEncode = .skipped }
             return job
         }
         transfer.onOrphanCompletion = { [weak self] in Task { @MainActor in self?.kick() } }
@@ -48,8 +62,14 @@ public final class UploadQueue {
             services.persistsUploads
             ? UploadStore.live()
             : UploadStore(url: FileManager.default.temporaryDirectory.appending(path: "studio-uploads-\(UUID().uuidString).json"))
-        self.init(studio: services.studio, transfer: services.transfer, store: store)
+        let preEncoder = services.renditionPackaging.map {
+            PreEncoder(packaging: $0, renditions: services.renditions, workRoot: PreEncoder.defaultWorkRoot)
+        }
+        self.init(studio: services.studio, transfer: services.transfer, store: store, preEncoder: preEncoder)
     }
+
+    /// True when this build can pre-encode renditions (desktop Studio with Core's packaging).
+    public var canPreEncode: Bool { preEncoder != nil }
 
     // MARK: Queue changes
 
@@ -61,6 +81,7 @@ public final class UploadQueue {
 
     public func pause(_ id: UUID) {
         tasks[id]?.cancel()
+        preEncodeTasks[id]?.cancel()
         update(id) { $0.state = .paused }
     }
 
@@ -75,6 +96,7 @@ public final class UploadQueue {
     /// Removes a job from the list. A started upload stays on the server as an unfinished video.
     public func remove(_ id: UUID) {
         tasks[id]?.cancel()
+        preEncodeTasks[id]?.cancel()
         if let job = jobs.first(where: { $0.id == id }), job.ownsFile { try? FileManager.default.removeItem(at: job.file) }
         jobs.removeAll { $0.id == id }
         save()
@@ -84,6 +106,7 @@ public final class UploadQueue {
     public func discardJobs(of accountID: String) {
         for job in jobs where job.accountID == accountID {
             tasks[job.id]?.cancel()
+            preEncodeTasks[job.id]?.cancel()
             if job.ownsFile { try? FileManager.default.removeItem(at: job.file) }
         }
         jobs.removeAll { $0.accountID == accountID }
@@ -148,8 +171,11 @@ public final class UploadQueue {
         let scoped = job.bookmark.flatMap(Self.resolve) ?? job.file
         let accessing = scoped.startAccessingSecurityScopedResource()
         defer { if accessing { scoped.stopAccessingSecurityScopedResource() } }
+        // However the run ends, a pre-encode still going stops with it (it is never resumed).
+        defer { preEncodeTasks[id]?.cancel() }
         do {
             let ticket = try await prepare(id)
+            startPreEncode(id, ticket: ticket, file: scoped)
             try await transmit(id, ticket: ticket, file: scoped)
             try await publish(id, ticket: ticket)
             update(id) {
@@ -206,8 +232,71 @@ public final class UploadQueue {
         update(id) { $0.state = .uploading }
         try await sendBytes(id, file: file)
         update(id) { $0.state = .finishing }
+        // The renditions must be complete before the original is, or the server has already encoded.
+        await waitForPreEncode(id)
+        try Task.checkCancellation()
         try await studio.completeUpload(videoID: ticket.videoID, fileSize: job.fileSize, channelID: job.channelID)
         update(id) { $0.completed = true }
+    }
+
+    // MARK: Pre-encoded renditions (D11)
+
+    /// Starts encoding the file's renditions alongside its upload, once per file.
+    private func startPreEncode(_ id: UUID, ticket: UploadTicket, file: URL) {
+        guard let preEncoder, let job = job(id), job.settings.preEncode, job.preEncode == nil, !job.completed,
+            preEncodeTasks[id] == nil
+        else { return }
+        update(id) {
+            $0.preEncode = .running
+            $0.preEncodeFraction = 0
+            $0.preEncodeRung = nil
+        }
+        let channelID = job.channelID
+        let encoder = encoderName
+        preEncodeTasks[id] = Task { [weak self] in
+            let outcome = await preEncoder.run(
+                source: file, videoID: ticket.videoID, channelID: channelID, encoder: encoder
+            ) { [weak self] status in
+                await self?.update(id, save: false) {
+                    $0.preEncodeFraction = status.fraction
+                    if case .encoding(let rung, _, _) = status.phase { $0.preEncodeRung = rung }
+                    if status.phase == .uploading { $0.preEncodeRung = nil }
+                }
+            }
+            self?.finishPreEncode(id, outcome)
+        }
+    }
+
+    private func finishPreEncode(_ id: UUID, _ outcome: RenditionUploader.Outcome) {
+        preEncodeTasks[id] = nil
+        update(id) {
+            $0.preEncode = Self.preEncodeState(outcome)
+            $0.preEncodeRung = nil
+            if outcome == .ready { $0.preEncodeFraction = 1 }
+        }
+    }
+
+    static func preEncodeState(_ outcome: RenditionUploader.Outcome) -> UploadJob.PreEncodeState {
+        switch outcome {
+        case .ready: .ready
+        case .tooLate, .cancelled: .skipped
+        case .failed: .failed
+        }
+    }
+
+    /// Waits for a running pre-encode; cancelling the upload cancels it too.
+    private func waitForPreEncode(_ id: UUID) async {
+        guard let task = preEncodeTasks[id] else { return }
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    /// Stops pre-encoding a file; its upload continues at once and the server encodes it.
+    public func skipPreEncode(_ id: UUID) {
+        preEncodeTasks[id]?.cancel()
     }
 
     /// The publish time, when the batch is scheduled (once).

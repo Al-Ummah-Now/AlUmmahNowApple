@@ -32,12 +32,13 @@ public enum StudioBootstrap {
         do {
             let accounts = try CoreAccountService.live(
                 environment: environment, bundleID: bundle.bundleIdentifier ?? "net.alummahnow.studio")
-            return StudioServices(
-                environment: environment, accounts: accounts,
-                studio: NativeStudioService(
-                    baseURL: environment.apiBaseURL, accounts: accounts, proofs: nativeProofs(environment, bundle)),
-                transfer: liveTransfer,
-                search: CoreSearchService(accounts: accounts, baseURL: environment.apiBaseURL))
+            return withMediaEngines(
+                StudioServices(
+                    environment: environment, accounts: accounts,
+                    studio: NativeStudioService(
+                        baseURL: environment.apiBaseURL, accounts: accounts, proofs: nativeProofs(environment, bundle)),
+                    transfer: liveTransfer,
+                    search: CoreSearchService(accounts: accounts, baseURL: environment.apiBaseURL)))
         } catch {
             AUNLog.studio.fault("Studio services could not start: \(error)")
             return StudioServices(
@@ -57,5 +58,18 @@ public enum StudioBootstrap {
         #else
             nil
         #endif
+    }
+
+    /// Core's media engines. The editor runs everywhere; pre-encoding and whisper are desktop features (D10, D11),
+    /// and Core ships whisper only in its macOS slice.
+    static func withMediaEngines(_ services: StudioServices) -> StudioServices {
+        var services = services
+        services.edl = CoreEDLEditing()
+        #if os(macOS)
+            services.renditionPackaging = CoreRenditionPackaging()
+            let transcriber = CoreOnDeviceTranscriber()
+            services.transcription = transcriber.isAvailable ? transcriber : nil
+        #endif
+        return services
     }
 }

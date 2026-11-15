@@ -75,11 +75,14 @@ public struct UploadSettings: Hashable, Sendable, Codable {
     public var scheduleIntervalMinutes: Int
     /// `{{episode}}` of the first file.
     public var firstEpisode: Int
+    /// Encode the server's renditions on this computer too (desktop Studio, D11). Off by default.
+    public var preEncode: Bool
 
     public init(
         titlePattern: String = TitlePattern.defaultPattern, description: String = "", category: VideoCategory? = nil,
         language: VideoLanguage? = nil, visibility: UploadVisibility = .public, playlistIDs: [String] = [],
-        tags: [String] = [], scheduleAt: Date? = nil, scheduleIntervalMinutes: Int = 0, firstEpisode: Int = 1
+        tags: [String] = [], scheduleAt: Date? = nil, scheduleIntervalMinutes: Int = 0, firstEpisode: Int = 1,
+        preEncode: Bool = false
     ) {
         self.titlePattern = titlePattern
         self.description = description
@@ -91,6 +94,23 @@ public struct UploadSettings: Hashable, Sendable, Codable {
         self.scheduleAt = scheduleAt
         self.scheduleIntervalMinutes = scheduleIntervalMinutes
         self.firstEpisode = firstEpisode
+        self.preEncode = preEncode
+    }
+
+    /// Queues saved before a setting existed decode with its default.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        titlePattern = try c.decode(String.self, forKey: .titlePattern)
+        description = try c.decode(String.self, forKey: .description)
+        category = try c.decodeIfPresent(VideoCategory.self, forKey: .category)
+        language = try c.decodeIfPresent(VideoLanguage.self, forKey: .language)
+        visibility = try c.decode(UploadVisibility.self, forKey: .visibility)
+        playlistIDs = try c.decode([String].self, forKey: .playlistIDs)
+        tags = try c.decode([String].self, forKey: .tags)
+        scheduleAt = try c.decodeIfPresent(Date.self, forKey: .scheduleAt)
+        scheduleIntervalMinutes = try c.decode(Int.self, forKey: .scheduleIntervalMinutes)
+        firstEpisode = try c.decode(Int.self, forKey: .firstEpisode)
+        preEncode = try c.decodeIfPresent(Bool.self, forKey: .preEncode) ?? false
     }
 
     /// The publish time of the file at `index`, or nil when not scheduled.
