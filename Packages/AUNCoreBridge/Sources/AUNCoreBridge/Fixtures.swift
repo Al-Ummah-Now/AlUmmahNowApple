@@ -2,7 +2,21 @@ import Foundation
 
 /// Stable bilingual data for UI tests, snapshots and previews. No network access.
 public struct FixtureCatalogService: CatalogServicing {
-    public init() {}
+    /// Playable fixtures stream a short bundled clip instead of an address that never answers, so store screenshots
+    /// (`-AUNFixturePlayable YES`) show the player instead of its error. Tests keep the unplayable default.
+    private let playable: Bool
+
+    public init(playable: Bool = false) { self.playable = playable }
+
+    /// A few seconds of a still frame (8 KB), bundled with AUNCoreBridge.
+    public static var playableClip: URL? { Bundle.module.url(forResource: "fixture-video", withExtension: "mp4") }
+
+    private func served(_ video: Video) -> Video {
+        guard playable, let clip = Self.playableClip else { return video }
+        var copy = video
+        copy.playURL = clip
+        return copy
+    }
 
     public static let videos: [Video] = (1...8).map { index in
         Video(
@@ -25,14 +39,14 @@ public struct FixtureCatalogService: CatalogServicing {
 
     public func homeRails(limit: Int) async throws -> [HomeRail] {
         [
-            HomeRail(kind: .trending, videos: Array(Self.videos.prefix(limit))),
-            HomeRail(kind: .recent, videos: Array(Self.videos.reversed().prefix(limit))),
+            HomeRail(kind: .trending, videos: Self.videos.prefix(limit).map(served)),
+            HomeRail(kind: .recent, videos: Self.videos.reversed().prefix(limit).map(served)),
         ]
     }
 
     public func video(id: String) async throws -> Video {
         guard let video = Self.videos.first(where: { $0.id == id }) else { throw CoreError.notFound }
-        return video
+        return served(video)
     }
 
     public func subtitles(videoID: String) async throws -> [SubtitleTrack] {

@@ -6,5 +6,9 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:$(AUN_LINK_HOST)</string>
+	</array>
 </dict>
 </plist>

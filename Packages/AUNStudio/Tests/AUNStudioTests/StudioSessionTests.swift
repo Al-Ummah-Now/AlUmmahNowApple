@@ -50,6 +50,41 @@ struct StudioSessionTests {
         #expect(second.channel?.id == "fixture-channel-2")
     }
 
+    @Test func aStudioLinkPicksItsChannelAndSection() async {
+        let session = session(signedIn: true)
+        await session.start()
+        await session.open(StudioLink(channelID: "fixture-channel-2", section: .analytics))
+        #expect(session.channel?.id == "fixture-channel-2")
+        #expect(session.linkedSection == .analytics)
+        let serial = session.linkSerial
+        session.consumeLink()
+        #expect(session.linkedSection == nil)
+
+        // A channel the account cannot upload to keeps the current one; the section still opens.
+        await session.open(StudioLink(channelID: "fixture-channel-3", section: .content))
+        #expect(session.channel?.id == "fixture-channel-2")
+        #expect(session.linkedSection == .content)
+        #expect(session.linkSerial == serial + 1)
+    }
+
+    @Test func aLinkBeforeTheChannelsLoadAppliesOnceTheyDo() async {
+        let session = session(signedIn: true)
+        await session.open(StudioLink(channelID: "fixture-channel-2", section: .content))
+        await session.start()
+        #expect(session.channel?.id == "fixture-channel-2")
+        #expect(session.linkedSection == .content)
+    }
+
+    @Test func linkSectionsMapToTheShells() {
+        #if os(iOS)
+            #expect(StudioShell.tab(for: .deleted) == .content)
+            #expect(StudioShell.tab(for: .analytics) == .analytics)
+        #elseif os(macOS)
+            #expect(StudioShell.section(for: .deleted) == .deleted)
+            #expect(StudioShell.section(for: .home) == .home)
+        #endif
+    }
+
     @Test func cancellingSignInShowsNoError() async {
         let session = session(authenticator: CancellingAuthenticator())
         await session.start()

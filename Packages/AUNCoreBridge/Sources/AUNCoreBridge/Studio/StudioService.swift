@@ -52,8 +52,11 @@ extension StudioServicing {
 public struct NativeStudioService: StudioServicing {
     let client: StudioHTTPClient
 
-    public init(baseURL: URL, accounts: any AccountServicing, session: URLSession = .shared) {
-        client = StudioHTTPClient(baseURL: baseURL, accounts: accounts, session: session)
+    /// `proofs` attaches `X-AUN-Native-Proof` to writes when attestation is on (App Attest on iOS); nil sends none.
+    public init(
+        baseURL: URL, accounts: any AccountServicing, session: URLSession = .shared, proofs: (any NativeProofProviding)? = nil
+    ) {
+        client = StudioHTTPClient(baseURL: baseURL, accounts: accounts, session: session, proofs: proofs)
     }
 
     struct DataEnvelope<T: Decodable>: Decodable { let data: T }
@@ -289,9 +292,22 @@ public struct NativeStudioService: StudioServicing {
 struct StudioHTTPClient: Sendable {
     enum Method: String { case get = "GET", post = "POST", put = "PUT", patch = "PATCH", delete = "DELETE" }
 
+    static let proofHeader = "X-AUN-Native-Proof"
+    static let proofRequired = "native_proof_required"
+
     let baseURL: URL
     let accounts: any AccountServicing
     let session: URLSession
+    /// Writes carry the account's native attestation proof when there is one; a `403 native_proof_required` is retried
+    /// once with a fresh proof.
+    var proofs: (any NativeProofProviding)?
+
+    init(baseURL: URL, accounts: any AccountServicing, session: URLSession, proofs: (any NativeProofProviding)? = nil) {
+        self.baseURL = baseURL
+        self.accounts = accounts
+        self.session = session
+        self.proofs = proofs
+    }
 
     static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
@@ -376,12 +392,12 @@ struct StudioHTTPClient: Sendable {
     }
 
     private func perform(_ request: URLRequest, _ method: Method, _ path: String) async throws -> Data {
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch let error as URLError where [.notConnectedToInternet, .networkConnectionLost].contains(error.code) {
-            throw CoreError.offline
+        // Proofs are per account: the server binds a proof to the first account that sends it.
+        let account = method != .get && proofs != nil ? try? await accounts.activeAccount()?.id : nil
+        var (data, response) = try await exchange(request, account: account, fresh: false)
+        if let account, (response as? HTTPURLResponse)?.statusCode == 403, Self.needsProof(data) {
+            AUNLog.network.info("\(method.rawValue, privacy: .public) \(path, privacy: .public): new native proof, retrying once")
+            (data, response) = try await exchange(request, account: account, fresh: true)
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
@@ -400,5 +416,23 @@ struct StudioHTTPClient: Sendable {
             }
         }
         return data
+    }
+
+    private func exchange(_ base: URLRequest, account: String?, fresh: Bool) async throws -> (Data, URLResponse) {
+        var request = base
+        if let account, let proofs, let proof = await proofs.proof(account: account, fresh: fresh) {
+            request.setValue(proof, forHTTPHeaderField: Self.proofHeader)
+        }
+        do {
+            return try await session.data(for: request)
+        } catch let error as URLError where [.notConnectedToInternet, .networkConnectionLost].contains(error.code) {
+            throw CoreError.offline
+        }
+    }
+
+    /// The server's answer for a protected write without a valid proof (`code` and `error` both say it).
+    static func needsProof(_ data: Data) -> Bool {
+        guard let body = try? decoder.decode(ErrorBody.self, from: data) else { return false }
+        return body.code == proofRequired || body.error == proofRequired
     }
 }

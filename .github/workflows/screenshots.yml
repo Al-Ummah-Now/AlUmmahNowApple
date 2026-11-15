@@ -1,0 +1,57 @@
+name: Store screenshots
+# App Store screenshots from the UI tests on fixture data (scripts/screenshots.sh), en-US and ar-SA, kept as workflow
+# artifacts in fastlane deliver's layout. Run it from Actions → Store screenshots → Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Which app
+        type: choice
+        default: all
+        options: [all, viewer-ios, viewer-tv, viewer-mac, studio-ios, studio-mac]
+permissions: {contents: read}
+env:
+  AUN_IOS_SIM_OS: "26.4.1"
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.p.outputs.apps }}
+    steps:
+      - id: p
+        env:
+          APP: ${{ inputs.app }}
+        run: |
+          if [[ "$APP" == all ]]; then
+            echo 'apps=["viewer-ios","viewer-tv","viewer-mac","studio-ios","studio-mac"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "apps=[\"$APP\"]" >> "$GITHUB_OUTPUT"
+          fi
+  shoot:
+    needs: plan
+    name: ${{ matrix.app }}
+    runs-on: macos-26
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: brew install xcodegen && xcodegen generate
+      - uses: actions/cache@v4
+        with:
+          path: build/DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+      - run: scripts/screenshots.sh ${{ matrix.app }} build/screenshots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-screenshots-${{ matrix.app }}
+          path: build/screenshots/${{ matrix.app }}
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: screenshot-results-${{ matrix.app }}
+          path: build/screenshot-results/*.xcresult
+          retention-days: 7

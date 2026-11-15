@@ -34,7 +34,9 @@ public enum StudioBootstrap {
                 environment: environment, bundleID: bundle.bundleIdentifier ?? "net.alummahnow.studio")
             return StudioServices(
                 environment: environment, accounts: accounts,
-                studio: NativeStudioService(baseURL: environment.apiBaseURL, accounts: accounts), transfer: liveTransfer,
+                studio: NativeStudioService(
+                    baseURL: environment.apiBaseURL, accounts: accounts, proofs: nativeProofs(environment, bundle)),
+                transfer: liveTransfer,
                 search: CoreSearchService(accounts: accounts, baseURL: environment.apiBaseURL))
         } catch {
             AUNLog.studio.fault("Studio services could not start: \(error)")
@@ -43,5 +45,17 @@ public enum StudioBootstrap {
                 studio: NativeStudioService(baseURL: environment.apiBaseURL, accounts: FixtureAccountService()),
                 transfer: liveTransfer, search: FixtureSearchService())
         }
+    }
+
+    /// App Attest proofs for writes (NAT-REL): iPhone and iPad only, and only once videos admin turns Apple attestation
+    /// on. Mac has no App Attest for this app, so it sends none.
+    static func nativeProofs(_ environment: AppEnvironment, _ bundle: Bundle) -> (any NativeProofProviding)? {
+        #if os(iOS)
+            NativeAttestationService(
+                baseURL: environment.apiBaseURL, bundleID: bundle.bundleIdentifier ?? "net.alummahnow.studio",
+                attest: DeviceAppAttest())
+        #else
+            nil
+        #endif
     }
 }

@@ -1,0 +1,39 @@
+{
+  "apps": [
+    {
+      "dir": "viewer-ios",
+      "scheme": "ViewerIOS",
+      "bundle": "net.alummahnow.viewer",
+      "platform": "ios",
+      "screenshots": "viewer-ios"
+    },
+    {
+      "dir": "viewer-tv",
+      "scheme": "ViewerTV",
+      "bundle": "net.alummahnow.viewer.tv",
+      "platform": "appletvos",
+      "screenshots": "viewer-tv"
+    },
+    {
+      "dir": "viewer-mac",
+      "scheme": "ViewerMac",
+      "bundle": "net.alummahnow.viewer.mac",
+      "platform": "osx",
+      "screenshots": "viewer-mac"
+    },
+    {
+      "dir": "studio-ios",
+      "scheme": "StudioIOS",
+      "bundle": "net.alummahnow.studio",
+      "platform": "ios",
+      "screenshots": "studio-ios"
+    },
+    {
+      "dir": "studio-mac",
+      "scheme": "StudioMac",
+      "bundle": "net.alummahnow.studio.mac",
+      "platform": "osx",
+      "screenshots": "studio-mac"
+    }
+  ]
+}

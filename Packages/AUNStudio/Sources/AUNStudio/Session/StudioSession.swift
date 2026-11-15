@@ -35,6 +35,12 @@ public final class StudioSession {
     /// A refusal that applies to the whole videos account (`videos_account_pending_deletion`, `videos_banned`).
     /// Studio shows it once, as a banner, instead of one error per action.
     public private(set) var accountState: Refusal?
+    /// The section a universal link asked for, until the shell shows it (`consumeLink`).
+    public private(set) var linkedSection: StudioLink.Section?
+    /// Changes with every link, so the same link opened twice still moves the shell.
+    public private(set) var linkSerial = 0
+    /// A link's channel that arrived before the channels were read.
+    private var linkedChannelID: String?
 
     public let services: StudioServices
     /// Uploads of every account on this device; only the active account's run.
@@ -113,6 +119,22 @@ public final class StudioSession {
         }
     }
 
+    /// Opens a Studio address from a universal link (`/studio/<channel>/<section>`): its channel when the account can
+    /// work in it, and its section. Links for other accounts' channels keep the current channel.
+    public func open(_ link: StudioLink) async {
+        linkedSection = link.section
+        linkSerial += 1
+        guard let id = link.channelID else { return }
+        if let match = channels.first(where: { $0.id == id }) {
+            if match.id != channel?.id { await select(match) }
+        } else if channelsState != .loaded {
+            linkedChannelID = id
+        }
+    }
+
+    /// The shell has shown `linkedSection`.
+    public func consumeLink() { linkedSection = nil }
+
     public func select(_ channel: StudioChannel) async {
         self.channel = channel
         if let account { defaults.set(channel.id, forKey: Self.channelKey(account.id)) }
@@ -152,6 +174,10 @@ public final class StudioSession {
             allChannels = try await services.studio.channels()
             channelsState = .loaded
             channel = preferredChannel()
+            if let id = linkedChannelID {
+                linkedChannelID = nil
+                if let match = channels.first(where: { $0.id == id }) { channel = match }
+            }
             await refreshCreatorAccess()
         } catch {
             AUNLog.studio.error("Loading channels failed: \(error)")

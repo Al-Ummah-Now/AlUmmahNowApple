@@ -30,6 +30,11 @@
                     .navigationTitle(l10n("app.name"))
             }
             .frame(minWidth: 900, minHeight: 560)
+            // A universal link reuses this window (instead of a new one) and opens the video in its own window.
+            .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+            .onOpenURL { url in
+                if let id = ViewerLinks.videoID(for: url) { openWindow(id: Self.watchWindowID, value: id) }
+            }
         }
 
         public static let watchWindowID = "watch"

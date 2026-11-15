@@ -29,6 +29,18 @@ jobs:
       - uses: actions/checkout@v5
       - name: Vendored theme registry matches the pinned monorepo commit
         run: scripts/sync-fanous.sh --check
+  store:
+    name: store listings and release tools
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: App Store limits, en/ar parity, copy tone and App Privacy sources
+        run: python3 scripts/check-store-metadata.py
+      - name: Version and build number from release tags
+        run: scripts/test-release-version.sh
+      - name: Release scripts parse
+        run: for f in scripts/*.sh; do bash -n "$f"; done
   test:
     name: ${{ matrix.job }}
     runs-on: macos-26

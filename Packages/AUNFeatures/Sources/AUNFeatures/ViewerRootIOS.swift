@@ -28,6 +28,9 @@
                             .fanousNavigationBar()
                     }
             }
+            .onOpenURL { url in
+                if let id = ViewerLinks.videoID(for: url) { path = [id] }
+            }
         }
     }
 #endif
