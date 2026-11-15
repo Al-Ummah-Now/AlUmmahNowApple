@@ -202,7 +202,7 @@ struct AccountsView: View {
             } label: {
                 HStack(spacing: FanousScale.spacingMd) {
                     AvatarView(name: account.label, url: account.avatarURL)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: FanousScale.spacingXxs) {
                         Text(account.label).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
                         if let email = account.email, email != account.label {
                             Text(email).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
@@ -253,25 +253,17 @@ struct AvatarView: View {
     }
 }
 
-/// Every channel the person may upload to; the pick is remembered per account.
+/// The "Acting as" picker: every channel the person may upload to, each with its logo, name and a "Channel" tag (the
+/// YouTube/Facebook identity pattern). Studio works inside a channel, so there is no personal identity here. The pick
+/// is remembered per account.
 struct ChannelPicker: View {
     @Environment(\.l10n) private var l10n
     let session: StudioSession
+    @State private var showing = false
 
     var body: some View {
-        Menu {
-            ForEach(session.channels) { channel in
-                Button {
-                    Task { await session.select(channel) }
-                } label: {
-                    if channel.id == session.channel?.id {
-                        Label(title(channel), systemImage: "checkmark")
-                    } else {
-                        Text(title(channel))
-                    }
-                }
-                .accessibilityIdentifier("channel-\(channel.id)")
-            }
+        Button {
+            showing = true
         } label: {
             HStack(spacing: FanousScale.spacingSm) {
                 AvatarView(
@@ -284,13 +276,100 @@ struct ChannelPicker: View {
             }
         }
         .disabled(session.channels.isEmpty)
-        .accessibilityLabel(l10n("studio.channel.title"))
-        .accessibilityValue(session.channel?.displayName(l10n.language) ?? l10n("studio.channel.pick"))
+        .accessibilityLabel(l10n("studio.actingAs.title"))
+        .accessibilityValue(session.channel.map { Self.identityLabel($0, l10n) } ?? l10n("studio.channel.pick"))
         .accessibilityIdentifier("channel-picker")
+        .popover(isPresented: $showing) {
+            ActingAsList(session: session) { showing = false }
+                .presentationCompactAdaptation(.popover)
+        }
     }
 
-    private func title(_ channel: StudioChannel) -> String {
-        "\(channel.displayName(l10n.language)) · \(l10n("studio.role.\(channel.role.rawValue)"))"
+    /// What assistive tech reads for a channel identity: "Tafsir Circle · Channel · Editor".
+    nonisolated static func identityLabel(_ channel: StudioChannel, _ l10n: L10n) -> String {
+        [channel.displayName(l10n.language), l10n("studio.actingAs.channel"), l10n("studio.role.\(channel.role.rawValue)")]
+            .joined(separator: " · ")
+    }
+}
+
+/// The open "Acting as" list: a heading, then one row per channel.
+struct ActingAsList: View {
+    @Environment(\.l10n) private var l10n
+    let session: StudioSession
+    let dismiss: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
+                Text(l10n("studio.actingAs.title"))
+                    .fanousFont(.label)
+                    .foregroundStyle(Fanous.textSecondary)
+                    .padding(.horizontal, FanousScale.spacingMd)
+                    .padding(.top, FanousScale.spacingMd)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("acting-as-heading")
+                ForEach(session.channels) { channel in
+                    row(channel)
+                }
+            }
+            .padding(.bottom, FanousScale.spacingSm)
+        }
+        .frame(minWidth: 300, idealWidth: 340, maxWidth: 380)
+        .frame(maxHeight: 440)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(Fanous.surface)
+        .accessibilityIdentifier("acting-as-list")
+    }
+
+    private func row(_ channel: StudioChannel) -> some View {
+        let selected = channel.id == session.channel?.id
+        return Button {
+            dismiss()
+            Task { await session.select(channel) }
+        } label: {
+            HStack(spacing: FanousScale.spacingMd) {
+                AvatarView(name: channel.displayName(l10n.language), url: channel.avatarURL, size: 36)
+                VStack(alignment: .leading, spacing: FanousScale.spacingXxs) {
+                    Text(channel.displayName(l10n.language))
+                        .fanousFont(.body)
+                        .foregroundStyle(Fanous.textPrimary)
+                        .lineLimit(1)
+                    HStack(spacing: FanousScale.spacingXs) {
+                        IdentityTag(text: l10n("studio.actingAs.channel"))
+                        Text(l10n("studio.role.\(channel.role.rawValue)"))
+                            .fanousFont(.caption)
+                            .foregroundStyle(Fanous.textSecondary)
+                    }
+                }
+                Spacer(minLength: FanousScale.spacingSm)
+                if selected {
+                    Image(systemName: "checkmark").foregroundStyle(Fanous.accent).accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, FanousScale.spacingMd)
+            .padding(.vertical, FanousScale.spacingSm)
+            .background(Fanous.surfaceRaised.opacity(selected ? 1 : 0))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(ChannelPicker.identityLabel(channel, l10n))
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier("channel-\(channel.id)")
+    }
+}
+
+/// The small "Channel" / "Personal" tag next to an identity's name.
+struct IdentityTag: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .fanousFont(.caption)
+            .foregroundStyle(Fanous.textSecondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(Fanous.outline, lineWidth: 1))
     }
 }
 

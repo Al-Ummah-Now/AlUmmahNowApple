@@ -39,6 +39,23 @@ final class StudioSmokeTests: XCTestCase {
     }
 
     @MainActor
+    func testActingAsPickerTagsChannels() {
+        for (language, heading, row) in [
+            ("en", "Acting as", "Tafsir Circle · Channel · Editor"), ("ar", "تتصرّف باسم", "حلقة التفسير · قناة · محرر"),
+        ] {
+            let app = launch(language, signedIn: true)
+            let picker = app.buttons["channel-picker"]
+            XCTAssertTrue(picker.waitForExistence(timeout: 30))
+            picker.click()
+            XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 10))
+            let option = app.buttons["channel-fixture-channel-2"]
+            XCTAssertTrue(option.waitForExistence(timeout: 10))
+            XCTAssertEqual(option.label, row)
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testSignOutAsksFirst() {
         let app = launch("en", signedIn: true)
         let account = app.buttons["account-button"]

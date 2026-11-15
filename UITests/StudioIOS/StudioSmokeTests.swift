@@ -38,13 +38,28 @@ final class StudioSignInTests: XCTestCase {
         let picker = app.buttons["channel-picker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 30))
         picker.tap()
-        let editor = app.buttons["Tafsir Circle · Editor"]
+        XCTAssertTrue(app.staticTexts["Acting as"].waitForExistence(timeout: 10))
+        let editor = app.buttons["Tafsir Circle · Channel · Editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["Comments desk · Moderator"].exists)
+        XCTAssertFalse(app.buttons["Comments desk · Channel · Moderator"].exists)
         editor.tap()
         let card = channelCard(app)
         XCTAssertTrue(card.waitForExistence(timeout: 10))
         XCTAssertTrue(card.label.hasPrefix("Tafsir Circle"), card.label)
+    }
+
+    @MainActor
+    func testArabicActingAsPickerTagsChannels() {
+        let app = launch("ar", signedIn: true)
+        let picker = app.buttons["channel-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 30))
+        XCTAssertEqual(picker.label, "تتصرّف باسم")
+        picker.tap()
+        XCTAssertTrue(app.staticTexts["تتصرّف باسم"].waitForExistence(timeout: 10))
+        let row = app.buttons["channel-fixture-channel-2"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertEqual(row.label, "حلقة التفسير · قناة · محرر")
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'فيديو'")).firstMatch.exists)
     }
 
     @MainActor

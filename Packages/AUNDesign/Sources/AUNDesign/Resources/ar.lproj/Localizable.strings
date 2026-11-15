@@ -74,10 +74,11 @@
 "studio.account.signOut" = "تسجيل الخروج";
 "studio.signOut.title" = "تسجيل الخروج من %@؟";
 "studio.signOut.message" = "سيُزال الحساب من هذا الجهاز وتنتهي جلسته على الخادم. تبقى مرئياتك في قنواتك، وتبقى الحسابات الأخرى مسجّلة الدخول.";
-"studio.channel.title" = "القناة";
 "studio.channel.pick" = "اختر قناة";
 "studio.channel.none" = "لا توجد قناة يمكنك الرفع إليها";
 "studio.channel.noneMessage" = "أنشئ قناة على الموقع، أو اطلب من مالك قناة إضافتك محررًا.";
+"studio.actingAs.title" = "تتصرّف باسم";
+"studio.actingAs.channel" = "قناة";
 "studio.role.owner" = "مالك";
 "studio.role.admin" = "مشرف";
 "studio.role.editor" = "محرر";

@@ -74,10 +74,11 @@
 "studio.account.signOut" = "Sign out";
 "studio.signOut.title" = "Sign out of %@?";
 "studio.signOut.message" = "This removes the account from this device and ends its session on the server. Your videos stay on your channels. Other accounts stay signed in.";
-"studio.channel.title" = "Channel";
 "studio.channel.pick" = "Choose a channel";
 "studio.channel.none" = "No channel to upload to";
 "studio.channel.noneMessage" = "Create a channel on the website, or ask a channel owner to add you as an editor.";
+"studio.actingAs.title" = "Acting as";
+"studio.actingAs.channel" = "Channel";
 "studio.role.owner" = "Owner";
 "studio.role.admin" = "Admin";
 "studio.role.editor" = "Editor";
