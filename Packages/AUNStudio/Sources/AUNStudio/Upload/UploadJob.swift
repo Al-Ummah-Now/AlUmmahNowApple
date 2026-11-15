@@ -7,6 +7,16 @@ public struct UploadJob: Identifiable, Hashable, Sendable, Codable {
         case waiting, preparing, uploading, finishing, done, failed, paused
     }
 
+    /// Pre-encoded renditions of this file (D11). Anything but `ready` means the server encodes as usual.
+    public enum PreEncodeState: String, Hashable, Sendable, Codable {
+        case running
+        /// Sent; the server verifies them before use.
+        case ready
+        /// Cancelled, or the server had already started encoding.
+        case skipped
+        case failed
+    }
+
     public let id: UUID
     public let batchID: UUID
     public let index: Int
@@ -36,6 +46,11 @@ public struct UploadJob: Identifiable, Hashable, Sendable, Codable {
     public var playlistsQueued = false
     public var completed = false
     public var scheduled = false
+    /// Nil until pre-encoding starts (or when it was not asked for).
+    public var preEncode: PreEncodeState?
+    /// Progress of a running pre-encode, 0…1, and the rung being encoded (optional so older saved queues decode).
+    public var preEncodeFraction: Double?
+    public var preEncodeRung: String?
 
     public init(
         batchID: UUID, index: Int, file: URL, bookmark: Data? = nil, ownsFile: Bool, fileSize: Int64, mimeType: String,
