@@ -320,10 +320,12 @@ struct StudioHTTPClient: Sendable {
     private struct ErrorBody: Decodable {
         let error: String?
         let code: String?
+        let missing: [String]?
     }
 
     func request(
-        _ method: Method, _ path: String, query: [URLQueryItem] = [], channelID: String? = nil, body: Data? = nil
+        _ method: Method, _ path: String, query: [URLQueryItem] = [], channelID: String? = nil, body: Data? = nil,
+        contentType: String = "application/json"
     ) async throws -> URLRequest {
         var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)
         if !query.isEmpty { components?.queryItems = query }
@@ -336,7 +338,8 @@ struct StudioHTTPClient: Sendable {
         if let channelID { request.setValue(channelID, forHTTPHeaderField: "channelId") }
         if let body {
             request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+            request.setValue(String(body.count), forHTTPHeaderField: "Content-Length")
         }
         return request
     }
@@ -359,7 +362,20 @@ struct StudioHTTPClient: Sendable {
         _ method: Method, _ path: String, query: [URLQueryItem] = [], channelID: String? = nil, body: (any Encodable)? = nil
     ) async throws -> Data {
         let encoded = try body.map { try Self.encoder.encode($0) }
-        let request = try await request(method, path, query: query, channelID: channelID, body: encoded)
+        return try await perform(request(method, path, query: query, channelID: channelID, body: encoded), method, path)
+    }
+
+    /// A raw body (a file's bytes), sent with its exact `Content-Length`.
+    @discardableResult
+    func sendBytes(
+        _ method: Method, _ path: String, query: [URLQueryItem] = [], channelID: String? = nil, bytes: Data,
+        contentType: String = "application/octet-stream"
+    ) async throws -> Data {
+        try await perform(
+            request(method, path, query: query, channelID: channelID, body: bytes, contentType: contentType), method, path)
+    }
+
+    private func perform(_ request: URLRequest, _ method: Method, _ path: String) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -378,6 +394,7 @@ struct StudioHTTPClient: Sendable {
             case 401: throw CoreError.signInRequired
             case 403: throw CoreError.forbidden
             case 404: throw CoreError.notFound
+            case 409: throw CoreError.conflict(body?.error ?? body?.code ?? "", missing: body?.missing ?? [])
             case 400, 422: throw CoreError.invalid(body?.error ?? "")
             default: throw CoreError.http(status: status)
             }
