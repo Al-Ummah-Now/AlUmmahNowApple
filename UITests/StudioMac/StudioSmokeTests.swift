@@ -47,10 +47,12 @@ final class StudioSmokeTests: XCTestCase {
             let picker = app.buttons["channel-picker"]
             XCTAssertTrue(picker.waitForExistence(timeout: 30))
             picker.click()
-            XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 10))
-            let option = app.buttons["channel-fixture-channel-2"]
-            XCTAssertTrue(option.waitForExistence(timeout: 10))
+            XCTAssertEqual(picker.label, heading)
+            let option = app.descendants(matching: .any).matching(identifier: "channel-fixture-channel-2").firstMatch
+            XCTAssertTrue(option.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertEqual(option.label, row)
+            let title = app.descendants(matching: .any).matching(identifier: "acting-as-heading").firstMatch
+            XCTAssertTrue(title.exists)
             app.terminate()
         }
     }
