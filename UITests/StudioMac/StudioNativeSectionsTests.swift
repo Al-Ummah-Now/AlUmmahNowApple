@@ -36,11 +36,21 @@ final class StudioNativeSectionsTests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
-    /// Scrolls the form until `target` is on screen; the CI runner's window is shorter than a desktop one.
+    /// Scrolls the form until `target` is on screen; the CI runner's window is shorter than a desktop one. The
+    /// scroll lands in the middle of the window, in the target's column, so the sidebar list is never the one moved.
+    @MainActor
     private func reveal(_ target: XCUIElement, in app: XCUIApplication) {
-        let scroller = app.scrollViews.firstMatch
-        for delta in Array(repeating: -200.0, count: 8) + Array(repeating: 200.0, count: 16) where !target.isHittable {
-            scroller.scroll(byDeltaX: 0, deltaY: delta)
+        let window = app.windows.firstMatch
+        let frame = window.frame
+        guard frame.width > 0, frame.height > 0 else { return }
+        let column = (target.frame.midX - frame.minX) / frame.width
+        let point = window.coordinate(withNormalizedOffset: CGVector(dx: column, dy: 0.5))
+        // Hittable alone is true for a button that only peeks in at the bottom, so ask for all of it.
+        let visible = frame.insetBy(dx: 0, dy: 8)
+        for delta in Array(repeating: -200.0, count: 8) + Array(repeating: 200.0, count: 16)
+        where !(target.isHittable && visible.contains(target.frame)) {
+            point.scroll(byDeltaX: 0, deltaY: delta)
+            Thread.sleep(forTimeInterval: 0.3)
         }
     }
 
@@ -192,6 +202,9 @@ final class StudioNativeSectionsTests: XCTestCase {
                 XCTAssertEqual(toggle.value as? Int, 0)
                 reveal(toggle, in: app)
                 toggle.click()
+                let switchedOn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 1"), object: toggle)
+                XCTAssertEqual(XCTWaiter().wait(for: [switchedOn], timeout: 10), .completed)
+                Thread.sleep(forTimeInterval: 0.5)
                 keep(app, "preencode-form-\(language)-\(theme)")
                 let send = element(app, "upload-send")
                 reveal(send, in: app)
