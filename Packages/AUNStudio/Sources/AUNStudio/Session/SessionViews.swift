@@ -230,7 +230,7 @@ struct AccountsView: View {
     }
 }
 
-/// A round avatar with the first letter as a fallback.
+/// A round avatar with the name's initial as a fallback.
 struct AvatarView: View {
     let name: String
     let url: URL?
@@ -239,7 +239,7 @@ struct AvatarView: View {
     var body: some View {
         ZStack {
             Circle().fill(Fanous.surfaceRaised)
-            Text(String(name.prefix(1)).uppercased()).fanousFont(.label).foregroundStyle(Fanous.accent)
+            Text(Self.initial(of: name)).fanousFont(.label).foregroundStyle(Fanous.accent)
             if let url {
                 AsyncImage(url: url) { phase in
                     if case .success(let image) = phase { image.resizable().scaledToFill() }
@@ -250,6 +250,14 @@ struct AvatarView: View {
         .frame(width: size, height: size)
         .overlay(Circle().strokeBorder(Fanous.outline, lineWidth: 1))
         .accessibilityHidden(true)
+    }
+
+    /// The first letter of the first word; an Arabic «ال» prefix is skipped when the word is longer than it
+    /// («الأمة الآن» → «أ»). Latin names keep their first letter, upper-cased.
+    nonisolated static func initial(of name: String) -> String {
+        let word = name.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+        let stem = word.hasPrefix("ال") && word.count > 2 ? String(word.dropFirst(2)) : word
+        return String(stem.prefix(1)).uppercased()
     }
 }
 
@@ -347,6 +355,7 @@ struct ActingAsList: View {
                     .foregroundStyle(Fanous.textSecondary)
                     .padding(.horizontal, FanousScale.spacingMd)
                     .padding(.top, FanousScale.spacingMd)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("acting-as-heading")
                 ForEach(session.channels) { channel in
@@ -359,6 +368,9 @@ struct ActingAsList: View {
         .frame(maxHeight: 440)
         .fixedSize(horizontal: false, vertical: true)
         .background(Fanous.surface)
+        // A popover is a new presentation and does not inherit the app's direction, so it sets it from the language:
+        // in Arabic the logo is at the leading (right) edge and the check at the trailing (left) edge.
+        .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
         .accessibilityIdentifier("acting-as-list")
     }
 

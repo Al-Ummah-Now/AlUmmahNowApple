@@ -31,4 +31,13 @@ struct ActingAsTests {
             }
         }
     }
+
+    @Test func initialsSkipTheArabicArticle() {
+        #expect(AvatarView.initial(of: "الأمة الآن") == "أ")
+        #expect(AvatarView.initial(of: "حلقة التفسير") == "ح")
+        #expect(AvatarView.initial(of: "ال") == "ا")
+        #expect(AvatarView.initial(of: "Al Ummah Now") == "A")
+        #expect(AvatarView.initial(of: "tafsir circle") == "T")
+        #expect(AvatarView.initial(of: "") == "")
+    }
 }
