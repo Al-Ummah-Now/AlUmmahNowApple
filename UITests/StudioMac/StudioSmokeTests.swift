@@ -44,10 +44,12 @@ final class StudioSmokeTests: XCTestCase {
             ("en", "Acting as", "Tafsir Circle · Channel · Editor"), ("ar", "تتصرّف باسم", "حلقة التفسير · قناة · محرر"),
         ] {
             let app = launch(language, signedIn: true)
+            // The picker is enabled once the channels have loaded, which is when the dashboard card shows.
+            XCTAssertTrue(channelCard(app).waitForExistence(timeout: 30))
             let picker = app.buttons["channel-picker"]
-            XCTAssertTrue(picker.waitForExistence(timeout: 30))
-            picker.click()
+            XCTAssertTrue(picker.isEnabled)
             XCTAssertEqual(picker.label, heading)
+            picker.click()
             let option = app.descendants(matching: .any).matching(identifier: "channel-fixture-channel-2").firstMatch
             XCTAssertTrue(option.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertEqual(option.label, row)
