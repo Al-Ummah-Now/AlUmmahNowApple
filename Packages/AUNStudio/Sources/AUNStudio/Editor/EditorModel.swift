@@ -83,7 +83,7 @@ public struct EditorProjectStore: Sendable {
 }
 
 /// The editor (E19 19.5): an EDL project edited only through Core (`edl_apply_json`), so trims, cuts, ripple deletes,
-/// joins and moves follow the same rules in every app. Undo and redo keep whole project JSON snapshots; export renders
+/// joins, moves and titles follow the same rules in every app. Undo and redo keep whole project JSON snapshots; export renders
 /// `edl_flatten_json` with AVFoundation.
 @MainActor @Observable
 public final class EditorModel {
@@ -111,8 +111,10 @@ public final class EditorModel {
     /// L10n key of the last refused edit, cleared by the next edit.
     public private(set) var problem: String?
     public private(set) var exportState = ExportState.idle
+    /// The channel's brand kit for new titles and for drawing lower thirds (shape, side, logo).
+    public var brand = TitleBrand()
 
-    private let edl: any EDLEditing
+    let edl: any EDLEditing
     private let store: EditorProjectStore?
     private var exportTask: Task<Void, Never>?
     /// Makes clip and source ids; tests make them predictable.
@@ -128,6 +130,16 @@ public final class EditorModel {
     }
 
     public var project: String { history.current }
+
+    /// The project's frame size and rate (`settings`), which titles are laid out on.
+    public var frameSize: CGSize {
+        let settings = Self.object(project)?["settings"] as? [String: Any]
+        let width = settings?["width"] as? Int ?? 1920
+        let height = settings?["height"] as? Int ?? 1080
+        return CGSize(width: max(1, width), height: max(1, height))
+    }
+
+    public var frameRate: Double { (Self.object(project)?["settings"] as? [String: Any])?["fps"] as? Double ?? 30 }
     public var isEmpty: Bool { timeline.tracks.allSatisfy(\.clips.isEmpty) }
     public var canUndo: Bool { history.canUndo }
     public var canRedo: Bool { history.canRedo }
@@ -183,8 +195,9 @@ public final class EditorModel {
         }
     }
 
-    /// Removes the selected clip and closes the gap.
+    /// Removes the selected title, or the selected clip and closes the gap.
     public func rippleDelete() {
+        if let title = selectedTitle { return removeTitle(title.titleID) }
         guard let clip = selectedClip else { return }
         if apply(["op": "rippleDeleteClip", "clipId": clip.clipID], refused: "studio.editor.error.refused") {
             selection = nil
@@ -207,6 +220,9 @@ public final class EditorModel {
     }
 
     public func nudge(_ clipID: String, by deltaMs: Int) {
+        if let title = titles.first(where: { $0.titleID == clipID }) {
+            return moveTitle(title.titleID, toMs: title.startMs + deltaMs)
+        }
         guard let clip = clips.first(where: { $0.clipID == clipID }) else { return }
         move(clipID, toMs: clip.timelineStartMs + deltaMs)
     }
@@ -264,12 +280,13 @@ public final class EditorModel {
         guard !isEmpty else { return }
         cancelExport()
         let timeline = timeline
+        let (brand, fps) = (brand, frameRate)
         exportState = .exporting(0)
         exportTask = Task { [weak self] in
             do {
                 try FileManager.default.createDirectory(
                     at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try await TimelineComposer.export(timeline, to: url) { fraction in
+                try await TimelineComposer.export(timeline, to: url, brand: brand, fps: fps) { fraction in
                     Task { @MainActor in
                         if case .exporting = self?.exportState { self?.exportState = .exporting(fraction) }
                     }
@@ -301,7 +318,7 @@ public final class EditorModel {
 
     /// Sends one op through Core. On refusal the project stays as it was and `refused` is shown.
     @discardableResult
-    private func apply(_ op: [String: Any], refused: String) -> Bool {
+    func apply(_ op: [String: Any], refused: String) -> Bool {
         do {
             commit(try edl.apply(project: project, op: Self.json(op)))
             return true
@@ -312,7 +329,7 @@ public final class EditorModel {
         }
     }
 
-    private func commit(_ next: String) {
+    func commit(_ next: String) {
         history.record(next)
         problem = nil
         refresh()
@@ -322,12 +339,16 @@ public final class EditorModel {
     private func afterHistoryChange() {
         problem = nil
         refresh()
-        if let selection, !clips.contains(where: { $0.clipID == selection }) { self.selection = nil }
+        if let selection, !clips.contains(where: { $0.clipID == selection }),
+            !titles.contains(where: { $0.titleID == selection })
+        {
+            self.selection = nil
+        }
         playheadMs = min(playheadMs, timeline.durationMs)
         store?.save(project)
     }
 
-    private func fail(_ key: String) { problem = key }
+    func fail(_ key: String) { problem = key }
 
     private func refresh() {
         timeline = (try? edl.flatten(project: project)) ?? FlattenedTimeline(durationMs: 0, tracks: [])

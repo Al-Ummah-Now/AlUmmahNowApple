@@ -191,6 +191,53 @@ final class StudioNativeSectionsTests: XCTestCase {
         app.terminate()
     }
 
+    /// Titles and lower thirds (19.5 + 19.9): the fixture project has a title and the brand kit's lower third under the
+    /// playhead; selecting the lower third shows its text, place, timing and kit style.
+    @MainActor
+    func testEditorTitlesInEveryLanguageAndTheme() {
+        for language in ["en", "ar"] {
+            for theme in ["dark", "light"] {
+                let app = launch("editor", language, theme)
+                let lowerThird = element(app, "title-1")
+                XCTAssertTrue(lowerThird.waitForExistence(timeout: 60))
+                XCTAssertTrue(element(app, "title-0").exists)
+                lowerThird.click()
+                XCTAssertTrue(element(app, "title-edit-text").waitForExistence(timeout: 10))
+                XCTAssertTrue(element(app, "title-position").exists)
+                Thread.sleep(forTimeInterval: 0.5)
+                keep(app, "editor-titles-\(language)-\(theme)")
+                app.terminate()
+            }
+        }
+    }
+
+    /// Adding a lower third opens its text; saving, undo and redo go through Core, and delete removes only the title.
+    @MainActor
+    func testEditorTitleEditsAndUndoInArabic() {
+        let app = launch("editor", "ar", "dark")
+        XCTAssertTrue(element(app, "title-1").waitForExistence(timeout: 60))
+        element(app, "editor-add-lower-third").click()
+        let english = element(app, "title-text-en")
+        XCTAssertTrue(english.waitForExistence(timeout: 10))
+        keep(app, "editor-title-text-ar-dark")
+        english.click()
+        english.typeKey("a", modifierFlags: .command)
+        english.typeText("Second line")
+        element(app, "title-save").click()
+        XCTAssertTrue(element(app, "title-2").waitForExistence(timeout: 10))
+        XCTAssertTrue(english.waitForNonExistence(timeout: 10))
+        element(app, "editor-undo").click()
+        element(app, "editor-undo").click()
+        XCTAssertTrue(element(app, "title-2").waitForNonExistence(timeout: 10))
+        element(app, "editor-redo").click()
+        XCTAssertTrue(element(app, "title-2").waitForExistence(timeout: 10))
+        element(app, "title-0").click()
+        element(app, "editor-delete").click()
+        XCTAssertTrue(element(app, "title-2").waitForNonExistence(timeout: 10))
+        XCTAssertTrue(element(app, "clip-3").exists)
+        app.terminate()
+    }
+
     /// Pre-encode renditions (19.3) is offered at upload, off by default, and shows its state per file.
     @MainActor
     func testPreEncodeAtUploadInEveryLanguageAndTheme() {

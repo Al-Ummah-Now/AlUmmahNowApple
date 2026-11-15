@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Al-Ummah-Now/AlUmmahNowCore",
       "state" : {
-        "revision" : "e65607ddea6a3fd12f39ebd00378aea8982b2677",
-        "version" : "0.4.0-rc.1"
+        "revision" : "514291d0cffc4dbab0726e5a71ed6eacd6a3acc6",
+        "version" : "0.4.0-rc.2"
       }
     }
   ],
