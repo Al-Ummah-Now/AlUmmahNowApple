@@ -52,9 +52,9 @@ final class StudioSmokeTests: XCTestCase {
             picker.click()
             let option = app.descendants(matching: .any).matching(identifier: "channel-fixture-channel-2").firstMatch
             XCTAssertTrue(option.waitForExistence(timeout: 10), app.debugDescription)
-            XCTAssertEqual(option.label, row)
-            let title = app.descendants(matching: .any).matching(identifier: "acting-as-heading").firstMatch
-            XCTAssertTrue(title.exists)
+            // A Mac menu item carries its text as the title.
+            XCTAssertEqual(option.title.isEmpty ? option.label : option.title, row)
+            XCTAssertTrue(app.menuItems[heading].exists || app.staticTexts[heading].exists, app.debugDescription)
             app.terminate()
         }
     }

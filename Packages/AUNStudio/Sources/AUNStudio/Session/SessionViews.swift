@@ -262,26 +262,51 @@ struct ChannelPicker: View {
     @State private var showing = false
 
     var body: some View {
-        Button {
-            showing = true
-        } label: {
-            HStack(spacing: FanousScale.spacingSm) {
-                AvatarView(
-                    name: session.channel?.displayName(l10n.language) ?? "?", url: session.channel?.avatarURL, size: 24)
-                Text(session.channel?.displayName(l10n.language) ?? l10n("studio.channel.pick"))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 230, alignment: .leading)
-                Image(systemName: "chevron.up.chevron.down").font(.caption).accessibilityHidden(true)
+        #if os(macOS)
+            // A popover from a macOS toolbar item does not present; the Mac uses the native menu, headed "Acting as".
+            Menu {
+                Section(l10n("studio.actingAs.title")) {
+                    ForEach(session.channels) { channel in
+                        Button {
+                            Task { await session.select(channel) }
+                        } label: {
+                            if channel.id == session.channel?.id {
+                                Label(Self.identityLabel(channel, l10n), systemImage: "checkmark")
+                            } else {
+                                Text(Self.identityLabel(channel, l10n))
+                            }
+                        }
+                        .accessibilityIdentifier("channel-\(channel.id)")
+                    }
+                }
+            } label: {
+                current
             }
-        }
-        .disabled(session.channels.isEmpty)
-        .accessibilityLabel(l10n("studio.actingAs.title"))
-        .accessibilityValue(session.channel.map { Self.identityLabel($0, l10n) } ?? l10n("studio.channel.pick"))
-        .accessibilityIdentifier("channel-picker")
-        .popover(isPresented: $showing) {
-            ActingAsList(session: session) { showing = false }
-                .presentationCompactAdaptation(.popover)
+            .modifier(PickerAccessibility(session: session))
+        #else
+            Button {
+                showing = true
+            } label: {
+                current
+            }
+            .modifier(PickerAccessibility(session: session))
+            .popover(isPresented: $showing) {
+                ActingAsList(session: session) { showing = false }
+                    .presentationCompactAdaptation(.popover)
+            }
+        #endif
+    }
+
+    /// The identity being acted as: its logo and name.
+    private var current: some View {
+        HStack(spacing: FanousScale.spacingSm) {
+            AvatarView(
+                name: session.channel?.displayName(l10n.language) ?? "?", url: session.channel?.avatarURL, size: 24)
+            Text(session.channel?.displayName(l10n.language) ?? l10n("studio.channel.pick"))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 230, alignment: .leading)
+            Image(systemName: "chevron.up.chevron.down").font(.caption).accessibilityHidden(true)
         }
     }
 
@@ -289,6 +314,22 @@ struct ChannelPicker: View {
     nonisolated static func identityLabel(_ channel: StudioChannel, _ l10n: L10n) -> String {
         [channel.displayName(l10n.language), l10n("studio.actingAs.channel"), l10n("studio.role.\(channel.role.rawValue)")]
             .joined(separator: " · ")
+    }
+}
+
+/// The picker button's label "Acting as" and the identity as its value.
+private struct PickerAccessibility: ViewModifier {
+    @Environment(\.l10n) private var l10n
+    let session: StudioSession
+
+    func body(content: Content) -> some View {
+        content
+            .disabled(session.channels.isEmpty)
+            .accessibilityLabel(l10n("studio.actingAs.title"))
+            .accessibilityValue(
+                session.channel.map { ChannelPicker.identityLabel($0, l10n) } ?? l10n("studio.channel.pick")
+            )
+            .accessibilityIdentifier("channel-picker")
     }
 }
 
