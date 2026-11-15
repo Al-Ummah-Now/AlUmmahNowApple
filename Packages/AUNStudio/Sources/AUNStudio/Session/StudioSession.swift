@@ -30,6 +30,8 @@ public final class StudioSession {
     public private(set) var channel: StudioChannel?
     public private(set) var isSigningIn = false
     public var notice: StudioNotice?
+    /// Files another screen hands to the upload form (the editor's export); the upload screen takes them once.
+    public var pendingUploads: [URL] = []
     /// What the account may do as a creator; nil until read (or when the server cannot say).
     public private(set) var creator: CreatorAccess?
     /// A refusal that applies to the whole videos account (`videos_account_pending_deletion`, `videos_banned`).

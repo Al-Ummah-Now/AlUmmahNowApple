@@ -195,7 +195,11 @@ struct ChannelGate<Content: View>: View {
                         case .assets:
                             ChannelGate(session: session) { AssetLibraryView(services: session.services, channelID: $0) }
                         case .encode: EncodeQueueView(queue: encodes)
-                        case .editor: EditorView()
+                        case .editor:
+                            EditorView(services: session.services) { exported in
+                                session.pendingUploads = [exported]
+                                section = .upload
+                            }
                         }
                     }
                     .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }

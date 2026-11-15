@@ -26,7 +26,14 @@ public enum StudioBootstrap {
     ) -> StudioServices {
         if defaults.bool(forKey: "AUNUseFixtures") {
             let state = defaults.string(forKey: "AUNFixtureAccountState").flatMap(FixtureStudioService.AccountState.init)
-            return .fixtures(signedIn: defaults.bool(forKey: "AUNFixtureSignedIn"), accountState: state ?? .creator)
+            var fixtures = StudioServices.fixtures(
+                signedIn: defaults.bool(forKey: "AUNFixtureSignedIn"), accountState: state ?? .creator)
+            // Core's EDL and packaging are pure and local, so fixture runs use the real ones; whisper stays a fixture.
+            fixtures.edl = CoreEDLEditing()
+            #if os(macOS)
+                fixtures.renditionPackaging = CoreRenditionPackaging()
+            #endif
+            return fixtures
         }
         let environment = AppEnvironment.fromInfoDictionary(bundle.infoDictionary)
         do {

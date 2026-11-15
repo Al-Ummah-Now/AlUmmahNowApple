@@ -2,260 +2,375 @@
     import AUNCoreBridge
     import AUNDesign
     import AVFoundation
+    import AVKit
     import AppKit
-    import MetalKit
     import SwiftUI
+    import UniformTypeIdentifiers
 
-    /// Pure geometry for the timeline, so hit-testing and layout are unit-tested.
-    struct TimelineLayout {
-        let list: EditDecisionList
-        let pointsPerSecond: CGFloat
-
-        func frames(height: CGFloat) -> [(clip: EditClip, frame: CGRect)] {
-            var x: CGFloat = 0
-            return list.clips.map { clip in
-                let width = CGFloat(clip.duration) * pointsPerSecond
-                defer { x += width }
-                return (clip, CGRect(x: x, y: 0, width: width, height: height))
-            }
-        }
-
-        func time(atX x: CGFloat) -> Double { max(0, min(Double(x / pointsPerSecond), list.duration)) }
-        func x(atTime time: Double) -> CGFloat { CGFloat(time) * pointsPerSecond }
-    }
-
-    /// Custom-drawn AppKit timeline. Time runs left to right in every language, like the editors creators already use.
-    final class TimelineNSView: NSView {
-        var list = EditDecisionList() { didSet { needsDisplay = true } }
-        var selection: UUID? { didSet { needsDisplay = true } }
-        var playhead = 0.0 { didSet { needsDisplay = true } }
-        var onSelect: ((UUID?) -> Void)?
-        var onScrub: ((Double) -> Void)?
-        let pointsPerSecond: CGFloat = 40
-
-        override var isFlipped: Bool { true }
-        override var acceptsFirstResponder: Bool { true }
-
-        private var layoutModel: TimelineLayout { TimelineLayout(list: list, pointsPerSecond: pointsPerSecond) }
-
-        override func draw(_ dirtyRect: NSRect) {
-            NSColor.windowBackgroundColor.setFill()
-            dirtyRect.fill()
-            for (clip, frame) in layoutModel.frames(height: bounds.height) {
-                let rect = frame.insetBy(dx: 1, dy: 8)
-                (clip.id == selection ? NSColor.systemOrange : NSColor.systemTeal).setFill()
-                NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
-                let label = clip.source.lastPathComponent as NSString
-                label.draw(
-                    in: rect.insetBy(dx: 6, dy: 6),
-                    withAttributes: [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 11)])
-            }
-            NSColor.systemRed.setFill()
-            NSRect(x: layoutModel.x(atTime: playhead), y: 0, width: 2, height: bounds.height).fill()
-        }
-
-        private func position(_ event: NSEvent) -> CGPoint { convert(event.locationInWindow, from: nil) }
-
-        override func mouseDown(with event: NSEvent) {
-            let point = position(event)
-            onSelect?(layoutModel.frames(height: bounds.height).first { $0.frame.contains(point) }?.clip.id)
-            onScrub?(layoutModel.time(atX: point.x))
-        }
-
-        override func mouseDragged(with event: NSEvent) { onScrub?(layoutModel.time(atX: position(event).x)) }
-    }
-
-    struct TimelineView: NSViewRepresentable {
-        let list: EditDecisionList
-        let selection: UUID?
-        let playhead: Double
-        let onSelect: (UUID?) -> Void
-        let onScrub: (Double) -> Void
-
-        func makeNSView(context: Context) -> TimelineNSView { TimelineNSView() }
-
-        func updateNSView(_ view: TimelineNSView, context: Context) {
-            view.list = list
-            view.selection = selection
-            view.playhead = playhead
-            view.onSelect = onSelect
-            view.onScrub = onScrub
-        }
-    }
-
-    /// Draws the composition's current frame through Metal, the base for real-time effects later.
-    @MainActor
-    final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
-        private static let shader = """
-            #include <metal_stdlib>
-            using namespace metal;
-            struct V { float4 p [[position]]; float2 t; };
-            vertex V v(uint i [[vertex_id]]) {
-                float2 u = float2((i << 1) & 2, i & 2);
-                return { float4(u * float2(2, -2) + float2(-1, 1), 0, 1), u };
-            }
-            fragment float4 f(V in [[stage_in]], texture2d<float> x [[texture(0)]]) {
-                constexpr sampler s(filter::linear);
-                return x.sample(s, in.t);
-            }
-            """
-        private let queue: any MTLCommandQueue
-        private let pipeline: any MTLRenderPipelineState
-        private var cache: CVMetalTextureCache?
-        private let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferMetalCompatibilityKey as String: true,
-        ])
-        private var currentTexture: CVMetalTexture?
-
-        init?(view: MTKView) {
-            guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
-                let library = try? device.makeLibrary(source: Self.shader, options: nil)
-            else { return nil }
-            let descriptor = MTLRenderPipelineDescriptor()
-            descriptor.vertexFunction = library.makeFunction(name: "v")
-            descriptor.fragmentFunction = library.makeFunction(name: "f")
-            descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-            guard let pipeline = try? device.makeRenderPipelineState(descriptor: descriptor) else { return nil }
-            self.queue = queue
-            self.pipeline = pipeline
-            super.init()
-            view.device = device
-            view.colorPixelFormat = .bgra8Unorm
-            CVMetalTextureCacheCreate(nil, nil, device, nil, &cache)
-        }
-
-        func attach(to item: AVPlayerItem) { item.add(output) }
-
-        nonisolated func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
-
-        nonisolated func draw(in view: MTKView) {
-            MainActor.assumeIsolated { render(view) }
-        }
-
-        private func updateTexture() {
-            let time = output.itemTime(forHostTime: CACurrentMediaTime())
-            guard output.hasNewPixelBuffer(forItemTime: time), let cache,
-                let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil)
-            else { return }
-            var texture: CVMetalTexture?
-            CVMetalTextureCacheCreateTextureFromImage(
-                nil, cache, buffer, nil, .bgra8Unorm, CVPixelBufferGetWidth(buffer), CVPixelBufferGetHeight(buffer), 0, &texture)
-            currentTexture = texture ?? currentTexture
-        }
-
-        private func render(_ view: MTKView) {
-            updateTexture()
-            guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
-                let commands = queue.makeCommandBuffer(), let encoder = commands.makeRenderCommandEncoder(descriptor: pass)
-            else { return }
-            if let currentTexture, let texture = CVMetalTextureGetTexture(currentTexture) {
-                encoder.setRenderPipelineState(pipeline)
-                encoder.setFragmentTexture(texture, index: 0)
-                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-            }
-            encoder.endEncoding()
-            commands.present(drawable)
-            commands.commit()
-        }
-    }
-
-    struct MetalPreview: NSViewRepresentable {
-        let item: AVPlayerItem?
-
-        final class Coordinator {
-            var renderer: MetalPreviewRenderer?
-            var item: AVPlayerItem?
-        }
-
-        func makeCoordinator() -> Coordinator { Coordinator() }
-
-        func makeNSView(context: Context) -> MTKView {
-            let view = MTKView()
-            context.coordinator.renderer = MetalPreviewRenderer(view: view)
-            view.delegate = context.coordinator.renderer
-            return view
-        }
-
-        func updateNSView(_ view: MTKView, context: Context) {
-            guard let item, item !== context.coordinator.item else { return }
-            context.coordinator.item = item
-            context.coordinator.renderer?.attach(to: item)
-        }
-    }
-
+    /// The editor section (E19 19.5): an EDL timeline whose every edit goes through Core, with undo/redo, a preview
+    /// and export into the normal upload.
     struct EditorView: View {
         @Environment(\.l10n) private var l10n
-        @State private var list = EditDecisionList()
-        @State private var selection: UUID?
-        @State private var playhead = 0.0
-        @State private var importing = false
-        @State private var player = AVPlayer()
-        @State private var previewItem: AVPlayerItem?
+        let services: StudioServices
+        let onUpload: (URL) -> Void
 
         var body: some View {
-            VStack(spacing: 8) {
-                HStack {
-                    Text(l10n("studio.editor.title")).font(.title2.weight(.bold)).accessibilityAddTraits(.isHeader)
-                    Spacer()
-                    Button(l10n("studio.editor.import")) { importing = true }.accessibilityIdentifier("editor-import")
-                    Button(l10n("studio.editor.split")) { mutate { $0.split(at: playhead) } }.disabled(list.clips.isEmpty)
-                    Button(l10n("studio.editor.delete")) {
-                        if let selection { mutate { $0.rippleDelete(id: selection) } }
-                    }
-                    .disabled(selection == nil)
-                }
-                if list.clips.isEmpty {
-                    Text(l10n("studio.editor.empty")).foregroundStyle(Fanous.textSecondary).frame(
-                        maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    MetalPreview(item: previewItem).frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                TimelineView(
-                    list: list, selection: selection, playhead: playhead,
-                    onSelect: { selection = $0 },
-                    onScrub: { time in
-                        playhead = time
-                        seekPlayer(to: time)
-                    }
-                )
-                .environment(\.layoutDirection, .leftToRight)
-                .frame(height: 96)
+            if let edl = services.edl {
+                EditorScreen(edl: edl, onUpload: onUpload)
+            } else {
+                Text(l10n("studio.editor.unavailable")).foregroundStyle(Fanous.textSecondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity).fanousPage()
             }
-            .padding()
+        }
+    }
+
+    /// Time as m:ss.t in the app's language.
+    struct EditorClock {
+        let locale: Locale
+        func callAsFunction(_ ms: Int) -> String {
+            Duration.milliseconds(max(0, ms)).formatted(
+                .time(pattern: .minuteSecond(padMinuteToLength: 1, fractionalSecondsLength: 1)).locale(locale))
+        }
+    }
+
+    private struct EditorScreen: View {
+        @Environment(\.l10n) private var l10n
+        @State private var model: EditorModel
+        @State private var player = AVPlayer()
+        @State private var isPlaying = false
+        @State private var pointsPerSecond: CGFloat = 48
+        @State private var importing = false
+        @State private var confirmingNew = false
+        @State private var observer: Any?
+        let onUpload: (URL) -> Void
+        private let fixtures: Bool
+
+        init(edl: any EDLEditing, onUpload: @escaping (URL) -> Void) {
+            let fixtures = UserDefaults.standard.bool(forKey: "AUNUseFixtures")
+            let store =
+                fixtures
+                ? EditorProjectStore(url: FileManager.default.temporaryDirectory.appending(path: "editor-\(UUID()).json"))
+                : EditorProjectStore.live()
+            _model = State(initialValue: EditorModel(edl: edl, store: store))
+            self.fixtures = fixtures
+            self.onUpload = onUpload
+        }
+
+        private var clock: EditorClock { EditorClock(locale: l10n.language.locale) }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: FanousScale.spacingMd) {
+                header
+                HStack(alignment: .top, spacing: FanousScale.spacingMd) {
+                    previewCard
+                    EditorInspector(model: model, clock: clock).frame(width: 280)
+                }
+                .frame(maxHeight: .infinity)
+                EditBar(model: model, pointsPerSecond: $pointsPerSecond)
+                if let problem = model.problem { problemBanner(problem) }
+                TimelineStrip(model: model, pointsPerSecond: pointsPerSecond, clock: clock) { ms in
+                    pause()
+                    model.playheadMs = ms
+                }
+                .frame(height: 150)
+                exportBar
+            }
+            .padding(FanousScale.spacingLg)
+            .fanousPage()
+            .navigationTitle(l10n("studio.editor.title"))
             .fileImporter(isPresented: $importing, allowedContentTypes: [.movie], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result { Task { await importClips(urls) } }
             }
+            .dropDestination(for: URL.self) { urls, _ in
+                Task { await importClips(urls) }
+                return !urls.isEmpty
+            }
+            .confirmationDialog(l10n("studio.editor.newProject.confirm"), isPresented: $confirmingNew) {
+                Button(l10n("studio.editor.newProject.action"), role: .destructive) {
+                    pause()
+                    model.newProject()
+                }
+                Button(l10n("common.cancel"), role: .cancel) {}
+            }
+            .task {
+                startObserving()
+                if fixtures, model.isEmpty { await seedFixture() }
+                await rebuildPreview()
+            }
+            .onDisappear {
+                pause()
+                if let observer { player.removeTimeObserver(observer) }
+                observer = nil
+            }
+            .onChange(of: model.timeline) { Task { await rebuildPreview() } }
+            .onChange(of: model.playheadMs) { _, ms in if !isPlaying { seek(ms) } }
         }
 
-        private func seekPlayer(to time: Double) {
-            player.seek(to: CMTime(seconds: time, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+        // MARK: Header
+
+        private var header: some View {
+            HStack(alignment: .firstTextBaseline, spacing: FanousScale.spacingSm) {
+                VStack(alignment: .leading, spacing: FanousScale.spacingXxs) {
+                    Text(l10n("studio.editor.title")).fanousFont(.title).foregroundStyle(Fanous.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                    if !model.isEmpty {
+                        Text(summary).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+                            .accessibilityIdentifier("editor-summary")
+                    }
+                }
+                Spacer()
+                Button {
+                    model.undo()
+                } label: {
+                    Label(l10n("studio.editor.undo"), systemImage: "arrow.uturn.backward")
+                }
+                .keyboardShortcut("z", modifiers: .command)
+                .disabled(!model.canUndo)
+                .accessibilityIdentifier("editor-undo")
+                Button {
+                    model.redo()
+                } label: {
+                    Label(l10n("studio.editor.redo"), systemImage: "arrow.uturn.forward")
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(!model.canRedo)
+                .accessibilityIdentifier("editor-redo")
+                Button(l10n("studio.editor.newProject")) { confirmingNew = true }
+                    .disabled(model.isEmpty && !model.canUndo)
+                    .accessibilityIdentifier("editor-new")
+                Button {
+                    importing = true
+                } label: {
+                    Label(l10n("studio.editor.import"), systemImage: "plus.rectangle.on.rectangle")
+                }
+                .accessibilityIdentifier("editor-import")
+                Button {
+                    pause()
+                    model.export(to: exportURL())
+                } label: {
+                    Label(l10n("studio.editor.export"), systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Fanous.primary)
+                .disabled(model.isEmpty || isExporting)
+                .accessibilityIdentifier("editor-export")
+            }
+            .controlSize(.large)
+        }
+
+        private var summary: String {
+            let count = model.clips.count.formatted(.number.locale(l10n.language.locale))
+            return "\(l10n("studio.editor.clips", count)) · \(l10n("studio.editor.total", clock(model.timeline.durationMs)))"
+        }
+
+        private var isExporting: Bool {
+            if case .exporting = model.exportState { return true }
+            return false
+        }
+
+        // MARK: Preview
+
+        private var previewCard: some View {
+            VStack(spacing: 0) {
+                ZStack {
+                    Rectangle().fill(Fanous.background)
+                    if model.isEmpty {
+                        emptyState
+                    } else {
+                        PlayerSurface(player: player).accessibilityHidden(true)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Divider().overlay(Fanous.divider)
+                transport
+            }
+            .background(Fanous.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Fanous.outline, lineWidth: 1))
+        }
+
+        private var emptyState: some View {
+            VStack(spacing: FanousScale.spacingSm) {
+                Image(systemName: "film.stack").font(.system(size: 40)).foregroundStyle(Fanous.accent)
+                    .accessibilityHidden(true)
+                Text(l10n("studio.editor.empty")).fanousFont(.headline).foregroundStyle(Fanous.textPrimary)
+                Text(l10n("studio.editor.emptyHint")).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
+                    .multilineTextAlignment(.center).frame(maxWidth: 380)
+                Button(l10n("studio.editor.import")) { importing = true }
+                    .buttonStyle(.borderedProminent).tint(Fanous.primary)
+                    .accessibilityIdentifier("editor-empty-import")
+            }
+            .padding(FanousScale.spacingLg)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("editor-empty")
+        }
+
+        private var transport: some View {
+            HStack(spacing: FanousScale.spacingSm) {
+                Button {
+                    isPlaying ? pause() : play()
+                } label: {
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill").frame(width: 18)
+                }
+                .keyboardShortcut(.space, modifiers: [])
+                .accessibilityLabel(l10n(isPlaying ? "studio.editor.pause" : "studio.editor.play"))
+                .disabled(model.isEmpty)
+                .accessibilityIdentifier("editor-play")
+                Text(l10n("studio.editor.time", clock(model.playheadMs), clock(model.timeline.durationMs)))
+                    .monospacedDigit().fanousFont(.label).foregroundStyle(Fanous.textSecondary)
+                    .environment(\.layoutDirection, .leftToRight)
+                    .accessibilityIdentifier("editor-time")
+                Spacer()
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, FanousScale.spacingMd)
+            .padding(.vertical, FanousScale.spacingSm)
+        }
+
+        // MARK: Problem and export
+
+        private func problemBanner(_ key: String) -> some View {
+            HStack(spacing: FanousScale.spacingSm) {
+                Label(l10n(key), systemImage: "exclamationmark.triangle").foregroundStyle(Fanous.errorText)
+                    .fanousFont(.body)
+                Spacer()
+                Button(l10n("common.dismiss")) { model.clearProblem() }.buttonStyle(.borderless)
+            }
+            .padding(FanousScale.spacingSm)
+            .background(Fanous.surfaceRaised, in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("editor-problem")
+        }
+
+        @ViewBuilder private var exportBar: some View {
+            switch model.exportState {
+            case .idle:
+                EmptyView()
+            case .exporting(let fraction):
+                let percent = fraction.formatted(.percent.precision(.fractionLength(0)).locale(l10n.language.locale))
+                HStack(spacing: FanousScale.spacingSm) {
+                    Text(l10n("studio.editor.exportingProgress", percent)).foregroundStyle(Fanous.textSecondary)
+                    ProgressView(value: fraction).tint(Fanous.accent).accessibilityLabel(l10n("studio.editor.export"))
+                        .accessibilityValue(percent)
+                    Button(l10n("common.cancel")) { model.cancelExport() }
+                }
+                .accessibilityIdentifier("editor-exporting")
+            case .finished(let url):
+                HStack(spacing: FanousScale.spacingSm) {
+                    Label(l10n("studio.editor.exportedTo", url.lastPathComponent), systemImage: "checkmark.circle")
+                        .foregroundStyle(Fanous.successText)
+                    Spacer()
+                    Button(l10n("studio.editor.showInFinder")) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    Button(l10n("studio.editor.uploadExport")) { onUpload(url) }
+                        .buttonStyle(.borderedProminent).tint(Fanous.primary)
+                        .accessibilityIdentifier("editor-upload-export")
+                }
+                .accessibilityIdentifier("editor-exported")
+            case .failed(let key):
+                HStack(spacing: FanousScale.spacingSm) {
+                    Label(l10n(key), systemImage: "exclamationmark.triangle").foregroundStyle(Fanous.errorText)
+                    Spacer()
+                    Button(l10n("common.retry")) { model.export(to: exportURL()) }
+                }
             }
         }
+
+        private func exportURL() -> URL {
+            fixtures
+                ? FileManager.default.temporaryDirectory.appending(path: "editor-export-\(UUID()).mp4")
+                : EditorModel.defaultExportURL()
+        }
+
+        // MARK: Playback
+
+        private func play() {
+            if model.playheadMs >= model.timeline.durationMs { model.playheadMs = 0 }
+            seek(model.playheadMs)
+            player.play()
+            isPlaying = true
+        }
+
+        private func pause() {
+            player.pause()
+            isPlaying = false
+        }
+
+        private func seek(_ ms: Int) {
+            player.seek(
+                to: CMTime(value: CMTimeValue(ms), timescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+
+        private func startObserving() {
+            guard observer == nil else { return }
+            let model = model
+            let player = player
+            observer = player.addPeriodicTimeObserver(
+                forInterval: CMTime(value: 1, timescale: 20), queue: .main
+            ) { time in
+                MainActor.assumeIsolated {
+                    guard player.rate != 0 else { return }
+                    model.playheadMs = min(model.timeline.durationMs, Int((time.seconds * 1000).rounded()))
+                }
+            }
+            NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.didPlayToEndTimeNotification, object: nil, queue: .main
+            ) { _ in
+                MainActor.assumeIsolated { isPlaying = false }
+            }
+        }
+
+        private func rebuildPreview() async {
+            guard !model.isEmpty, let built = try? await TimelineComposer.build(model.timeline) else {
+                player.replaceCurrentItem(with: nil)
+                return
+            }
+            let item = AVPlayerItem(asset: built.composition)
+            item.audioMix = built.audioMix
+            player.replaceCurrentItem(with: item)
+            seek(model.playheadMs)
+            if isPlaying { player.play() }
+        }
+
+        // MARK: Import
 
         private func importClips(_ urls: [URL]) async {
             for url in urls {
                 _ = url.startAccessingSecurityScopedResource()
-                guard let duration = try? await AVURLAsset(url: url).load(.duration).seconds else { continue }
-                list.append(EditClip(source: url, duration: duration))
+                do {
+                    model.importClip(url: url, media: try await EditorSourceMedia.inspect(url))
+                } catch {
+                    AUNLog.studio.error("Editor import failed: \(error)")
+                    model.importClip(url: url, media: EditorSourceMedia(durationMs: 0))
+                }
             }
-            await rebuildPreview()
         }
 
-        private func mutate(_ change: (inout EditDecisionList) -> Void) {
-            change(&list)
-            Task { await rebuildPreview() }
-        }
-
-        private func rebuildPreview() async {
-            guard let composition = try? await CompositionBuilder.build(list) else {
-                previewItem = nil
-                return
-            }
-            let item = AVPlayerItem(asset: composition)
-            player.replaceCurrentItem(with: item)
-            previewItem = item
-            seekPlayer(to: min(playhead, list.duration))
+        /// Fixture runs (UI tests, screenshots): three sample clips, the first cut in two, the cut's right half
+        /// selected.
+        private func seedFixture() async {
+            let urls = await SampleVideos.make(count: 3, seconds: [6, 4, 5])
+            await importClips(urls)
+            model.playheadMs = 2_500
+            model.split()
+            model.playheadMs = 8_000
         }
     }
+
+    /// AVKit's player view without controls; the editor has its own transport.
+    struct PlayerSurface: NSViewRepresentable {
+        let player: AVPlayer
+
+        func makeNSView(context: Context) -> AVPlayerView {
+            let view = AVPlayerView()
+            view.controlsStyle = .none
+            view.videoGravity = .resizeAspect
+            view.player = player
+            return view
+        }
+
+        func updateNSView(_ view: AVPlayerView, context: Context) {
+            if view.player !== player { view.player = player }
+        }
+    }
+
 #endif
