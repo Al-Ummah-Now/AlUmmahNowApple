@@ -26,6 +26,8 @@ final class AdminFlowTests: XCTestCase {
             [
                 "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", signedIn ? "YES" : "NO", "-AUNFixtureRole", role,
                 "-AUNLanguage", language, "-AUNTheme", "dark", "-ApplePersistenceIgnoreState", "YES",
+                // Toasts stay up while XCUITest waits for the app to go idle (24 s on a busy runner).
+                "-AUNFixtureUndoSeconds", "60",
             ] + extra
         app.launch()
         return app

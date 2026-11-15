@@ -10,6 +10,8 @@ final class AdminMacTests: XCTestCase {
         app.launchArguments = [
             "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNFixtureRole", "reviewer", "-AUNLanguage",
             language, "-AUNTheme", "light", "-ApplePersistenceIgnoreState", "YES",
+            // Toasts stay up while XCUITest waits for the app to go idle (24 s on a busy runner).
+            "-AUNFixtureUndoSeconds", "60",
         ]
         app.launch()
         return app

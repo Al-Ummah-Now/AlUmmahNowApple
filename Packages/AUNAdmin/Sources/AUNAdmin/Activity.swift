@@ -41,7 +41,13 @@ public final class ToastCenter {
     @ObservationIgnored private var action: (() async -> Void)?
     @ObservationIgnored private var timer: Task<Void, Never>?
     /// Undo lasts 10 seconds (AD8); after that, History has "Reverse decision" on the server's own window.
-    public static let undoSeconds: Double = 10
+    /// UI tests on fixtures may lengthen it (`-AUNFixtureUndoSeconds`): XCUITest waits for the app to go idle before it
+    /// looks, and on a busy CI runner that wait reached 24 s, so a 10-second toast was gone before it was checked.
+    public static let undoSeconds: Double = {
+        let defaults = UserDefaults.standard
+        let fixtureSeconds = defaults.double(forKey: "AUNFixtureUndoSeconds")
+        return defaults.bool(forKey: "AUNUseFixtures") && fixtureSeconds > 0 ? fixtureSeconds : 10
+    }()
 
     public init() {}
 
