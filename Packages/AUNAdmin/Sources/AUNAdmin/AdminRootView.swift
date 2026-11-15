@@ -41,7 +41,7 @@ public struct AdminRootView: View {
         .adminPrivacy(capture)
         .task { await session.start() }
         .onAppear {
-            LaunchClock.mark("root appeared")
+            LaunchClock.rootAppeared()
             // Light and Dark only: the first launch follows the device, then the last explicit choice.
             if settings.theme == .system { settings.theme = colorScheme == .dark ? .dark : .light }
         }
