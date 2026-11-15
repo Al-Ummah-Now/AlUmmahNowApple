@@ -76,6 +76,7 @@ public struct FixtureStudioService: StudioServicing {
     public enum AccountState: String, Sendable { case creator, invitation, pendingDeletion }
 
     let store = FixtureContentStore()
+    let media = FixtureMediaStore()
     private let original = FixtureContentStore()
     let accountState: AccountState
 

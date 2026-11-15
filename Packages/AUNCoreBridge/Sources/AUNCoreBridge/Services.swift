@@ -13,6 +13,9 @@ public enum CoreError: Error, Equatable, Sendable {
     case invalid(String)
     /// The server refused because of a plan, a creator tier or the account's state; see `Refusal`.
     case refused(Refusal)
+    /// 409 with the server's `error` code (`too_late`, `draft_exists`, `draft_conflict`…) and, for `files_missing`,
+    /// the paths it lists.
+    case conflict(String, missing: [String] = [])
 
     /// The refusal, when the server refused with a code. Retrying it changes nothing.
     public var refusal: Refusal? {
