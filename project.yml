@@ -48,6 +48,9 @@ targetTemplates:
         AUNAuthIssuer: "$(AUN_AUTH_ISSUER)"
         AUNOAuthClientID: "$(AUN_OAUTH_CLIENT_ID)"
         UILaunchScreen: {}
+        # The release scripts set these from the tag (scripts/release-version.sh); without them every build is 1.0 (1).
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
 
 targets:
   ViewerIOS:
@@ -59,6 +62,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.viewer$(AUN_BUNDLE_SUFFIX)
         AUN_APP_NAME: Al Ummah Now
         TARGETED_DEVICE_FAMILY: "1,2"
+        # Universal links only in the signed QA and Release builds; Debug (CI, simulator) carries no entitlements.
+        CODE_SIGN_ENTITLEMENTS: Apps/ViewerIOS/ViewerIOS.entitlements
+      configs:
+        Debug: {CODE_SIGN_ENTITLEMENTS: ""}
     info:
       path: Apps/ViewerIOS/Info.plist
       properties:
@@ -68,6 +75,7 @@ targets:
         AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
         AUNEnvironment: "$(AUN_ENVIRONMENT)"
         UILaunchScreen: {}
+        ITSAppUsesNonExemptEncryption: false
         UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
@@ -92,6 +100,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.viewer.tv$(AUN_BUNDLE_SUFFIX)
         AUN_APP_NAME: Al Ummah Now
         TARGETED_DEVICE_FAMILY: "3"
+    info:
+      path: Apps/ViewerTV/Info.plist
+      properties:
+        ITSAppUsesNonExemptEncryption: false
     dependencies:
       - package: AUNFeatures
       - package: AUNDesign
@@ -110,11 +122,16 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.viewer.mac$(AUN_BUNDLE_SUFFIX)
         AUN_APP_NAME: Al Ummah Now
-    entitlements:
-      path: Apps/ViewerMac/ViewerMac.entitlements
+        # Sandbox everywhere; universal links only in the signed QA and Release builds (ad hoc Debug cannot carry them).
+        # `.debug` (sandbox only) for Debug; scripts/release.sh also picks it for ad hoc and certificate-only builds.
+        CODE_SIGN_ENTITLEMENTS: Apps/ViewerMac/ViewerMac$(AUN_ENTITLEMENTS_VARIANT).entitlements
+      configs:
+        Debug: {AUN_ENTITLEMENTS_VARIANT: .debug}
+    info:
+      path: Apps/ViewerMac/Info.plist
       properties:
-        com.apple.security.app-sandbox: true
-        com.apple.security.network.client: true
+        LSApplicationCategoryType: public.app-category.video
+        ITSAppUsesNonExemptEncryption: false
     dependencies:
       - package: AUNFeatures
       - package: AUNDesign
@@ -137,6 +154,14 @@ targets:
         AUN_APP_NAME: Al Ummah Now Studio
         AUN_OAUTH_CLIENT_ID: $(AUN_STUDIO_CLIENT_ID_IOS)
         TARGETED_DEVICE_FAMILY: "1,2"
+        # Universal links and App Attest only in the signed QA and Release builds; Debug carries no entitlements.
+        CODE_SIGN_ENTITLEMENTS: Apps/StudioIOS/StudioIOS.entitlements
+      configs:
+        Debug: {CODE_SIGN_ENTITLEMENTS: ""}
+    info:
+      path: Apps/StudioIOS/Info.plist
+      properties:
+        ITSAppUsesNonExemptEncryption: false
     dependencies:
       - package: AUNStudio
       - package: AUNDesign
@@ -156,13 +181,16 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.studio.mac$(AUN_BUNDLE_SUFFIX)
         AUN_APP_NAME: Al Ummah Now Studio
         AUN_OAUTH_CLIENT_ID: $(AUN_STUDIO_CLIENT_ID_MAC)
-    entitlements:
-      path: Apps/StudioMac/StudioMac.entitlements
+        # Universal links only in the signed QA and Release builds (ad hoc Debug and unsigned releases cannot carry them).
+        # `.debug` (sandbox only) for Debug; scripts/release.sh also picks it for ad hoc and certificate-only builds.
+        CODE_SIGN_ENTITLEMENTS: Apps/StudioMac/StudioMac$(AUN_ENTITLEMENTS_VARIANT).entitlements
+      configs:
+        Debug: {AUN_ENTITLEMENTS_VARIANT: .debug}
+    info:
+      path: Apps/StudioMac/Info.plist
       properties:
-        com.apple.security.app-sandbox: true
-        com.apple.security.network.client: true
-        com.apple.security.files.user-selected.read-write: true
-        com.apple.security.files.bookmarks.app-scope: true
+        LSApplicationCategoryType: public.app-category.video
+        ITSAppUsesNonExemptEncryption: false
     dependencies:
       - package: AUNStudio
       - package: AUNDesign
@@ -259,31 +287,31 @@ targets:
   ViewerIOSUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests/ViewerIOS]
+    sources: [UITests/ViewerIOS, UITests/Shared]
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: ViewerIOS, TARGETED_DEVICE_FAMILY: "1,2"}}
     dependencies: [{target: ViewerIOS}]
   ViewerTVUITests:
     type: bundle.ui-testing
     platform: tvOS
-    sources: [UITests/ViewerTV]
+    sources: [UITests/ViewerTV, UITests/Shared]
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: ViewerTV, TARGETED_DEVICE_FAMILY: "3"}}
     dependencies: [{target: ViewerTV}]
   ViewerMacUITests:
     type: bundle.ui-testing
     platform: macOS
-    sources: [UITests/ViewerMac]
+    sources: [UITests/ViewerMac, UITests/Shared]
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: ViewerMac}}
     dependencies: [{target: ViewerMac}]
   StudioIOSUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests/StudioIOS]
+    sources: [UITests/StudioIOS, UITests/Shared]
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: StudioIOS, TARGETED_DEVICE_FAMILY: "1,2"}}
     dependencies: [{target: StudioIOS}]
   StudioMacUITests:
     type: bundle.ui-testing
     platform: macOS
-    sources: [UITests/StudioMac]
+    sources: [UITests/StudioMac, UITests/Shared]
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: StudioMac}}
     dependencies: [{target: StudioMac}]
   AdminIOSUITests:

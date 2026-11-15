@@ -126,10 +126,11 @@ public struct CoreBridge: Sendable {
         )
     }
 
-    /// Hermetic bridge for UI tests, snapshots and previews. The site theme is the one given, Fawanees by default.
-    public static func fixtures(siteTheme: String = "fawanees") -> CoreBridge {
+    /// Hermetic bridge for UI tests, snapshots and previews. The site theme is the one given, Fawanees by default;
+    /// `playable` streams a bundled clip (store screenshots).
+    public static func fixtures(siteTheme: String = "fawanees", playable: Bool = false) -> CoreBridge {
         CoreBridge(
-            environment: .qa, catalog: FixtureCatalogService(), auth: GuestAuthSession(),
+            environment: .qa, catalog: FixtureCatalogService(playable: playable), auth: GuestAuthSession(),
             uploads: NativeTUSUploadEngine(session: .shared), siteTheme: FixedSiteThemeService(siteTheme))
     }
 }

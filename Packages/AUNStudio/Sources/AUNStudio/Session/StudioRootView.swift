@@ -21,6 +21,11 @@ public struct StudioRootView: View {
             }
         }
         .task { await session.start() }
+        // Universal links on the videos host (`/studio/…`, `/app/studio/…`); the viewer's links are not Studio's.
+        .onOpenURL { url in
+            guard case .studio(let link) = AppLink.parse(url) else { return }
+            Task { await session.open(link) }
+        }
     }
 }
 
@@ -118,14 +123,31 @@ struct ChannelGate<Content: View>: View {
 
 #if os(iOS)
     struct StudioShell: View {
+        enum Tab: Hashable { case home, content, upload, analytics, editor }
+
         @Environment(\.l10n) private var l10n
         let session: StudioSession
         @State private var showingAccounts = false
+        @State private var tab: Tab = .home
 
         var body: some View {
             tabs
                 .safeAreaInset(edge: .top, spacing: 0) { AccountStateBanner(session: session) }
                 .sheet(isPresented: $showingAccounts) { AccountsView(session: session) }
+                .task(id: session.linkSerial) {
+                    guard let section = session.linkedSection else { return }
+                    tab = Self.tab(for: section)
+                    session.consumeLink()
+                }
+        }
+
+        /// iPhone and iPad have no Recently deleted tab; it lives under Content.
+        static func tab(for section: StudioLink.Section) -> Tab {
+            switch section {
+            case .home: .home
+            case .content, .deleted: .content
+            case .analytics: .analytics
+            }
         }
 
         private func screen(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
@@ -139,22 +161,27 @@ struct ChannelGate<Content: View>: View {
         }
 
         private var tabs: some View {
-            TabView {
+            TabView(selection: $tab) {
                 screen(l10n("studio.home.title")) { StudioHomeView(session: session) }
                     .tabItem { Label(l10n("studio.home.title"), systemImage: "square.grid.2x2") }
+                    .tag(Tab.home)
                 screen(l10n("studio.content.title")) {
                     ChannelGate(session: session) { channel in ContentView(session: session, channelID: channel) }
                 }
                 .tabItem { Label(l10n("studio.content.title"), systemImage: "film.stack") }
+                .tag(Tab.content)
                 screen(l10n("studio.upload.title")) { UploadView(session: session) }
                     .tabItem { Label(l10n("studio.upload.title"), systemImage: "square.and.arrow.up") }
                     .badge(session.uploads.jobs.filter { $0.isActive && $0.accountID == session.account?.id }.count)
+                    .tag(Tab.upload)
                 screen(l10n("studio.analytics.title")) {
                     ChannelGate(session: session) { channel in AnalyticsView(services: session.services, channelID: channel) }
                 }
                 .tabItem { Label(l10n("studio.analytics.title"), systemImage: "chart.bar") }
+                .tag(Tab.analytics)
                 NavigationStack { MobileEditorView() }
                     .tabItem { Label(l10n("studio.editor.title"), systemImage: "scissors") }
+                    .tag(Tab.editor)
             }
         }
     }
@@ -197,6 +224,20 @@ struct ChannelGate<Content: View>: View {
             }
             .frame(minWidth: 960, minHeight: 600)
             .sheet(isPresented: $showingAccounts) { AccountsView(session: session) }
+            .task(id: session.linkSerial) {
+                guard let linked = session.linkedSection else { return }
+                section = Self.section(for: linked)
+                session.consumeLink()
+            }
+        }
+
+        static func section(for link: StudioLink.Section) -> StudioSection {
+            switch link {
+            case .home: .home
+            case .content: .content
+            case .deleted: .deleted
+            case .analytics: .analytics
+            }
         }
     }
 #endif

@@ -1,0 +1,468 @@
+{
+  "about": "App Store Connect → App Privacy answers for each public app, drawn from the code (each answer cites its source files). scripts/check-store-metadata.py checks the files exist. Review when a feature adds a network call. Human-readable: store/apple/app-privacy.md.",
+  "apps": {
+    "viewer-ios": {
+      "tracking": false,
+      "dataCollected": false,
+      "summary": "Data Not Collected. The viewer has no sign-in (GuestAuthSession) and only reads the public catalog, the site theme and video streams; it sends no identifiers, history or usage events.",
+      "collected": [],
+      "notCollected": [
+        {
+          "what": "Account data",
+          "answer": "none: guest only, no sign-in",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Services.swift"
+          ]
+        },
+        {
+          "what": "Watch history, views, usage data",
+          "answer": "not sent: catalog and subtitle reads are GETs without an account; playback is AVPlayer streaming",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/NativeCatalogService.swift",
+            "Packages/AUNPlayer/Sources/AUNPlayer/PlayerController.swift"
+          ]
+        },
+        {
+          "what": "Site theme",
+          "answer": "read from the public admin-api endpoint, nothing sent",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/SiteTheme.swift"
+          ]
+        },
+        {
+          "what": "Device identifiers",
+          "answer": "none: no App Attest in the viewer (it makes no writes)",
+          "sources": [
+            "Packages/AUNFeatures/Sources/AUNFeatures/ViewerBootstrap.swift"
+          ]
+        },
+        {
+          "what": "Analytics, advertising or tracking SDKs",
+          "answer": "none: the apps link no third-party SDK; Apple frameworks and aun-core only",
+          "sources": [
+            "project.yml",
+            "Packages/AUNCoreKit/Package.swift"
+          ]
+        },
+        {
+          "what": "Crash and diagnostic logs",
+          "answer": "not sent: AUNLog writes to the device's unified log (os.Logger) only",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/AppEnvironment.swift"
+          ]
+        },
+        {
+          "what": "Settings (language, theme)",
+          "answer": "kept on the device (UserDefaults)",
+          "sources": [
+            "Packages/AUNDesign/Sources/AUNDesign/AppSettings.swift"
+          ]
+        },
+        {
+          "what": "Location, contacts, health, financial info, browsing history, purchases",
+          "answer": "the apps never read them",
+          "sources": [
+            "project.yml"
+          ]
+        }
+      ]
+    },
+    "viewer-tv": {
+      "tracking": false,
+      "dataCollected": false,
+      "summary": "Data Not Collected. The viewer has no sign-in (GuestAuthSession) and only reads the public catalog, the site theme and video streams; it sends no identifiers, history or usage events.",
+      "collected": [],
+      "notCollected": [
+        {
+          "what": "Account data",
+          "answer": "none: guest only, no sign-in",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Services.swift"
+          ]
+        },
+        {
+          "what": "Watch history, views, usage data",
+          "answer": "not sent: catalog and subtitle reads are GETs without an account; playback is AVPlayer streaming",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/NativeCatalogService.swift",
+            "Packages/AUNPlayer/Sources/AUNPlayer/PlayerController.swift"
+          ]
+        },
+        {
+          "what": "Site theme",
+          "answer": "read from the public admin-api endpoint, nothing sent",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/SiteTheme.swift"
+          ]
+        },
+        {
+          "what": "Device identifiers",
+          "answer": "none: no App Attest in the viewer (it makes no writes)",
+          "sources": [
+            "Packages/AUNFeatures/Sources/AUNFeatures/ViewerBootstrap.swift"
+          ]
+        },
+        {
+          "what": "Analytics, advertising or tracking SDKs",
+          "answer": "none: the apps link no third-party SDK; Apple frameworks and aun-core only",
+          "sources": [
+            "project.yml",
+            "Packages/AUNCoreKit/Package.swift"
+          ]
+        },
+        {
+          "what": "Crash and diagnostic logs",
+          "answer": "not sent: AUNLog writes to the device's unified log (os.Logger) only",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/AppEnvironment.swift"
+          ]
+        },
+        {
+          "what": "Settings (language, theme)",
+          "answer": "kept on the device (UserDefaults)",
+          "sources": [
+            "Packages/AUNDesign/Sources/AUNDesign/AppSettings.swift"
+          ]
+        },
+        {
+          "what": "Location, contacts, health, financial info, browsing history, purchases",
+          "answer": "the apps never read them",
+          "sources": [
+            "project.yml"
+          ]
+        }
+      ]
+    },
+    "viewer-mac": {
+      "tracking": false,
+      "dataCollected": false,
+      "summary": "Data Not Collected. The viewer has no sign-in (GuestAuthSession) and only reads the public catalog, the site theme and video streams; it sends no identifiers, history or usage events.",
+      "collected": [],
+      "notCollected": [
+        {
+          "what": "Account data",
+          "answer": "none: guest only, no sign-in",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Services.swift"
+          ]
+        },
+        {
+          "what": "Watch history, views, usage data",
+          "answer": "not sent: catalog and subtitle reads are GETs without an account; playback is AVPlayer streaming",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/NativeCatalogService.swift",
+            "Packages/AUNPlayer/Sources/AUNPlayer/PlayerController.swift"
+          ]
+        },
+        {
+          "what": "Site theme",
+          "answer": "read from the public admin-api endpoint, nothing sent",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/SiteTheme.swift"
+          ]
+        },
+        {
+          "what": "Device identifiers",
+          "answer": "none: no App Attest in the viewer (it makes no writes)",
+          "sources": [
+            "Packages/AUNFeatures/Sources/AUNFeatures/ViewerBootstrap.swift"
+          ]
+        },
+        {
+          "what": "Analytics, advertising or tracking SDKs",
+          "answer": "none: the apps link no third-party SDK; Apple frameworks and aun-core only",
+          "sources": [
+            "project.yml",
+            "Packages/AUNCoreKit/Package.swift"
+          ]
+        },
+        {
+          "what": "Crash and diagnostic logs",
+          "answer": "not sent: AUNLog writes to the device's unified log (os.Logger) only",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/AppEnvironment.swift"
+          ]
+        },
+        {
+          "what": "Settings (language, theme)",
+          "answer": "kept on the device (UserDefaults)",
+          "sources": [
+            "Packages/AUNDesign/Sources/AUNDesign/AppSettings.swift"
+          ]
+        },
+        {
+          "what": "Location, contacts, health, financial info, browsing history, purchases",
+          "answer": "the apps never read them",
+          "sources": [
+            "project.yml"
+          ]
+        }
+      ]
+    },
+    "studio-ios": {
+      "tracking": false,
+      "dataCollected": true,
+      "summary": "Data Linked to You, used for App Functionality only; no tracking, no third-party sharing for advertising.",
+      "collected": [
+        {
+          "category": "Contact Info",
+          "dataType": "Email Address",
+          "linkedToUser": true,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "Sign-in (OAuth with the email scope) returns the account's email, shown in the account switcher",
+          "sources": [
+            "Packages/AUNCoreKit/Sources/AUNCoreKit/CoreAccountService.swift",
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/Accounts.swift"
+          ]
+        },
+        {
+          "category": "Contact Info",
+          "dataType": "Name",
+          "linkedToUser": true,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "The account's display name (profile scope), shown in the account switcher",
+          "sources": [
+            "Packages/AUNCoreKit/Sources/AUNCoreKit/CoreAccountService.swift",
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/Accounts.swift"
+          ]
+        },
+        {
+          "category": "Identifiers",
+          "dataType": "User ID",
+          "linkedToUser": true,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "Every Studio request carries the account's access token; the account id keys tokens and per-account choices",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/StudioService.swift",
+            "Packages/AUNCoreKit/Sources/AUNCoreKit/KeychainStorage.swift"
+          ]
+        },
+        {
+          "category": "User Content",
+          "dataType": "Photos or Videos",
+          "linkedToUser": true,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "Videos the creator picks are uploaded to their channel (TUS)",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/TUSTransfer.swift",
+            "Packages/AUNStudio/Sources/AUNStudio/Upload/UploadView.swift"
+          ]
+        },
+        {
+          "category": "User Content",
+          "dataType": "Other User Content",
+          "linkedToUser": true,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "Titles, descriptions, tags, categories, playlists and schedules of the creator's videos",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/UploadModels.swift",
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/ContentModels.swift"
+          ]
+        },
+        {
+          "category": "Identifiers",
+          "dataType": "Device ID",
+          "linkedToUser": true,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "Only when videos admin turns Apple attestation on: an App Attest key id and assertions prove writes come from the genuine app (fraud prevention); the proof is bound to the signed-in account",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Attestation.swift",
+            "Packages/AUNCoreKit/Sources/AUNCoreKit/StudioBootstrap.swift"
+          ]
+        }
+      ],
+      "notCollected": [
+        {
+          "what": "Search History",
+          "answer": "Studio's search suggestions are answered in real time; api-videos search.router.ts stores no query",
+          "sources": [
+            "Packages/AUNCoreKit/Sources/AUNCoreKit/CoreSearchService.swift"
+          ]
+        },
+        {
+          "what": "Usage Data / Product Interaction",
+          "answer": "Analytics shows the channel's own numbers read from the server; the app reports no usage events",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/AnalyticsModels.swift"
+          ]
+        },
+        {
+          "what": "Analytics, advertising or tracking SDKs",
+          "answer": "none: the apps link no third-party SDK; Apple frameworks and aun-core only",
+          "sources": [
+            "project.yml",
+            "Packages/AUNCoreKit/Package.swift"
+          ]
+        },
+        {
+          "what": "Crash and diagnostic logs",
+          "answer": "not sent: AUNLog writes to the device's unified log (os.Logger) only",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/AppEnvironment.swift"
+          ]
+        },
+        {
+          "what": "Settings (language, theme)",
+          "answer": "kept on the device (UserDefaults)",
+          "sources": [
+            "Packages/AUNDesign/Sources/AUNDesign/AppSettings.swift"
+          ]
+        },
+        {
+          "what": "Location, contacts, health, financial info, browsing history, purchases",
+          "answer": "the apps never read them",
+          "sources": [
+            "project.yml"
+          ]
+        }
+      ]
+    },
+    "studio-mac": {
+      "tracking": false,
+      "dataCollected": true,
+      "summary": "Data Linked to You, used for App Functionality only; no tracking, no third-party sharing for advertising.",
+      "collected": [
+        {
+          "category": "Contact Info",
+          "dataType": "Email Address",
+          "linkedToUser": true,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "Sign-in (OAuth with the email scope) returns the account's email, shown in the account switcher",
+          "sources": [
+            "Packages/AUNCoreKit/Sources/AUNCoreKit/CoreAccountService.swift",
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/Accounts.swift"
+          ]
+        },
+        {
+          "category": "Contact Info",
+          "dataType": "Name",
+          "linkedToUser": true,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "The account's display name (profile scope), shown in the account switcher",
+          "sources": [
+            "Packages/AUNCoreKit/Sources/AUNCoreKit/CoreAccountService.swift",
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/Accounts.swift"
+          ]
+        },
+        {
+          "category": "Identifiers",
+          "dataType": "User ID",
+          "linkedToUser": true,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "Every Studio request carries the account's access token; the account id keys tokens and per-account choices",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/StudioService.swift",
+            "Packages/AUNCoreKit/Sources/AUNCoreKit/KeychainStorage.swift"
+          ]
+        },
+        {
+          "category": "User Content",
+          "dataType": "Photos or Videos",
+          "linkedToUser": true,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "Videos the creator picks are uploaded to their channel (TUS)",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/TUSTransfer.swift",
+            "Packages/AUNStudio/Sources/AUNStudio/Upload/UploadView.swift"
+          ]
+        },
+        {
+          "category": "User Content",
+          "dataType": "Other User Content",
+          "linkedToUser": true,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "Titles, descriptions, tags, categories, playlists and schedules of the creator's videos",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/UploadModels.swift",
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/ContentModels.swift"
+          ]
+        }
+      ],
+      "notCollected": [
+        {
+          "what": "Search History",
+          "answer": "Studio's search suggestions are answered in real time; api-videos search.router.ts stores no query",
+          "sources": [
+            "Packages/AUNCoreKit/Sources/AUNCoreKit/CoreSearchService.swift"
+          ]
+        },
+        {
+          "what": "Usage Data / Product Interaction",
+          "answer": "Analytics shows the channel's own numbers read from the server; the app reports no usage events",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Studio/AnalyticsModels.swift"
+          ]
+        },
+        {
+          "what": "Device identifiers",
+          "answer": "none on the Mac: no App Attest",
+          "sources": [
+            "Packages/AUNCoreKit/Sources/AUNCoreKit/StudioBootstrap.swift"
+          ]
+        },
+        {
+          "what": "Analytics, advertising or tracking SDKs",
+          "answer": "none: the apps link no third-party SDK; Apple frameworks and aun-core only",
+          "sources": [
+            "project.yml",
+            "Packages/AUNCoreKit/Package.swift"
+          ]
+        },
+        {
+          "what": "Crash and diagnostic logs",
+          "answer": "not sent: AUNLog writes to the device's unified log (os.Logger) only",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/AppEnvironment.swift"
+          ]
+        },
+        {
+          "what": "Settings (language, theme)",
+          "answer": "kept on the device (UserDefaults)",
+          "sources": [
+            "Packages/AUNDesign/Sources/AUNDesign/AppSettings.swift"
+          ]
+        },
+        {
+          "what": "Location, contacts, health, financial info, browsing history, purchases",
+          "answer": "the apps never read them",
+          "sources": [
+            "project.yml"
+          ]
+        }
+      ]
+    }
+  }
+}

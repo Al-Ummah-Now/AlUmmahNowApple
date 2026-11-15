@@ -8,7 +8,7 @@ let package = Package(
     products: [.library(name: "AUNCoreBridge", targets: ["AUNCoreBridge"])],
     dependencies: [],
     targets: [
-        .target(name: "AUNCoreBridge", dependencies: []),
+        .target(name: "AUNCoreBridge", dependencies: [], resources: [.copy("Resources/fixture-video.mp4")]),
         .testTarget(name: "AUNCoreBridgeTests", dependencies: ["AUNCoreBridge"]),
     ]
 )

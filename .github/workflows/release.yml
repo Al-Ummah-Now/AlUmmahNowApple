@@ -1,7 +1,11 @@
 name: Release
-# A tag vX.Y.Z on main builds Studio for Mac (zip + dmg, attached to the GitHub release) and Studio for iPhone and
-# iPad (uploaded to TestFlight). Without the Apple secrets everything is built unsigned, so the pipeline is proven.
-# workflow_dispatch builds the same artifacts from any branch without releasing anything.
+# A tag vX.Y.Z[-N] on main builds every shipping app, production (Release) and QA (docs/RELEASING.md):
+#   Studio for Mac      → Developer ID .dmg/.zip, attached to the GitHub release
+#   Studio for iPhone and iPad, Al Ummah Now for iPhone and iPad, Apple TV and Mac → App Store Connect (TestFlight)
+#   store listings      → App Store Connect (metadata + screenshots, never submitted), for the apps in APPLE_LISTINGS
+# Version and build number come from the tag (scripts/release-version.sh). Without the Apple secrets every step builds
+# unsigned and says which secret is missing; the run stays green. workflow_dispatch builds the same matrix from any
+# branch, keeps the files as workflow artifacts and never uploads or releases anything.
 on:
   push:
     tags: ["v*"]
@@ -22,7 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      build: ${{ steps.v.outputs.build }}
       release: ${{ steps.v.outputs.release }}
+      listings: ${{ steps.listings.outputs.matrix }}
     steps:
       - uses: actions/checkout@v5
         with: {fetch-depth: 0}
@@ -32,29 +38,47 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             git fetch origin main
             git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::$GITHUB_REF_NAME is not on main"; exit 1; }
-            VERSION="${GITHUB_REF_NAME#v}"
-            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::tag must be vX.Y.Z"; exit 1; }
-            echo "release=true" >> "$GITHUB_OUTPUT"
-          else
-            VERSION="0.0.$GITHUB_RUN_NUMBER"
-            echo "release=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if [[ -z "${ASC_KEY_P8:-}" ]]; then echo "::notice::No Apple secrets: building unsigned artifacts only."; fi
+          scripts/release-version.sh "$GITHUB_REF_TYPE" "$GITHUB_REF_NAME" "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" | tee -a "$GITHUB_OUTPUT"
+          missing=()
+          for name in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do [[ -n "${!name:-}" ]] || missing+=("$name"); done
+          if ((${#missing[@]})); then
+            echo "::notice title=Unsigned release::Missing secret(s): ${missing[*]}. Every app is built unsigned and nothing is uploaded (docs/RELEASING.md)."
+          fi
+      - id: listings
+        name: Store listings to upload (repository variable APPLE_LISTINGS)
+        env:
+          APPLE_LISTINGS: ${{ vars.APPLE_LISTINGS }}
+          RELEASE: ${{ steps.v.outputs.release }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          apps = {a["dir"]: a for a in json.load(open("store/apple/apps.json"))["apps"]}
+          wanted = [x.strip() for x in os.environ.get("APPLE_LISTINGS", "").split(",") if x.strip()]
+          unknown = [x for x in wanted if x not in apps]
+          for x in unknown:
+              print(f"::warning::APPLE_LISTINGS names an unknown app '{x}' (known: {', '.join(apps)})", flush=True)
+          chosen = [apps[x] for x in wanted if x in apps] if os.environ["RELEASE"] == "true" else []
+          print("matrix=" + json.dumps({"include": chosen}, separators=(",", ":"), ensure_ascii=False))
+          PY
+          if [[ -z "${APPLE_LISTINGS:-}" ]]; then
+            echo "::notice title=Store listings skipped::Repository variable APPLE_LISTINGS is empty (e.g. viewer-ios,viewer-tv,viewer-mac,studio-ios)."
+          fi
 
   build:
     needs: verify
-    name: ${{ matrix.platform }} ${{ matrix.config }}
+    name: ${{ matrix.scheme }} ${{ matrix.config }}
     runs-on: macos-26
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        platform: [mac, ios]
+        scheme: [StudioMac, StudioIOS, ViewerIOS, ViewerTV, ViewerMac]
         config: [Release, QA]
     env:
       AUN_VERSION: ${{ needs.verify.outputs.version }}
-      AUN_BUILD_NUMBER: ${{ github.run_number }}
+      AUN_BUILD_NUMBER: ${{ needs.verify.outputs.build }}
     steps:
       - uses: actions/checkout@v5
       - run: brew install xcodegen && xcodegen generate
@@ -62,11 +86,17 @@ jobs:
         with:
           path: build/DerivedData/SourcePackages
           key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
-      - run: scripts/release.sh ${{ matrix.platform }} ${{ matrix.config }} dist
+      # A dispatch from a branch never uploads, even with the secrets: store builds come from main tags only.
+      - if: needs.verify.outputs.release != 'true'
+        run: |
+          echo "ASC_KEY_P8=" >> "$GITHUB_ENV"
+          echo "::notice::workflow_dispatch: unsigned build, nothing uploaded."
+      - run: scripts/release.sh ${{ matrix.scheme }} ${{ matrix.config }} dist
       - uses: actions/upload-artifact@v4
         with:
-          name: studio-${{ matrix.platform }}-${{ matrix.config }}
+          name: ${{ matrix.scheme }}-${{ matrix.config }}
           path: dist/*
+          if-no-files-found: ignore
           retention-days: 14
 
   publish:
@@ -76,14 +106,62 @@ jobs:
     permissions: {contents: write}
     steps:
       - uses: actions/download-artifact@v4
-        with: {path: dist, pattern: studio-mac-*, merge-multiple: true}
-      - name: GitHub release with the Mac downloads
+        with: {path: dist, pattern: StudioMac-*, merge-multiple: true}
+      - name: GitHub release with the Studio for Mac downloads
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          (cd dist && shasum -a 256 * > SHA256SUMS.txt)
-          NOTES="Al Ummah Now Studio $TAG. Mac: download the .dmg (production) or the -qa build (QA). iPhone and iPad: TestFlight."
-          if ls dist | grep -q unsigned; then NOTES="$NOTES Unsigned build: on a Mac, right-click the app and choose Open the first time."; fi
-          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "Studio $TAG" --notes "$NOTES"
+          (cd dist && shasum -a 256 -- * > SHA256SUMS.txt)
+          NOTES="Al Ummah Now $TAG. Studio for Mac: download the .dmg (production) or the -qa build (QA). Studio for iPhone and iPad, and Al Ummah Now for iPhone, iPad, Apple TV and Mac: TestFlight."
+          if compgen -G "dist/*unsigned*" >/dev/null; then NOTES="$NOTES Unsigned build: on a Mac, right-click the app and choose Open the first time."; fi
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "$NOTES"
+
+  # Store listing texts (store/apple/<app>/metadata) and freshly generated screenshots into App Store Connect, for the
+  # version being released. Never submits for review. App Privacy answers are entered by hand (store/apple/app-privacy.md).
+  listings:
+    needs: [verify, build]
+    if: needs.verify.outputs.release == 'true' && needs.verify.outputs.listings != '{"include":[]}'
+    name: listing ${{ matrix.dir }}
+    runs-on: macos-26
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.verify.outputs.listings) }}
+    env:
+      AUN_IOS_SIM_OS: "26.4.1"
+    steps:
+      - uses: actions/checkout@v5
+      - id: gate
+        run: |
+          missing=()
+          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do [[ -n "${!name:-}" ]] || missing+=("$name"); done
+          if ((${#missing[@]})); then
+            echo "::notice title=${{ matrix.dir }} listing skipped::Missing secret(s): ${missing[*]}."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.run == 'true'
+        run: brew install xcodegen fastlane && xcodegen generate
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: build/DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+      - if: steps.gate.outputs.run == 'true'
+        run: scripts/screenshots.sh ${{ matrix.screenshots }} build/screenshots
+      - if: steps.gate.outputs.run == 'true'
+        name: fastlane deliver (metadata + screenshots, no binary, no review)
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          export KEY="$RUNNER_TEMP/asc-api-key.json"
+          trap 'rm -f "$KEY"' EXIT
+          python3 -c 'import json, os; json.dump({"key_id": os.environ["ASC_KEY_ID"], "issuer_id": os.environ["ASC_ISSUER_ID"], "key": os.environ["ASC_KEY_P8"], "in_house": False}, open(os.environ["KEY"], "w"))'
+          fastlane deliver --api_key_path "$KEY" --app_identifier "${{ matrix.bundle }}" --platform "${{ matrix.platform }}" \
+            --app_version "$VERSION" --metadata_path "store/apple/${{ matrix.dir }}/metadata" \
+            --screenshots_path "build/screenshots/${{ matrix.screenshots }}" --overwrite_screenshots true \
+            --skip_binary_upload true --submit_for_review false --automatic_release false \
+            --run_precheck_before_submit false --force true

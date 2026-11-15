@@ -78,3 +78,13 @@ private struct ProcessingCatalog: CatalogServicing {
         #expect(SkipKey.delta(isRightArrow: false, direction: .rightToLeft) == 10)
     }
 #endif
+
+struct ViewerLinksTests {
+    @Test func videosAndShortsOpenTheWatchPageOtherLinksOpenHome() {
+        #expect(ViewerLinks.videoID(for: URL(string: "https://videos.alummahnow.net/ar/video/v1")!) == "v1")
+        #expect(ViewerLinks.videoID(for: URL(string: "https://videos.qa.alummahnow.net/shorts/s1")!) == "s1")
+        #expect(ViewerLinks.videoID(for: URL(string: "https://videos.alummahnow.net/en/@main")!) == nil)
+        #expect(ViewerLinks.videoID(for: URL(string: "https://videos.alummahnow.net/en/studio/c1")!) == nil)
+        #expect(ViewerLinks.videoID(for: URL(string: "https://example.com/en/video/v1")!) == nil)
+    }
+}
