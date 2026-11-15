@@ -189,7 +189,7 @@ struct ChannelGate<Content: View>: View {
     struct StudioShell: View {
         @Environment(\.l10n) private var l10n
         let session: StudioSession
-        @State private var section: StudioSection? = .home
+        @State private var section: StudioSection? = StudioSection.initial()
         @State private var showingAccounts = false
         @State private var encodes = EncodeQueue(
             outputDirectory: URL.moviesDirectory.appending(path: "Al Ummah Now Studio"))
@@ -212,6 +212,8 @@ struct ChannelGate<Content: View>: View {
                         case .deleted:
                             ChannelGate(session: session) { RecentlyDeletedView(services: session.services, channelID: $0) }
                         case .upload: UploadView(session: session)
+                        case .captions:
+                            ChannelGate(session: session) { CaptionsView(services: session.services, channelID: $0) }
                         case .analytics:
                             ChannelGate(session: session) { AnalyticsView(services: session.services, channelID: $0) }
                         case .encode: EncodeQueueView(queue: encodes)
@@ -229,6 +231,7 @@ struct ChannelGate<Content: View>: View {
                 section = Self.section(for: linked)
                 session.consumeLink()
             }
+            .onAppear { FixtureSnapshots.installIfFixtures() }
         }
 
         static func section(for link: StudioLink.Section) -> StudioSection {
