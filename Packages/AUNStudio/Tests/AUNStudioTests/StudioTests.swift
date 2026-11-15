@@ -122,12 +122,20 @@ private func makeVideo(seconds: Int) async throws -> URL {
 }
 
 #if os(macOS)
-    @Test func timelineGeometryMapsTimeAndClips() {
-        let list = EditDecisionList(clips: [clip(2), clip(3)])
-        let layout = TimelineLayout(list: list, pointsPerSecond: 10)
-        #expect(layout.frames(height: 50).map(\.frame.maxX) == [20, 50])
-        #expect(layout.time(atX: 35) == 3.5)
-        #expect(layout.time(atX: 999) == 5)
-        #expect(layout.x(atTime: 2) == 20)
+    @Test func timelineGeometryMapsTimeTicksAndTrims() {
+        let geometry = TimelineGeometry(pointsPerSecond: 10)
+        #expect(geometry.x(3_500) == 35)
+        #expect(geometry.ms(35) == 3_500)
+        #expect(geometry.ms(-5) == 0)
+        #expect(geometry.tickSeconds() == 10)
+        #expect(TimelineGeometry(pointsPerSecond: 80).tickSeconds() == 1)
+        let clip = FlattenedTimeline.Clip(
+            clipID: "a", sourceID: "s", path: "/a.mp4", inMs: 1_000, outMs: 5_000, timelineStartMs: 0, speed: 2)
+        // A timeline drag of 1 s moves 2 s of source at double speed, and never past the file or under 100 ms.
+        #expect(TimelineGeometry.trimmed(clip, start: true, deltaMs: 1_000, sourceDurationMs: 9_000) == (3_000, 5_000))
+        #expect(TimelineGeometry.trimmed(clip, start: true, deltaMs: -5_000, sourceDurationMs: 9_000) == (0, 5_000))
+        #expect(TimelineGeometry.trimmed(clip, start: true, deltaMs: 9_000, sourceDurationMs: 9_000) == (4_900, 5_000))
+        #expect(TimelineGeometry.trimmed(clip, start: false, deltaMs: 9_000, sourceDurationMs: 9_000) == (1_000, 9_000))
+        #expect(TimelineGeometry.trimmed(clip, start: false, deltaMs: -9_000, sourceDurationMs: 9_000) == (1_000, 1_100))
     }
 #endif

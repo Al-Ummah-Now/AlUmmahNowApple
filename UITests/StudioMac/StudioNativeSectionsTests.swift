@@ -6,12 +6,13 @@ final class StudioNativeSectionsTests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
     @MainActor
-    private func launch(_ section: String, _ language: String, _ theme: String) -> XCUIApplication {
+    private func launch(_ section: String, _ language: String, _ theme: String, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = [
-            "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNLanguage", language, "-AUNTheme", theme,
-            "-AUNStudioSection", section, "-ApplePersistenceIgnoreState", "YES",
-        ]
+        app.launchArguments =
+            [
+                "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNLanguage", language, "-AUNTheme", theme,
+                "-AUNStudioSection", section, "-ApplePersistenceIgnoreState", "YES",
+            ] + extra
         app.launch()
         return app
     }
@@ -133,5 +134,61 @@ final class StudioNativeSectionsTests: XCTestCase {
         XCTAssertFalse(element(app, "brand-save").exists)
         keep(app, "brand-team-ar-dark")
         app.terminate()
+    }
+
+    /// The editor timeline (19.5) on fixtures: three sample clips, the first cut in two by Core.
+    @MainActor
+    func testEditorInEveryLanguageAndTheme() {
+        for language in ["en", "ar"] {
+            for theme in ["dark", "light"] {
+                let app = launch("editor", language, theme)
+                XCTAssertTrue(element(app, "clip-3").waitForExistence(timeout: 60))
+                XCTAssertTrue(element(app, "editor-inspector").exists)
+                keep(app, "editor-\(language)-\(theme)")
+                app.terminate()
+            }
+        }
+    }
+
+    /// Every edit goes through Core and can be undone: split, undo, redo, join and delete from the edit bar.
+    @MainActor
+    func testEditorEditsAndUndoInArabic() {
+        let app = launch("editor", "ar", "dark")
+        XCTAssertTrue(element(app, "clip-3").waitForExistence(timeout: 60))
+        element(app, "clip-0").click()
+        element(app, "editor-join").click()
+        XCTAssertTrue(element(app, "clip-2").waitForExistence(timeout: 10))
+        XCTAssertFalse(element(app, "clip-3").exists)
+        element(app, "editor-undo").click()
+        XCTAssertTrue(element(app, "clip-3").waitForExistence(timeout: 10))
+        element(app, "editor-redo").click()
+        XCTAssertTrue(element(app, "clip-3").waitForNonExistence(timeout: 10))
+        element(app, "clip-1").click()
+        element(app, "editor-later").click()
+        XCTAssertTrue(element(app, "editor-problem").waitForExistence(timeout: 10))
+        keep(app, "editor-refused-ar-dark")
+        element(app, "editor-delete").click()
+        XCTAssertTrue(element(app, "clip-1").waitForExistence(timeout: 10))
+        XCTAssertFalse(element(app, "clip-2").exists)
+        app.terminate()
+    }
+
+    /// Pre-encode renditions (19.3) is offered at upload, off by default, and shows its state per file.
+    @MainActor
+    func testPreEncodeAtUploadInEveryLanguageAndTheme() {
+        for language in ["en", "ar"] {
+            for theme in ["dark", "light"] {
+                let app = launch("upload", language, theme, extra: ["-AUNSampleVideos", "1"])
+                let toggle = element(app, "upload-preencode")
+                XCTAssertTrue(toggle.waitForExistence(timeout: 60))
+                XCTAssertEqual(toggle.value as? Int, 0)
+                toggle.click()
+                keep(app, "preencode-form-\(language)-\(theme)")
+                element(app, "upload-send").click()
+                XCTAssertTrue(element(app, "upload-preencode-0").waitForExistence(timeout: 60))
+                keep(app, "preencode-queue-\(language)-\(theme)")
+                app.terminate()
+            }
+        }
     }
 }

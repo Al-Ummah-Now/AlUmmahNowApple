@@ -56,7 +56,7 @@ struct UploadView: View {
             } else if let channel = session.channel {
                 filesSection.studioRows()
                 if !composer.files.isEmpty {
-                    SetForAllSection(composer: composer, channel: channel) {
+                    SetForAllSection(composer: composer, channel: channel, canPreEncode: session.uploads.canPreEncode) {
                         Task { await composer.loadPlaylists(channelID: channel.id, studio: session.services.studio) }
                     }
                     sendSection(channel).studioRows()
@@ -75,6 +75,12 @@ struct UploadView: View {
             guard count > 0, composer.files.isEmpty else { return }
             let samples = await SampleVideos.make(count: count)
             composer.add(samples.compactMap { PickedVideo.make(file: $0, ownsFile: true) })
+        }
+        .task(id: session.pendingUploads) {
+            // An export from the editor: add it like a picked file, once.
+            guard !session.pendingUploads.isEmpty else { return }
+            composer.add(session.pendingUploads.compactMap(Self.importFile))
+            session.pendingUploads = []
         }
         .task(id: session.channel?.id) {
             if let channel = session.channel {
@@ -242,6 +248,8 @@ private struct SetForAllSection: View {
     @Environment(\.l10n) private var l10n
     @Bindable var composer: UploadComposer
     let channel: StudioChannel
+    /// Desktop Studio with Core's packaging can encode the renditions too (D11).
+    var canPreEncode = false
     let retryPlaylists: () -> Void
 
     var body: some View {
@@ -297,6 +305,17 @@ private struct SetForAllSection: View {
         .studioRows()
         playlistsSection.studioRows()
         scheduleSection.studioRows()
+        if canPreEncode { preEncodeSection.studioRows() }
+    }
+
+    /// Off by default; the server always encodes when this is off or anything goes wrong.
+    private var preEncodeSection: some View {
+        Section {
+            Toggle(l10n("studio.upload.preEncode"), isOn: $composer.settings.preEncode)
+                .accessibilityIdentifier("upload-preencode")
+        } footer: {
+            Text(l10n("studio.upload.preEncode.help"))
+        }
     }
 
     @ViewBuilder private var playlistsSection: some View {
@@ -398,6 +417,7 @@ private struct UploadJobRow: View {
                 .accessibilityValue(job.fraction.formatted(.percent.precision(.fractionLength(0)).locale(l10n.language.locale)))
             Text(status).fanousFont(.caption)
                 .foregroundStyle(job.state == .failed ? Fanous.errorText : Fanous.textSecondary)
+            if let preEncode = job.preEncode { PreEncodeRow(job: job, state: preEncode, queue: queue) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("upload-job-\(job.index)")
@@ -411,7 +431,8 @@ private struct UploadJobRow: View {
             l10n(
                 "studio.upload.state.uploading",
                 job.fraction.formatted(.percent.precision(.fractionLength(0)).locale(l10n.language.locale)))
-        case .finishing: l10n("studio.upload.state.finishing")
+        case .finishing:
+            l10n(job.preEncode == .running ? "studio.upload.preEncode.waiting" : "studio.upload.state.finishing")
         case .paused: l10n("studio.upload.state.paused")
         case .failed: l10n(job.failure ?? "studio.upload.error.generic")
         case .done:
@@ -438,5 +459,49 @@ private struct UploadJobRow: View {
         }
         .buttonStyle(.borderless)
         .fanousFont(.caption)
+    }
+}
+
+/// A file's pre-encoded renditions (D11): progress and Skip while running, then what happened.
+private struct PreEncodeRow: View {
+    @Environment(\.l10n) private var l10n
+    let job: UploadJob
+    let state: UploadJob.PreEncodeState
+    let queue: UploadQueue
+
+    var body: some View {
+        switch state {
+        case .running:
+            let fraction = job.preEncodeFraction ?? 0
+            let percent = fraction.formatted(.percent.precision(.fractionLength(0)).locale(l10n.language.locale))
+            VStack(alignment: .leading, spacing: FanousScale.spacingXxs) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label(runningText(percent), systemImage: "cpu")
+                        .fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+                    Spacer(minLength: FanousScale.spacingSm)
+                    Button(l10n("studio.upload.preEncode.skip")) { queue.skipPreEncode(job.id) }
+                        .buttonStyle(.borderless).fanousFont(.caption)
+                        .accessibilityIdentifier("upload-preencode-skip-\(job.index)")
+                }
+                ProgressView(value: fraction)
+                    .tint(Fanous.accent)
+                    .accessibilityLabel(l10n("studio.upload.preEncode.progress"))
+                    .accessibilityValue(percent)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("upload-preencode-\(job.index)")
+        case .ready, .skipped, .failed:
+            let symbol = state == .ready ? "checkmark.circle" : "info.circle"
+            Label(l10n("studio.upload.preEncode.\(state.rawValue)"), systemImage: symbol)
+                .fanousFont(.caption)
+                .foregroundStyle(state == .ready ? Fanous.successText : Fanous.textSecondary)
+                .accessibilityIdentifier("upload-preencode-\(job.index)")
+        }
+    }
+
+    private func runningText(_ percent: String) -> String {
+        if let rung = job.preEncodeRung { return l10n("studio.upload.preEncode.encoding", rung, percent) }
+        if (job.preEncodeFraction ?? 0) >= PreEncoder.encodeShare { return l10n("studio.upload.preEncode.sending", percent) }
+        return l10n("studio.upload.preEncode.starting")
     }
 }
