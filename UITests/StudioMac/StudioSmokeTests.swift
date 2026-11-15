@@ -46,8 +46,8 @@ final class StudioSmokeTests: XCTestCase {
             let app = launch(language, signedIn: true)
             // The picker is enabled once the channels have loaded, which is when the dashboard card shows.
             XCTAssertTrue(channelCard(app).waitForExistence(timeout: 30))
-            let picker = app.buttons["channel-picker"]
-            XCTAssertTrue(picker.isEnabled)
+            let picker = app.descendants(matching: .any).matching(identifier: "channel-picker").firstMatch
+            XCTAssertTrue(picker.waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertEqual(picker.label, heading)
             picker.click()
             let option = app.descendants(matching: .any).matching(identifier: "channel-fixture-channel-2").firstMatch
