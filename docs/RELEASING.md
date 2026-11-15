@@ -202,7 +202,7 @@ app.
 
 ### 7. App icon
 
-[The app icon PR](#) adds the icons from the site's lantern logo (the same mark as the Android launcher); it is held
+[The app icon PR](https://github.com/Al-Ummah-Now/AlUmmahNowApple/pull/40) adds the icons from the site's lantern logo (the same mark as the Android launcher); it is held
 for your review of the screenshots. App Store Connect rejects uploads without icons, so it must be merged before the
 first signed upload.
 
