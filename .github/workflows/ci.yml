@@ -54,6 +54,13 @@ jobs:
           name: results-${{ matrix.job }}
           path: build/DerivedData/Logs/Test/*.xcresult
           retention-days: 7
+      - name: Studio screens (UI test window screenshots) for owner review
+        uses: actions/upload-artifact@v4
+        if: always() && matrix.job == 'studio'
+        with:
+          name: studio-screens
+          path: build/DerivedData/Logs/Test/*StudioMac*.xcresult
+          retention-days: 7
       - name: Snapshots recorded on this simulator, to review and commit
         uses: actions/upload-artifact@v4
         if: failure()
