@@ -60,7 +60,8 @@ final class StudioNativeSectionsTests: XCTestCase {
             for theme in ["dark", "light"] {
                 let app = launch("captions", language, theme)
                 XCTAssertTrue(element(app, "draft-ar").waitForExistence(timeout: 30))
-                XCTAssertTrue(element(app, "captions-minutes").exists)
+                // The minutes meter loads after the drafts (its own request), so wait for it too.
+                XCTAssertTrue(element(app, "captions-minutes").waitForExistence(timeout: 20))
                 keep(app, "captions-\(language)-\(theme)")
                 app.terminate()
             }
