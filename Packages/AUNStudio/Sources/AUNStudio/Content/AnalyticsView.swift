@@ -222,7 +222,8 @@ struct VideoStatsView: View {
                 Text(l10n("common.error.load")).foregroundStyle(Fanous.errorText)
             } else if phase == .empty {
                 Text(l10n("studio.analytics.empty.views")).foregroundStyle(Fanous.textSecondary)
-            } else if phase.isLoading {
+            } else if phase == .idle || phase.isLoading {
+                // Drawn before the first load too: `.task` never runs on an empty group.
                 ProgressView().accessibilityLabel(l10n("common.loading"))
             }
         }
