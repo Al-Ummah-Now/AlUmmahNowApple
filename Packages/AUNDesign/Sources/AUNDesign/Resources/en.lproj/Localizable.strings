@@ -87,6 +87,14 @@
 "studio.role.moderator" = "Moderator";
 "studio.home.title" = "Dashboard";
 "studio.home.signedInAs" = "Signed in as %@";
+"studio.home.recent" = "Recent uploads";
+"studio.home.recentEmpty" = "No videos on this channel yet.";
+"studio.home.held" = "Comments awaiting review";
+"studio.home.heldEmpty" = "No comments are waiting for review.";
+"studio.home.heldCount" = "%@ waiting";
+"studio.home.queue" = "Drafts and scheduled";
+"studio.home.queueEmpty" = "No drafts or scheduled videos.";
+"studio.home.seeAll" = "See all";
 "studio.error.offline" = "You're offline. Check your connection and try again.";
 "studio.error.signIn" = "Your session ended. Sign in again.";
 "studio.error.forbidden" = "You don't have permission to do this in this channel.";

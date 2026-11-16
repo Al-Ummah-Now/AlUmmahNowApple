@@ -87,6 +87,14 @@
 "studio.role.moderator" = "مراقب";
 "studio.home.title" = "لوحة التحكم";
 "studio.home.signedInAs" = "مسجّل الدخول باسم %@";
+"studio.home.recent" = "أحدث المرفوعات";
+"studio.home.recentEmpty" = "لا توجد مرئيات في هذه القناة بعد.";
+"studio.home.held" = "تعليقات بانتظار المراجعة";
+"studio.home.heldEmpty" = "لا توجد تعليقات بانتظار المراجعة.";
+"studio.home.heldCount" = "%@ بانتظار المراجعة";
+"studio.home.queue" = "المسودات والمجدولة";
+"studio.home.queueEmpty" = "لا توجد مسودات أو مرئيات مجدولة.";
+"studio.home.seeAll" = "عرض الكل";
 "studio.error.offline" = "أنت غير متصل. تحقّق من اتصالك وحاول مجددًا.";
 "studio.error.signIn" = "انتهت جلستك. سجّل الدخول مجددًا.";
 "studio.error.forbidden" = "ليست لديك صلاحية للقيام بهذا في هذه القناة.";

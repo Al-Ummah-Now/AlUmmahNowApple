@@ -65,6 +65,10 @@ final class StudioSmokeTests: XCTestCase {
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: analytics)
         waitForExpectations(timeout: 15)
         XCTAssertTrue(app.descendants(matching: .any)["section-home"].exists)
+        // No hollow Dashboard: its sections stay without Analytics.
+        for section in ["dashboard-recent", "dashboard-held", "dashboard-queue"] {
+            XCTAssertTrue(app.descendants(matching: .any)[section].waitForExistence(timeout: 15), section)
+        }
     }
 
     @MainActor

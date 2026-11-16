@@ -103,6 +103,49 @@ final class StudioAccountStateTests: XCTestCase {
         XCTAssertTrue(tab(app, "Dashboard").isSelected)
         XCTAssertFalse(app.staticTexts["We couldn't load this right now."].exists)
         keep("analytics-off-en")
+        assertDashboardSections(app)
+    }
+
+    /// No hollow Dashboard (owner review 2026-11-16): with Analytics off it still lists recent uploads, comments awaiting
+    /// review, and drafts and scheduled, and every loader has stopped.
+    @MainActor
+    func testDashboardKeepsItsSectionsWithAnalyticsOff() {
+        for language in ["en", "ar"] {
+            let app = launch(language, state: "creator", featuresOff: "analytics")
+            assertDashboardSections(app)
+            app.terminate()
+        }
+    }
+
+    /// Comments off takes only that section away.
+    @MainActor
+    func testCommentsOffHidesOnlyThatSection() {
+        let app = launch("en", state: "creator", featuresOff: "comments")
+        let recent = app.descendants(matching: .any)["dashboard-recent"]
+        XCTAssertTrue(recent.waitForExistence(timeout: 30))
+        XCTAssertTrue(find(app, "dashboard-queue").exists)
+        XCTAssertFalse(app.descendants(matching: .any)["dashboard-held"].exists)
+    }
+
+    @MainActor
+    private func assertDashboardSections(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let recent = app.descendants(matching: .any)["dashboard-recent"]
+        XCTAssertTrue(recent.waitForExistence(timeout: 30), file: file, line: line)
+        XCTAssertTrue(recent.staticTexts.count > 1, file: file, line: line)
+        for section in ["dashboard-held", "dashboard-queue"] {
+            XCTAssertTrue(find(app, section).exists, "\(section) missing", file: file, line: line)
+        }
+        let spinning = app.activityIndicators
+        expectation(for: NSPredicate(format: "count == 0"), evaluatedWith: spinning)
+        waitForExpectations(timeout: 15)
+    }
+
+    /// Scrolls down until an element below the fold is on screen.
+    @MainActor
+    private func find(_ app: XCUIApplication, _ identifier: String) -> XCUIElement {
+        let element = app.descendants(matching: .any)[identifier]
+        for _ in 0..<4 where !element.exists { app.swipeUp() }
+        return element
     }
 
 }

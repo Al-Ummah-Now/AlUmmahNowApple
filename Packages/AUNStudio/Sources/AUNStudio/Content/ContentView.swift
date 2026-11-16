@@ -253,6 +253,8 @@ struct ContentView: View {
 struct VideoRow: View {
     @Environment(\.l10n) private var l10n
     let video: StudioVideo
+    /// Leads the details with the video's status (Processing, Failed…), as the Dashboard lists mixed statuses.
+    var showsStatus = false
 
     var body: some View {
         HStack(spacing: FanousScale.spacingMd) {
@@ -273,6 +275,7 @@ struct VideoRow: View {
 
     private var details: String {
         var parts = [l10n(video.isPublic ? "visibility.public" : "visibility.private")]
+        if showsStatus, let status = video.studioStatus { parts.insert(l10n("studio.tab.\(status.rawValue)"), at: 0) }
         if let date = video.scheduledPublishDate, video.studioStatus == .scheduled {
             parts.append(l10n("studio.content.publishes", DisplayFormat.dateTime(date, l10n.language)))
         } else {
