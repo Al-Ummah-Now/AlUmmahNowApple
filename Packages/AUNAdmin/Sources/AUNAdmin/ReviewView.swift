@@ -221,7 +221,7 @@ struct ReviewScreen: View {
                     Text(AdminText.decision(entry.decision ?? entry.status ?? "", by: entry.decidedByName, l10n: l10n))
                     Spacer()
                     if let at = entry.decidedAt {
-                        Text(at.formatted(.dateTime.day().month().year().locale(l10n.language.locale)))
+                        Text(DisplayFormat.day(at, l10n.language))
                     }
                 }
                 .fanousFont(.caption).foregroundStyle(Fanous.textSecondary)

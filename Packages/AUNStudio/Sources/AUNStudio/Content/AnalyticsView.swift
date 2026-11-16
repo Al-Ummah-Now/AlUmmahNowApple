@@ -20,7 +20,7 @@ struct AnalyticsView: View {
             VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
                 Picker(l10n("studio.analytics.range"), selection: $range) {
                     ForEach(AnalyticsRange.allCases, id: \.self) {
-                        Text(l10n("studio.analytics.days", $0.rawValue.formatted(.number.locale(l10n.language.locale)))).tag($0)
+                        Text(l10n("studio.analytics.days", DisplayFormat.number($0.rawValue, l10n.language))).tag($0)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -81,7 +81,6 @@ struct AnalyticsView: View {
 
     /// Period numbers from the daily series, each against the period before it; lifetime totals underneath.
     private func tiles(_ stats: ChannelStats) -> some View {
-        let locale = l10n.language.locale
         func change(_ value: (ChannelStats) -> Double) -> Double? { previous.flatMap { periodChange(value(stats), value($0)) } }
         return VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
             LazyVGrid(
@@ -102,7 +101,7 @@ struct AnalyticsView: View {
                 l10n(
                     "studio.analytics.lifetime", DisplayFormat.count(stats.totalViews, l10n.language),
                     DisplayFormat.count(stats.totalSubscribers, l10n.language),
-                    (stats.engagementRate / 100).formatted(.percent.precision(.fractionLength(0...1)).locale(locale)))
+                    DisplayFormat.percent(stats.engagementRate / 100, l10n.language, fraction: 0...1))
             )
             .fanousFont(.caption)
             .foregroundStyle(Fanous.textSecondary)
@@ -172,8 +171,7 @@ struct StatTile: View {
                 Text(
                     l10n(
                         "studio.analytics.change",
-                        change.formatted(
-                            .percent.precision(.fractionLength(0)).sign(strategy: .always()).locale(l10n.language.locale)))
+                        DisplayFormat.percent(change, l10n.language, signed: true))
                 )
                 .fanousFont(.caption)
                 .foregroundStyle(change >= 0 ? Fanous.successText : Fanous.errorText)

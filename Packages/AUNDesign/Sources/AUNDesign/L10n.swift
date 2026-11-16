@@ -34,23 +34,3 @@ public struct L10n: Sendable {
 extension EnvironmentValues {
     @Entry public var l10n = L10n(.en)
 }
-
-/// Locale-aware display formatting for server numbers and times.
-public enum DisplayFormat {
-    public static func count(_ value: Int, _ language: AppLanguage) -> String {
-        value.formatted(.number.notation(.compactName).locale(language.locale))
-    }
-
-    public static func duration(_ seconds: Double, _ language: AppLanguage) -> String {
-        let total = max(0, Int(seconds.rounded()))
-        let numbers = IntegerFormatStyle<Int>.number.grouping(.never).locale(language.locale)
-        func pad(_ value: Int) -> String {
-            let zero = 0.formatted(numbers)
-            let text = value.formatted(numbers)
-            return value < 10 ? zero + text : text
-        }
-        let (hours, minutes, secs) = (total / 3600, (total % 3600) / 60, total % 60)
-        if hours > 0 { return "\(hours.formatted(numbers)):\(pad(minutes)):\(pad(secs))" }
-        return "\(minutes.formatted(numbers)):\(pad(secs))"
-    }
-}

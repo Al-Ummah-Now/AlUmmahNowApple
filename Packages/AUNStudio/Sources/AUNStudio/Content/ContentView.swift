@@ -62,8 +62,9 @@ struct ContentView: View {
         ) {
             let ids = confirmingDelete ?? []
             ConfirmSheet(
-                title: l10n("studio.content.deleteTitle", ids.count.formatted(.number.locale(l10n.language.locale))),
-                message: l10n("studio.content.deleteMessage"), actionTitle: l10n("studio.content.delete")
+                title: l10n("studio.content.deleteTitle", DisplayFormat.number(ids.count, l10n.language)),
+                message: l10n("studio.content.deleteMessage", DisplayFormat.number(DeletedVideo.restoreDays, l10n.language)),
+                actionTitle: l10n("studio.content.delete")
             ) {
                 editing = nil
                 Task { await model.delete(ids) }
@@ -144,7 +145,7 @@ struct ContentView: View {
     private func label(for status: StudioStatus) -> String {
         let name = l10n("studio.tab.\(status.rawValue)")
         guard let count = model.counts[status] else { return name }
-        return "\(name) \(count.formatted(.number.locale(l10n.language.locale)))"
+        return "\(name) \(DisplayFormat.number(count, l10n.language))"
     }
 
     @ViewBuilder private var list: some View {
@@ -220,7 +221,7 @@ struct ContentView: View {
     }
 
     private var bulkBar: some View {
-        let count = model.selection.count.formatted(.number.locale(l10n.language.locale))
+        let count = DisplayFormat.number(model.selection.count, l10n.language)
         return ViewThatFits {
             HStack(spacing: FanousScale.spacingMd) { bulkButtons(count) }
             ScrollView(.horizontal) { HStack(spacing: FanousScale.spacingMd) { bulkButtons(count) } }
@@ -268,12 +269,12 @@ struct VideoRow: View {
     private var details: String {
         var parts = [l10n(video.isPublic ? "visibility.public" : "visibility.private")]
         if let date = video.scheduledPublishDate, video.studioStatus == .scheduled {
-            parts.append(l10n("studio.content.publishes", date.formatted(.dateTime.locale(l10n.language.locale))))
+            parts.append(l10n("studio.content.publishes", DisplayFormat.dateTime(date, l10n.language)))
         } else {
             parts.append(l10n("video.views", DisplayFormat.count(video.views, l10n.language)))
         }
         if let date = video.dateCreated {
-            parts.append(date.formatted(.dateTime.day().month().year().locale(l10n.language.locale)))
+            parts.append(DisplayFormat.day(date, l10n.language))
         }
         return parts.joined(separator: " · ")
     }
@@ -314,7 +315,7 @@ struct MessageBanner: View {
     }
 
     private func text(_ message: (key: String, values: [String])) -> String {
-        let numbers = message.values.map { Int($0).map { $0.formatted(.number.locale(l10n.language.locale)) } ?? $0 }
+        let numbers = message.values.map { Int($0).map { DisplayFormat.number($0, l10n.language) } ?? $0 }
         switch numbers.count {
         case 0: return l10n(message.key)
         case 1: return l10n(message.key, numbers[0])

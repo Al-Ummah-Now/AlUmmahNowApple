@@ -139,14 +139,16 @@ struct UploadView: View {
                 guard let account = session.account else { return }
                 session.uploads.enqueue(composer.makeJobs(channel: channel, accountID: account.id, language: l10n.language))
             } label: {
-                Text(l10n("studio.upload.send", composer.files.count.formatted(.number.locale(l10n.language.locale))))
+                Text(l10n("studio.upload.send", DisplayFormat.number(composer.files.count, l10n.language)))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(FanousButtonStyle(.primary))
             .disabled(problem != nil)
             .accessibilityIdentifier("upload-send")
             if let problem, !composer.files.isEmpty {
-                Text(l10n(problem)).fanousFont(.caption).foregroundStyle(Fanous.errorText)
+                Text(l10n(problem, DisplayFormat.number(Int(UploadComposer.minimumLead / 60), l10n.language))).fanousFont(
+                    .caption
+                ).foregroundStyle(Fanous.errorText)
                     .accessibilityIdentifier("upload-problem")
             }
         } footer: {
@@ -222,7 +224,7 @@ private struct FileRow: View {
                     prompt: Text(composer.title(at: index, channelName: channelName, language: l10n.language))
                 )
                 .accessibilityIdentifier("upload-title-\(index)")
-                Text(verbatim: "\(file.fileName) · \(ByteCountFormatter.string(fromByteCount: file.fileSize, countStyle: .file))")
+                Text(verbatim: "\(file.fileName) · \(DisplayFormat.bytes(file.fileSize, l10n.language))")
                     .fanousFont(.caption).foregroundStyle(Fanous.textMuted)
             }
             Button {
@@ -263,7 +265,7 @@ private struct SetForAllSection: View {
                 Stepper(
                     l10n(
                         "studio.upload.firstEpisode",
-                        composer.settings.firstEpisode.formatted(.number.locale(l10n.language.locale))),
+                        DisplayFormat.number(composer.settings.firstEpisode, l10n.language)),
                     value: $composer.settings.firstEpisode, in: 0...9999)
             }
             TextField(l10n("studio.upload.description"), text: $composer.settings.description, axis: .vertical)
@@ -342,7 +344,7 @@ private struct SetForAllSection: View {
                     Stepper(
                         l10n(
                             "studio.upload.interval",
-                            (composer.settings.scheduleIntervalMinutes / 60).formatted(.number.locale(l10n.language.locale))),
+                            DisplayFormat.number(composer.settings.scheduleIntervalMinutes / 60, l10n.language)),
                         value: $composer.settings.scheduleIntervalMinutes, in: 0...(7 * 24 * 60), step: 60)
                 }
             }
@@ -395,7 +397,7 @@ private struct UploadJobRow: View {
             }
             ProgressView(value: job.fraction)
                 .accessibilityLabel(l10n("studio.upload.progress", job.title))
-                .accessibilityValue(job.fraction.formatted(.percent.precision(.fractionLength(0)).locale(l10n.language.locale)))
+                .accessibilityValue(DisplayFormat.percent(job.fraction, l10n.language))
             Text(status).fanousFont(.caption)
                 .foregroundStyle(job.state == .failed ? Fanous.errorText : Fanous.textSecondary)
         }
@@ -410,13 +412,13 @@ private struct UploadJobRow: View {
         case .uploading:
             l10n(
                 "studio.upload.state.uploading",
-                job.fraction.formatted(.percent.precision(.fractionLength(0)).locale(l10n.language.locale)))
+                DisplayFormat.percent(job.fraction, l10n.language))
         case .finishing: l10n("studio.upload.state.finishing")
         case .paused: l10n("studio.upload.state.paused")
         case .failed: l10n(job.failure ?? "studio.upload.error.generic")
         case .done:
             job.scheduleDate.map {
-                l10n("studio.upload.state.scheduled", $0.formatted(.dateTime.locale(l10n.language.locale)))
+                l10n("studio.upload.state.scheduled", DisplayFormat.dateTime($0, l10n.language))
             } ?? l10n("studio.upload.state.done")
         }
     }

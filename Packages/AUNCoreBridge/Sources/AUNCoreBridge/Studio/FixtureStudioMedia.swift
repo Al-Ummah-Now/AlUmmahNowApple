@@ -101,6 +101,7 @@ actor FixtureMediaStore {
 
     func add(name: String, bytes: Data) -> StudioAsset {
         let asset = StudioAsset(
+            // swiftlint:disable:next display_format
             id: String(format: "a1b2c3d4e5f6%04x", assets.count + 1), kind: .image, name: name, contentType: "image/png",
             bytes: Int64(bytes.count), createdAt: Date())
         assets.insert(asset, at: 0)

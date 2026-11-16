@@ -29,8 +29,8 @@
 "player.speed.normal" = "Normal";
 "player.subtitles" = "Subtitles";
 "player.subtitles.off" = "Off";
-"player.skipForward" = "Forward 10 seconds";
-"player.skipBack" = "Back 10 seconds";
+"player.skipForward" = "Forward %@ seconds";
+"player.skipBack" = "Back %@ seconds";
 "player.error" = "This video can't play right now. Check your connection and try again.";
 "studio.upload.title" = "Upload";
 "studio.upload.add" = "Add videos";
@@ -130,7 +130,7 @@
 "studio.upload.resume" = "Resume";
 "studio.upload.remove" = "Remove";
 "studio.upload.problem.noFiles" = "Add at least one video.";
-"studio.upload.problem.scheduleSoon" = "Pick a publish time at least 10 minutes from now.";
+"studio.upload.problem.scheduleSoon" = "Pick a publish time at least %@ minutes from now.";
 "studio.upload.error.forbidden" = "You can't upload to this channel. Uploads may be by invitation.";
 "studio.upload.error.limit" = "You've reached your upload limit. Try again later.";
 "studio.upload.error.invalid" = "The server didn't accept this video's details.";
@@ -181,8 +181,8 @@
 "studio.content.edit" = "Edit";
 "studio.content.delete" = "Delete";
 "studio.content.deleteTitle" = "Delete %@ video(s)?";
-"studio.content.deleteMessage" = "Deleted videos are hidden at once. You can restore them from Recently deleted for 30 days; after that they are erased.";
-"studio.content.deleteFooter" = "You can restore a deleted video for 30 days.";
+"studio.content.deleteMessage" = "Deleted videos are hidden at once. You can restore them from Recently deleted for %@ days; after that they are erased.";
+"studio.content.deleteFooter" = "You can restore a deleted video for %@ days.";
 "studio.content.selected" = "%@ selected";
 "studio.content.bulkEdit" = "Edit details";
 "studio.content.bulkSchedule" = "Schedule";
@@ -214,7 +214,7 @@
 "studio.bulk.apply" = "Apply";
 "studio.deleted.title" = "Recently deleted";
 "studio.deleted.empty" = "Nothing deleted";
-"studio.deleted.emptyMessage" = "Videos you delete stay here for 30 days.";
+"studio.deleted.emptyMessage" = "Videos you delete stay here for %@ days.";
 "studio.deleted.footer" = "Select videos to restore them, or to delete them permanently now.";
 "studio.deleted.queued" = "Permanent deletion queued";
 "studio.deleted.purging" = "Being erased";

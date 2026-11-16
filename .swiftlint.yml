@@ -19,6 +19,12 @@ custom_rules:
     regex: "\\b(AsyncImage|URLSession\\.shared|URLCache\\.shared|AVAssetDownload\\w*|ShareLink|fileExporter|onDrag|draggable|UIImageWriteToSavedPhotosAlbum|PHPhotoLibrary|UIPasteboard|NSPasteboard|UNNotificationAttachment)\\b"
     message: "Owner rule: the Admin app never caches, downloads or shares media. Use PrivateMediaSession and PrivateImage."
     severity: error
+  display_format:
+    name: "Display formatting goes through DisplayFormat"
+    excluded: [".*/DisplayFormat\\.swift", ".*/L10n\\.swift", ".*/CSVWriter\\.swift", ".*/Tests/.*", "UITests/.*"]
+    regex: "\\.formatted\\(|\\b(NumberFormatter|DateFormatter|RelativeDateTimeFormatter|DateComponentsFormatter|DateIntervalFormatter|ByteCountFormatter|MeasurementFormatter)\\b|String\\(format:"
+    message: "Format display numbers, dates, durations, sizes and money with DisplayFormat (AUNDesign), so Arabic always shows Eastern Arabic (Hindi) numerals. Ids, codes and wire formats: disable with a reason."
+    severity: error
 line_length: {warning: 180, error: 200}
 file_length: {warning: 600, error: 900}
 type_body_length: {warning: 400, error: 600}

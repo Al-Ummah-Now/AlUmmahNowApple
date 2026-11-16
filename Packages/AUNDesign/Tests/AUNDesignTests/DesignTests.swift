@@ -119,7 +119,7 @@ import Testing
     @Test func durationUsesLocaleDigits() {
         #expect(DisplayFormat.duration(75, .en) == "1:15")
         #expect(DisplayFormat.duration(3661, .en) == "1:01:01")
-        #expect(DisplayFormat.duration(75, .ar) == "1:15")  // Eastern Arabic digits become an explicit setting (spec §3).
+        #expect(DisplayFormat.duration(75, .ar) == "١:١٥")
     }
 
     @MainActor @Test func defaultsToArabicOnlyWhenPreferredFirst() {

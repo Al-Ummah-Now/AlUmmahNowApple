@@ -29,8 +29,8 @@
 "player.speed.normal" = "عادية";
 "player.subtitles" = "الترجمة";
 "player.subtitles.off" = "إيقاف";
-"player.skipForward" = "تقديم 10 ثوانٍ";
-"player.skipBack" = "رجوع 10 ثوانٍ";
+"player.skipForward" = "تقديم %@ ثوانٍ";
+"player.skipBack" = "رجوع %@ ثوانٍ";
 "player.error" = "تعذّر تشغيل هذا المرئي الآن. تحقق من اتصالك وحاول مجددًا.";
 "studio.upload.title" = "رفع";
 "studio.upload.add" = "إضافة مرئيات";
@@ -130,7 +130,7 @@
 "studio.upload.resume" = "استئناف";
 "studio.upload.remove" = "إزالة";
 "studio.upload.problem.noFiles" = "أضف مرئيًا واحدًا على الأقل.";
-"studio.upload.problem.scheduleSoon" = "اختر وقت نشر بعد 10 دقائق على الأقل.";
+"studio.upload.problem.scheduleSoon" = "اختر وقت نشر بعد %@ دقائق على الأقل.";
 "studio.upload.error.forbidden" = "لا يمكنك الرفع إلى هذه القناة. قد يكون الرفع بدعوة.";
 "studio.upload.error.limit" = "وصلت إلى حد الرفع. حاول لاحقًا.";
 "studio.upload.error.invalid" = "لم يقبل الخادم تفاصيل هذا المرئي.";
@@ -181,8 +181,8 @@
 "studio.content.edit" = "تعديل";
 "studio.content.delete" = "حذف";
 "studio.content.deleteTitle" = "حذف %@ من المرئيات؟";
-"studio.content.deleteMessage" = "تُخفى المرئيات المحذوفة فورًا. يمكنك استعادتها من «المحذوفة مؤخرًا» خلال 30 يومًا، ثم تُمحى نهائيًا.";
-"studio.content.deleteFooter" = "يمكنك استعادة المرئي المحذوف خلال 30 يومًا.";
+"studio.content.deleteMessage" = "تُخفى المرئيات المحذوفة فورًا. يمكنك استعادتها من «المحذوفة مؤخرًا» خلال %@ يومًا، ثم تُمحى نهائيًا.";
+"studio.content.deleteFooter" = "يمكنك استعادة المرئي المحذوف خلال %@ يومًا.";
 "studio.content.selected" = "تم تحديد %@";
 "studio.content.bulkEdit" = "تعديل التفاصيل";
 "studio.content.bulkSchedule" = "جدولة";
@@ -214,7 +214,7 @@
 "studio.bulk.apply" = "تطبيق";
 "studio.deleted.title" = "المحذوفة مؤخرًا";
 "studio.deleted.empty" = "لا توجد مرئيات محذوفة";
-"studio.deleted.emptyMessage" = "تبقى المرئيات التي تحذفها هنا 30 يومًا.";
+"studio.deleted.emptyMessage" = "تبقى المرئيات التي تحذفها هنا %@ يومًا.";
 "studio.deleted.footer" = "حدّد مرئيات لاستعادتها أو لحذفها نهائيًا الآن.";
 "studio.deleted.queued" = "الحذف النهائي في قائمة الانتظار";
 "studio.deleted.purging" = "جارٍ المحو";

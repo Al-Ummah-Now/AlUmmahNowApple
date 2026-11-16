@@ -20,7 +20,9 @@ struct RecentlyDeletedView: View {
             } else if !model.loaded {
                 ThemeLoader().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.items.isEmpty {
-                EmptyStateView(title: l10n("studio.deleted.empty"), message: l10n("studio.deleted.emptyMessage"))
+                EmptyStateView(
+                    title: l10n("studio.deleted.empty"),
+                    message: l10n("studio.deleted.emptyMessage", DisplayFormat.number(DeletedVideo.restoreDays, l10n.language)))
             } else {
                 List(selection: $model.selection) {
                     Section {
@@ -45,7 +47,7 @@ struct RecentlyDeletedView: View {
         .sheet(isPresented: Binding(get: { confirmingPurge != nil }, set: { if !$0 { confirmingPurge = nil } })) {
             let ids = confirmingPurge ?? []
             ConfirmSheet(
-                title: l10n("studio.deleted.purgeTitle", ids.count.formatted(.number.locale(l10n.language.locale))),
+                title: l10n("studio.deleted.purgeTitle", DisplayFormat.number(ids.count, l10n.language)),
                 message: l10n("studio.deleted.purgeMessage"), actionTitle: l10n("studio.deleted.purge")
             ) {
                 Task { await model.purge(ids) }
@@ -64,7 +66,7 @@ struct RecentlyDeletedView: View {
     }
 
     private func status(_ item: DeletedVideo) -> String {
-        let date = item.purgeAfter.map { $0.formatted(.dateTime.day().month().year().locale(l10n.language.locale)) } ?? ""
+        let date = item.purgeAfter.map { DisplayFormat.day($0, l10n.language) } ?? ""
         switch item.status {
         case .queued: return l10n("studio.deleted.queued")
         case .purging, .purged: return l10n("studio.deleted.purging")
