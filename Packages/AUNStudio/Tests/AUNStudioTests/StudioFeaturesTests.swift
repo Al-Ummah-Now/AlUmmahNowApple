@@ -158,7 +158,8 @@ struct StudioFeaturesTests {
         #expect(StudioFailure.message(CoreError.refused(Refusal(code: Refusal.uploadsByInvitation))) == nil)
         #expect(StudioNotice.from(CoreError.featureOff) == nil)
         // Quotas stay plain facts.
-        #expect(StudioFailure.message(CoreError.refused(Refusal(code: Refusal.channelLimit)))?.key == "studio.refusal.channelLimit")
+        let channelLimit = StudioFailure.message(CoreError.refused(Refusal(code: Refusal.channelLimit)))
+        #expect(channelLimit?.key == "studio.refusal.channelLimit")
         #expect(StudioFailure.message(CoreError.http(status: 429))?.key == "studio.error.generic")
         #expect(StudioFailure.refusalMessage(Refusal(code: Refusal.accountPendingDeletion)) == "studio.account.pendingDeletion")
     }

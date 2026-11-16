@@ -44,6 +44,9 @@ public struct UserFeatures: Hashable, Sendable, Decodable {
                 return
             }
         }
-        on = Set(UserFeature.allCases.filter { (try? c.decodeIfPresent(Bool.self, forKey: AnyKey(stringValue: $0.rawValue))) == true })
+        on = Set(
+            UserFeature.allCases.filter { feature in
+                (try? c.decodeIfPresent(Bool.self, forKey: AnyKey(stringValue: feature.rawValue))) == true
+            })
     }
 }

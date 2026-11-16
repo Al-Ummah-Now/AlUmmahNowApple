@@ -47,7 +47,8 @@ struct UploadView: View {
         Form {
             if let refusal = uploadRefusal {
                 // The server would refuse every upload; say why instead of offering the picker.
-                Text(l10n(StudioFailure.refusalMessage(refusal) ?? "studio.error.generic")).foregroundStyle(Fanous.textSecondary).studioRows()
+                let key = StudioFailure.refusalMessage(refusal) ?? "studio.error.generic"
+                Text(l10n(key)).foregroundStyle(Fanous.textSecondary).studioRows()
                     .accessibilityIdentifier("upload-refused")
             } else if let channel = session.channel {
                 filesSection.studioRows()
