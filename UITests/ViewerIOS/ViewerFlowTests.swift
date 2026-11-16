@@ -58,7 +58,7 @@ final class ViewerFlowTests: XCTestCase {
         XCTAssertTrue(forward.waitForExistence(timeout: 20))
         XCTAssertLessThan(forward.frame.midX, app.buttons["skip-back"].frame.midX, "RTL places back on the right")
         app.buttons["quality-menu"].tap()
-        XCTAssertTrue(app.buttons["360p"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["٣٦٠p"].waitForExistence(timeout: 5), "Arabic shows Eastern Arabic (Hindi) numerals")
         XCTAssertTrue(app.buttons["تلقائي"].exists)
     }
 
