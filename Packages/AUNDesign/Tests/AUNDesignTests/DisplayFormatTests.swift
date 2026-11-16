@@ -72,15 +72,20 @@ import Testing
     }
 
     @Test func arabicViewsPutTheNumberFirstAndAgree() {
+        // Foundation isolates `%@` arguments (FSI…PDI); compare the visible text.
+        func views(_ count: Int, _ l10n: L10n) -> String {
+            DisplayFormat.views(count, l10n).replacingOccurrences(of: "\u{2068}", with: "")
+                .replacingOccurrences(of: "\u{2069}", with: "")
+        }
         let ar = L10n(.ar)
-        #expect(DisplayFormat.views(1200, ar) == "١٫٢ ألف مشاهدة")
-        #expect(DisplayFormat.views(0, ar) == "لا مشاهدات")
-        #expect(DisplayFormat.views(1, ar) == "مشاهدة واحدة")
-        #expect(DisplayFormat.views(2, ar) == "مشاهدتان")
-        #expect(DisplayFormat.views(5, ar) == "٥ مشاهدات")
-        #expect(DisplayFormat.views(40, ar) == "٤٠ مشاهدة")
-        #expect(DisplayFormat.views(1, L10n(.en)) == "1 view")
-        #expect(DisplayFormat.views(1200, L10n(.en)) == "1.2K views")
+        #expect(views(1200, ar) == "١٫٢ ألف مشاهدة")
+        #expect(views(0, ar) == "لا مشاهدات")
+        #expect(views(1, ar) == "مشاهدة واحدة")
+        #expect(views(2, ar) == "مشاهدتان")
+        #expect(views(5, ar) == "٥ مشاهدات")
+        #expect(views(40, ar) == "٤٠ مشاهدة")
+        #expect(views(1, L10n(.en)) == "1 view")
+        #expect(views(1200, L10n(.en)) == "1.2K views")
     }
 
     @Test func arabicSeparatorIsNotMistakenForZero() {
