@@ -19,7 +19,7 @@ public enum DisplayFormat {
 
     /// A whole number with grouping: "6,075", "٦٬٠٧٥".
     public static func number<Value: BinaryInteger>(_ value: Value, _ language: AppLanguage, grouping: Bool = true) -> String {
-        format(value, IntegerFormatStyle<Value>.number.grouping(grouping ? .automatic : .never), language)
+        format(value, IntegerFormatStyle<Value>().grouping(grouping ? .automatic : .never), language)
     }
 
     /// A number with up to `fraction` decimals: "1.5", "١٫٥".
@@ -29,7 +29,7 @@ public enum DisplayFormat {
 
     /// A short count for views and subscribers: "1.2K", "١٫٢ ألف".
     public static func count<Value: BinaryInteger>(_ value: Value, _ language: AppLanguage) -> String {
-        format(value, IntegerFormatStyle<Value>.number.notation(.compactName), language)
+        format(value, IntegerFormatStyle<Value>().notation(.compactName), language)
     }
 
     /// A compact number with up to one decimal (chart axes): "1.2K", "١٫٢ ألف".
