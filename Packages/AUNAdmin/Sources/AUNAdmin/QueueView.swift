@@ -114,7 +114,7 @@ struct OfflineLine: View {
     private func text(now: Date) -> String {
         guard let lastUpdated else { return l10n("admin.offline") }
         let minutes = max(0, Int(now.timeIntervalSince(lastUpdated) / 60))
-        return l10n("admin.offline.updated", minutes.formatted(.number.locale(l10n.language.locale)))
+        return l10n("admin.offline.updated", DisplayFormat.number(minutes, l10n.language))
     }
 }
 
@@ -184,9 +184,13 @@ struct TimeLeft: View {
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 let minutes = Int((due.timeIntervalSince(context.date) / 60).rounded(.up))
                 let late = minutes <= 0
-                Text(late ? l10n("admin.sla.late", (-minutes).formatted()) : l10n("admin.sla.left", minutes.formatted()))
-                    .fanousFont(.caption).monospacedDigit()
-                    .foregroundStyle(late ? Fanous.errorText : Fanous.textSecondary)
+                Text(
+                    late
+                        ? l10n("admin.sla.late", DisplayFormat.number(-minutes, l10n.language))
+                        : l10n("admin.sla.left", DisplayFormat.number(minutes, l10n.language))
+                )
+                .fanousFont(.caption).monospacedDigit()
+                .foregroundStyle(late ? Fanous.errorText : Fanous.textSecondary)
             }
         }
     }
@@ -205,7 +209,7 @@ enum AdminText {
     }
 
     static func percent(_ score: Double, _ l10n: L10n) -> String {
-        score.formatted(.percent.precision(.fractionLength(0)).locale(l10n.language.locale))
+        DisplayFormat.percent(score, l10n.language)
     }
 
     static func decision(_ decision: String, by name: String?, l10n: L10n) -> String {

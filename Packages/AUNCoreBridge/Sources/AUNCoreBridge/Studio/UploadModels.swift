@@ -160,12 +160,15 @@ public enum TitlePattern {
         gregorian.timeZone = context.timeZone
         var hijri = Calendar(identifier: .islamicUmmAlQura)
         hijri.timeZone = context.timeZone
-        let locale = context.language.locale
+        // Titles are text people edit and the server stores, so their tokens keep Arabic numerals 0–9 in every
+        // language (like the web rename engine); only month and weekday names follow the language.
+        let locale = Locale(identifier: "\(context.language.rawValue)@numbers=latn")
         let parts = gregorian.dateComponents([.year, .month, .day], from: context.date)
         let hijriParts = hijri.dateComponents([.year, .month, .day], from: context.date)
+        // swiftlint:disable:next display_format
         func two(_ value: Int?) -> String { String(format: "%02d", value ?? 0) }
         func formatted(_ calendar: Calendar, _ template: String) -> String {
-            let formatter = DateFormatter()
+            let formatter = DateFormatter()  // swiftlint:disable:this display_format
             formatter.calendar = calendar
             formatter.locale = locale
             formatter.timeZone = context.timeZone

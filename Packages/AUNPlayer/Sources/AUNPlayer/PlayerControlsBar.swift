@@ -7,13 +7,13 @@ extension PlayerQuality {
     func label(_ l10n: L10n) -> String {
         switch self {
         case .auto: l10n("player.quality.auto")
-        case .maximum(let height): "\(height)p"
+        case .maximum(let height): DisplayFormat.number(height, l10n.language, grouping: false) + "p"
         }
     }
 }
 
 func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
-    speed == 1 ? l10n("player.speed.normal") : speed.formatted(.number.locale(l10n.language.locale)) + "×"
+    speed == 1 ? l10n("player.speed.normal") : DisplayFormat.number(Double(speed), l10n.language) + "×"
 }
 
 #if os(iOS) || os(macOS)
@@ -24,6 +24,8 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
 
         public init(controller: PlayerController) { self.controller = controller }
 
+        private var skipSeconds: String { DisplayFormat.number(Int(PlayerController.skipInterval), l10n.language) }
+
         public var body: some View {
             HStack(spacing: 16) {
                 Button {
@@ -31,14 +33,14 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
                 } label: {
                     Image(systemName: "gobackward.10")
                 }
-                .accessibilityLabel(l10n("player.skipBack"))
+                .accessibilityLabel(l10n("player.skipBack", skipSeconds))
                 .accessibilityIdentifier("skip-back")
                 Button {
                     controller.skip(by: PlayerController.skipInterval)
                 } label: {
                     Image(systemName: "goforward.10")
                 }
-                .accessibilityLabel(l10n("player.skipForward"))
+                .accessibilityLabel(l10n("player.skipForward", skipSeconds))
                 .accessibilityIdentifier("skip-forward")
                 Spacer()
                 qualityMenu

@@ -76,7 +76,7 @@ struct VideoEditView: View {
                         .foregroundStyle(Fanous.errorText)
                         .accessibilityIdentifier("edit-delete")
                 } footer: {
-                    Text(l10n("studio.content.deleteFooter"))
+                    Text(l10n("studio.content.deleteFooter", DisplayFormat.number(DeletedVideo.restoreDays, l10n.language)))
                 }
                 .studioRows()
             }
@@ -152,7 +152,7 @@ struct BulkEditView: View {
                         label: l10n("studio.bulk.removeTags"), text: $removeTags, prompt: l10n("studio.upload.tagsHint"),
                         identifier: "bulk-remove-tags")
                 } footer: {
-                    Text(l10n("studio.bulk.footer", model.selection.count.formatted(.number.locale(l10n.language.locale))))
+                    Text(l10n("studio.bulk.footer", DisplayFormat.number(model.selection.count, l10n.language)))
                 }
                 .studioRows()
             }
@@ -195,7 +195,7 @@ struct BulkScheduleView: View {
                         l10n("studio.upload.publishAt"), selection: $start,
                         in: Date().addingTimeInterval(UploadComposer.minimumLead)...)
                     Stepper(
-                        l10n("studio.upload.interval", intervalHours.formatted(.number.locale(l10n.language.locale))),
+                        l10n("studio.upload.interval", DisplayFormat.number(intervalHours, l10n.language)),
                         value: $intervalHours, in: 0...168)
                 } footer: {
                     Text(l10n("studio.upload.scheduleHelp"))

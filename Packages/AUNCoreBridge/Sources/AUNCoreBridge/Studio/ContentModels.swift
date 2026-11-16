@@ -12,6 +12,9 @@ public enum ContentVisibility: String, CaseIterable, Sendable { case all, `publi
 public struct DeletedVideo: Identifiable, Hashable, Sendable, Decodable {
     public enum Status: String, Sendable, Decodable { case deleted, queued, purging, purged }
 
+    /// Days a deleted video can be restored before the cleanup erases it (server rule, shown in copy).
+    public static let restoreDays = 30
+
     public var id: String
     public var title: String
     public var deletedAt: Date?

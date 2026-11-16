@@ -36,19 +36,12 @@ enum ChartScale {
         return Array(Set(picked)).sorted()
     }
 
-    /// Chart numbers and dates: Arabic always with Arabic-Indic digits (web `ar-u-nu-arab`).
-    static func locale(_ language: AppLanguage) -> Locale {
-        Locale(identifier: language == .ar ? "ar@numbers=arab" : language.rawValue)
-    }
-
     /// 1234 → "1.2K" (en), "١٫٢ ألف" (ar).
-    static func compact(_ value: Double, _ language: AppLanguage) -> String {
-        value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)).locale(locale(language)))
-    }
+    static func compact(_ value: Double, _ language: AppLanguage) -> String { DisplayFormat.compact(value, language) }
 
     /// A whole number with grouping: "6,075", "٦٬٠٧٥".
     static func full(_ value: Double, _ language: AppLanguage) -> String {
-        value.formatted(.number.precision(.fractionLength(0...1)).locale(locale(language)))
+        DisplayFormat.number(value, language, fraction: 0...1)
     }
 
     enum WatchUnit: Equatable {
@@ -62,12 +55,11 @@ enum ChartScale {
 
     /// A value already in `unit`, with the unit: "3.1 min", "12.5 hr", "٣٫١ د".
     static func format(_ value: Double, in unit: WatchUnit, _ language: AppLanguage) -> String {
-        Measurement(value: value, unit: unit == .hour ? UnitDuration.hours : UnitDuration.minutes)
-            .formatted(
-                .measurement(
-                    width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(0...1))
-                )
-                .locale(locale(language)))
+        DisplayFormat.format(
+            Measurement(value: value, unit: unit == .hour ? UnitDuration.hours : UnitDuration.minutes),
+            Measurement<UnitDuration>.FormatStyle(
+                width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(0...1))),
+            language)
     }
 
     /// Seconds as minutes or hours, the unit picked from the seconds themselves.
@@ -78,8 +70,7 @@ enum ChartScale {
 
     /// "15 Oct", "١٥ أكتوبر": a UTC day, as the API sends it.
     static func day(_ date: Date, _ language: AppLanguage) -> String {
-        var style = Date.FormatStyle(date: .omitted, time: .omitted, locale: locale(language), timeZone: .gmt)
-        style = style.day().month(.abbreviated)
-        return date.formatted(style)
+        DisplayFormat.date(
+            date, Date.FormatStyle(date: .omitted, time: .omitted, timeZone: .gmt).day().month(.abbreviated), language)
     }
 }

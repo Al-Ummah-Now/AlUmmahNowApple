@@ -195,10 +195,7 @@ public final class ReviewModel {
         let verb = ["approve", "reject", "escalate", "request_changes"].contains(decision) ? decision : "generic"
         let when: String
         if let at {
-            let formatter = RelativeDateTimeFormatter()
-            formatter.locale = l10n.language.locale
-            formatter.unitsStyle = .short
-            when = formatter.localizedString(for: at, relativeTo: now)
+            when = DisplayFormat.relative(at, to: now, l10n.language)
         } else {
             when = ""
         }

@@ -4,7 +4,10 @@ public enum AppLanguage: String, CaseIterable, Codable, Hashable, Sendable {
     case en, ar
 
     public var isRTL: Bool { self == .ar }
-    public var locale: Locale { Locale(identifier: rawValue) }
+    /// The locale for display formatting. Arabic always uses Eastern Arabic (Hindi) numerals ٠–٩ (owner decision
+    /// 2026-11-15), whatever the device region or numbering settings; `Locale(identifier: "ar")` alone gives 0–9 on
+    /// some systems. Format through `DisplayFormat` in AUNDesign.
+    public var locale: Locale { Locale(identifier: self == .ar ? "ar@numbers=arab" : rawValue) }
 }
 
 /// Server text with per-language variants. Empty variants count as missing.
