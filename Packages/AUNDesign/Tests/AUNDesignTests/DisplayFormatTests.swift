@@ -72,10 +72,10 @@ import Testing
     }
 
     @Test func arabicViewsPutTheNumberFirstAndAgree() {
-        // Foundation isolates `%@` arguments (FSI…PDI); compare the visible text.
+        // Foundation isolates `%@` arguments (FSI…PDI) and compact numbers use a no-break space; compare the visible text.
         func views(_ count: Int, _ l10n: L10n) -> String {
             DisplayFormat.views(count, l10n).replacingOccurrences(of: "\u{2068}", with: "")
-                .replacingOccurrences(of: "\u{2069}", with: "")
+                .replacingOccurrences(of: "\u{2069}", with: "").replacingOccurrences(of: "\u{00A0}", with: " ")
         }
         let ar = L10n(.ar)
         #expect(views(1200, ar) == "١٫٢ ألف مشاهدة")
