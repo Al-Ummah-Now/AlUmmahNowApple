@@ -23,6 +23,9 @@ struct ContentView: View {
         self.session = session
         let model = ContentModel(channelID: channelID, services: session.services)
         model.onError = { [weak session] in session?.note($0) }
+        model.showsStats = { [weak session] in session?.showsAnalytics ?? false }
+        model.onStatsOff = { [weak session] in session?.featureOff(.analytics) }
+        model.showsBulkSchedule = { [weak session] in session?.shows(.bulkSchedule) ?? false }
         _model = State(initialValue: model)
     }
 
@@ -237,7 +240,9 @@ struct ContentView: View {
         Text(l10n("studio.content.selected", count)).fanousFont(.label).foregroundStyle(Fanous.textPrimary)
         Spacer(minLength: 0)
         Button(l10n("studio.content.bulkEdit")) { sheet = .edit }.accessibilityIdentifier("bulk-edit")
-        Button(l10n("studio.content.bulkSchedule")) { sheet = .schedule }.accessibilityIdentifier("bulk-schedule")
+        if model.showsBulkSchedule() {
+            Button(l10n("studio.content.bulkSchedule")) { sheet = .schedule }.accessibilityIdentifier("bulk-schedule")
+        }
         Button(l10n("studio.content.bulkPlaylist")) { sheet = .playlist }.accessibilityIdentifier("bulk-playlist")
         Button(l10n("studio.content.delete"), role: .destructive) { confirmingDelete = Array(model.selection) }
             .accessibilityIdentifier("bulk-delete")
@@ -311,7 +316,7 @@ struct MessageBanner: View {
 
     private func isError(_ key: String) -> Bool {
         key.hasPrefix("studio.error.") || key.hasPrefix("studio.refusal.") || key.hasPrefix("studio.account.")
-            || [StudioFailure.plainKey, "studio.content.limit", "studio.upload.error.limit"].contains(key)
+            || key == "studio.upload.error.limit"
     }
 
     private func text(_ message: (key: String, values: [String])) -> String {

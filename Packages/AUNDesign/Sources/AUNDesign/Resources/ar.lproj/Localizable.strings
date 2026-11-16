@@ -62,8 +62,6 @@
 "studio.editor.exported" = "اكتمل التصدير";
 "studio.editor.moveUp" = "نقل للأمام";
 "studio.editor.moveDown" = "نقل للخلف";
-"studio.live.title" = "بث مباشر";
-"studio.live.unavailable" = "يتطلب البث المباشر تحديد مزوّد الخدمة وهو غير متاح بعد.";
 "common.cancel" = "إلغاء";
 "common.dismiss" = "إغلاق";
 "studio.signIn.title" = "سجّل الدخول إلى الاستوديو";
@@ -136,7 +134,7 @@
 "studio.upload.remove" = "إزالة";
 "studio.upload.problem.noFiles" = "أضف مرئيًا واحدًا على الأقل.";
 "studio.upload.problem.scheduleSoon" = "اختر وقت نشر بعد %@ دقائق على الأقل.";
-"studio.upload.error.forbidden" = "لا يمكنك الرفع إلى هذه القناة. قد يكون الرفع بدعوة.";
+"studio.upload.error.forbidden" = "لا يمكنك الرفع إلى هذه القناة.";
 "studio.upload.error.limit" = "وصلت إلى حد الرفع. حاول لاحقًا.";
 "studio.upload.error.invalid" = "لم يقبل الخادم تفاصيل هذا المرئي.";
 "studio.upload.error.generic" = "توقف الرفع. أعد المحاولة للمتابعة من حيث توقف.";
@@ -199,7 +197,6 @@
 "studio.content.addedToPlaylist" = "تمت إضافة %@ إلى قائمة التشغيل";
 "studio.content.partial" = "نجح %@، وتعذّر %@";
 "studio.content.saved" = "تم الحفظ";
-"studio.content.limit" = "خطتك لا تشمل هذا. اطلب من المشرف تغييرها.";
 "studio.sort.newest" = "الأحدث";
 "studio.sort.oldest" = "الأقدم";
 "studio.sort.views" = "الأكثر مشاهدة";
@@ -245,8 +242,6 @@
 "studio.analytics.lifetime" = "منذ البداية: %@ مشاهدة • %@ مشترك • تفاعل %@";
 
 /* Plan refusals and account states (api-videos codes) */
-"studio.plain" = "%@";
-"studio.refusal.invitation" = "الرفع بدعوة. اطلب من المشرف منح حسابك خطة صانع محتوى.";
 "studio.refusal.channelLimit" = "وصلت إلى حد القنوات في خطتك.";
 "studio.account.stateTitle" = "حسابك في المرئيات";
 "studio.account.pendingDeletion" = "حسابك في المرئيات مجدول للحذف. تواصل مع الدعم.";

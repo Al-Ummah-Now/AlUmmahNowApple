@@ -79,8 +79,28 @@ public struct FixtureStudioService: StudioServicing {
     let media = FixtureMediaStore()
     private let original = FixtureContentStore()
     let accountState: AccountState
+    /// Feature keys switched off for UI tests (`-AUNFixtureFeaturesOff upload,analytics`): `UserFeature` raw values, and
+    /// `analytics`, whose routes then answer 404 `feature_off`.
+    let featuresOff: Set<String>
 
-    public init(accountState: AccountState = .creator) { self.accountState = accountState }
+    public init(accountState: AccountState = .creator, featuresOff: Set<String> = []) {
+        self.accountState = accountState
+        self.featuresOff = featuresOff
+    }
+
+    /// Every feature on for a creator; without a creator tier, uploads and channel creation are off.
+    public func features(channelID: String?) async throws -> UserFeatures {
+        var features = UserFeatures.all
+        if accountState == .invitation {
+            features = features.with(.upload, false).with(.createChannel, false)
+        }
+        for key in featuresOff { if let feature = UserFeature(rawValue: key) { features = features.with(feature, false) } }
+        return features
+    }
+
+    private func refuseIfOff(_ key: String) throws {
+        if featuresOff.contains(key) { throw CoreError.featureOff }
+    }
 
     public func creatorAccess() async throws -> CreatorAccess {
         switch accountState {
@@ -179,7 +199,8 @@ public struct FixtureStudioService: StudioServicing {
     public func bulkSchedule(_ ids: [String], startAt: Date, intervalMinutes: Int, timeZone: TimeZone) async throws
         -> BulkResult
     {
-        await store.apply(ids) { video in
+        try refuseIfOff(UserFeature.bulkSchedule.rawValue)
+        return await store.apply(ids) { video in
             video.studioStatus = .scheduled
             video.scheduledPublishDate = startAt
         }
@@ -198,6 +219,7 @@ public struct FixtureStudioService: StudioServicing {
     public func purgeVideos(_ ids: [String]) async throws -> BulkResult { await store.purge(ids) }
 
     public func channelStats(channelID: String, period: DateInterval) async throws -> ChannelStats {
+        try refuseIfOff("analytics")
         let daily = Self.fixtureDays(period)
         let videos = await store.videos.filter { $0.studioStatus == .published }
         return ChannelStats(
@@ -211,6 +233,7 @@ public struct FixtureStudioService: StudioServicing {
     }
 
     public func videoStats(videoID: String, period: DateInterval) async throws -> VideoStats {
+        try refuseIfOff("analytics")
         let video = await store.videos.first { $0.id == videoID }
         return VideoStats(
             videoID: videoID, title: video?.title ?? "", views: (video?.views ?? 0) / 4, likes: 12, comments: 3, shares: 2,

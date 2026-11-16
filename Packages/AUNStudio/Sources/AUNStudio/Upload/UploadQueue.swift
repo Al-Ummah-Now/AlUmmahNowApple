@@ -34,6 +34,9 @@ public final class UploadQueue {
     /// Called when the server refuses for the whole account (pending deletion, ban). The queue pauses rather than
     /// fails its jobs, and runs nothing until `unblock()`.
     var onAccountState: ((Refusal) -> Void)?
+    /// Called when the server says uploads are off for the account (`feature_off`, 402, no creator tier). The job is
+    /// dropped without a message and Studio reads its features again, which hides the Upload tab.
+    var onFeatureOff: (() -> Void)?
     private(set) var isBlocked = false
 
     init(
@@ -196,10 +199,15 @@ public final class UploadQueue {
             if let refusal = error.refusal { onAccountState?(refusal) }
         } catch {
             AUNLog.studio.error("Upload \(id, privacy: .public) failed: \(error)")
+            guard let key = Self.failureKey(error) else {
+                remove(id)
+                onFeatureOff?()
+                return
+            }
             update(id) {
                 $0.state = .failed
                 $0.inFlight = 0
-                $0.failure = Self.failureKey(error)
+                $0.failure = key
             }
         }
     }
@@ -393,15 +401,15 @@ public final class UploadQueue {
         #endif
     }
 
-    static func failureKey(_ error: any Error) -> String {
-        if let refusal = (error as? CoreError)?.refusal {
-            return refusal.code == Refusal.upgradeRequired ? "studio.content.limit" : StudioFailure.refusalMessage(refusal).key
-        }
+    /// The job's failure text, or nil when uploads are off for the account (nothing is said; the tab goes away).
+    static func failureKey(_ error: any Error) -> String? {
+        if let core = error as? CoreError, core.hidesEntryPoint { return nil }
+        if let refusal = (error as? CoreError)?.refusal { return StudioFailure.refusalMessage(refusal) }
         return switch error as? CoreError {
         case .offline: "studio.error.offline"
         case .signInRequired: "studio.error.signIn"
         case .forbidden: "studio.upload.error.forbidden"
-        case .http(let status) where status == 429 || status == 402: "studio.upload.error.limit"
+        case .http(let status) where status == 429: "studio.upload.error.limit"
         case .invalid: "studio.upload.error.invalid"
         default: "studio.upload.error.generic"
         }

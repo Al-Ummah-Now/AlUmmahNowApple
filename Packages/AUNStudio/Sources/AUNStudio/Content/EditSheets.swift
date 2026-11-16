@@ -69,8 +69,12 @@ struct VideoEditView: View {
                         identifier: "edit-tags")
                 }
                 .studioRows()
-                Section(l10n("studio.analytics.title")) { VideoStatsView(services: model.services, videoID: video.id) }
+                if model.showsStats() {
+                    Section(l10n("studio.analytics.title")) {
+                        VideoStatsView(services: model.services, videoID: video.id, onFeatureOff: model.onStatsOff)
+                    }
                     .studioRows()
+                }
                 Section {
                     Button(l10n("studio.content.delete"), role: .destructive) { onDelete([video.id]) }
                         .foregroundStyle(Fanous.errorText)

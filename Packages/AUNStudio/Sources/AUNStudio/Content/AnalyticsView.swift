@@ -6,8 +6,9 @@ import SwiftUI
 /// A channel's numbers for a range, each against the period before it, with daily views and top videos.
 struct AnalyticsView: View {
     @Environment(\.l10n) private var l10n
-    let services: StudioServices
+    let session: StudioSession
     let channelID: String
+    private var services: StudioServices { session.services }
     @State private var range: AnalyticsRange = .days28
     @State private var current: ChannelStats?
     @State private var previous: ChannelStats?
@@ -44,7 +45,9 @@ struct AnalyticsView: View {
         .task(id: range) { await load() }
         .sheet(item: $opened) { video in
             NavigationStack {
-                Form { VideoStatsView(services: services, videoID: video.videoID).studioRows() }
+                Form {
+                    VideoStatsView(services: services, videoID: video.videoID) { session.featureOff(.analytics) }.studioRows()
+                }
                     .formStyle(.grouped)
                     .scrollContentBackground(.hidden)
                     .fanousPage()
@@ -73,6 +76,9 @@ struct AnalyticsView: View {
             failed = false
         } catch is CancellationError {
             // A newer range replaced this load.
+        } catch CoreError.featureOff {
+            // Analytics is off for this channel: the tab goes away, with nothing to say.
+            session.featureOff(.analytics)
         } catch {
             AUNLog.studio.error("Analytics failed: \(error)")
             failed = current == nil
@@ -189,8 +195,11 @@ struct VideoStatsView: View {
     @Environment(\.l10n) private var l10n
     let services: StudioServices
     let videoID: String
+    /// The stats API answered 404 `feature_off`; whoever shows this hides it.
+    var onFeatureOff: () -> Void = {}
     @State private var stats: VideoStats?
     @State private var failed = false
+    @State private var off = false
 
     var body: some View {
         Group {
@@ -207,7 +216,7 @@ struct VideoStatsView: View {
                 }
             } else if failed {
                 Text(l10n("common.error.load")).foregroundStyle(Fanous.errorText)
-            } else {
+            } else if !off {
                 ProgressView().accessibilityLabel(l10n("common.loading"))
             }
         }
@@ -217,6 +226,9 @@ struct VideoStatsView: View {
                     try await services.studio.videoStats(videoID: videoID, period: AnalyticsRange.days28.periods().current)
                 }
             } catch is CancellationError {
+            } catch CoreError.featureOff {
+                off = true
+                onFeatureOff()
             } catch {
                 failed = true
             }

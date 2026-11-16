@@ -39,19 +39,15 @@ struct UploadView: View {
         @State private var loadingPhotos = false
     #endif
 
-    /// Why this account cannot upload at all, from `GET /api/me/creator`: its videos data is pending deletion, or it
-    /// has no creator tier (uploads by invitation).
-    private var uploadRefusal: Refusal? {
-        if let state = session.accountState { return state }
-        if let creator = session.creator, !creator.canUpload { return Refusal(code: Refusal.uploadsByInvitation) }
-        return nil
-    }
+    /// Why this account cannot upload at all: its videos data is pending deletion, or it is banned. Without a creator
+    /// tier there is no Upload tab (`StudioSession.shows(.upload)`), so this screen never explains tiers.
+    private var uploadRefusal: Refusal? { session.accountState }
 
     var body: some View {
         Form {
             if let refusal = uploadRefusal {
                 // The server would refuse every upload; say why instead of offering the picker.
-                Text(l10n(StudioFailure.refusalMessage(refusal).key)).foregroundStyle(Fanous.textSecondary).studioRows()
+                Text(l10n(StudioFailure.refusalMessage(refusal) ?? "studio.error.generic")).foregroundStyle(Fanous.textSecondary).studioRows()
                     .accessibilityIdentifier("upload-refused")
             } else if let channel = session.channel {
                 filesSection.studioRows()

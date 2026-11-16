@@ -5,11 +5,13 @@ final class StudioSmokeTests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
     @MainActor
-    private func launch(_ language: String, signedIn: Bool = false) -> XCUIApplication {
+    private func launch(
+        _ language: String, signedIn: Bool = false, state: String = "creator", featuresOff: String = ""
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", signedIn ? "YES" : "NO", "-AUNLanguage", language,
-            "-ApplePersistenceIgnoreState", "YES",
+            "-AUNFixtureAccountState", state, "-AUNFixtureFeaturesOff", featuresOff, "-ApplePersistenceIgnoreState", "YES",
         ]
         app.launch()
         return app
@@ -36,6 +38,33 @@ final class StudioSmokeTests: XCTestCase {
         let card = channelCard(app)
         XCTAssertTrue(card.waitForExistence(timeout: 30))
         XCTAssertTrue(app.staticTexts["لوحة التحكم"].firstMatch.exists)
+    }
+
+    /// Off, unconfigured or not-in-tier features have no section (owner rule 2026-11-16).
+    @MainActor
+    func testUploadSectionFollowsTheFeature() {
+        let on = launch("en", signedIn: true)
+        XCTAssertTrue(on.descendants(matching: .any)["section-upload"].waitForExistence(timeout: 30))
+        on.terminate()
+        let off = launch("ar", signedIn: true, state: "invitation")
+        XCTAssertTrue(off.descendants(matching: .any)["section-content"].waitForExistence(timeout: 30))
+        XCTAssertFalse(off.descendants(matching: .any)["section-upload"].exists)
+        off.terminate()
+        let switchedOff = launch("en", signedIn: true, featuresOff: "upload")
+        XCTAssertTrue(switchedOff.descendants(matching: .any)["section-content"].waitForExistence(timeout: 30))
+        XCTAssertFalse(switchedOff.descendants(matching: .any)["section-upload"].exists)
+    }
+
+    /// Analytics answering 404 `feature_off` takes its section away without a message.
+    @MainActor
+    func testAnalyticsOffHidesItsSection() {
+        let app = launch("en", signedIn: true, featuresOff: "analytics")
+        let analytics = app.descendants(matching: .any)["section-analytics"]
+        XCTAssertTrue(analytics.waitForExistence(timeout: 30))
+        analytics.click()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: analytics)
+        waitForExpectations(timeout: 15)
+        XCTAssertTrue(app.descendants(matching: .any)["section-home"].exists)
     }
 
     @MainActor

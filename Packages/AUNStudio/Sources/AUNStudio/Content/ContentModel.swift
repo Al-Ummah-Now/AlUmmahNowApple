@@ -114,6 +114,12 @@ final class ContentModel {
 
     /// Tells the session about account-wide refusals, which its banner shows once.
     @ObservationIgnored var onError: ((any Error) -> Void)?
+    /// Whether a video's stats show in its edit sheet (Analytics not switched off), and what to do when the stats API
+    /// says it is off.
+    @ObservationIgnored var showsStats: () -> Bool = { true }
+    @ObservationIgnored var onStatsOff: () -> Void = {}
+    /// Whether Bulk schedule is offered (the `bulkSchedule` feature).
+    @ObservationIgnored var showsBulkSchedule: () -> Bool = { true }
 
     /// An action failed: say why, unless the account banner already does.
     private func fail(_ error: any Error) {

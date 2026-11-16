@@ -5,11 +5,11 @@ final class StudioManageTests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
     @MainActor
-    private func launch(_ language: String) -> XCUIApplication {
+    private func launch(_ language: String, theme: String = "dark", featuresOff: String = "") -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
-            "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNLanguage", language, "-AUNTheme", "dark",
-            "-ApplePersistenceIgnoreState", "YES",
+            "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNLanguage", language, "-AUNTheme", theme,
+            "-AUNFixtureFeaturesOff", featuresOff, "-ApplePersistenceIgnoreState", "YES",
         ]
         app.launch()
         return app
@@ -73,6 +73,30 @@ final class StudioManageTests: XCTestCase {
         keep("search-en")
         XCTAssertTrue(row(app, "fixture-content-3").waitForExistence(timeout: 10))
         XCTAssertFalse(row(app, "fixture-content-1").exists)
+    }
+
+    /// Bulk schedule shows only with the `bulkSchedule` feature (owner rule 2026-11-16), in English and Arabic. Themes
+    /// come from `AUN_HIDE_THEMES` (default dark) so the same test can capture light screenshots.
+    @MainActor
+    func testBulkScheduleFollowsTheFeature() {
+        let themes = (ProcessInfo.processInfo.environment["AUN_HIDE_THEMES"] ?? "dark").split(separator: ",").map(String.init)
+        for theme in themes {
+            for (language, content) in [("en", "Content"), ("ar", "المحتوى")] {
+                for off in [false, true] {
+                    let app = launch(language, theme: theme, featuresOff: off ? "bulkSchedule" : "")
+                    tab(app, content)
+                    XCTAssertTrue(row(app, "fixture-content-1").waitForExistence(timeout: 20))
+                    app.buttons["content-select"].tap()
+                    row(app, "fixture-content-1").tap()
+                    row(app, "fixture-content-2").tap()
+                    XCTAssertTrue(app.descendants(matching: .any)["bulk-bar"].firstMatch.waitForExistence(timeout: 10))
+                    XCTAssertTrue(app.buttons["bulk-edit"].exists)
+                    XCTAssertEqual(app.buttons["bulk-schedule"].exists, !off, "\(language) \(theme) off=\(off)")
+                    keep("bulk-schedule-\(off ? "off" : "on")-\(language)-\(theme)")
+                    app.terminate()
+                }
+            }
+        }
     }
 
     @MainActor
