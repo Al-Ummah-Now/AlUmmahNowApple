@@ -1,4 +1,5 @@
 import AUNCoreBridge
+import AUNDesign
 import Foundation
 import Testing
 
@@ -173,3 +174,44 @@ struct StudioFeaturesTests {
         #expect(session.showsAnalytics)
     }
 }
+
+#if os(macOS)
+    /// The Mac sidebar in English with Upload and Analytics off: the sections, and the titles a person reads.
+    @MainActor
+    struct MacSectionListTests {
+        private func titles(_ session: StudioSession) -> [String] {
+            StudioShell.sections(for: session).map { L10n(.en)($0.titleKey) }
+        }
+
+        private func session(_ account: FixtureStudioService.AccountState, off: Set<String> = []) async -> StudioSession {
+            let session = StudioSession(
+                services: .fixtures(signedIn: true, accountState: account, featuresOff: off),
+                authenticator: FixtureWebAuthenticator(),
+                defaults: UserDefaults(suiteName: "mac-sections-\(UUID().uuidString)")!)
+            await session.start()
+            return session
+        }
+
+        @Test func everySectionWhenEverythingIsOn() async {
+            let on = await session(.creator)
+            #expect(StudioShell.sections(for: on) == StudioSection.allCases)
+            #expect(titles(on).contains("Upload") && titles(on).contains("Analytics"))
+        }
+
+        @Test func noUploadWithoutTheFeatureOrATier() async {
+            for off in [await session(.creator, off: ["upload"]), await session(.invitation)] {
+                #expect(!StudioShell.sections(for: off).contains(.upload))
+                #expect(!titles(off).contains("Upload"))
+                #expect(titles(off).contains("Analytics"))
+            }
+        }
+
+        @Test func noAnalyticsOnceItsApiSaysFeatureOff() async {
+            let off = await session(.creator, off: ["analytics"])
+            off.featureOff(.analytics)
+            #expect(!StudioShell.sections(for: off).contains(.analytics))
+            #expect(!titles(off).contains("Analytics"))
+            #expect(titles(off).contains("Upload"))
+        }
+    }
+#endif

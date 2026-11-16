@@ -250,7 +250,10 @@ struct ChannelGate<Content: View>: View {
         }
 
         /// Upload only with the `upload` feature; Analytics until its API answers `feature_off`.
-        private var sections: [StudioSection] {
+        private var sections: [StudioSection] { Self.sections(for: session) }
+
+        /// The sidebar's sections for the session's features; the same in every language.
+        static func sections(for session: StudioSession) -> [StudioSection] {
             StudioSection.allCases.filter { item in
                 switch item {
                 case .upload: session.showsUpload
