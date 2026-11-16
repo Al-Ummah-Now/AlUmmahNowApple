@@ -34,8 +34,8 @@ struct VideoCardContent: View {
     }
 
     private var metadata: String {
-        let views = l10n("video.views", DisplayFormat.count(video.views, l10n.language))
-        return [video.channelName, views].compactMap { $0 }.joined(separator: " · ")
+        let views = DisplayFormat.views(video.views, l10n)
+        return DisplayFormat.meta([video.channelName, views], l10n.language)
     }
 }
 

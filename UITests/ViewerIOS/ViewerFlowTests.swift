@@ -43,7 +43,7 @@ final class ViewerFlowTests: XCTestCase {
         card(app).tap()
         let title = app.staticTexts["watch-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 20))
-        XCTAssertEqual(title.label, "مقدمة في التفسير، الجزء 1")
+        XCTAssertEqual(title.label, "مقدمة في التفسير، الجزء ١")
         XCTAssertTrue(app.buttons["chapter-c1"].exists)
         XCTAssertTrue(app.buttons["subtitles-menu"].exists)
         XCTAssertTrue(app.buttons["speed-menu"].exists)

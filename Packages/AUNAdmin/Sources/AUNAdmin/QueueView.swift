@@ -160,7 +160,7 @@ struct QueueRow: View {
 
     private func channelLine(_ channel: String) -> String {
         guard let trust = item.channelTrust else { return channel }
-        return "\(channel) · \(AdminText.optional("admin.trust.\(trust)", l10n) ?? trust)"
+        return DisplayFormat.meta([channel, AdminText.optional("admin.trust.\(trust)", l10n) ?? trust], l10n.language)
     }
 
     private var reasons: String {
@@ -170,7 +170,7 @@ struct QueueRow: View {
         if let cause = item.holdCause, cause != .nsfw { parts.append(l10n("admin.hold.\(cause.rawValue)")) }
         if let top = item.topCategory { parts.append(AdminText.category(top, l10n)) }
         if let risk = item.risk { parts.append(l10n("admin.item.risk", AdminText.percent(risk, l10n))) }
-        return parts.joined(separator: " · ")
+        return DisplayFormat.meta(parts, l10n.language)
     }
 }
 

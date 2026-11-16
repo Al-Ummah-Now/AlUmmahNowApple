@@ -166,8 +166,11 @@ struct ReviewScreen: View {
         Section {
             ForEach(detail.findings) { finding in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(AdminText.category(finding.category, l10n)) · \(AdminText.percent(finding.score, l10n))")
-                        .fanousFont(.label).foregroundStyle(Fanous.textPrimary)
+                    Text(
+                        DisplayFormat.meta(
+                            [AdminText.category(finding.category, l10n), AdminText.percent(finding.score, l10n)], l10n.language)
+                    )
+                    .fanousFont(.label).foregroundStyle(Fanous.textPrimary)
                     Text(sourceLine(finding)).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
                     if let text = finding.text {
                         Text(text).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
@@ -187,7 +190,7 @@ struct ReviewScreen: View {
     private func sourceLine(_ finding: ReviewFinding) -> String {
         let source = AdminText.optional("admin.source.\(finding.source)", l10n) ?? finding.source
         guard let at = finding.atMs else { return source }
-        return "\(source) · \(AdminText.timecode(at, l10n))"
+        return DisplayFormat.meta([source, AdminText.timecode(at, l10n)], l10n.language)
     }
 
     @ViewBuilder private func metadata(_ detail: ReviewDetail) -> some View {

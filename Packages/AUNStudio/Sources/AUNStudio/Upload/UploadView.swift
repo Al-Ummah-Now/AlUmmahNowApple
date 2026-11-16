@@ -224,8 +224,11 @@ private struct FileRow: View {
                     prompt: Text(composer.title(at: index, channelName: channelName, language: l10n.language))
                 )
                 .accessibilityIdentifier("upload-title-\(index)")
-                Text(verbatim: "\(file.fileName) · \(DisplayFormat.bytes(file.fileSize, l10n.language))")
-                    .fanousFont(.caption).foregroundStyle(Fanous.textMuted)
+                Text(
+                    verbatim: DisplayFormat.meta(
+                        [file.fileName, DisplayFormat.bytes(file.fileSize, l10n.language)], l10n.language)
+                )
+                .fanousFont(.caption).foregroundStyle(Fanous.textMuted)
             }
             Button {
                 composer.remove(file.id)

@@ -19,11 +19,13 @@ public struct FixtureCatalogService: CatalogServicing {
     }
 
     public static let videos: [Video] = (1...8).map { index in
-        Video(
+        // Arabic fixture titles are written the way an Arabic creator types them, with ٠–٩.
+        let arabicIndex = index.formatted(.number.locale(AppLanguage.ar.locale))  // swiftlint:disable:this display_format
+        return Video(
             id: "fixture-\(index)",
             title: "Introduction to Tafsir, part \(index)",
             titleLocalized: LocalizedText(
-                en: "Introduction to Tafsir, part \(index)", ar: "مقدمة في التفسير، الجزء \(index)"),
+                en: "Introduction to Tafsir, part \(index)", ar: "مقدمة في التفسير، الجزء \(arabicIndex)"),
             description: "An introduction to the sources of tafsir.",
             descriptionLocalized: LocalizedText(
                 en: "An introduction to the sources of tafsir.", ar: "مقدمة في مصادر التفسير."),
