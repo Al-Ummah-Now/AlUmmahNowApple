@@ -107,14 +107,27 @@ struct UploadQueueTests {
         #expect(queue.jobs[0].state == .done)
     }
 
-    @Test func aTierRefusalSaysUploadsAreByInvitation() async throws {
-        let studio = RecordingStudio(refuseInitiate: .refused(Refusal(code: Refusal.uploadsByInvitation)))
-        let queue = UploadQueue(studio: studio, transfer: FixtureTUSTransfer(delay: .zero), store: store())
-        queue.accountID = "a1"
-        queue.enqueue([job(try file(bytes: 10), title: "Four")])
-        try await waitUntilIdle(queue)
-        #expect(queue.jobs[0].state == .failed)
-        #expect(queue.jobs[0].failure == "studio.refusal.invitation")
+    @Test func aTierRefusalSaysNothingAndAsksForTheFeaturesAgain() async throws {
+        // No creator tier, upload switched off, or a plan refusal: no text, the job goes, and Studio reads its features
+        // again so the Upload tab disappears.
+        let refusals: [CoreError] = [
+            .refused(Refusal(code: Refusal.uploadsByInvitation)), .featureOff, .http(status: 402),
+            .refused(Refusal(code: Refusal.upgradeRequired, message: "On the Pro plan.")),
+        ]
+        for refusal in refusals {
+            let studio = RecordingStudio(refuseInitiate: refusal)
+            let queue = UploadQueue(studio: studio, transfer: FixtureTUSTransfer(delay: .zero), store: store())
+            var asked = 0
+            queue.onFeatureOff = { asked += 1 }
+            queue.accountID = "a1"
+            queue.enqueue([job(try file(bytes: 10), title: "Four")])
+            try await waitUntilIdle(queue)
+            #expect(queue.jobs.isEmpty, "\(refusal)")
+            #expect(asked == 1, "\(refusal)")
+        }
+        #expect(UploadQueue.failureKey(CoreError.refused(Refusal(code: Refusal.uploadsByInvitation))) == nil)
+        #expect(UploadQueue.failureKey(CoreError.forbidden) == "studio.upload.error.forbidden")
+        #expect(UploadQueue.failureKey(CoreError.refused(Refusal(code: Refusal.uploadLimit))) == "studio.upload.error.limit")
     }
 
     @Test func aRefusalFailsTheJobAndRetryContinues() async throws {

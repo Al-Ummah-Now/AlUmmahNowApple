@@ -16,6 +16,19 @@ public enum CoreError: Error, Equatable, Sendable {
     /// 409 with the server's `error` code (`too_late`, `draft_exists`, `draft_conflict`…) and, for `files_missing`,
     /// the paths it lists.
     case conflict(String, missing: [String] = [])
+    /// 404 `feature_off`: the feature is switched off, not configured or not in the tier. Hide what asked, say nothing.
+    case featureOff
+
+    /// Off, not configured or not in the person's tier (`feature_off`, 402, `upgrade_required`, `uploads_by_invitation`):
+    /// the entry point disappears and no text is shown (owner rule 2026-11-16).
+    public var hidesEntryPoint: Bool {
+        switch self {
+        case .featureOff: true
+        case .http(let status): status == 402
+        case .refused(let refusal): refusal.hidesEntryPoint
+        default: false
+        }
+    }
 
     /// The refusal, when the server refused with a code. Retrying it changes nothing.
     public var refusal: Refusal? {
@@ -57,6 +70,9 @@ public struct Refusal: Equatable, Sendable {
     /// Dislikes were removed from the product (410).
     public static let dislikesDisabled = "dislikes_disabled"
 
+    /// A gated API's answer while its feature is off for the caller (404, no message); see `CoreError.featureOff`.
+    public static let featureOff = "feature_off"
+
     public static let known: Set<String> = [
         uploadsByInvitation, channelLimit, uploadLimit, upgradeRequired, accountPendingDeletion, banned, dislikesDisabled,
     ]
@@ -71,6 +87,9 @@ public struct Refusal: Equatable, Sendable {
             code: code, message: message?.isEmpty == false ? message : nil,
             retryAfter: (object["retryAfter"] as? NSNumber)?.intValue, entitlement: object["entitlement"] as? String)
     }
+
+    /// A tier or plan refusal: nothing to say, the entry point is hidden.
+    public var hidesEntryPoint: Bool { code == Self.upgradeRequired || code == Self.uploadsByInvitation }
 
     /// Writes are refused for the whole account until an admin acts; stop retrying and say so once.
     public var isAccountState: Bool { code == Self.accountPendingDeletion || code == Self.banned }

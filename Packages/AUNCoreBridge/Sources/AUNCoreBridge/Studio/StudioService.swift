@@ -41,11 +41,16 @@ public protocol StudioServicing: Sendable {
 
     // Creator tier and account state
     func creatorAccess() async throws -> CreatorAccess
+    /// Which features this person sees (`GET /api/me/features`); with a channel, judged by that channel's owner's tier
+    /// and the person's role there.
+    func features(channelID: String?) async throws -> UserFeatures
 }
 
 extension StudioServicing {
     /// Services that cannot tell allow everything; the server still refuses with a code.
     public func creatorAccess() async throws -> CreatorAccess { CreatorAccess() }
+    /// Services that cannot tell show nothing gated (fail closed).
+    public func features(channelID: String?) async throws -> UserFeatures { .none }
 }
 
 /// api-videos over URLSession with the active account's bearer token.
@@ -89,6 +94,11 @@ public struct NativeStudioService: StudioServicing {
         } catch {
             throw CoreError.decoding
         }
+    }
+
+    public func features(channelID: String?) async throws -> UserFeatures {
+        let query = channelID.map { [URLQueryItem(name: "channelId", value: $0)] } ?? []
+        return try await client.send(.get, "/api/me/features", query: query, as: UserFeatures.self)
     }
 
     public func playlists(channelID: String) async throws -> [StudioPlaylist] {
@@ -406,6 +416,7 @@ struct StudioHTTPClient: Sendable {
                 "\(method.rawValue, privacy: .public) \(path, privacy: .public) failed: \(status) \(body?.code ?? "", privacy: .public)"
             )
             if let refusal = Refusal.parse(data) { throw CoreError.refused(refusal) }
+            if status == 404 && body?.code == Refusal.featureOff { throw CoreError.featureOff }
             switch status {
             case 401: throw CoreError.signInRequired
             case 403: throw CoreError.forbidden

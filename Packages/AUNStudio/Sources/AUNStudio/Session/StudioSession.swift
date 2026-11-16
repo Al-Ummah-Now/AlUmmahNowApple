@@ -11,7 +11,7 @@ public struct StudioNotice: Identifiable, Hashable, Sendable {
 
     static func from(_ error: any Error) -> StudioNotice? {
         if (error as? CoreError) == .cancelled { return nil }
-        return StudioNotice(StudioFailure.message(error).key)
+        return StudioFailure.message(error).map { StudioNotice($0.key) }
     }
 }
 
@@ -35,6 +35,11 @@ public final class StudioSession {
     /// A refusal that applies to the whole videos account (`videos_account_pending_deletion`, `videos_banned`).
     /// Studio shows it once, as a banner, instead of one error per action.
     public private(set) var accountState: Refusal?
+    /// Which features the account sees in the current channel (`GET /api/me/features`); nil until the first read.
+    /// While nil, or for a key the server leaves out, the feature is hidden (fail closed).
+    public private(set) var features: UserFeatures?
+    /// Sections a gated API answered 404 `feature_off` for, hidden until the account or channel changes.
+    public private(set) var hiddenSections: Set<StudioLink.Section> = []
     /// The section a universal link asked for, until the shell shows it (`consumeLink`).
     public private(set) var linkedSection: StudioLink.Section?
     /// Changes with every link, so the same link opened twice still moves the shell.
@@ -54,6 +59,7 @@ public final class StudioSession {
         self.authenticator = authenticator
         self.defaults = defaults
         uploads.onAccountState = { [weak self] in self?.accountState = $0 }
+        uploads.onFeatureOff = { [weak self] in Task { await self?.refreshFeatures() } }
     }
 
     /// Channels the person may upload to: the picker's list.
@@ -111,6 +117,8 @@ public final class StudioSession {
             account = nil
             uploads.accountID = nil
             creator = nil
+            features = nil
+            hiddenSections = []
             accountState = nil
             allChannels = []
             channel = nil
@@ -136,7 +144,12 @@ public final class StudioSession {
     public func consumeLink() { linkedSection = nil }
 
     public func select(_ channel: StudioChannel) async {
+        let changed = channel.id != self.channel?.id
         self.channel = channel
+        if changed {
+            hiddenSections = []
+            await refreshFeatures()
+        }
         if let account { defaults.set(channel.id, forKey: Self.channelKey(account.id)) }
         do {
             try await services.accounts.setActiveChannel(channel.id)
@@ -163,9 +176,36 @@ public final class StudioSession {
         }
     }
 
-    /// Records an account-wide refusal from any call; other errors are left to the screen that made the call.
+    /// Reads `GET /api/me/features` for the current channel, at the same moments as `refreshCreatorAccess`. A failed
+    /// read keeps the last answer; with none, every gated entry stays hidden.
+    public func refreshFeatures() async {
+        guard account != nil else { return }
+        do {
+            features = try await services.studio.features(channelID: channel?.id)
+        } catch {
+            AUNLog.studio.error("Reading features failed: \(error)")
+        }
+    }
+
+    /// Whether a gated feature is on for the account in the current channel.
+    public func shows(_ feature: UserFeature) -> Bool { features?.isOn(feature) ?? false }
+
+    /// The Upload tab (iPhone, iPad) and section (Mac): only with the `upload` feature.
+    public var showsUpload: Bool { shows(.upload) }
+    /// The Analytics tab and section, until its API answers `feature_off`.
+    public var showsAnalytics: Bool { !hiddenSections.contains(.analytics) }
+
+    /// A section's API answered 404 `feature_off`: hide the section and read the features again.
+    public func featureOff(_ section: StudioLink.Section) {
+        hiddenSections.insert(section)
+        Task { await refreshFeatures() }
+    }
+
+    /// Records an account-wide refusal from any call; a feature that turned out to be off makes Studio read its features
+    /// again. Other errors are left to the screen that made the call.
     func note(_ error: any Error) {
         if let refusal = StudioFailure.accountState(error) { accountState = refusal }
+        if (error as? CoreError)?.hidesEntryPoint == true { Task { await refreshFeatures() } }
     }
 
     public func loadChannels() async {
@@ -179,6 +219,7 @@ public final class StudioSession {
                 if let match = channels.first(where: { $0.id == id }) { channel = match }
             }
             await refreshCreatorAccess()
+            await refreshFeatures()
         } catch {
             AUNLog.studio.error("Loading channels failed: \(error)")
             channelsState = .failed
@@ -194,6 +235,8 @@ public final class StudioSession {
         allChannels = []
         channel = nil
         creator = nil
+        features = nil
+        hiddenSections = []
         accountState = nil
         uploads.unblock()
         await loadChannels()

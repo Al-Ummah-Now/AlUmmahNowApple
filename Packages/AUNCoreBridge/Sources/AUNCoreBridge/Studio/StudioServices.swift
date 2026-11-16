@@ -39,14 +39,15 @@ public struct StudioServices: Sendable {
         renditions = studio as? any RenditionsServicing ?? fallback
     }
 
-    /// Hermetic services. `signedIn` starts with the fixture creator already signed in, in `accountState`.
+    /// Hermetic services. `signedIn` starts with the fixture creator already signed in, in `accountState`, with
+    /// `featuresOff` switched off.
     public static func fixtures(
-        signedIn: Bool = false, accountState: FixtureStudioService.AccountState = .creator
+        signedIn: Bool = false, accountState: FixtureStudioService.AccountState = .creator, featuresOff: Set<String> = []
     ) -> StudioServices {
         var services = StudioServices(
             environment: .qa,
             accounts: FixtureAccountService(signedIn: signedIn ? [FixtureAccountService.creator] : []),
-            studio: FixtureStudioService(accountState: accountState), transfer: FixtureTUSTransfer(),
+            studio: FixtureStudioService(accountState: accountState, featuresOff: featuresOff), transfer: FixtureTUSTransfer(),
             search: FixtureSearchService())
         services.persistsUploads = false
         services.transcription = FixtureTranscriber()

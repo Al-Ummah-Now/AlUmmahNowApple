@@ -62,8 +62,6 @@
 "studio.editor.exported" = "Export finished";
 "studio.editor.moveUp" = "Move earlier";
 "studio.editor.moveDown" = "Move later";
-"studio.live.title" = "Go live";
-"studio.live.unavailable" = "Live broadcasting needs a live provider decision and isn't available yet.";
 "common.cancel" = "Cancel";
 "common.dismiss" = "Dismiss";
 "studio.signIn.title" = "Sign in to Studio";
@@ -136,7 +134,7 @@
 "studio.upload.remove" = "Remove";
 "studio.upload.problem.noFiles" = "Add at least one video.";
 "studio.upload.problem.scheduleSoon" = "Pick a publish time at least %@ minutes from now.";
-"studio.upload.error.forbidden" = "You can't upload to this channel. Uploads may be by invitation.";
+"studio.upload.error.forbidden" = "You can't upload to this channel.";
 "studio.upload.error.limit" = "You've reached your upload limit. Try again later.";
 "studio.upload.error.invalid" = "The server didn't accept this video's details.";
 "studio.upload.error.generic" = "The upload stopped. Retry to continue where it stopped.";
@@ -199,7 +197,6 @@
 "studio.content.addedToPlaylist" = "%@ added to the playlist";
 "studio.content.partial" = "%@ done, %@ failed";
 "studio.content.saved" = "Saved";
-"studio.content.limit" = "Your plan doesn't include this. Ask an admin to change it.";
 "studio.sort.newest" = "Newest";
 "studio.sort.oldest" = "Oldest";
 "studio.sort.views" = "Most viewed";
@@ -245,8 +242,6 @@
 "studio.analytics.lifetime" = "All time: %@ views · %@ subscribers · %@ engagement";
 
 /* Plan refusals and account states (api-videos codes) */
-"studio.plain" = "%@";
-"studio.refusal.invitation" = "Uploads are by invitation. Ask an admin to give your account a creator plan.";
 "studio.refusal.channelLimit" = "You've reached your plan's channel limit.";
 "studio.account.stateTitle" = "Your videos account";
 "studio.account.pendingDeletion" = "Your videos account is scheduled for deletion. Contact support.";

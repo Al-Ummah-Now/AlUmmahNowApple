@@ -85,7 +85,7 @@ struct AccountStateBanner: View {
                 Label {
                     VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
                         Text(l10n("studio.account.stateTitle")).fanousFont(.label).foregroundStyle(Fanous.textPrimary)
-                        Text(l10n(StudioFailure.refusalMessage(state).key)).fanousFont(.body)
+                        Text(l10n(StudioFailure.refusalMessage(state) ?? "studio.error.generic")).fanousFont(.body)
                             .foregroundStyle(Fanous.textSecondary)
                     }
                 } icon: {
@@ -136,9 +136,20 @@ struct ChannelGate<Content: View>: View {
                 .sheet(isPresented: $showingAccounts) { AccountsView(session: session) }
                 .task(id: session.linkSerial) {
                     guard let section = session.linkedSection else { return }
-                    tab = Self.tab(for: section)
+                    let linked = Self.tab(for: section)
+                    tab = visible.contains(linked) ? linked : .home
                     session.consumeLink()
                 }
+                // A tab that disappears (a feature switched off) never stays selected.
+                .onChange(of: visible) { _, shown in if !shown.contains(tab) { tab = .home } }
+        }
+
+        /// Upload only with the `upload` feature; Analytics until its API answers `feature_off`.
+        private var visible: Set<Tab> {
+            var tabs: Set<Tab> = [.home, .content, .editor]
+            if session.showsUpload { tabs.insert(.upload) }
+            if session.showsAnalytics { tabs.insert(.analytics) }
+            return tabs
         }
 
         /// iPhone and iPad have no Recently deleted tab; it lives under Content.
@@ -170,15 +181,19 @@ struct ChannelGate<Content: View>: View {
                 }
                 .tabItem { Label(l10n("studio.content.title"), systemImage: "film.stack") }
                 .tag(Tab.content)
-                screen(l10n("studio.upload.title")) { UploadView(session: session) }
-                    .tabItem { Label(l10n("studio.upload.title"), systemImage: "square.and.arrow.up") }
-                    .badge(session.uploads.jobs.filter { $0.isActive && $0.accountID == session.account?.id }.count)
-                    .tag(Tab.upload)
-                screen(l10n("studio.analytics.title")) {
-                    ChannelGate(session: session) { channel in AnalyticsView(services: session.services, channelID: channel) }
+                if session.showsUpload {
+                    screen(l10n("studio.upload.title")) { UploadView(session: session) }
+                        .tabItem { Label(l10n("studio.upload.title"), systemImage: "square.and.arrow.up") }
+                        .badge(session.uploads.jobs.filter { $0.isActive && $0.accountID == session.account?.id }.count)
+                        .tag(Tab.upload)
                 }
-                .tabItem { Label(l10n("studio.analytics.title"), systemImage: "chart.bar") }
-                .tag(Tab.analytics)
+                if session.showsAnalytics {
+                    screen(l10n("studio.analytics.title")) {
+                        ChannelGate(session: session) { channel in AnalyticsView(session: session, channelID: channel) }
+                    }
+                    .tabItem { Label(l10n("studio.analytics.title"), systemImage: "chart.bar") }
+                    .tag(Tab.analytics)
+                }
                 NavigationStack { MobileEditorView() }
                     .tabItem { Label(l10n("studio.editor.title"), systemImage: "scissors") }
                     .tag(Tab.editor)
@@ -196,7 +211,7 @@ struct ChannelGate<Content: View>: View {
 
         var body: some View {
             NavigationSplitView {
-                List(StudioSection.allCases, selection: $section) { item in
+                List(sections, selection: $section) { item in
                     Label(l10n(item.titleKey), systemImage: item.icon)
                         .tag(item)
                         .accessibilityIdentifier("section-\(item.rawValue)")
@@ -213,7 +228,7 @@ struct ChannelGate<Content: View>: View {
                             ChannelGate(session: session) { RecentlyDeletedView(services: session.services, channelID: $0) }
                         case .upload: UploadView(session: session)
                         case .analytics:
-                            ChannelGate(session: session) { AnalyticsView(services: session.services, channelID: $0) }
+                            ChannelGate(session: session) { AnalyticsView(session: session, channelID: $0) }
                         case .encode: EncodeQueueView(queue: encodes)
                         case .editor: EditorView()
                         }
@@ -226,8 +241,22 @@ struct ChannelGate<Content: View>: View {
             .sheet(isPresented: $showingAccounts) { AccountsView(session: session) }
             .task(id: session.linkSerial) {
                 guard let linked = session.linkedSection else { return }
-                section = Self.section(for: linked)
+                let target = Self.section(for: linked)
+                section = sections.contains(target) ? target : .home
                 session.consumeLink()
+            }
+            // A section that disappears (a feature switched off) never stays selected.
+            .onChange(of: sections) { _, shown in if let section, !shown.contains(section) { self.section = .home } }
+        }
+
+        /// Upload only with the `upload` feature; Analytics until its API answers `feature_off`.
+        private var sections: [StudioSection] {
+            StudioSection.allCases.filter { item in
+                switch item {
+                case .upload: session.showsUpload
+                case .analytics: session.showsAnalytics
+                default: true
+                }
             }
         }
 
