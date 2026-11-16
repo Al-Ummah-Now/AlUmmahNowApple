@@ -79,8 +79,10 @@ public struct UploadJob: Identifiable, Hashable, Sendable, Codable {
     public var isActive: Bool { [.preparing, .uploading, .finishing].contains(state) }
     public var scheduleDate: Date? { settings.scheduleDate(at: index) }
 
+    // swiftlint:disable display_format
     /// Upload position within the batch, so playlists keep the batch's order.
-    public var orderKey: String { "\(batchID.uuidString.lowercased())-\(String(format: "%04d", index))" }  // swiftlint:disable:this display_format
+    public var orderKey: String { "\(batchID.uuidString.lowercased())-\(String(format: "%04d", index))" }
+    // swiftlint:enable display_format
 
     /// What initiate sends: a scheduled video stays private until its time; a draft is always private.
     public var initiation: UploadInitiation {

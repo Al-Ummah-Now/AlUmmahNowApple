@@ -46,8 +46,10 @@ public final class AdminPush: NSObject {
         }
     }
 
+    // swiftlint:disable display_format
     /// The APNs device token, as the registry wants it (hex). Never logged.
-    public static func hex(_ token: Data) -> String { token.map { String(format: "%02x", $0) }.joined() }  // swiftlint:disable:this display_format
+    public static func hex(_ token: Data) -> String { token.map { String(format: "%02x", $0) }.joined() }
+    // swiftlint:enable display_format
 
     public func didRegister(deviceToken: Data) {
         token = Self.hex(deviceToken)
