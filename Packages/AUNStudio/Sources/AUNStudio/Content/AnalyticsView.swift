@@ -45,9 +45,7 @@ struct AnalyticsView: View {
         .task(id: range) { await load() }
         .sheet(item: $opened) { video in
             NavigationStack {
-                Form {
-                    VideoStatsView(services: services, videoID: video.videoID) { session.featureOff(.analytics) }.studioRows()
-                }
+                Form { stats(video).studioRows() }
                     .formStyle(.grouped)
                     .scrollContentBackground(.hidden)
                     .fanousPage()
@@ -60,6 +58,11 @@ struct AnalyticsView: View {
                 .frame(minWidth: 420, minHeight: 360)
             #endif
         }
+    }
+
+    /// One video's numbers; a `feature_off` answer hides Analytics.
+    private func stats(_ video: VideoStats) -> some View {
+        VideoStatsView(services: services, videoID: video.videoID) { session.featureOff(.analytics) }
     }
 
     private func load() async {
