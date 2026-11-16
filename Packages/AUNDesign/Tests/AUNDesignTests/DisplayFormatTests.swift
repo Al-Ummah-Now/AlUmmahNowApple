@@ -88,7 +88,9 @@ import Testing
         #expect(!line.contains("·"))
         #expect(line.contains(" • "))
         #expect(line.hasPrefix("\u{200F}"))
-        #expect(DisplayFormat.meta(["Al Ummah Now", "1.2K views"], .en) == "\u{2068}Al Ummah Now\u{2069} · \u{2068}1.2K views\u{2069}")
+        #expect(
+            DisplayFormat.meta(["Al Ummah Now", "1.2K views"], .en) == "\u{2068}Al Ummah Now\u{2069} · \u{2068}1.2K views\u{2069}"
+        )
         #expect(!L10n(.ar)("studio.analytics.lifetime", "١", "٢", "٣").contains("·"))
     }
 }
