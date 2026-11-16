@@ -313,7 +313,8 @@ struct AccountButton: View {
     }
 }
 
-/// Dashboard header: the channel being worked in, and who is signed in.
+/// Dashboard: the channel being worked in and who is signed in, then what needs attention (recent uploads and their
+/// processing, comments awaiting review, drafts and scheduled videos). A section whose feature is off is not shown.
 struct StudioHomeView: View {
     @Environment(\.l10n) private var l10n
     let session: StudioSession
@@ -327,15 +328,7 @@ struct StudioHomeView: View {
                 ErrorStateView { Task { await session.loadChannels() } }
             case .loaded:
                 if let channel = session.channel {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-                            channelCard(channel)
-                            NoticeView(session: session)
-                        }
-                        .padding(FanousScale.spacingLg)
-                        .frame(maxWidth: 900, alignment: .leading)
-                        .frame(maxWidth: .infinity)
-                    }
+                    DashboardContent(session: session, channel: channel).id(channel.id)
                 } else {
                     EmptyStateView(title: l10n("studio.channel.none"), message: l10n("studio.channel.noneMessage"))
                         .accessibilityIdentifier("no-channels")
@@ -344,8 +337,47 @@ struct StudioHomeView: View {
         }
         .fanousPage()
     }
+}
 
-    private func channelCard(_ channel: StudioChannel) -> some View {
+/// One channel's Dashboard; rebuilt when the channel changes.
+struct DashboardContent: View {
+    @Environment(\.l10n) private var l10n
+    let session: StudioSession
+    let channel: StudioChannel
+    @State private var model: DashboardModel
+
+    init(session: StudioSession, channel: StudioChannel) {
+        self.session = session
+        self.channel = channel
+        let model = DashboardModel(channel: channel, services: session.services)
+        model.onHollow = { [weak session] in session?.featureOff(.home) }
+        model.onFeatureOff = { [weak session] in Task { await session?.refreshFeatures() } }
+        _model = State(initialValue: model)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
+                channelCard
+                NoticeView(session: session)
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 320), spacing: FanousScale.spacingLg, alignment: .top)],
+                    alignment: .leading, spacing: FanousScale.spacingLg
+                ) {
+                    recentSection
+                    heldSection
+                    queueSection
+                }
+            }
+            .padding(FanousScale.spacingLg)
+            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: .infinity)
+        }
+        .refreshable { await model.load() }
+        .task { if model.recentPhase == .idle { await model.load() } }
+    }
+
+    private var channelCard: some View {
         HStack(spacing: FanousScale.spacingLg) {
             AvatarView(name: channel.displayName(l10n.language), url: channel.avatarURL, size: 56)
             VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
@@ -355,9 +387,9 @@ struct StudioHomeView: View {
                         .environment(\.layoutDirection, .leftToRight)
                 }
                 Text(l10n("studio.role.\(channel.role.rawValue)")).fanousFont(.caption).foregroundStyle(Fanous.accent)
-                if let account = session.account {
-                    Text(l10n("studio.home.signedInAs", account.label)).fanousFont(.caption)
-                        .foregroundStyle(Fanous.textMuted)
+                // The person by the display-name rule (display name, first + last, email); never a handle or an id.
+                if let name = session.account?.name {
+                    Text(l10n("studio.home.signedInAs", name)).fanousFont(.caption).foregroundStyle(Fanous.textMuted)
                 }
             }
             Spacer(minLength: 0)
@@ -366,5 +398,112 @@ struct StudioHomeView: View {
         .fanousMaterial(.card) { .rounded($0.lg) }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("channel-card")
+    }
+
+    @ViewBuilder private var recentSection: some View {
+        DashboardSection(
+            title: l10n("studio.home.recent"), phase: model.recentPhase, empty: l10n("studio.home.recentEmpty"),
+            identifier: "dashboard-recent", seeAll: openContent, retry: { Task { await model.loadRecent() } }
+        ) {
+            ForEach(model.recent) { VideoRow(video: $0, showsStatus: true) }
+        }
+    }
+
+    @ViewBuilder private var heldSection: some View {
+        DashboardSection(
+            title: l10n("studio.home.held"), phase: model.heldPhase, empty: l10n("studio.home.heldEmpty"),
+            identifier: "dashboard-held", retry: { Task { await model.loadHeld() } }
+        ) {
+            Text(l10n("studio.home.heldCount", DisplayFormat.count(model.held.total, l10n.language)))
+                .fanousFont(.label).foregroundStyle(Fanous.accent)
+            ForEach(model.held.items) { HeldCommentRow(comment: $0) }
+        }
+    }
+
+    @ViewBuilder private var queueSection: some View {
+        DashboardSection(
+            title: l10n("studio.home.queue"), phase: model.queuePhase, empty: l10n("studio.home.queueEmpty"),
+            identifier: "dashboard-queue", seeAll: openContent, retry: { Task { await model.loadQueue() } }
+        ) {
+            Text(queueSummary).fanousFont(.label).foregroundStyle(Fanous.accent)
+            ForEach(model.scheduled + model.drafts) { VideoRow(video: $0, showsStatus: true) }
+        }
+    }
+
+    private var queueSummary: String {
+        let language = l10n.language
+        let drafts = model.counts[.drafts] ?? model.drafts.count
+        let scheduled = model.counts[.scheduled] ?? model.scheduled.count
+        return [
+            "\(l10n("studio.tab.drafts")) \(DisplayFormat.count(drafts, language))",
+            "\(l10n("studio.tab.scheduled")) \(DisplayFormat.count(scheduled, language))",
+        ].joined(separator: " · ")
+    }
+
+    private func openContent() { Task { await session.open(StudioLink(section: .content)) } }
+}
+
+/// One Dashboard card: its title, then a spinner while it loads, its rows, a plain empty line, or Retry. Hidden
+/// sections draw nothing.
+struct DashboardSection<Rows: View>: View {
+    @Environment(\.l10n) private var l10n
+    let title: String
+    let phase: LoadPhase
+    let empty: String
+    let identifier: String
+    var seeAll: (() -> Void)?
+    let retry: () -> Void
+    @ViewBuilder let rows: () -> Rows
+
+    var body: some View {
+        if phase != .hidden {
+            VStack(alignment: .leading, spacing: FanousScale.spacingMd) {
+                HStack {
+                    Text(title).fanousFont(.title).foregroundStyle(Fanous.textPrimary).accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: FanousScale.spacingSm)
+                    if let seeAll, phase == .ready {
+                        Button(l10n("studio.home.seeAll"), action: seeAll).fanousFont(.label)
+                            .accessibilityIdentifier("\(identifier)-all")
+                    }
+                }
+                switch phase {
+                case .loading:
+                    ProgressView().accessibilityLabel(l10n("common.loading")).frame(maxWidth: .infinity)
+                case .ready:
+                    rows()
+                case .empty:
+                    Text(empty).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
+                        .accessibilityIdentifier("\(identifier)-empty")
+                case .failed:
+                    VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                        Text(l10n("common.error.load")).fanousFont(.body).foregroundStyle(Fanous.errorText)
+                        Button(l10n("common.retry"), action: retry)
+                    }
+                case .idle, .hidden:
+                    EmptyView()
+                }
+            }
+            .padding(FanousScale.spacingLg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fanousMaterial(.card) { .rounded($0.lg) }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(identifier)
+        }
+    }
+}
+
+/// A held comment: who wrote it, where, and its text.
+struct HeldCommentRow: View {
+    let comment: HeldComment
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
+            Text(comment.authorName).fanousFont(.label).foregroundStyle(Fanous.textPrimary)
+            Text(comment.text).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(3)
+            Text(comment.targetTitle).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("held-\(comment.id)")
     }
 }

@@ -59,6 +59,8 @@ final class ContentModel {
             if searchText.trimmingCharacters(in: .whitespaces).isEmpty { suggestions = initialSuggestions }
         } catch is CancellationError {
         } catch {
+            // Replaced by a newer load, which owns the state: a cancelled request must not flip it to failed.
+            guard !Task.isCancelled else { return }
             AUNLog.studio.error("Loading content failed: \(error)")
             state = .failed
         }

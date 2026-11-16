@@ -137,20 +137,28 @@ struct ChannelGate<Content: View>: View {
                 .task(id: session.linkSerial) {
                     guard let section = session.linkedSection else { return }
                     let linked = Self.tab(for: section)
-                    tab = visible.contains(linked) ? linked : .home
+                    tab = visible.contains(linked) ? linked : Self.first(visible)
                     session.consumeLink()
                 }
                 // A tab that disappears (a feature switched off) never stays selected.
-                .onChange(of: visible) { _, shown in if !shown.contains(tab) { tab = .home } }
+                .onChange(of: visible) { _, shown in if !shown.contains(tab) { tab = Self.first(shown) } }
+                .onAppear { if !visible.contains(tab) { tab = Self.first(visible) } }
         }
 
-        /// Upload only with the `upload` feature; Analytics until its API answers `feature_off`.
-        private var visible: Set<Tab> {
-            var tabs: Set<Tab> = [.home, .content, .editor]
+        private var visible: Set<Tab> { Self.visibleTabs(for: session) }
+
+        /// Dashboard while it has something to show; Upload only with the `upload` feature; Analytics until its API
+        /// answers `feature_off`.
+        static func visibleTabs(for session: StudioSession) -> Set<Tab> {
+            var tabs: Set<Tab> = [.content, .editor]
+            if session.showsDashboard { tabs.insert(.home) }
             if session.showsUpload { tabs.insert(.upload) }
             if session.showsAnalytics { tabs.insert(.analytics) }
             return tabs
         }
+
+        /// Where Studio opens: the Dashboard, or Content when the Dashboard has nothing left.
+        static func first(_ visible: Set<Tab>) -> Tab { visible.contains(.home) ? .home : .content }
 
         /// iPhone and iPad have no Recently deleted tab; it lives under Content.
         static func tab(for section: StudioLink.Section) -> Tab {
@@ -173,9 +181,11 @@ struct ChannelGate<Content: View>: View {
 
         private var tabs: some View {
             TabView(selection: $tab) {
-                screen(l10n("studio.home.title")) { StudioHomeView(session: session) }
-                    .tabItem { Label(l10n("studio.home.title"), systemImage: "square.grid.2x2") }
-                    .tag(Tab.home)
+                if session.showsDashboard {
+                    screen(l10n("studio.home.title")) { StudioHomeView(session: session) }
+                        .tabItem { Label(l10n("studio.home.title"), systemImage: "square.grid.2x2") }
+                        .tag(Tab.home)
+                }
                 screen(l10n("studio.content.title")) {
                     ChannelGate(session: session) { channel in ContentView(session: session, channelID: channel) }
                 }
@@ -242,11 +252,14 @@ struct ChannelGate<Content: View>: View {
             .task(id: session.linkSerial) {
                 guard let linked = session.linkedSection else { return }
                 let target = Self.section(for: linked)
-                section = sections.contains(target) ? target : .home
+                section = sections.contains(target) ? target : Self.first(sections)
                 session.consumeLink()
             }
             // A section that disappears (a feature switched off) never stays selected.
-            .onChange(of: sections) { _, shown in if let section, !shown.contains(section) { self.section = .home } }
+            .onChange(of: sections) { _, shown in
+                if let section, !shown.contains(section) { self.section = Self.first(shown) }
+            }
+            .onAppear { if let section, !sections.contains(section) { self.section = Self.first(sections) } }
         }
 
         /// Upload only with the `upload` feature; Analytics until its API answers `feature_off`.
@@ -256,12 +269,16 @@ struct ChannelGate<Content: View>: View {
         static func sections(for session: StudioSession) -> [StudioSection] {
             StudioSection.allCases.filter { item in
                 switch item {
+                case .home: session.showsDashboard
                 case .upload: session.showsUpload
                 case .analytics: session.showsAnalytics
                 default: true
                 }
             }
         }
+
+        /// Where Studio opens: the Dashboard, or Content when the Dashboard has nothing left.
+        static func first(_ sections: [StudioSection]) -> StudioSection { sections.first ?? .content }
 
         static func section(for link: StudioLink.Section) -> StudioSection {
             switch link {

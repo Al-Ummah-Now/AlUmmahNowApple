@@ -22,12 +22,18 @@ public struct StudioAccount: Identifiable, Hashable, Sendable {
         self.needsReauth = needsReauth
     }
 
-    /// The name to show: display name, then email, then the id.
-    public var label: String {
-        if let displayName, !displayName.isEmpty { return displayName }
-        if let email, !email.isEmpty { return email }
-        return id
+    /// The person's name by the platform rule: the display name (aun-core already falls back to first + last name from
+    /// the token), then the email. Never a handle, never the account id; nil when there is neither.
+    public var name: String? {
+        if let displayName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !displayName.isEmpty {
+            return displayName
+        }
+        if let email = email?.trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty { return email }
+        return nil
     }
+
+    /// `name`, or the id where something must be shown (an avatar's initial, an accessibility value).
+    public var label: String { name ?? id }
 }
 
 /// How the sign-in page is opened.

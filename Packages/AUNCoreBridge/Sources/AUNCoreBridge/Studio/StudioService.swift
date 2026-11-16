@@ -44,6 +44,10 @@ public protocol StudioServicing: Sendable {
     /// Which features this person sees (`GET /api/me/features`); with a channel, judged by that channel's owner's tier
     /// and the person's role there.
     func features(channelID: String?) async throws -> UserFeatures
+
+    // MARK: Comments
+    /// The newest comments waiting for review and their total (needs `comment.moderate` on the channel).
+    func heldComments(channelID: String, limit: Int) async throws -> HeldComments
 }
 
 extension StudioServicing {
@@ -51,6 +55,8 @@ extension StudioServicing {
     public func creatorAccess() async throws -> CreatorAccess { CreatorAccess() }
     /// Services that cannot tell show nothing gated (fail closed).
     public func features(channelID: String?) async throws -> UserFeatures { .none }
+    /// Services without the comments routes answer "not found".
+    public func heldComments(channelID: String, limit: Int) async throws -> HeldComments { throw CoreError.notFound }
 }
 
 /// api-videos over URLSession with the active account's bearer token.
@@ -99,6 +105,18 @@ public struct NativeStudioService: StudioServicing {
     public func features(channelID: String?) async throws -> UserFeatures {
         let query = channelID.map { [URLQueryItem(name: "channelId", value: $0)] } ?? []
         return try await client.send(.get, "/api/me/features", query: query, as: UserFeatures.self)
+    }
+
+    struct HeldPage: Decodable {
+        let items: [HeldComment]
+        let total: Int?
+    }
+
+    public func heldComments(channelID: String, limit: Int) async throws -> HeldComments {
+        let query = [URLQueryItem(name: "tab", value: "held"), URLQueryItem(name: "limit", value: String(limit))]
+        let page = try await client.send(
+            .get, "/api/channels/\(channelID)/comments", query: query, channelID: channelID, as: HeldPage.self)
+        return HeldComments(items: page.items, total: page.total ?? page.items.count)
     }
 
     public func playlists(channelID: String) async throws -> [StudioPlaylist] {

@@ -12,6 +12,7 @@ actor FixtureContentStore {
             ("Friday khutbah: patience", "خطبة الجمعة: الصبر", .published, false),
             ("Seerah, part 4", "السيرة النبوية، الجزء الرابع", .scheduled, false),
             ("Fiqh of fasting (draft)", "فقه الصيام (مسودة)", .drafts, false),
+            ("Seerah, part 5", "السيرة النبوية، الجزء الخامس", .processing, false),
         ]
         videos = titles.enumerated().map { index, item in
             StudioVideo(
@@ -19,9 +20,14 @@ actor FixtureContentStore {
                 description: "", channelID: "fixture-channel", isPublic: item.3, isDraft: item.2 == .drafts,
                 tags: index < 2 ? ["tafsir"] : [], category: index < 2 ? VideoCategory.quranTafsir.rawValue : nil,
                 durationSeconds: Double(600 + index * 120), views: 1500 - index * 200, likes: 40 - index, comments: 5,
-                dateCreated: Date(timeIntervalSince1970: 1_794_000_000 - Double(index) * 86_400), studioStatus: item.2,
+                dateCreated: Self.created(index, item.2), studioStatus: item.2,
                 scheduledPublishDate: item.2 == .scheduled ? Date(timeIntervalSince1970: 1_800_000_000) : nil)
         }
+    }
+
+    /// One day apart, newest first; the video still processing is the latest upload.
+    static func created(_ index: Int, _ status: StudioStatus) -> Date {
+        Date(timeIntervalSince1970: status == .processing ? 1_794_003_600 : 1_794_000_000 - Double(index) * 86_400)
     }
 
     func page(_ query: ContentQuery) -> [StudioVideo] {
@@ -96,6 +102,22 @@ public struct FixtureStudioService: StudioServicing {
         }
         for key in featuresOff { if let feature = UserFeature(rawValue: key) { features = features.with(feature, false) } }
         return features
+    }
+
+    public static let heldComments = [
+        HeldComment(
+            id: "fixture-held-1", text: "Jazakum Allah khayran, is there a part 3?",
+            targetTitle: "Tafsir of Surah Al-Kahf, part 2",
+            authorName: "Maryam Haddad", createdAt: Date(timeIntervalSince1970: 1_794_010_000)),
+        HeldComment(
+            id: "fixture-held-2", text: "ما المرجع المذكور في الدقيقة العاشرة؟", targetTitle: "Friday khutbah: patience",
+            authorName: "Omar Saleh", createdAt: Date(timeIntervalSince1970: 1_794_000_000)),
+    ]
+
+    /// Two held comments; `-AUNFixtureFeaturesOff comments` makes the route answer `feature_off`.
+    public func heldComments(channelID: String, limit: Int) async throws -> HeldComments {
+        try refuseIfOff("comments")
+        return HeldComments(items: Array(Self.heldComments.prefix(limit)), total: Self.heldComments.count)
     }
 
     private func refuseIfOff(_ key: String) throws {

@@ -12,7 +12,8 @@ struct AnalyticsView: View {
     @State private var range: AnalyticsRange = .days28
     @State private var current: ChannelStats?
     @State private var previous: ChannelStats?
-    @State private var failed = false
+    @State private var phase: LoadPhase = .idle
+    @State private var loadID = UUID()
     @State private var opened: VideoStats?
     @State private var metric: ChartMetric = .views
 
@@ -26,14 +27,17 @@ struct AnalyticsView: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("analytics-range")
-                if failed {
-                    ErrorStateView { Task { await load() } }
-                } else if let current {
-                    tiles(current)
-                    chart(current)
-                    topVideos(current)
-                } else {
+                switch phase {
+                case .loading where current == nil:
                     ThemeLoader().frame(maxWidth: .infinity, minHeight: 200)
+                case .failed:
+                    ErrorStateView { Task { await load() } }
+                default:
+                    if let current {
+                        tiles(current)
+                        chart(current)
+                        topVideos(current)
+                    }
                 }
             }
             .padding(FanousScale.spacingLg)
@@ -65,9 +69,13 @@ struct AnalyticsView: View {
         VideoStatsView(services: services, videoID: video.videoID) { session.featureOff(.analytics) }
     }
 
+    /// Ends in the numbers, an error with Retry, or no Analytics at all (`feature_off`). A load replaced by a newer
+    /// range leaves the phase to the newer one.
     private func load() async {
         let periods = range.periods()
-        do {
+        let id = UUID()
+        loadID = id
+        await LoadPhase.run(from: phase, set: { if loadID == id { phase = $0 } }) {
             async let now = retryingRebuild {
                 try await services.studio.channelStats(channelID: channelID, period: periods.current)
             }
@@ -76,16 +84,10 @@ struct AnalyticsView: View {
             }
             current = try await now
             previous = try? await before
-            failed = false
-        } catch is CancellationError {
-            // A newer range replaced this load.
-        } catch CoreError.featureOff {
-            // Analytics is off for this channel: the tab goes away, with nothing to say.
-            session.featureOff(.analytics)
-        } catch {
-            AUNLog.studio.error("Analytics failed: \(error)")
-            failed = current == nil
+            return false
         }
+        // Analytics is off for this channel: the tab goes away, with nothing to say.
+        if loadID == id, phase == .hidden { session.featureOff(.analytics) }
     }
 
     /// Period numbers from the daily series, each against the period before it; lifetime totals underneath.
@@ -201,12 +203,11 @@ struct VideoStatsView: View {
     /// The stats API answered 404 `feature_off`; whoever shows this hides it.
     var onFeatureOff: () -> Void = {}
     @State private var stats: VideoStats?
-    @State private var failed = false
-    @State private var off = false
+    @State private var phase: LoadPhase = .idle
 
     var body: some View {
         Group {
-            if let stats {
+            if phase == .ready, let stats {
                 let language = l10n.language
                 LabeledContent(l10n("studio.analytics.views"), value: DisplayFormat.count(stats.periodViews, language))
                 LabeledContent(l10n("studio.analytics.watchTime"), value: ChartScale.watchTime(stats.watchTime, language))
@@ -217,24 +218,22 @@ struct VideoStatsView: View {
                 if !stats.daily.isEmpty {
                     DailyChart(series: ChartSeries(metric: .views, daily: stats.daily), height: 160)
                 }
-            } else if failed {
+            } else if phase == .failed {
                 Text(l10n("common.error.load")).foregroundStyle(Fanous.errorText)
-            } else if !off {
+            } else if phase == .empty {
+                Text(l10n("studio.analytics.empty.views")).foregroundStyle(Fanous.textSecondary)
+            } else if phase.isLoading {
                 ProgressView().accessibilityLabel(l10n("common.loading"))
             }
         }
         .task {
-            do {
+            await LoadPhase.run(from: phase, set: { phase = $0 }) {
                 stats = try await retryingRebuild {
                     try await services.studio.videoStats(videoID: videoID, period: AnalyticsRange.days28.periods().current)
                 }
-            } catch is CancellationError {
-            } catch CoreError.featureOff {
-                off = true
-                onFeatureOff()
-            } catch {
-                failed = true
+                return false
             }
+            if phase == .hidden { onFeatureOff() }
         }
         .accessibilityIdentifier("video-stats")
     }

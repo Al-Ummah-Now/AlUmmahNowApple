@@ -192,6 +192,8 @@ public final class StudioSession {
 
     /// The Upload tab (iPhone, iPad) and section (Mac): only with the `upload` feature.
     public var showsUpload: Bool { shows(.upload) }
+    /// The Dashboard, unless every one of its sections is hidden; Studio then opens on Content.
+    public var showsDashboard: Bool { !hiddenSections.contains(.home) }
     /// The Analytics tab and section, until its API answers `feature_off`.
     public var showsAnalytics: Bool { !hiddenSections.contains(.analytics) }
 
