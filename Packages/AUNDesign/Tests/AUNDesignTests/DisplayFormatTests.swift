@@ -70,4 +70,25 @@ import Testing
         #expect(DisplayFormat.normalizeDigits("۱۲۳") == "123")
         #expect(DisplayFormat.normalizeDigits("abc 42 ٤٢") == "abc 42 42")
     }
+
+    @Test func arabicViewsPutTheNumberFirstAndAgree() {
+        let ar = L10n(.ar)
+        #expect(DisplayFormat.views(1200, ar) == "١٫٢ ألف مشاهدة")
+        #expect(DisplayFormat.views(0, ar) == "لا مشاهدات")
+        #expect(DisplayFormat.views(1, ar) == "مشاهدة واحدة")
+        #expect(DisplayFormat.views(2, ar) == "مشاهدتان")
+        #expect(DisplayFormat.views(5, ar) == "٥ مشاهدات")
+        #expect(DisplayFormat.views(40, ar) == "٤٠ مشاهدة")
+        #expect(DisplayFormat.views(1, L10n(.en)) == "1 view")
+        #expect(DisplayFormat.views(1200, L10n(.en)) == "1.2K views")
+    }
+
+    @Test func arabicSeparatorIsNotMistakenForZero() {
+        let line = DisplayFormat.meta(["عام", "١٫٥ ألف مشاهدة", nil, ""], .ar)
+        #expect(!line.contains("·"))
+        #expect(line.contains(" • "))
+        #expect(line.hasPrefix("\u{200F}"))
+        #expect(DisplayFormat.meta(["Al Ummah Now", "1.2K views"], .en) == "\u{2068}Al Ummah Now\u{2069} · \u{2068}1.2K views\u{2069}")
+        #expect(!L10n(.ar)("studio.analytics.lifetime", "١", "٢", "٣").contains("·"))
+    }
 }

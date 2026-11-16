@@ -204,7 +204,9 @@ public struct FixtureStudioService: StudioServicing {
             totalViews: daily.reduce(0) { $0 + $1.views }, totalVideos: videos.count, totalSubscribers: 120, totalLikes: 90,
             totalComments: 25, engagementRate: 4.2,
             topVideos: videos.map {
-                VideoStats(videoID: $0.id, title: $0.title, views: $0.views / 4, watchTime: 7200, averageViewDuration: 310)
+                VideoStats(
+                    videoID: $0.id, title: $0.title, views: $0.views / 4, watchTime: 7200, averageViewDuration: 310,
+                    titleLocalized: $0.titleLocalized)
             }, daily: daily)
     }
 
@@ -213,7 +215,7 @@ public struct FixtureStudioService: StudioServicing {
         return VideoStats(
             videoID: videoID, title: video?.title ?? "", views: (video?.views ?? 0) / 4, likes: 12, comments: 3, shares: 2,
             watchTime: 7200, averageViewDuration: 310, engagementRate: 5.1, rangeViews: (video?.views ?? 0) / 8,
-            rangeLikes: 6, rangeComments: 2, daily: Self.fixtureDays(period))
+            rangeLikes: 6, rangeComments: 2, daily: Self.fixtureDays(period), titleLocalized: video?.titleLocalized)
     }
 
     /// One UTC day per day of `period`, both ends counted, as the API answers.

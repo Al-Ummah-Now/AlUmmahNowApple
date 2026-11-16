@@ -38,9 +38,13 @@ final class StudioSignInTests: XCTestCase {
         let picker = app.buttons["channel-picker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 30))
         picker.tap()
-        let editor = app.buttons["Tafsir Circle · Editor"]
+        // Names and roles are direction-isolated in the label, so match the parts.
+        func channel(_ name: String, _ role: String) -> XCUIElement {
+            app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", name, role)).firstMatch
+        }
+        let editor = channel("Tafsir Circle", "Editor")
         XCTAssertTrue(editor.waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["Comments desk · Moderator"].exists)
+        XCTAssertFalse(channel("Comments desk", "Moderator").exists)
         editor.tap()
         let card = channelCard(app)
         XCTAssertTrue(card.waitForExistence(timeout: 10))

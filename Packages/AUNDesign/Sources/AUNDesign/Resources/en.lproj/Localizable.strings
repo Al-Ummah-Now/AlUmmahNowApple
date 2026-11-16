@@ -19,7 +19,12 @@
 "rail.recommended" = "Recommended";
 "rail.popular" = "Popular";
 "rail.recent" = "Recently added";
-"video.views" = "%@ views";
+"video.views.zero" = "No views";
+"video.views.one" = "%@ view";
+"video.views.two" = "%@ views";
+"video.views.few" = "%@ views";
+"video.views.many" = "%@ views";
+"video.views.other" = "%@ views";
 "watch.notReady" = "This video is still being processed.";
 "watch.chapters" = "Chapters";
 "watch.description" = "Description";

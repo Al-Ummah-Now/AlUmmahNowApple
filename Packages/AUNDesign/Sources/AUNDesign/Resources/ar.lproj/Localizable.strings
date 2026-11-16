@@ -19,7 +19,12 @@
 "rail.recommended" = "مقترح لك";
 "rail.popular" = "الأكثر مشاهدة";
 "rail.recent" = "أضيف حديثًا";
-"video.views" = "%@ مشاهدة";
+"video.views.zero" = "لا مشاهدات";
+"video.views.one" = "مشاهدة واحدة";
+"video.views.two" = "مشاهدتان";
+"video.views.few" = "%@ مشاهدات";
+"video.views.many" = "%@ مشاهدة";
+"video.views.other" = "%@ مشاهدة";
 "watch.notReady" = "ما زال هذا المرئي قيد المعالجة.";
 "watch.chapters" = "الفصول";
 "watch.description" = "الوصف";
@@ -237,7 +242,7 @@
 "studio.analytics.likes" = "الإعجابات";
 "studio.analytics.comments" = "التعليقات";
 "studio.analytics.newSubscribers" = "مشتركون جدد";
-"studio.analytics.lifetime" = "منذ البداية: %@ مشاهدة · %@ مشترك · تفاعل %@";
+"studio.analytics.lifetime" = "منذ البداية: %@ مشاهدة • %@ مشترك • تفاعل %@";
 
 /* Plan refusals and account states (api-videos codes) */
 "studio.plain" = "%@";

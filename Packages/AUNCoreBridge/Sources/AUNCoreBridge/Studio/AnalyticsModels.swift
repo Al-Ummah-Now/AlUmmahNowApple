@@ -61,6 +61,8 @@ public struct DailyMetric: Hashable, Sendable, Decodable, Identifiable {
 public struct VideoStats: Hashable, Sendable, Decodable, Identifiable {
     public var videoID: String
     public var title: String
+    /// Per-language titles when the server sends them (as on content items).
+    public var titleLocalized: LocalizedText?
     public var views: Int
     public var likes: Int
     public var comments: Int
@@ -80,6 +82,11 @@ public struct VideoStats: Hashable, Sendable, Decodable, Identifiable {
     public var daily: [DailyMetric]
     public var id: String { videoID }
 
+    /// The title in `language`, falling back to the plain title (same rule as content items).
+    public func displayTitle(_ language: AppLanguage) -> String {
+        titleLocalized?.value(for: language, fallback: title) ?? title
+    }
+
     /// The range's numbers when the server sends them, else the plain ones.
     public var periodViews: Int { rangeViews ?? views }
     public var periodLikes: Int { rangeLikes ?? likes }
@@ -88,8 +95,10 @@ public struct VideoStats: Hashable, Sendable, Decodable, Identifiable {
     public init(
         videoID: String, title: String, views: Int, likes: Int = 0, comments: Int = 0, shares: Int = 0,
         watchTime: Double = 0, averageViewDuration: Double = 0, engagementRate: Double = 0, thumbnailURL: URL? = nil,
-        rangeViews: Int? = nil, rangeLikes: Int? = nil, rangeComments: Int? = nil, daily: [DailyMetric] = []
+        rangeViews: Int? = nil, rangeLikes: Int? = nil, rangeComments: Int? = nil, daily: [DailyMetric] = [],
+        titleLocalized: LocalizedText? = nil
     ) {
+        self.titleLocalized = titleLocalized
         self.rangeViews = rangeViews
         self.rangeLikes = rangeLikes
         self.rangeComments = rangeComments
@@ -107,7 +116,7 @@ public struct VideoStats: Hashable, Sendable, Decodable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case videoID = "videoId", title, views, likes, comments, shares, watchTime, engagementRate
+        case videoID = "videoId", title, titleLocalized, views, likes, comments, shares, watchTime, engagementRate
         case averageViewDuration = "avgViewDuration"
         case thumbnailURL = "thumbnailUrl"
         case rangeViews, rangeLikes, rangeComments
@@ -118,6 +127,7 @@ public struct VideoStats: Hashable, Sendable, Decodable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         videoID = try c.decode(String.self, forKey: .videoID)
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        titleLocalized = try? c.decodeIfPresent(LocalizedText.self, forKey: .titleLocalized)
         views = Int(try c.decodeIfPresent(Double.self, forKey: .views) ?? 0)
         likes = Int(try c.decodeIfPresent(Double.self, forKey: .likes) ?? 0)
         comments = Int(try c.decodeIfPresent(Double.self, forKey: .comments) ?? 0)

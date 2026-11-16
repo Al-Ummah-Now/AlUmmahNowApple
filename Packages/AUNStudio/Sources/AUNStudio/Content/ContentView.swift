@@ -271,12 +271,12 @@ struct VideoRow: View {
         if let date = video.scheduledPublishDate, video.studioStatus == .scheduled {
             parts.append(l10n("studio.content.publishes", DisplayFormat.dateTime(date, l10n.language)))
         } else {
-            parts.append(l10n("video.views", DisplayFormat.count(video.views, l10n.language)))
+            parts.append(DisplayFormat.views(video.views, l10n))
         }
         if let date = video.dateCreated {
             parts.append(DisplayFormat.day(date, l10n.language))
         }
-        return parts.joined(separator: " · ")
+        return DisplayFormat.meta(parts, l10n.language)
     }
 }
 

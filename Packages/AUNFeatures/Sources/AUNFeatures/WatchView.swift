@@ -70,8 +70,8 @@
         }
 
         private var metadata: String {
-            let views = l10n("video.views", DisplayFormat.count(content.video.views, l10n.language))
-            return [content.video.channelName, views].compactMap { $0 }.joined(separator: " · ")
+            let views = DisplayFormat.views(content.video.views, l10n)
+            return DisplayFormat.meta([content.video.channelName, views], l10n.language)
         }
     }
 

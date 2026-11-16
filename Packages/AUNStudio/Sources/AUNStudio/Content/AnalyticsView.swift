@@ -48,7 +48,7 @@ struct AnalyticsView: View {
                     .formStyle(.grouped)
                     .scrollContentBackground(.hidden)
                     .fanousPage()
-                    .navigationTitle(video.title)
+                    .navigationTitle(video.displayTitle(l10n.language))
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(l10n("common.dismiss")) { opened = nil } }
                     }
@@ -138,9 +138,9 @@ struct AnalyticsView: View {
                     opened = video
                 } label: {
                     HStack {
-                        Text(video.title).foregroundStyle(Fanous.textPrimary).lineLimit(2)
+                        Text(video.displayTitle(l10n.language)).foregroundStyle(Fanous.textPrimary).lineLimit(2)
                         Spacer()
-                        Text(l10n("video.views", DisplayFormat.count(video.views, l10n.language)))
+                        Text(DisplayFormat.views(video.views, l10n))
                             .foregroundStyle(Fanous.textSecondary)
                     }
                     .fanousFont(.body)

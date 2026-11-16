@@ -102,6 +102,45 @@ public enum DisplayFormat {
         return format(duration, Duration.TimeFormatStyle(pattern: pattern), language)
     }
 
+    /// The separator between values on one line. Arabic uses a bullet: a middle dot «·» looks like the Eastern
+    /// Arabic zero «٠» next to ٠–٩ numbers.
+    public static func separator(_ language: AppLanguage) -> String { language == .ar ? " • " : " · " }
+
+    /// Values on one line ("Al Ummah Now · 1.2K views"), empty ones dropped. Each value is direction-isolated so an
+    /// English name inside Arabic text (or the reverse) keeps its order and punctuation; Arabic starts right-to-left.
+    public static func meta(_ parts: [String?], _ language: AppLanguage) -> String {
+        let values = parts.compactMap { $0 }.filter { !$0.isEmpty }
+        let line = values.map(isolate).joined(separator: separator(language))
+        return language == .ar && !line.isEmpty ? "\u{200F}" + line : line
+    }
+
+    /// Wraps text in FIRST STRONG ISOLATE … POP DIRECTIONAL ISOLATE.
+    public static func isolate(_ text: String) -> String { "\u{2068}\(text)\u{2069}" }
+
+    /// The CLDR plural category of a whole number: zero, one, two, few, many or other.
+    public static func pluralCategory(_ count: Int, _ language: AppLanguage) -> String {
+        let n = abs(count)
+        switch language {
+        case .en: return n == 1 ? "one" : "other"
+        case .ar:
+            switch (n, n % 100) {
+            case (0, _): return "zero"
+            case (1, _): return "one"
+            case (2, _): return "two"
+            case (_, 3...10): return "few"
+            case (_, 11...99): return "many"
+            default: return "other"
+            }
+        }
+    }
+
+    /// "1.2K views", «١٫٢ ألف مشاهدة», «مشاهدتان», with the noun agreeing with the count (keys `video.views.*`).
+    public static func views(_ count: Int, _ l10n: L10n) -> String {
+        // A compact number ("1.2K", «١٫٢ ألف») takes the "other" form in both languages.
+        let category = count >= 1000 ? "other" : pluralCategory(count, l10n.language)
+        return l10n("video.views.\(category)", self.count(count, l10n.language))
+    }
+
     /// Text the user typed, with Eastern Arabic (Hindi) ٠–٩ and Persian ۰–۹ digits turned into 0–9, for
     /// numeric fields, codes and anything parsed as a number.
     public static func normalizeDigits(_ input: String) -> String {

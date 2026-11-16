@@ -290,7 +290,7 @@ struct ChannelPicker: View {
     }
 
     private func title(_ channel: StudioChannel) -> String {
-        "\(channel.displayName(l10n.language)) · \(l10n("studio.role.\(channel.role.rawValue)"))"
+        DisplayFormat.meta([channel.displayName(l10n.language), l10n("studio.role.\(channel.role.rawValue)")], l10n.language)
     }
 }
 
