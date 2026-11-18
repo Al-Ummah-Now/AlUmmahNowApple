@@ -222,10 +222,19 @@ struct ChannelGate<Content: View>: View {
         var body: some View {
             NavigationSplitView {
                 List(sections, selection: $section) { item in
-                    Label(l10n(item.titleKey), systemImage: item.icon)
-                        .tag(item)
-                        .accessibilityIdentifier("section-\(item.rawValue)")
+                    // Theme ink, not the sidebar's vibrant label colours: those wash out on a light theme page.
+                    Label {
+                        Text(l10n(item.titleKey)).foregroundStyle(Fanous.textPrimary)
+                    } icon: {
+                        // One icon column: every glyph centred in the same width, so labels line up and rows match.
+                        Image(systemName: item.icon).foregroundStyle(Fanous.textSecondary)
+                            .frame(width: 20, alignment: .center)
+                    }
+                    .tag(item)
+                    .accessibilityIdentifier("section-\(item.rawValue)")
                 }
+                // A list that fits never scrolls, so no section slides under the title bar.
+                .scrollBounceBehavior(.basedOnSize)
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220)
             } detail: {
                 NavigationStack {
@@ -245,6 +254,9 @@ struct ChannelGate<Content: View>: View {
                     }
                     .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
                     .safeAreaInset(edge: .top, spacing: 0) { AccountStateBanner(session: session) }
+                    // An opaque title bar: scrolled content goes under it, never shows through the traffic lights.
+                    .toolbarBackground(Fanous.background, for: .windowToolbar)
+                    .toolbarBackground(.visible, for: .windowToolbar)
                 }
             }
             .frame(minWidth: 960, minHeight: 600)

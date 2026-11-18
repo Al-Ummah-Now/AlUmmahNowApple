@@ -87,7 +87,7 @@ public actor FixtureAccountService: AccountServicing {
     }
 
     public static let creator = StudioAccount(
-        id: "fixture-creator", email: "creator@example.org", displayName: "Fixture Creator")
+        id: "fixture-creator", email: "yusuf.rahman@example.org", displayName: "Yusuf Rahman")
 
     public func accounts() -> [StudioAccount] { stored }
     public func activeAccount() -> StudioAccount? { stored.first { $0.id == active } }

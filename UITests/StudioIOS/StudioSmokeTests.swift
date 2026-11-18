@@ -73,7 +73,7 @@ final class StudioSignInTests: XCTestCase {
         XCTAssertTrue(signOut.waitForExistence(timeout: 10))
         signOut.tap()
         XCTAssertTrue(app.buttons["confirm-cancel"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Sign out of Fixture Creator?"].exists)
+        XCTAssertTrue(app.staticTexts["Sign out of Yusuf Rahman?"].exists)
         app.buttons["confirm-cancel"].tap()
         XCTAssertTrue(signOut.waitForExistence(timeout: 10))
         signOut.tap()

@@ -277,6 +277,7 @@ struct ChannelPicker: View {
                 AvatarView(
                     name: session.channel?.displayName(l10n.language) ?? "?", url: session.channel?.avatarURL, size: 24)
                 Text(session.channel?.displayName(l10n.language) ?? l10n("studio.channel.pick"))
+                    .foregroundStyle(Fanous.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: 230, alignment: .leading)
@@ -434,10 +435,11 @@ struct DashboardContent: View {
         let language = l10n.language
         let drafts = model.counts[.drafts] ?? model.drafts.count
         let scheduled = model.counts[.scheduled] ?? model.scheduled.count
-        return [
-            "\(l10n("studio.tab.drafts")) \(DisplayFormat.count(drafts, language))",
-            "\(l10n("studio.tab.scheduled")) \(DisplayFormat.count(scheduled, language))",
-        ].joined(separator: " · ")
+        return DisplayFormat.meta(
+            [
+                "\(l10n("studio.tab.drafts")) \(DisplayFormat.count(drafts, language))",
+                "\(l10n("studio.tab.scheduled")) \(DisplayFormat.count(scheduled, language))",
+            ], language)
     }
 
     private func openContent() { Task { await session.open(StudioLink(section: .content)) } }

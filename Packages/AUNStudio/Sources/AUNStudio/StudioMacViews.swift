@@ -16,7 +16,7 @@
             case .upload: "square.and.arrow.up.on.square"
             case .analytics: "chart.bar"
             case .encode: "cpu"
-            case .editor: "timeline.selection"
+            case .editor: "scissors"
             }
         }
     }
