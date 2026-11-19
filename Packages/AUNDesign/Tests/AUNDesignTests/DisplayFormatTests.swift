@@ -20,6 +20,7 @@ import Testing
             DisplayFormat.percent(0.256, language, fraction: 0...1),
             DisplayFormat.percent(0.12, language, signed: true),
             DisplayFormat.day(date, language),
+            DisplayFormat.shortDay(date, language, now: date),
             DisplayFormat.dateTime(date, language),
             DisplayFormat.relative(date.addingTimeInterval(-3 * 3600), to: date, language),
             DisplayFormat.bytes(123_456_789, language),

@@ -2426,11 +2426,7 @@ public enum FanousThemes {
             ),
             material: FanousMaterial(
             glow: [.solid(.init(0xF4AE3A, 0.46))],
-            page: [
-                .radial(circle: false, extent: .radii(0.38, 0.36), center: .init(0.16, 0.08), logicalX: false, stops: [.init(.init(0xF4AE3A, 0.22), 0), .init(.init(0xF4AE3A, 0), 0.72)]),
-                .radial(circle: false, extent: .radii(0.38, 0.36), center: .init(0.84, 0.14), logicalX: false, stops: [.init(.init(0xF4AE3A, 0.18), 0), .init(.init(0xF4AE3A, 0), 0.72)]),
-                .linear(angle: 180, logical: false, stops: [.init(.init(0xEBE4D6), 0), .init(.init(0xF3EEE5), 0.46)]),
-            ],
+            page: [.solid(.init(0xF3EEE5))],
             header: [
                 .linear(angle: 90, logical: false, stops: [.init(.init(0x0E2B3D), 0), .init(.init(0x33403D), 0.5), .init(.init(0x0E2B3D), 1)]),
             ],
@@ -2681,11 +2677,7 @@ public enum FanousThemes {
             ),
             material: FanousMaterial(
             glow: [.solid(.init(0xF4AE3A, 0.46))],
-            page: [
-                .radial(circle: false, extent: .radii(0.38, 0.36), center: .init(0.16, 0.08), logicalX: false, stops: [.init(.init(0xF4AE3A, 0.22), 0), .init(.init(0xF4AE3A, 0), 0.72)]),
-                .radial(circle: false, extent: .radii(0.38, 0.36), center: .init(0.84, 0.14), logicalX: false, stops: [.init(.init(0xF4AE3A, 0.18), 0), .init(.init(0xF4AE3A, 0), 0.72)]),
-                .linear(angle: 180, logical: false, stops: [.init(.init(0x0B1D2A), 0), .init(.init(0x09151E), 0.46)]),
-            ],
+            page: [.solid(.init(0x09151E))],
             header: [
                 .linear(angle: 90, logical: false, stops: [.init(.init(0x0B1D2A), 0), .init(.init(0x30342D), 0.5), .init(.init(0x0B1D2A), 1)]),
             ],

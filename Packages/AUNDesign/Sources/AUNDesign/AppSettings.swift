@@ -3,12 +3,13 @@ import Foundation
 import Observation
 import SwiftUI
 
+/// Light or dark, the person's choice. There is no "System" option (owner, 2026-11-13): until the person picks one,
+/// the app follows the device and stores that mode the first time a window appears.
 public enum AppTheme: String, CaseIterable, Sendable {
-    case system, dark, light
+    case light, dark
 
-    public var colorScheme: ColorScheme? {
+    public var colorScheme: ColorScheme {
         switch self {
-        case .system: nil
         case .dark: .dark
         case .light: .light
         }
@@ -21,7 +22,14 @@ public final class AppSettings {
     private let defaults: UserDefaults
 
     public var language: AppLanguage { didSet { defaults.set(language.rawValue, forKey: Keys.language) } }
-    public var theme: AppTheme { didSet { defaults.set(theme.rawValue, forKey: Keys.theme) } }
+    public var theme: AppTheme {
+        didSet {
+            themeChosen = true
+            defaults.set(theme.rawValue, forKey: Keys.theme)
+        }
+    }
+    /// False until a mode is stored: the window then follows the device, and ``adoptDeviceScheme(_:)`` stores it.
+    public private(set) var themeChosen: Bool
 
     private enum Keys {
         static let language = "AUNLanguage"
@@ -33,7 +41,16 @@ public final class AppSettings {
         language =
             defaults.string(forKey: Keys.language).flatMap(AppLanguage.init(rawValue:))
             ?? Self.language(from: preferredLanguages)
-        theme = defaults.string(forKey: Keys.theme).flatMap(AppTheme.init(rawValue:)) ?? .system
+        // A stored "system" (older builds) or nothing at all both mean "not chosen yet".
+        let stored = defaults.string(forKey: Keys.theme).flatMap(AppTheme.init(rawValue:))
+        theme = stored ?? .dark
+        themeChosen = stored != nil
+    }
+
+    /// The device's mode at first launch becomes the stored choice, once.
+    public func adoptDeviceScheme(_ scheme: ColorScheme) {
+        guard !themeChosen else { return }
+        theme = scheme == .dark ? .dark : .light
     }
 
     /// Arabic-first product: Arabic when the device prefers it before English, English otherwise.
@@ -51,10 +68,12 @@ private struct FanousThemeRoot: ViewModifier {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.scenePhase) private var phase
     let siteTheme: SiteThemeStore
+    let settings: AppSettings
 
     func body(content: Content) -> some View {
         content
             .environment(\.fanous, FanousTheme(siteTheme.id, dark: scheme == .dark))
+            .onAppear { settings.adoptDeviceScheme(scheme) }
             .tint(Fanous.link)
             .task { await siteTheme.refresh() }
             .onChange(of: phase) { _, now in
@@ -66,11 +85,11 @@ private struct FanousThemeRoot: ViewModifier {
 extension View {
     /// Applies language, direction, the site theme and the light or dark mode for a whole window.
     public func fanousRoot(_ settings: AppSettings, siteTheme: SiteThemeStore) -> some View {
-        modifier(FanousThemeRoot(siteTheme: siteTheme))
+        modifier(FanousThemeRoot(siteTheme: siteTheme, settings: settings))
             .environment(\.l10n, L10n(settings.language))
             .environment(\.locale, settings.language.locale)
             .environment(\.layoutDirection, settings.language.isRTL ? .rightToLeft : .leftToRight)
-            .preferredColorScheme(settings.theme.colorScheme)
+            .preferredColorScheme(settings.themeChosen ? settings.theme.colorScheme : nil)
     }
 
     /// The window theme for previews and snapshots, without a store.

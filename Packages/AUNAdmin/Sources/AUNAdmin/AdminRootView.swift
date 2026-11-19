@@ -43,7 +43,7 @@ public struct AdminRootView: View {
         .onAppear {
             LaunchClock.rootAppeared()
             // Light and Dark only: the first launch follows the device, then the last explicit choice.
-            if settings.theme == .system { settings.theme = colorScheme == .dark ? .dark : .light }
+            settings.adoptDeviceScheme(colorScheme)
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {

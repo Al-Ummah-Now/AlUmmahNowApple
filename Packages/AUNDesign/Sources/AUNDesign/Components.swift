@@ -289,3 +289,62 @@ private struct FanousPageBackground: ViewModifier {
         content.background { FanousSurfaceKind(kind: .page, shape: .rect).ignoresSafeArea() }
     }
 }
+
+/// A card in the theme's `card` material (frosted, gold edge and glow in Fawanees), with an optional footer.
+/// Owner rule: a card's buttons live in its footer, at the trailing end; status or a note sits at the leading end.
+public struct FanousCard<Content: View, Status: View, Actions: View>: View {
+    @Environment(\.fanous) private var theme
+    private let content: Content
+    private let status: Status
+    private let actions: Actions
+    private let hasFooter: Bool
+
+    /// A card with a footer: `status` at the leading end, `actions` at the trailing end.
+    public init(
+        @ViewBuilder content: () -> Content, @ViewBuilder status: () -> Status, @ViewBuilder actions: () -> Actions
+    ) {
+        self.content = content()
+        self.status = status()
+        self.actions = actions()
+        hasFooter = true
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content
+                .padding(FanousScale.spacingLg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if hasFooter {
+                Rectangle().fill(Color(theme.colors.divider)).frame(height: 1).accessibilityHidden(true)
+                HStack(spacing: FanousScale.spacingSm) {
+                    status
+                    Spacer(minLength: FanousScale.spacingSm)
+                    actions
+                }
+                .padding(.horizontal, FanousScale.spacingMd)
+                .padding(.vertical, FanousScale.spacingSm)
+            }
+        }
+        .fanousMaterial(.card) { .rounded($0.xl) }
+    }
+}
+
+extension FanousCard where Status == EmptyView, Actions == EmptyView {
+    /// A card without a footer.
+    public init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+        status = EmptyView()
+        actions = EmptyView()
+        hasFooter = false
+    }
+}
+
+extension FanousCard where Status == EmptyView {
+    /// A card whose footer holds only actions, at the trailing end.
+    public init(@ViewBuilder content: () -> Content, @ViewBuilder actions: () -> Actions) {
+        self.content = content()
+        status = EmptyView()
+        self.actions = actions()
+        hasFooter = true
+    }
+}
