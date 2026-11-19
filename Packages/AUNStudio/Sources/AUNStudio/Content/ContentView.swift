@@ -264,9 +264,12 @@ struct VideoRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
                 Text(video.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(2)
-                // One line that truncates: the date has its own column, so it never wraps ("Nov / 6, 2026").
-                Text(details).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1)
+                // Up to two lines: narrow cards (the Mac Dashboard's half-width column) wrap rather than cut the
+                // status and views. The date has its own column, so it never wraps ("Nov / 6, 2026").
+                Text(details).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(2)
             }
+            // Its own height, not the thumbnail's: the title and details wrap instead of truncating to one line.
+            .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: FanousScale.spacingSm)
             if let date = video.dateCreated {
                 Text(DisplayFormat.shortDay(date, l10n.language))
