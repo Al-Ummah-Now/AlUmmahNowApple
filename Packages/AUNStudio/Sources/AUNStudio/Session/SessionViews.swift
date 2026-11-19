@@ -241,7 +241,7 @@ struct AvatarView: View {
     var body: some View {
         ZStack {
             Circle().fill(Fanous.surfaceRaised)
-            Text(String(name.prefix(1)).uppercased()).fanousFont(.label).foregroundStyle(Fanous.accent)
+            Text(Self.initial(of: name)).fanousFont(.label).foregroundStyle(Fanous.accent)
             if let url {
                 AsyncImage(url: url) { phase in
                     if case .success(let image) = phase { image.resizable().scaledToFill() }
@@ -252,6 +252,14 @@ struct AvatarView: View {
         .frame(width: size, height: size)
         .overlay { if ring { Circle().strokeBorder(Fanous.outline, lineWidth: 1) } }
         .accessibilityHidden(true)
+    }
+
+    /// The first letter of the first word; an Arabic «ال» article is skipped when the word is longer than it
+    /// («الأمة الآن» → «أ», not «ا»). Latin names keep their first letter, upper-cased.
+    nonisolated static func initial(of name: String) -> String {
+        let word = name.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+        let stem = word.hasPrefix("ال") && word.count > 2 ? String(word.dropFirst(2)) : word
+        return String(stem.prefix(1)).uppercased()
     }
 }
 

@@ -90,10 +90,26 @@ extension View {
             .environment(\.locale, settings.language.locale)
             .environment(\.layoutDirection, settings.language.isRTL ? .rightToLeft : .leftToRight)
             .preferredColorScheme(settings.themeChosen ? settings.theme.colorScheme : nil)
+            .modifier(UIKitDirection(language: settings.language))
     }
 
     /// The window theme for previews and snapshots, without a store.
     public func fanousTheme(_ id: FanousThemeID, dark: Bool) -> some View {
         environment(\.fanous, FanousTheme(id, dark: dark)).tint(Fanous.link)
+    }
+}
+
+/// Keeps UIKit-presented chrome (menus) in the app language's direction, now and after a language change.
+private struct UIKitDirection: ViewModifier {
+    let language: AppLanguage
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+            content
+                .onAppear { UIKitLayoutDirection.match(language) }
+                .onChange(of: language) { _, now in UIKitLayoutDirection.match(now) }
+        #else
+            content
+        #endif
     }
 }
