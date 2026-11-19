@@ -11,3 +11,18 @@
         }
     }
 #endif
+
+#if os(iOS)
+    import SwiftUI
+
+    /// The navigation bar's own titles (inline and large) in the web header's text colour (`navText`), so the system
+    /// title on the header matches the web header exactly. Applied per theme and mode by `fanousRoot`.
+    public enum FanousHeaderText {
+        @MainActor public static func apply(_ theme: FanousTheme) {
+            let color = UIColor(Color(theme.parts.navText))
+            let bar = UINavigationBar.appearance()
+            bar.titleTextAttributes = [.foregroundColor: color]
+            bar.largeTitleTextAttributes = [.foregroundColor: color]
+        }
+    }
+#endif

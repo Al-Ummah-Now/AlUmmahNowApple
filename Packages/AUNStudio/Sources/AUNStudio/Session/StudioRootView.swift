@@ -36,10 +36,21 @@ struct StudioToolbar: ToolbarContent {
     let session: StudioSession
     @Binding var showingAccounts: Bool
 
+    #if os(iOS)
+        private var identity: some ToolbarContent {
+            ToolbarItem(placement: .topBarTrailing) { IdentityMenu(session: session, showingAccounts: $showingAccounts) }
+        }
+    #endif
+
     var body: some ToolbarContent {
         #if os(iOS)
-            ToolbarItem(placement: .topBarLeading) { FanousHeaderTitle(title, large: true) }
-            ToolbarItem(placement: .topBarTrailing) { IdentityMenu(session: session, showingAccounts: $showingAccounts) }
+            // The title is the bar's own (large, leading, in navText via FanousHeaderText); a custom leading item was
+            // squeezed into a "…" bubble by the iOS 26 toolbar.
+            if #available(iOS 26, *) {
+                identity.sharedBackgroundVisibility(.hidden)
+            } else {
+                identity
+            }
         #else
             ToolbarItem(placement: .navigation) { FanousHeaderTitle(title) }
         #endif
@@ -171,7 +182,8 @@ struct ChannelGate<Content: View>: View {
         private func screen(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
             NavigationStack {
                 content()
-                    .navigationBarTitleDisplayMode(.inline)
+                    .navigationTitle(title)
+                    .toolbarTitleDisplayMode(.inlineLarge)
                     .toolbar { StudioToolbar(title: title, session: session, showingAccounts: $showingAccounts) }
                     .studioNavigationBar()
             }
@@ -232,6 +244,8 @@ struct ChannelGate<Content: View>: View {
                     }
                 }
                 .tabViewStyle(.sidebarAdaptable)
+                // iPad opens on the sidebar (the approved layout); iPhone keeps the tab bar.
+                .defaultAdaptableTabBarPlacement(.sidebar)
                 if #available(iOS 26, *) {
                     adaptable.tabBarMinimizeBehavior(.onScrollDown)
                 } else {
@@ -260,16 +274,34 @@ struct ChannelGate<Content: View>: View {
 
         var body: some View {
             NavigationSplitView {
-                List(sections, selection: $section) { item in
-                    // Theme ink, not the sidebar's vibrant label colours: those wash out on a light theme page.
-                    Label {
-                        Text(l10n(item.titleKey)).foregroundStyle(Fanous.textPrimary)
-                    } icon: {
-                        // One icon column: every glyph centred in the same width, so labels line up and rows match.
-                        Image(systemName: item.icon).foregroundStyle(Fanous.textSecondary)
-                            .frame(width: 20, alignment: .center)
+                List(sections) { item in
+                    // The active section in the theme's gold "active" material, not the system accent: a gold accent
+                    // would put white text on gold (below 4.5:1), and blue is not the brand.
+                    let selected = item == (section ?? .home)
+                    Button {
+                        section = item
+                    } label: {
+                        Label {
+                            Text(l10n(item.titleKey))
+                                .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerText))
+                                .fontWeight(selected ? .semibold : .regular)
+                        } icon: {
+                            // One icon column: every glyph centred in the same width, so labels line up.
+                            Image(systemName: item.icon)
+                                .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerIcon))
+                                .frame(width: 20, alignment: .center)
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background {
+                            if selected { FanousSurfaceKind(kind: .active, shape: .rounded(8)) }
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .tag(item)
+                    .buttonStyle(.plain)
+                    .listRowSeparator(.hidden)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
                     .accessibilityIdentifier("section-\(item.rawValue)")
                 }
                 // A list that fits never scrolls, so no section slides under the title bar.
