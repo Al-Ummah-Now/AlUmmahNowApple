@@ -263,7 +263,8 @@ struct VideoRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
-                Text(video.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(2)
+                // Three lines before truncating: long Arabic titles otherwise lose the part that tells them apart ("…الجزء").
+                Text(video.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(3)
                 // Up to two lines: narrow cards (the Mac Dashboard's half-width column) wrap rather than cut the
                 // status and views. The date has its own column, so it never wraps ("Nov / 6, 2026").
                 Text(details).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(2)
