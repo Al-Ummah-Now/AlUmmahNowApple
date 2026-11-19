@@ -71,9 +71,14 @@ private struct FanousThemeRoot: ViewModifier {
     let settings: AppSettings
 
     func body(content: Content) -> some View {
+        let theme = FanousTheme(siteTheme.id, dark: scheme == .dark)
         content
-            .environment(\.fanous, FanousTheme(siteTheme.id, dark: scheme == .dark))
-            .onAppear { settings.adoptDeviceScheme(scheme) }
+            .environment(\.fanous, theme)
+            .onAppear {
+                settings.adoptDeviceScheme(scheme)
+                applyHeaderText(theme)
+            }
+            .onChange(of: theme) { _, now in applyHeaderText(now) }
             .tint(Fanous.link)
             .task { await siteTheme.refresh() }
             .onChange(of: phase) { _, now in
@@ -97,6 +102,12 @@ extension View {
     public func fanousTheme(_ id: FanousThemeID, dark: Bool) -> some View {
         environment(\.fanous, FanousTheme(id, dark: dark)).tint(Fanous.link)
     }
+}
+
+@MainActor private func applyHeaderText(_ theme: FanousTheme) {
+    #if os(iOS)
+        FanousHeaderText.apply(theme)
+    #endif
 }
 
 /// Keeps UIKit-presented chrome (menus) in the app language's direction, now and after a language change.
