@@ -47,7 +47,7 @@ public enum AUNClient {
         }
         var info = utsname()
         uname(&info)
-        let machine = withUnsafeBytes(of: &info.machine) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        let machine = withUnsafeBytes(of: &info.machine) { String(bytes: $0.prefix { $0 != 0 }, encoding: .utf8) ?? "" }
         return machine.hasPrefix("iPad")
     }
 }
