@@ -251,7 +251,7 @@ final class LiveQAManageTests: LiveQATestCase {
         keep("purged-live-en")
 
         app.tabBars.buttons["Analytics"].tap()
-        XCTAssertTrue(app.segmentedControls["analytics-range"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.descendants(matching: .any)["analytics-range"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.staticTexts["Top videos"].waitForExistence(timeout: 30))
         noLoadError(app)
         keep("analytics-live-en")
