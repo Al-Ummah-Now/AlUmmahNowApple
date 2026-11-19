@@ -34,8 +34,8 @@ final class StudioUploadTests: XCTestCase {
         pattern.tap()
         pattern.press(forDuration: 1.2)
         if app.menuItems["Select All"].waitForExistence(timeout: 3) { app.menuItems["Select All"].tap() }
-        pattern.typeText("Lesson {{episode}}")
-        XCTAssertEqual(app.textFields["upload-title-1"].placeholderValue, "Lesson 2")
+        pattern.typeText("Tafsir {{episode}}")
+        XCTAssertEqual(app.textFields["upload-title-1"].placeholderValue, "Tafsir 2")
 
         app.swipeUp()
         let playlist = app.switches["upload-playlist-fixture-playlist-1"]
@@ -56,7 +56,7 @@ final class StudioUploadTests: XCTestCase {
         while done.count < 2, Date() < deadline { sleep(1) }
         XCTAssertEqual(done.count, 2)
         keep("upload-done-en")
-        XCTAssertTrue(app.staticTexts["Lesson 1"].firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["Tafsir 1"].firstMatch.exists)
     }
 
     @MainActor
@@ -71,7 +71,10 @@ final class StudioUploadTests: XCTestCase {
         let photos = app.buttons["upload-photos"]
         app.swipeDown()
         XCTAssertTrue(photos.waitForExistence(timeout: 10))
-        XCTAssertGreaterThan(photos.frame.midX, app.windows.firstMatch.frame.midX)
+        // The pick buttons sit at the row's end, which is the left in Arabic, with Photos (the primary) last.
+        let files = app.buttons["upload-files"]
+        XCTAssertLessThan(photos.frame.midX, app.windows.firstMatch.frame.midX)
+        if files.exists { XCTAssertLessThan(photos.frame.midX, files.frame.midX) }
     }
 
     @MainActor
