@@ -131,7 +131,9 @@ final class StudioAccountStateTests: XCTestCase {
     private func assertDashboardSections(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let recent = app.descendants(matching: .any)["dashboard-recent"]
         XCTAssertTrue(recent.waitForExistence(timeout: 30), file: file, line: line)
-        XCTAssertTrue(recent.staticTexts.count > 1, file: file, line: line)
+        // Its rows load after the section appears: wait for them rather than counting at once.
+        let rows = expectation(for: NSPredicate(format: "count > 1"), evaluatedWith: recent.staticTexts)
+        XCTAssertEqual(XCTWaiter.wait(for: [rows], timeout: 15), .completed, "recent uploads empty", file: file, line: line)
         for section in ["dashboard-held", "dashboard-queue"] {
             XCTAssertTrue(find(app, section).exists, "\(section) missing", file: file, line: line)
         }
