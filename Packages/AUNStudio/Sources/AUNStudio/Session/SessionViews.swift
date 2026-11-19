@@ -394,6 +394,8 @@ struct DashboardContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
                 NoticeView(session: session)
+                if !model.counts.isEmpty { kpis }
+                // The full width (no reading cap): one column on iPhone, two on iPad, three on Mac.
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 320), spacing: FanousScale.spacingLg, alignment: .top)],
                     alignment: .leading, spacing: FanousScale.spacingLg
@@ -404,8 +406,7 @@ struct DashboardContent: View {
                 }
             }
             .padding(FanousScale.spacingLg)
-            .frame(maxWidth: 1100, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .refreshable { await model.load() }
         .task { if model.recentPhase == .idle { await model.load() } }
@@ -441,6 +442,22 @@ struct DashboardContent: View {
         }
     }
 
+    /// The channel's videos by status, as tiles; Failed turns red when there are any.
+    private var kpis: some View {
+        let tiles = ForEach(StudioStatus.allCases, id: \.self) { status in
+            KPITile(label: l10n("studio.tab.\(status.rawValue)"), value: model.counts[status] ?? 0, alert: status == .failed)
+        }
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: FanousScale.spacingMd) { tiles }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: FanousScale.spacingMd) { tiles.frame(width: 120) }
+                    .padding(.vertical, FanousScale.spacingSm)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("dashboard-counts")
+    }
+
     private var queueSummary: String {
         let language = l10n.language
         let drafts = model.counts[.drafts] ?? model.drafts.count
@@ -469,38 +486,66 @@ struct DashboardSection<Rows: View>: View {
 
     var body: some View {
         if phase != .hidden {
-            VStack(alignment: .leading, spacing: FanousScale.spacingMd) {
-                HStack {
-                    Text(title).fanousFont(.title).foregroundStyle(Fanous.textPrimary).accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: FanousScale.spacingSm)
-                    if let seeAll, phase == .ready {
-                        Button(l10n("studio.home.seeAll"), action: seeAll).fanousFont(.label)
+            Group {
+                if let seeAll, phase == .ready {
+                    // Owner rule: a card's buttons sit in its footer, at the trailing end.
+                    FanousCard {
+                        content
+                    } actions: {
+                        Button(l10n("studio.home.seeAll"), action: seeAll)
+                            .buttonStyle(FanousButtonStyle(.ghost))
                             .accessibilityIdentifier("\(identifier)-all")
                     }
-                }
-                switch phase {
-                case .loading:
-                    ProgressView().accessibilityLabel(l10n("common.loading")).frame(maxWidth: .infinity)
-                case .ready:
-                    rows()
-                case .empty:
-                    Text(empty).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
-                        .accessibilityIdentifier("\(identifier)-empty")
-                case .failed:
-                    VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
-                        Text(l10n("common.error.load")).fanousFont(.body).foregroundStyle(Fanous.errorText)
-                        Button(l10n("common.retry"), action: retry)
-                    }
-                case .idle, .hidden:
-                    EmptyView()
+                } else {
+                    FanousCard { content }
                 }
             }
-            .padding(FanousScale.spacingLg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fanousMaterial(.card) { .rounded($0.lg) }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(identifier)
         }
+    }
+
+    @ViewBuilder private var content: some View {
+        VStack(alignment: .leading, spacing: FanousScale.spacingMd) {
+            Text(title).fanousFont(.title).foregroundStyle(Fanous.textPrimary).accessibilityAddTraits(.isHeader)
+            switch phase {
+            case .loading:
+                ProgressView().accessibilityLabel(l10n("common.loading")).frame(maxWidth: .infinity)
+            case .ready:
+                rows()
+            case .empty:
+                Text(empty).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
+                    .accessibilityIdentifier("\(identifier)-empty")
+            case .failed:
+                VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                    Text(l10n("common.error.load")).fanousFont(.body).foregroundStyle(Fanous.errorText)
+                    Button(l10n("common.retry"), action: retry)
+                }
+            case .idle, .hidden:
+                EmptyView()
+            }
+        }
+    }
+}
+
+/// A count tile: the number large, the status under it, in the card material.
+struct KPITile: View {
+    @Environment(\.l10n) private var l10n
+    let label: String
+    let value: Int
+    var alert = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(DisplayFormat.number(value, l10n.language))
+                .font(.system(size: 26, weight: .bold)).monospacedDigit()
+                .foregroundStyle(alert && value > 0 ? Fanous.errorText : Fanous.textPrimary)
+            Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1)
+        }
+        .padding(FanousScale.spacingMd)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fanousMaterial(.card) { .rounded($0.lg) }
+        .accessibilityElement(children: .combine)
     }
 }
 
