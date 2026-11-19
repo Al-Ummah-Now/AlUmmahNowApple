@@ -20,12 +20,21 @@ struct AnalyticsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-                Picker(l10n("studio.analytics.range"), selection: $range) {
-                    ForEach(AnalyticsRange.allCases, id: \.self) {
-                        Text(l10n("studio.analytics.days", DisplayFormat.number($0.rawValue, l10n.language))).tag($0)
+                // The range as chips, the selected one gold (a system segmented control can't take the gradient).
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: FanousScale.spacingSm) {
+                        ForEach(AnalyticsRange.allCases, id: \.self) { item in
+                            StatusChip(
+                                title: l10n("studio.analytics.days", DisplayFormat.number(item.rawValue, l10n.language)),
+                                selected: range == item
+                            ) { range = item }
+                            .accessibilityIdentifier("range-\(item.rawValue)")
+                        }
                     }
+                    .padding(.vertical, 2)
                 }
-                .pickerStyle(.segmented)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(l10n("studio.analytics.range"))
                 .accessibilityIdentifier("analytics-range")
                 switch phase {
                 case .loading where current == nil:
@@ -35,14 +44,22 @@ struct AnalyticsView: View {
                 default:
                     if let current {
                         tiles(current)
-                        chart(current)
-                        topVideos(current)
+                        // The chart beside the top videos when there is room (iPad, Mac), one under the other on iPhone.
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .top, spacing: FanousScale.spacingLg) {
+                                chart(current).frame(minWidth: 460, maxWidth: .infinity)
+                                topVideos(current).frame(minWidth: 300, maxWidth: 420)
+                            }
+                            VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
+                                chart(current)
+                                topVideos(current)
+                            }
+                        }
                     }
                 }
             }
             .padding(FanousScale.spacingLg)
-            .frame(maxWidth: 900)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .fanousPage()
         .navigationTitle(l10n("studio.analytics.title"))
@@ -125,16 +142,23 @@ struct AnalyticsView: View {
         return VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
             Text(l10n("studio.analytics.daily")).fanousFont(.title).foregroundStyle(Fanous.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            Picker(l10n("studio.analytics.metric"), selection: $metric) {
-                ForEach(ChartMetric.allCases) { Text(l10n($0.titleKey)).tag($0) }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: FanousScale.spacingSm) {
+                    ForEach(ChartMetric.allCases) { item in
+                        StatusChip(title: l10n(item.titleKey), selected: metric == item) { metric = item }
+                            .accessibilityIdentifier("metric-\(item.id)")
+                    }
+                }
+                .padding(.vertical, 2)
             }
-            .pickerStyle(.segmented)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(l10n("studio.analytics.metric"))
             .accessibilityIdentifier("analytics-metric")
             DailyChart(series: series)
             DailyTable(series: series)
         }
         .padding(FanousScale.spacingLg)
-        .fanousMaterial(.card) { .rounded($0.lg) }
+        .fanousMaterial(.card) { .rounded($0.xl) }
     }
 
     @ViewBuilder private func topVideos(_ stats: ChannelStats) -> some View {
@@ -163,7 +187,8 @@ struct AnalyticsView: View {
             }
         }
         .padding(FanousScale.spacingLg)
-        .fanousMaterial(.card) { .rounded($0.lg) }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fanousMaterial(.card) { .rounded($0.xl) }
     }
 }
 
