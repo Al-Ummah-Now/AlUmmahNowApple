@@ -27,7 +27,7 @@ final class StoreScreenshots: XCTestCase {
         for language in StoreScreenshot.languages {
             for theme in StoreScreenshot.themes {
                 let app = StoreScreenshot.launch(language, theme, extra: ["-AUNFixtureSignedIn", "YES"])
-                let card = app.descendants(matching: .any).matching(identifier: "channel-card").firstMatch
+                let card = app.descendants(matching: .any).matching(identifier: "account-button").firstMatch
                 XCTAssertTrue(card.waitForExistence(timeout: 30))
                 StoreScreenshot.capture(app, self, .init(language: language, theme: theme, index: 1, name: "dashboard"))
                 for (offset, tab) in (tabs[language] ?? tabs["en"]!).enumerated() {

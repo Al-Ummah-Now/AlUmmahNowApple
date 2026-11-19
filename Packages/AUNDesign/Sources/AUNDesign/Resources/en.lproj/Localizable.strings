@@ -67,8 +67,8 @@
 "studio.signIn.message" = "Upload and manage videos for your channels. You sign in on the Al Ummah Now sign-in page.";
 "studio.signIn.button" = "Sign in";
 "studio.signIn.progress" = "Signing in…";
+"studio.identity.menu" = "Acting as";
 "studio.account.title" = "Accounts";
-"studio.account.menu" = "Account";
 "studio.account.add" = "Add account";
 "studio.account.active" = "Current account";
 "studio.account.switch" = "Switch to %@";
@@ -76,7 +76,6 @@
 "studio.account.signOut" = "Sign out";
 "studio.signOut.title" = "Sign out of %@?";
 "studio.signOut.message" = "This removes the account from this device and ends its session on the server. Your videos stay on your channels. Other accounts stay signed in.";
-"studio.channel.title" = "Channel";
 "studio.channel.pick" = "Choose a channel";
 "studio.channel.none" = "No channel to upload to";
 "studio.channel.noneMessage" = "Create a channel on the website, or ask a channel owner to add you as an editor.";
@@ -85,7 +84,6 @@
 "studio.role.editor" = "Editor";
 "studio.role.moderator" = "Moderator";
 "studio.home.title" = "Dashboard";
-"studio.home.signedInAs" = "Signed in as %@";
 "studio.home.recent" = "Recent uploads";
 "studio.home.recentEmpty" = "No videos on this channel yet.";
 "studio.home.held" = "Comments awaiting review";

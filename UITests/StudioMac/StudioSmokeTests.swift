@@ -17,9 +17,10 @@ final class StudioSmokeTests: XCTestCase {
         return app
     }
 
+    /// The identity menu: its value is "channel · role · account".
     @MainActor
-    private func channelCard(_ app: XCUIApplication) -> XCUIElement {
-        app.descendants(matching: .any).matching(identifier: "channel-card").firstMatch
+    private func identity(_ app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: "account-button").firstMatch
     }
 
     @MainActor
@@ -28,14 +29,14 @@ final class StudioSmokeTests: XCTestCase {
         let signIn = app.buttons["sign-in"]
         XCTAssertTrue(signIn.waitForExistence(timeout: 30))
         signIn.click()
-        XCTAssertTrue(channelCard(app).waitForExistence(timeout: 20))
+        XCTAssertTrue(identity(app).waitForExistence(timeout: 20))
         XCTAssertTrue(app.descendants(matching: .any)["section-home"].exists)
     }
 
     @MainActor
     func testArabicSignedIn() {
         let app = launch("ar", signedIn: true)
-        let card = channelCard(app)
+        let card = identity(app)
         XCTAssertTrue(card.waitForExistence(timeout: 30))
         XCTAssertTrue(app.staticTexts["لوحة التحكم"].firstMatch.exists)
     }
@@ -73,9 +74,10 @@ final class StudioSmokeTests: XCTestCase {
     @MainActor
     func testSignOutAsksFirst() {
         let app = launch("en", signedIn: true)
-        let account = app.buttons["account-button"]
+        let account = identity(app)
         XCTAssertTrue(account.waitForExistence(timeout: 30))
         account.click()
+        app.descendants(matching: .any)["accounts-manage"].firstMatch.click()
         let signOut = app.buttons["account-sign-out-fixture-creator"]
         XCTAssertTrue(signOut.waitForExistence(timeout: 10))
         signOut.click()
