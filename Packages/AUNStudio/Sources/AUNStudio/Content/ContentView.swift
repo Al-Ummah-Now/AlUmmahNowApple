@@ -97,17 +97,21 @@ struct ContentView: View {
     /// and the account button visible on a phone.
     private var statusPicker: some View {
         VStack(spacing: FanousScale.spacingXs) {
+            // Status chips: the selected one in the gold primary material, the rest outlined (a system segmented
+            // control can't take the gradient).
             ScrollView(.horizontal, showsIndicators: false) {
-                Picker(l10n("studio.content.status"), selection: $model.status) {
+                HStack(spacing: FanousScale.spacingSm) {
                     ForEach(StudioStatus.allCases, id: \.self) { status in
-                        Text(label(for: status)).tag(status)
+                        StatusChip(title: label(for: status), selected: model.status == status) { model.status = status }
+                            .accessibilityIdentifier("status-\(status.rawValue)")
                     }
                 }
-                .pickerStyle(.segmented)
-                .fixedSize()
                 .padding(.horizontal, FanousScale.spacingLg)
-                .accessibilityIdentifier("content-status")
+                .padding(.vertical, 2)
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(l10n("studio.content.status"))
+            .accessibilityIdentifier("content-status")
             HStack {
                 Menu {
                     Picker(l10n("studio.content.sort"), selection: $model.sort) {
@@ -165,21 +169,39 @@ struct ContentView: View {
             } else {
                 List(selection: $model.selection) {
                     ForEach(model.items) { video in
-                        VideoRow(video: video)
-                            .contentShape(Rectangle())
-                            .onTapGesture(count: 1, perform: { editing = video }, when: opensOnTap)
-                            .swipeActions(edge: .trailing) {
+                        HStack(spacing: FanousScale.spacingSm) {
+                            VideoRow(video: video)
+                            if opensOnTap {
+                                // The card's action at its trailing end (owner rule); a tap anywhere also opens it.
+                                Button(l10n("studio.content.edit")) { editing = video }
+                                    .buttonStyle(FanousButtonStyle(.secondary))
+                                    .accessibilityIdentifier("edit-\(video.id)")
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 1, perform: { editing = video }, when: opensOnTap)
+                        .swipeActions(edge: .trailing) {
+                            Button(l10n("studio.content.delete"), role: .destructive) { confirmingDelete = [video.id] }
+                        }
+                        #if os(iOS)
+                            .contextMenu {
+                                Button(l10n("studio.content.edit")) { editing = video }
                                 Button(l10n("studio.content.delete"), role: .destructive) { confirmingDelete = [video.id] }
                             }
-                            #if os(iOS)
-                                .contextMenu {
-                                    Button(l10n("studio.content.edit")) { editing = video }
-                                    Button(l10n("studio.content.delete"), role: .destructive) { confirmingDelete = [video.id] }
-                                }
-                            #endif
-                            .listRowBackground(Rectangle().fill(Fanous.surface))
-                            .tag(video.id)
-                            .task { if video.id == model.items.last?.id { await model.loadMore() } }
+                        #endif
+                        // Each video on its own card: the card material, spaced, no separators.
+                        .listRowBackground(
+                            FanousSurfaceKind(kind: .card, shape: .rounded(16))
+                                .padding(.vertical, FanousScale.spacingXs)
+                                .padding(.horizontal, FanousScale.spacingSm)
+                        )
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: 10, leading: FanousScale.spacingLg + 4, bottom: 10, trailing: FanousScale.spacingLg + 4)
+                        )
+                        .tag(video.id)
+                        .task { if video.id == model.items.last?.id { await model.loadMore() } }
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -231,7 +253,9 @@ struct ContentView: View {
         }
         .padding(FanousScale.spacingMd)
         .frame(maxWidth: .infinity)
-        .background(Fanous.surfaceRaised)
+        .fanousMaterial(.raised) { .rounded($0.xl) }
+        .padding(.horizontal, FanousScale.spacingSm)
+        .padding(.bottom, FanousScale.spacingXs)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("bulk-bar")
     }
@@ -239,13 +263,17 @@ struct ContentView: View {
     @ViewBuilder private func bulkButtons(_ count: String) -> some View {
         Text(l10n("studio.content.selected", count)).fanousFont(.label).foregroundStyle(Fanous.textPrimary)
         Spacer(minLength: 0)
-        Button(l10n("studio.content.bulkEdit")) { sheet = .edit }.accessibilityIdentifier("bulk-edit")
         if model.showsBulkSchedule() {
-            Button(l10n("studio.content.bulkSchedule")) { sheet = .schedule }.accessibilityIdentifier("bulk-schedule")
+            Button(l10n("studio.content.bulkSchedule")) { sheet = .schedule }
+                .buttonStyle(FanousButtonStyle(.secondary)).accessibilityIdentifier("bulk-schedule")
         }
-        Button(l10n("studio.content.bulkPlaylist")) { sheet = .playlist }.accessibilityIdentifier("bulk-playlist")
+        Button(l10n("studio.content.bulkPlaylist")) { sheet = .playlist }
+            .buttonStyle(FanousButtonStyle(.secondary)).accessibilityIdentifier("bulk-playlist")
         Button(l10n("studio.content.delete"), role: .destructive) { confirmingDelete = Array(model.selection) }
-            .accessibilityIdentifier("bulk-delete")
+            .buttonStyle(FanousButtonStyle(.ghost)).foregroundStyle(Fanous.errorText).accessibilityIdentifier("bulk-delete")
+        // Gold only for the primary action, at the trailing end.
+        Button(l10n("studio.content.bulkEdit")) { sheet = .edit }
+            .buttonStyle(FanousButtonStyle(.primary)).accessibilityIdentifier("bulk-edit")
     }
 }
 
@@ -345,5 +373,35 @@ extension View {
     @ViewBuilder
     func onTapGesture(count: Int, perform action: @escaping () -> Void, when active: Bool) -> some View {
         if active { onTapGesture(count: count, perform: action) } else { self }
+    }
+}
+
+/// A status filter chip: the selected one in the gold primary material, the others outlined.
+struct StatusChip: View {
+    @Environment(\.fanous) private var theme
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .fanousFont(.label)
+                .fontWeight(selected ? .semibold : .regular)
+                .foregroundStyle(selected ? Color(theme.parts.buttonPrimaryText) : Color(theme.colors.textSecondary))
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 36)
+                .background {
+                    if selected {
+                        FanousSurfaceKind(kind: .primary, shape: .capsule)
+                    } else {
+                        Capsule().strokeBorder(Color(theme.colors.outline), lineWidth: 1)
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

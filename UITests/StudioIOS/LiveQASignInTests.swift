@@ -163,7 +163,7 @@ final class LiveQAManageTests: LiveQATestCase {
     /// (a fresh upload takes a moment to reach the channel's content index).
     @MainActor
     private func openTabWithTestUploads(_ app: XCUIApplication) -> Bool {
-        let tabs = app.segmentedControls["content-status"].buttons
+        let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'status-'"))
         XCTAssertTrue(tabs.firstMatch.waitForExistence(timeout: 30))
         let deadline = Date().addingTimeInterval(180)
         repeat {
