@@ -15,7 +15,7 @@ final class StudioSignInTests: XCTestCase {
         return app
     }
 
-    /// The identity menu: its value is "channel · role · account".
+    /// The identity menu: its value is "channel · role · account", each part direction-isolated.
     @MainActor
     private func identity(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: "account-button").firstMatch
@@ -30,7 +30,7 @@ final class StudioSignInTests: XCTestCase {
         signIn.tap()
         let card = identity(app)
         XCTAssertTrue(card.waitForExistence(timeout: 20))
-        XCTAssertTrue((card.value as? String ?? "").hasPrefix("Al Ummah Now"), card.debugDescription)
+        XCTAssertTrue((card.value as? String ?? "").contains("Al Ummah Now"), card.debugDescription)
     }
 
     @MainActor
@@ -49,7 +49,7 @@ final class StudioSignInTests: XCTestCase {
         editor.tap()
         let card = identity(app)
         XCTAssertTrue(card.waitForExistence(timeout: 10))
-        let switched = NSPredicate(format: "value BEGINSWITH %@", "Tafsir Circle")
+        let switched = NSPredicate(format: "value CONTAINS %@", "Tafsir Circle")
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: switched, evaluatedWith: card)], timeout: 10), .completed)
     }
 
@@ -59,7 +59,7 @@ final class StudioSignInTests: XCTestCase {
         let account = identity(app)
         XCTAssertTrue(account.waitForExistence(timeout: 30))
         let value = account.value as? String ?? ""
-        XCTAssertTrue(value.hasPrefix("الأمة الآن"), value)
+        XCTAssertTrue(value.contains("الأمة الآن"), value)
         XCTAssertTrue(value.contains("مالك"), value)
         // The identity menu sits at the trailing edge: on the left in Arabic.
         XCTAssertLessThan(account.frame.midX, app.windows.firstMatch.frame.midX)
