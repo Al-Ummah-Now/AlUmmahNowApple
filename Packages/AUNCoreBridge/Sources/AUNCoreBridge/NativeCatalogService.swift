@@ -34,7 +34,9 @@ public struct NativeCatalogService: CatalogServicing {
     }
 
     private func fetch(_ url: URL) async throws -> Data {
-        let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        request.setAUNClient()
+        let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             AUNLog.network.error("GET \(url.path, privacy: .public) failed: \(status)")
