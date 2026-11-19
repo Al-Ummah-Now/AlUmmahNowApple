@@ -264,9 +264,16 @@ struct VideoRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
                 Text(video.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(2)
-                Text(details).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(2)
+                // One line that truncates: the date has its own column, so it never wraps ("Nov / 6, 2026").
+                Text(details).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: FanousScale.spacingSm)
+            if let date = video.dateCreated {
+                Text(DisplayFormat.shortDay(date, l10n.language))
+                    .fanousFont(.caption).foregroundStyle(Fanous.textMuted)
+                    .lineLimit(1).fixedSize()
+                    .frame(maxHeight: .infinity, alignment: .top)
+            }
         }
         .padding(.vertical, FanousScale.spacingXs)
         .accessibilityElement(children: .combine)
@@ -277,12 +284,9 @@ struct VideoRow: View {
         var parts = [l10n(video.isPublic ? "visibility.public" : "visibility.private")]
         if showsStatus, let status = video.studioStatus { parts.insert(l10n("studio.tab.\(status.rawValue)"), at: 0) }
         if let date = video.scheduledPublishDate, video.studioStatus == .scheduled {
-            parts.append(l10n("studio.content.publishes", DisplayFormat.dateTime(date, l10n.language)))
+            parts.append(l10n("studio.content.publishes", DisplayFormat.shortDay(date, l10n.language)))
         } else {
             parts.append(DisplayFormat.views(video.views, l10n))
-        }
-        if let date = video.dateCreated {
-            parts.append(DisplayFormat.day(date, l10n.language))
         }
         return DisplayFormat.meta(parts, l10n.language)
     }
