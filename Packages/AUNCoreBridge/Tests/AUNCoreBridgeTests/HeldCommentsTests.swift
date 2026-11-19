@@ -35,6 +35,24 @@ struct HeldCommentsTests {
         #expect(held.items[0].targetTitle == "Seerah, part 1")
     }
 
+    @Test func theTargetTitleFollowsThePageLanguage() throws {
+        let json = #"""
+            {"id":"c","text":"Jazakum Allahu khayran","targetTitle":"Friday khutbah: patience",
+             "targetTitleLocalized":{"en":"Friday khutbah: patience","ar":"خطبة الجمعة: الصبر"}}
+            """#
+        let comment = try JSONDecoder().decode(HeldComment.self, from: Data(json.utf8))
+        #expect(comment.displayTargetTitle(.ar) == "خطبة الجمعة: الصبر")
+        #expect(comment.displayTargetTitle(.en) == "Friday khutbah: patience")
+        #expect(comment.text == "Jazakum Allahu khayran")
+        // No Arabic title (or none at all): the plain title.
+        let plain = try JSONDecoder().decode(
+            HeldComment.self,
+            from: Data(#"{"id":"c","text":"t","targetTitle":"Seerah","targetTitleLocalized":{"ar":" "}}"#.utf8))
+        #expect(plain.displayTargetTitle(.ar) == "Seerah")
+        let bare = try JSONDecoder().decode(HeldComment.self, from: Data(#"{"id":"c","text":"t","targetTitle":"Seerah"}"#.utf8))
+        #expect(bare.displayTargetTitle(.ar) == "Seerah")
+    }
+
     @Test func aFeatureOffAnswerHidesTheSection() async {
         await #expect(throws: CoreError.featureOff) {
             try await service { _ in

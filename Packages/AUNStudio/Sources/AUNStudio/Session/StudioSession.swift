@@ -149,6 +149,7 @@ public final class StudioSession {
         if changed {
             hiddenSections = []
             await refreshFeatures()
+            await probeAnalytics()
         }
         if let account { defaults.set(channel.id, forKey: Self.channelKey(account.id)) }
         do {
@@ -197,6 +198,21 @@ public final class StudioSession {
     /// The Analytics tab and section, until its API answers `feature_off`.
     public var showsAnalytics: Bool { !hiddenSections.contains(.analytics) }
 
+    /// Analytics has no key in `/api/me/features`: ask its API once per channel (a one-day range) so an Analytics tab
+    /// that is off never shows, not only after someone opens it. Other failures leave the tab to its own screen.
+    func probeAnalytics() async {
+        guard let id = channel?.id else { return }
+        let end = Date()
+        do {
+            _ = try await services.studio.channelStats(
+                channelID: id, period: DateInterval(start: end.addingTimeInterval(-86_400), end: end))
+        } catch let error as CoreError where error == .featureOff {
+            if channel?.id == id { hiddenSections.insert(.analytics) }
+        } catch {
+            AUNLog.studio.error("Checking Analytics failed: \(error)")
+        }
+    }
+
     /// A section's API answered 404 `feature_off`: hide the section and read the features again.
     public func featureOff(_ section: StudioLink.Section) {
         hiddenSections.insert(section)
@@ -222,6 +238,7 @@ public final class StudioSession {
             }
             await refreshCreatorAccess()
             await refreshFeatures()
+            await probeAnalytics()
         } catch {
             AUNLog.studio.error("Loading channels failed: \(error)")
             channelsState = .failed

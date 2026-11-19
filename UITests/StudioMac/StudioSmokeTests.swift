@@ -55,16 +55,15 @@ final class StudioSmokeTests: XCTestCase {
         XCTAssertFalse(switchedOff.descendants(matching: .any)["section-upload"].exists)
     }
 
-    /// Analytics answering 404 `feature_off` takes its section away without a message.
+    /// Analytics answering 404 `feature_off` takes its section away without a message, before anyone opens it.
     @MainActor
     func testAnalyticsOffHidesItsSection() {
         let app = launch("en", signedIn: true, featuresOff: "analytics")
+        XCTAssertTrue(app.descendants(matching: .any)["section-home"].waitForExistence(timeout: 30))
         let analytics = app.descendants(matching: .any)["section-analytics"]
-        XCTAssertTrue(analytics.waitForExistence(timeout: 30))
-        analytics.click()
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: analytics)
         waitForExpectations(timeout: 15)
-        XCTAssertTrue(app.descendants(matching: .any)["section-home"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["section-content"].exists)
         // No hollow Dashboard: its sections stay without Analytics.
         for section in ["dashboard-recent", "dashboard-held", "dashboard-queue"] {
             XCTAssertTrue(app.descendants(matching: .any)[section].waitForExistence(timeout: 15), section)
