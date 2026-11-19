@@ -10,6 +10,10 @@ struct StudioMacApp: App {
     private let services = StudioBootstrap.services()
     private let preferences = StudioBootstrap.preferences()
 
+    init() {
+        AppKitLayoutDirection.match(AppSettings().language)
+    }
+
     var body: some Scene {
         WindowGroup {
             StudioRootView(
@@ -20,8 +24,16 @@ struct StudioMacApp: App {
             )
             .fanousRoot(settings, siteTheme: siteTheme)
             .environment(settings)
+            .studioWindowTitleHidden()
         }
         // Fits a 1280x800 screen (and CI's), so the bulk bar at the bottom of Content is on screen in a fresh window.
         .defaultSize(width: 1100, height: 680)
+    }
+}
+
+extension View {
+    /// No window title: the sidebar names the app, and an English title would sit in the Arabic chrome.
+    @ViewBuilder fileprivate func studioWindowTitleHidden() -> some View {
+        if #available(macOS 15, *) { toolbar(removing: .title) } else { self }
     }
 }

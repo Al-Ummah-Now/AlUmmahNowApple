@@ -213,6 +213,7 @@ struct ChannelGate<Content: View>: View {
 #elseif os(macOS)
     struct StudioShell: View {
         @Environment(\.l10n) private var l10n
+        @Environment(\.fanous) private var fanous
         let session: StudioSession
         @State private var section: StudioSection? = .home
         @State private var showingAccounts = false
@@ -255,7 +256,9 @@ struct ChannelGate<Content: View>: View {
                     .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
                     .safeAreaInset(edge: .top, spacing: 0) { AccountStateBanner(session: session) }
                     // An opaque title bar: scrolled content goes under it, never shows through the traffic lights.
-                    .toolbarBackground(Fanous.background, for: .windowToolbar)
+                    // A concrete colour: the window toolbar does not see the theme environment, so a role would
+                    // resolve to the default (light) palette in Dark mode.
+                    .toolbarBackground(Color(fanous.colors.background), for: .windowToolbar)
                     .toolbarBackground(.visible, for: .windowToolbar)
                 }
             }
