@@ -25,7 +25,8 @@ struct LabeledField: View {
 
 extension View {
     /// List rows on the theme's surface instead of the system's grouped grey.
-    func studioRows() -> some View { listRowBackground(Rectangle().fill(Fanous.surface)) }
+    /// Form rows on the raised card surface, as the cards elsewhere in Studio.
+    func studioRows() -> some View { listRowBackground(Rectangle().fill(Fanous.surfaceRaised)) }
 }
 
 /// Upload one video or many: pick files, set values for all of them, follow the queue.
@@ -100,12 +101,10 @@ struct UploadView: View {
             ForEach(composer.files) { file in
                 FileRow(composer: composer, id: file.id, channelName: session.channel?.displayName(l10n.language) ?? "")
             }
-            HStack(spacing: FanousScale.spacingMd) {
+            // The pick actions at the trailing end (owner rule); Photos is the gold one on iPhone and iPad.
+            HStack(spacing: FanousScale.spacingSm) {
+                Spacer(minLength: 0)
                 #if os(iOS)
-                    PhotosPicker(selection: $photoPicks, matching: .videos, preferredItemEncoding: .current) {
-                        Label(l10n("studio.upload.fromPhotos"), systemImage: "photo.on.rectangle")
-                    }
-                    .accessibilityIdentifier("upload-photos")
                     if loadingPhotos { ProgressView().accessibilityLabel(l10n("common.loading")) }
                 #endif
                 Button {
@@ -113,9 +112,20 @@ struct UploadView: View {
                 } label: {
                     Label(l10n("studio.upload.fromFiles"), systemImage: "folder")
                 }
+                #if os(iOS)
+                    .buttonStyle(FanousButtonStyle(.secondary))
+                #else
+                    .buttonStyle(FanousButtonStyle(.primary))
+                #endif
                 .accessibilityIdentifier("upload-files")
+                #if os(iOS)
+                    PhotosPicker(selection: $photoPicks, matching: .videos, preferredItemEncoding: .current) {
+                        Label(l10n("studio.upload.fromPhotos"), systemImage: "photo.on.rectangle")
+                    }
+                    .buttonStyle(FanousButtonStyle(.primary))
+                    .accessibilityIdentifier("upload-photos")
+                #endif
             }
-            .buttonStyle(.borderless)
         } header: {
             Text(l10n("studio.upload.files"))
         } footer: {
