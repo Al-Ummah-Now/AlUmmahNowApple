@@ -58,9 +58,12 @@ public enum DisplayFormat {
 
     /// Day and month, with the year only when it is not this year: "Nov 6", "٦ نوفمبر", "Nov 6, 2025".
     /// For list rows, where the date sits in its own column and must never wrap.
-    public static func shortDay(_ date: Date, _ language: AppLanguage, now: Date = .now, calendar: Calendar = .current) -> String {
+    public static func shortDay(
+        _ date: Date, _ language: AppLanguage, now: Date = .now, calendar: Calendar = .current
+    ) -> String {
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
-        return self.date(date, sameYear ? .dateTime.day().month(.abbreviated) : .dateTime.day().month(.abbreviated).year(), language)
+        let style: Date.FormatStyle = .dateTime.day().month(.abbreviated)
+        return self.date(date, sameYear ? style : style.year(), language)
     }
 
     /// Date and time: "10/15/2026, 9:41 AM", "١٥‏/١٠‏/٢٠٢٦، ٩:٤١ ص".
