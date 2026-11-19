@@ -90,15 +90,12 @@ struct SettingsMenu: View {
 }
 
 extension View {
-    /// The app header in the theme's nav colours (`--m-header` sits under the bar's own material).
+    /// The app header: the web header's colours (`FanousHeader`).
     func fanousNavigationBar() -> some View {
-        #if os(iOS)
-            self.toolbarBackground(Fanous.part(\.navBg), for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-        #elseif os(macOS)
-            self.toolbarBackground(Fanous.part(\.navBg), for: .windowToolbar)
-        #else
+        #if os(tvOS)
             self
+        #else
+            fanousHeaderBar()
         #endif
     }
 }
