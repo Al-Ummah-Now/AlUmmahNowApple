@@ -179,12 +179,12 @@ struct UploadComposerTests {
             try Data([1]).write(to: url)
             composer.add([try #require(PickedVideo.make(file: url, ownsFile: false))])
         }
-        composer.settings.titlePattern = "Lesson {{episode}}"
+        composer.settings.titlePattern = "Tafsir {{episode}}"
         composer.settings.firstEpisode = 4
         composer.files[1].titleOverride = "Custom"
         composer.tagsText = "fiqh, , salah "
         let jobs = composer.makeJobs(channel: FixtureStudioService.channels[0], accountID: "a1", language: .en)
-        #expect(jobs.map(\.title) == ["Lesson 4", "Custom"])
+        #expect(jobs.map(\.title) == ["Tafsir 4", "Custom"])
         #expect(jobs[0].settings.tags == ["fiqh", "salah"])
         #expect(jobs.map(\.index) == [0, 1])
         #expect(jobs[0].orderKey.hasSuffix("-0000"))

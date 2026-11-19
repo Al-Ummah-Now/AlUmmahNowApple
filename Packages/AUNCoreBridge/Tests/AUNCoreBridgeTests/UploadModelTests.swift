@@ -8,7 +8,7 @@ struct TitlePatternTests {
     private let utc = TimeZone(identifier: "UTC")!
 
     @Test func defaultPatternIsTheFileNameWithoutExtension() {
-        #expect(TitlePattern.render(TitlePattern.defaultPattern, .init(filename: "Lesson 3.mov")) == "Lesson 3")
+        #expect(TitlePattern.render(TitlePattern.defaultPattern, .init(filename: "Tafsir 3.mov")) == "Tafsir 3")
     }
 
     @Test func tokensFillPerFile() {
