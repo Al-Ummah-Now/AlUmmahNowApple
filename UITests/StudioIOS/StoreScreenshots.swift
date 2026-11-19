@@ -15,11 +15,20 @@ final class StoreScreenshots: XCTestCase {
 
     @MainActor
     private func open(_ app: XCUIApplication, tab: String) {
-        // iPhone has a bottom tab bar; iPadOS draws the tabs at the top, outside `tabBars`.
-        let bar = app.tabBars.buttons[tab]
-        let button = bar.waitForExistence(timeout: 10) ? bar : app.buttons[tab].firstMatch
-        XCTAssertTrue(button.waitForExistence(timeout: 10))
-        button.tap()
+        // iPhone has a bottom tab bar; iPad opens on the sidebar, whose rows are cells (or buttons on some releases).
+        let candidates = [
+            app.tabBars.buttons[tab], app.buttons[tab].firstMatch, app.cells[tab].firstMatch,
+            app.cells.containing(.staticText, identifier: tab).firstMatch,
+        ]
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline {
+            if let hit = candidates.first(where: { $0.exists && $0.isHittable }) {
+                hit.tap()
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        XCTFail("no tab named \(tab)")
     }
 
     @MainActor
