@@ -99,15 +99,24 @@ struct ContentView: View {
         VStack(spacing: FanousScale.spacingXs) {
             // Status chips: the selected one in the gold primary material, the rest outlined (a system segmented
             // control can't take the gradient).
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: FanousScale.spacingSm) {
-                    ForEach(StudioStatus.allCases, id: \.self) { status in
-                        StatusChip(title: label(for: status), selected: model.status == status) { model.status = status }
-                            .accessibilityIdentifier("status-\(status.rawValue)")
+            // A row wider than the screen fades at both edges (so a cut chip reads as "more"), and the chosen chip
+            // scrolls fully into view.
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: FanousScale.spacingSm) {
+                        ForEach(StudioStatus.allCases, id: \.self) { status in
+                            StatusChip(title: label(for: status), selected: model.status == status) { model.status = status }
+                                .id(status)
+                                .accessibilityIdentifier("status-\(status.rawValue)")
+                        }
                     }
+                    .padding(.horizontal, FanousScale.spacingLg)
+                    .padding(.vertical, 2)
                 }
-                .padding(.horizontal, FanousScale.spacingLg)
-                .padding(.vertical, 2)
+                .mask(EdgeFade(width: FanousScale.spacingLg))
+                .onChange(of: model.status) { _, status in
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(status, anchor: .center) }
+                }
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel(l10n("studio.content.status"))
@@ -403,5 +412,18 @@ struct StatusChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// A horizontal mask that fades both edges of a scrolling row over `width` points.
+private struct EdgeFade: View {
+    let width: CGFloat
+
+    var body: some View {
+        HStack(spacing: 0) {
+            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: width)
+            Rectangle().fill(.black)
+            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: width)
+        }
     }
 }
