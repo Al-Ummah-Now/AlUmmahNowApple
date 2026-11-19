@@ -503,7 +503,8 @@ struct HeldCommentRow: View {
         VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
             Text(comment.authorName).fanousFont(.label).foregroundStyle(Fanous.textPrimary)
             Text(comment.text).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(3)
-            Text(comment.displayTargetTitle(l10n.language)).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1)
+            Text(comment.displayTargetTitle(l10n.language)).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
