@@ -46,7 +46,7 @@ class LiveQATestCase: XCTestCase {
         XCTAssertTrue(passwordField.wait(for: \.hasFocus, toEqual: true, timeout: 10))
         web.typeText(password + "\n")
 
-        XCTAssertTrue(app.buttons["channel-picker"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["account-button"].waitForExistence(timeout: 60))
     }
 
     @MainActor
@@ -61,6 +61,7 @@ class LiveQATestCase: XCTestCase {
     func signOutAll(_ app: XCUIApplication) {
         while app.buttons["account-button"].waitForExistence(timeout: 5) {
             app.buttons["account-button"].tap()
+            app.buttons["accounts-manage"].tap()
             let signOut = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'account-sign-out-'")).firstMatch
             guard signOut.waitForExistence(timeout: 10) else { return }
             signOut.tap()
@@ -74,12 +75,11 @@ final class LiveQASignInTests: LiveQATestCase {
     @MainActor
     func testSignInThroughAuthAndSignOut() throws {
         let app = try launchSignedIn()
-        let picker = app.buttons["channel-picker"]
-        XCTAssertTrue(picker.waitForExistence(timeout: 60))
-        XCTAssertTrue(app.descendants(matching: .any)["channel-card"].waitForExistence(timeout: 30))
+        let identity = app.buttons["account-button"]
+        XCTAssertTrue(identity.waitForExistence(timeout: 60))
         keep("signed-in")
-        picker.tap()
-        keep("channel-picker")
+        identity.tap()
+        keep("identity-menu")
         app.tap()
         signOutAll(app)
         XCTAssertTrue(app.buttons["sign-in"].waitForExistence(timeout: 30))

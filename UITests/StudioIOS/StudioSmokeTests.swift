@@ -15,9 +15,10 @@ final class StudioSignInTests: XCTestCase {
         return app
     }
 
+    /// The identity menu: its value is "channel · role · account".
     @MainActor
-    private func channelCard(_ app: XCUIApplication) -> XCUIElement {
-        app.descendants(matching: .any).matching(identifier: "channel-card").firstMatch
+    private func identity(_ app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: "account-button").firstMatch
     }
 
     @MainActor
@@ -27,15 +28,15 @@ final class StudioSignInTests: XCTestCase {
         XCTAssertTrue(signIn.waitForExistence(timeout: 30))
         XCTAssertTrue(app.staticTexts["Sign in to Studio"].exists)
         signIn.tap()
-        let card = channelCard(app)
+        let card = identity(app)
         XCTAssertTrue(card.waitForExistence(timeout: 20))
-        XCTAssertTrue(card.label.hasPrefix("Al Ummah Now"), card.label)
+        XCTAssertTrue((card.value as? String ?? "").hasPrefix("Al Ummah Now"), card.debugDescription)
     }
 
     @MainActor
     func testChannelPickerListsOnlyChannelsYouCanUploadTo() {
         let app = launch("en", signedIn: true)
-        let picker = app.buttons["channel-picker"]
+        let picker = identity(app)
         XCTAssertTrue(picker.waitForExistence(timeout: 30))
         picker.tap()
         // Names and roles are direction-isolated in the label, so match the parts.
@@ -46,29 +47,31 @@ final class StudioSignInTests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 10))
         XCTAssertFalse(channel("Comments desk", "Moderator").exists)
         editor.tap()
-        let card = channelCard(app)
+        let card = identity(app)
         XCTAssertTrue(card.waitForExistence(timeout: 10))
-        XCTAssertTrue(card.label.hasPrefix("Tafsir Circle"), card.label)
+        let switched = NSPredicate(format: "value BEGINSWITH %@", "Tafsir Circle")
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: switched, evaluatedWith: card)], timeout: 10), .completed)
     }
 
     @MainActor
     func testArabicIsRightToLeft() {
         let app = launch("ar", signedIn: true)
-        let card = channelCard(app)
-        XCTAssertTrue(card.waitForExistence(timeout: 30))
-        XCTAssertTrue(card.label.hasPrefix("الأمة الآن"), card.label)
-        XCTAssertTrue(card.label.contains("مالك"), card.label)
-        // The picker reads from the trailing edge in Arabic: the account button sits on the left.
-        let account = app.buttons["account-button"]
+        let account = identity(app)
+        XCTAssertTrue(account.waitForExistence(timeout: 30))
+        let value = account.value as? String ?? ""
+        XCTAssertTrue(value.hasPrefix("الأمة الآن"), value)
+        XCTAssertTrue(value.contains("مالك"), value)
+        // The identity menu sits at the trailing edge: on the left in Arabic.
         XCTAssertLessThan(account.frame.midX, app.windows.firstMatch.frame.midX)
     }
 
     @MainActor
     func testSignOutExplainsAndFocusesCancel() {
         let app = launch("en", signedIn: true)
-        let account = app.buttons["account-button"]
+        let account = identity(app)
         XCTAssertTrue(account.waitForExistence(timeout: 30))
         account.tap()
+        app.buttons["accounts-manage"].tap()
         let signOut = app.buttons["account-sign-out-fixture-creator"]
         XCTAssertTrue(signOut.waitForExistence(timeout: 10))
         signOut.tap()
@@ -84,17 +87,19 @@ final class StudioSignInTests: XCTestCase {
     @MainActor
     func testAddSecondAccountAndSwitchBack() {
         let app = launch("ar", signedIn: true)
-        let account = app.buttons["account-button"]
+        let account = identity(app)
         XCTAssertTrue(account.waitForExistence(timeout: 30))
         account.tap()
+        app.buttons["accounts-manage"].tap()
         app.buttons["account-add"].tap()
-        XCTAssertTrue(channelCard(app).waitForExistence(timeout: 20))
+        XCTAssertTrue(account.waitForExistence(timeout: 20))
         account.tap()
+        app.buttons["accounts-manage"].tap()
         let first = app.buttons["account-fixture-creator"]
         XCTAssertTrue(first.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["account-fixture-account-1"].exists)
         first.tap()
         app.buttons["accounts-done"].tap()
-        XCTAssertTrue(channelCard(app).waitForExistence(timeout: 10))
+        XCTAssertTrue(account.waitForExistence(timeout: 10))
     }
 }

@@ -235,6 +235,8 @@ struct AvatarView: View {
     let name: String
     let url: URL?
     var size: Double = 36
+    /// The hairline ring; the header avatar has none, as on the web (owner, 2026-11-13).
+    var ring = true
 
     var body: some View {
         ZStack {
@@ -248,69 +250,93 @@ struct AvatarView: View {
             }
         }
         .frame(width: size, height: size)
-        .overlay(Circle().strokeBorder(Fanous.outline, lineWidth: 1))
+        .overlay { if ring { Circle().strokeBorder(Fanous.outline, lineWidth: 1) } }
         .accessibilityHidden(true)
     }
 }
 
-/// Every channel the person may upload to; the pick is remembered per account.
-struct ChannelPicker: View {
+/// The one identity control (owner rule: identity only in the navigation). Its label is the channel being acted as;
+/// it opens one menu: the signed-in person, every channel they may upload to with their role (the pick is remembered
+/// per account), then Accounts (switch, add, sign in again, sign out).
+struct IdentityMenu: View {
     @Environment(\.l10n) private var l10n
     let session: StudioSession
+    @Binding var showingAccounts: Bool
+    var style: Style = .avatar
+
+    enum Style { case avatar, sidebar }
 
     var body: some View {
         Menu {
-            ForEach(session.channels) { channel in
-                Button {
-                    Task { await session.select(channel) }
-                } label: {
-                    if channel.id == session.channel?.id {
-                        Label(title(channel), systemImage: "checkmark")
-                    } else {
-                        Text(title(channel))
+            Section(session.account?.label ?? "") {
+                ForEach(session.channels) { channel in
+                    Button {
+                        Task { await session.select(channel) }
+                    } label: {
+                        if channel.id == session.channel?.id {
+                            Label(title(channel), systemImage: "checkmark")
+                        } else {
+                            Text(title(channel))
+                        }
                     }
+                    .accessibilityIdentifier("channel-\(channel.id)")
                 }
-                .accessibilityIdentifier("channel-\(channel.id)")
+            }
+            Section {
+                Button {
+                    showingAccounts = true
+                } label: {
+                    Label(l10n("studio.account.title"), systemImage: "person.2")
+                }
+                .accessibilityIdentifier("accounts-manage")
             }
         } label: {
-            HStack(spacing: FanousScale.spacingSm) {
-                AvatarView(
-                    name: session.channel?.displayName(l10n.language) ?? "?", url: session.channel?.avatarURL, size: 24)
-                Text(session.channel?.displayName(l10n.language) ?? l10n("studio.channel.pick"))
-                    .foregroundStyle(Fanous.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 230, alignment: .leading)
-                Image(systemName: "chevron.up.chevron.down").font(.caption).accessibilityHidden(true)
-            }
+            label
         }
-        .disabled(session.channels.isEmpty)
-        .accessibilityLabel(l10n("studio.channel.title"))
-        .accessibilityValue(session.channel?.displayName(l10n.language) ?? l10n("studio.channel.pick"))
-        .accessibilityIdentifier("channel-picker")
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .accessibilityLabel(l10n("studio.identity.menu"))
+        .accessibilityValue(value)
+        .accessibilityIdentifier("account-button")
+    }
+
+    @ViewBuilder private var label: some View {
+        let name = session.channel?.displayName(l10n.language) ?? session.account?.label ?? "?"
+        let url = session.channel?.avatarURL ?? session.account?.avatarURL
+        switch style {
+        case .avatar:
+            AvatarView(name: name, url: url, size: 32, ring: false)
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        case .sidebar:
+            HStack(spacing: FanousScale.spacingSm) {
+                AvatarView(name: name, url: url, size: 32, ring: false)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(name).fanousFont(.label).fontWeight(.semibold).foregroundStyle(Fanous.textPrimary).lineLimit(1)
+                    if let role = session.channel?.role {
+                        Text(l10n("studio.role.\(role.rawValue)")).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(Fanous.textSecondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(FanousScale.spacingSm)
+            .fanousMaterial(.card) { .rounded($0.lg) }
+            .contentShape(Rectangle())
+        }
+    }
+
+    /// The channel, the role in it and who is signed in, for VoiceOver and tests.
+    private var value: String {
+        guard let channel = session.channel else { return session.account?.label ?? l10n("studio.channel.pick") }
+        return DisplayFormat.meta(
+            [channel.displayName(l10n.language), l10n("studio.role.\(channel.role.rawValue)"), session.account?.label ?? ""]
+                .filter { !$0.isEmpty }, l10n.language)
     }
 
     private func title(_ channel: StudioChannel) -> String {
         DisplayFormat.meta([channel.displayName(l10n.language), l10n("studio.role.\(channel.role.rawValue)")], l10n.language)
-    }
-}
-
-/// Opens the accounts sheet from a toolbar.
-struct AccountButton: View {
-    @Environment(\.l10n) private var l10n
-    let session: StudioSession
-    @Binding var showing: Bool
-
-    var body: some View {
-        Button {
-            showing = true
-        } label: {
-            AvatarView(name: session.account?.label ?? "?", url: session.account?.avatarURL, size: 28)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(l10n("studio.account.menu"))
-        .accessibilityValue(session.account?.label ?? "")
-        .accessibilityIdentifier("account-button")
     }
 }
 
@@ -359,7 +385,6 @@ struct DashboardContent: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-                channelCard
                 NoticeView(session: session)
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 320), spacing: FanousScale.spacingLg, alignment: .top)],
@@ -376,29 +401,6 @@ struct DashboardContent: View {
         }
         .refreshable { await model.load() }
         .task { if model.recentPhase == .idle { await model.load() } }
-    }
-
-    private var channelCard: some View {
-        HStack(spacing: FanousScale.spacingLg) {
-            AvatarView(name: channel.displayName(l10n.language), url: channel.avatarURL, size: 56)
-            VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
-                Text(channel.displayName(l10n.language)).fanousFont(.title).foregroundStyle(Fanous.textPrimary)
-                if let handle = channel.handle {
-                    Text(verbatim: "@\(handle)").fanousFont(.label).foregroundStyle(Fanous.textSecondary)
-                        .environment(\.layoutDirection, .leftToRight)
-                }
-                Text(l10n("studio.role.\(channel.role.rawValue)")).fanousFont(.caption).foregroundStyle(Fanous.accent)
-                // The person by the display-name rule (display name, first + last, email); never a handle or an id.
-                if let name = session.account?.name {
-                    Text(l10n("studio.home.signedInAs", name)).fanousFont(.caption).foregroundStyle(Fanous.textMuted)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(FanousScale.spacingLg)
-        .fanousMaterial(.card) { .rounded($0.lg) }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("channel-card")
     }
 
     @ViewBuilder private var recentSection: some View {

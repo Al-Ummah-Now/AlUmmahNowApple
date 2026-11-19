@@ -29,19 +29,20 @@ public struct StudioRootView: View {
     }
 }
 
-/// Channel and account controls shared by both shells.
+/// The iPhone and iPad header: the screen title at the leading edge in the header's text colour, the identity menu
+/// (the only identity control) at the trailing edge. The Mac keeps identity at the head of its sidebar.
 struct StudioToolbar: ToolbarContent {
+    let title: String
     let session: StudioSession
     @Binding var showingAccounts: Bool
 
     var body: some ToolbarContent {
         #if os(iOS)
-            // Leading, not centred: a long channel name then truncates instead of running into the account button.
-            ToolbarItem(placement: .topBarLeading) { ChannelPicker(session: session) }
+            ToolbarItem(placement: .topBarLeading) { FanousHeaderTitle(title, large: true) }
+            ToolbarItem(placement: .topBarTrailing) { IdentityMenu(session: session, showingAccounts: $showingAccounts) }
         #else
-            ToolbarItem(placement: .principal) { ChannelPicker(session: session) }
+            ToolbarItem(placement: .navigation) { FanousHeaderTitle(title) }
         #endif
-        ToolbarItem(placement: .primaryAction) { AccountButton(session: session, showing: $showingAccounts) }
     }
 }
 
@@ -61,7 +62,8 @@ extension View {
         func body(content: Content) -> some View {
             let solid = content.fanousHeaderBar()
             if #available(iOS 26, *) {
-                solid.scrollEdgeEffectStyle(.hard, for: .top)
+                // Hard edges: scrolled text never shows through the header or the glass tab bar.
+                solid.scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
             } else {
                 solid
             }
@@ -169,41 +171,81 @@ struct ChannelGate<Content: View>: View {
         private func screen(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
             NavigationStack {
                 content()
-                    .navigationTitle(title)
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
+                    .toolbar { StudioToolbar(title: title, session: session, showingAccounts: $showingAccounts) }
                     .studioNavigationBar()
             }
         }
 
-        private var tabs: some View {
-            TabView(selection: $tab) {
-                if session.showsDashboard {
-                    screen(l10n("studio.home.title")) { StudioHomeView(session: session) }
-                        .tabItem { Label(l10n("studio.home.title"), systemImage: "square.grid.2x2") }
-                        .tag(Tab.home)
-                }
-                screen(l10n("studio.content.title")) {
+        /// The visible tabs in their order.
+        private var ordered: [Tab] { [.home, .content, .upload, .analytics, .editor].filter(visible.contains) }
+
+        private func title(_ tab: Tab) -> String {
+            switch tab {
+            case .home: l10n("studio.home.title")
+            case .content: l10n("studio.content.title")
+            case .upload: l10n("studio.upload.title")
+            case .analytics: l10n("studio.analytics.title")
+            case .editor: l10n("studio.editor.title")
+            }
+        }
+
+        private func icon(_ tab: Tab) -> String {
+            switch tab {
+            case .home: "square.grid.2x2"
+            case .content: "film.stack"
+            case .upload: "square.and.arrow.up"
+            case .analytics: "chart.bar"
+            case .editor: "scissors"
+            }
+        }
+
+        private var activeUploads: Int {
+            session.uploads.jobs.filter { $0.isActive && $0.accountID == session.account?.id }.count
+        }
+
+        @ViewBuilder private func page(_ tab: Tab) -> some View {
+            switch tab {
+            case .home: screen(title(tab)) { StudioHomeView(session: session) }
+            case .content:
+                screen(title(tab)) {
                     ChannelGate(session: session) { channel in ContentView(session: session, channelID: channel) }
                 }
-                .tabItem { Label(l10n("studio.content.title"), systemImage: "film.stack") }
-                .tag(Tab.content)
-                if session.showsUpload {
-                    screen(l10n("studio.upload.title")) { UploadView(session: session) }
-                        .tabItem { Label(l10n("studio.upload.title"), systemImage: "square.and.arrow.up") }
-                        .badge(session.uploads.jobs.filter { $0.isActive && $0.accountID == session.account?.id }.count)
-                        .tag(Tab.upload)
+            case .upload: screen(title(tab)) { UploadView(session: session) }
+            case .analytics:
+                screen(title(tab)) {
+                    ChannelGate(session: session) { channel in AnalyticsView(session: session, channelID: channel) }
                 }
-                if session.showsAnalytics {
-                    screen(l10n("studio.analytics.title")) {
-                        ChannelGate(session: session) { channel in AnalyticsView(session: session, channelID: channel) }
+            case .editor: screen(title(tab)) { MobileEditorView() }
+            }
+        }
+
+        /// iOS 18+: the adaptable tab view, so iPad gets the sidebar and iPhone the (Liquid Glass) tab bar, which
+        /// shrinks while scrolling down on iOS 26. iOS 17 keeps the classic tab bar.
+        @ViewBuilder private var tabs: some View {
+            if #available(iOS 18, *) {
+                let adaptable = TabView(selection: $tab) {
+                    ForEach(ordered, id: \.self) { item in
+                        SwiftUI.Tab(title(item), systemImage: icon(item), value: item) { page(item) }
+                            .badge(item == .upload ? activeUploads : 0)
+                            .accessibilityIdentifier("tab-\(item)")
                     }
-                    .tabItem { Label(l10n("studio.analytics.title"), systemImage: "chart.bar") }
-                    .tag(Tab.analytics)
                 }
-                NavigationStack { MobileEditorView() }
-                    .tabItem { Label(l10n("studio.editor.title"), systemImage: "scissors") }
-                    .tag(Tab.editor)
+                .tabViewStyle(.sidebarAdaptable)
+                if #available(iOS 26, *) {
+                    adaptable.tabBarMinimizeBehavior(.onScrollDown)
+                } else {
+                    adaptable
+                }
+            } else {
+                TabView(selection: $tab) {
+                    ForEach(ordered, id: \.self) { item in
+                        page(item)
+                            .tabItem { Label(title(item), systemImage: icon(item)) }
+                            .badge(item == .upload ? activeUploads : 0)
+                            .tag(item)
+                    }
+                }
             }
         }
     }
@@ -232,6 +274,12 @@ struct ChannelGate<Content: View>: View {
                 }
                 // A list that fits never scrolls, so no section slides under the title bar.
                 .scrollBounceBehavior(.basedOnSize)
+                // Identity at the head of the sidebar: the only identity control on the Mac.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    IdentityMenu(session: session, showingAccounts: $showingAccounts, style: .sidebar)
+                        .padding(.horizontal, FanousScale.spacingSm)
+                        .padding(.bottom, FanousScale.spacingSm)
+                }
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220)
             } detail: {
                 NavigationStack {
@@ -249,7 +297,11 @@ struct ChannelGate<Content: View>: View {
                         case .editor: EditorView()
                         }
                     }
-                    .toolbar { StudioToolbar(session: session, showingAccounts: $showingAccounts) }
+                    .toolbar {
+                        StudioToolbar(
+                            title: l10n((section ?? .home).titleKey), session: session, showingAccounts: $showingAccounts)
+                    }
+                    .modifier(HidesWindowTitle())
                     .safeAreaInset(edge: .top, spacing: 0) { AccountStateBanner(session: session) }
                     // The web header as an opaque title bar: scrolled content never shows through the traffic lights.
                     // It resolves concrete colours here, because the window toolbar does not see the theme environment.
@@ -295,6 +347,20 @@ struct ChannelGate<Content: View>: View {
             case .content: .content
             case .deleted: .deleted
             case .analytics: .analytics
+            }
+        }
+    }
+#endif
+
+#if os(macOS)
+    /// The section title is drawn in the header's text colour; the system window title (white) is hidden where macOS
+    /// allows it (15+).
+    private struct HidesWindowTitle: ViewModifier {
+        func body(content: Content) -> some View {
+            if #available(macOS 15, *) {
+                content.toolbar(removing: .title)
+            } else {
+                content
             }
         }
     }
