@@ -38,7 +38,10 @@ final class StudioSmokeTests: XCTestCase {
         let app = launch("ar", signedIn: true)
         let card = identity(app)
         XCTAssertTrue(card.waitForExistence(timeout: 30))
-        XCTAssertTrue(app.staticTexts["لوحة التحكم"].firstMatch.exists)
+        // The Arabic section name, wherever the window shows it (sidebar row or header title).
+        let dashboard = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@ OR value == %@", "لوحة التحكم", "لوحة التحكم")).firstMatch
+        XCTAssertTrue(dashboard.waitForExistence(timeout: 10))
     }
 
     /// Off, unconfigured or not-in-tier features have no section (owner rule 2026-11-16).
