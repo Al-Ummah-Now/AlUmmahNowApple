@@ -377,6 +377,7 @@ struct StudioHTTPClient: Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setAUNClient()
         guard let token = try await accounts.accessToken() else { throw CoreError.signInRequired }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let channelID { request.setValue(channelID, forHTTPHeaderField: "channelId") }

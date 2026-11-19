@@ -21,7 +21,7 @@ public final class CoreSearchService: SearchSuggesting, @unchecked Sendable {
             if let client, client.account == active { return client.api }
             let config = ApiClientConfig(
                 baseUrl: baseURL.absoluteString, userAgent: "AlUmmahNowStudio-Apple", locale: nil, timeoutMs: 8000,
-                maxAttempts: 1)
+                maxAttempts: 1, client: AUNClient.value)
             let api = try accounts.manager.apiClient(config: config, userId: active.isEmpty ? nil : active)
             client = (active, api)
             return api
