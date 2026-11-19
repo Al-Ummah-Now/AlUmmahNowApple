@@ -71,7 +71,9 @@ extension View {
 #if os(iOS)
     private struct SolidNavigationBar: ViewModifier {
         func body(content: Content) -> some View {
-            let solid = content.fanousHeaderBar()
+            // Every Studio screen, pushed ones included, uses the same large leading title (a pushed screen left on the
+            // automatic mode drew no visible title on the iOS 26 header).
+            let solid = content.toolbarTitleDisplayMode(.inlineLarge).fanousHeaderBar()
             if #available(iOS 26, *) {
                 // Hard edges: scrolled text never shows through the header or the glass tab bar.
                 solid.scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
