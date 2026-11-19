@@ -108,9 +108,11 @@ public struct FixtureStudioService: StudioServicing {
         HeldComment(
             id: "fixture-held-1", text: "Jazakum Allah khayran, is there a part 3?",
             targetTitle: "Tafsir of Surah Al-Kahf, part 2",
+            targetTitleLocalized: LocalizedText(en: "Tafsir of Surah Al-Kahf, part 2", ar: "تفسير سورة الكهف، الجزء الثاني"),
             authorName: "Maryam Haddad", createdAt: Date(timeIntervalSince1970: 1_794_010_000)),
         HeldComment(
             id: "fixture-held-2", text: "ما المرجع المذكور في الدقيقة العاشرة؟", targetTitle: "Friday khutbah: patience",
+            targetTitleLocalized: LocalizedText(en: "Friday khutbah: patience", ar: "خطبة الجمعة: الصبر"),
             authorName: "Omar Saleh", createdAt: Date(timeIntervalSince1970: 1_794_000_000)),
     ]
 

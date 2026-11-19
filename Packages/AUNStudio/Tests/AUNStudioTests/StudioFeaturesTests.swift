@@ -165,6 +165,16 @@ struct StudioFeaturesTests {
         #expect(StudioFailure.refusalMessage(Refusal(code: Refusal.accountPendingDeletion)) == "studio.account.pendingDeletion")
     }
 
+    @Test func analyticsOffHidesTheTabBeforeAnyoneOpensIt() async {
+        let session = StudioSession(
+            services: .fixtures(signedIn: true, accountState: .creator, featuresOff: ["analytics"]),
+            authenticator: FixtureWebAuthenticator(),
+            defaults: UserDefaults(suiteName: "studio-features-\(UUID().uuidString)")!)
+        await session.start()
+        #expect(!session.showsAnalytics)
+        #expect(session.showsDashboard)
+    }
+
     @Test func fixturesWithoutACreatorTierHideUpload() async {
         let session = StudioSession(
             services: .fixtures(signedIn: true, accountState: .invitation), authenticator: FixtureWebAuthenticator(),
@@ -206,9 +216,9 @@ struct StudioFeaturesTests {
             }
         }
 
-        @Test func noAnalyticsOnceItsApiSaysFeatureOff() async {
+        @Test func noAnalyticsWhenItsApiSaysFeatureOff() async {
+            // Nobody opens Analytics: Studio asks its API when the channel opens.
             let off = await session(.creator, off: ["analytics"])
-            off.featureOff(.analytics)
             #expect(!StudioShell.sections(for: off).contains(.analytics))
             #expect(!titles(off).contains("Analytics"))
             #expect(titles(off).contains("Upload"))

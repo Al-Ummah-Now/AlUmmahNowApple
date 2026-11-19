@@ -496,13 +496,14 @@ struct DashboardSection<Rows: View>: View {
 
 /// A held comment: who wrote it, where, and its text.
 struct HeldCommentRow: View {
+    @Environment(\.l10n) private var l10n
     let comment: HeldComment
 
     var body: some View {
         VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
             Text(comment.authorName).fanousFont(.label).foregroundStyle(Fanous.textPrimary)
             Text(comment.text).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(3)
-            Text(comment.targetTitle).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1)
+            Text(comment.displayTargetTitle(l10n.language)).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)

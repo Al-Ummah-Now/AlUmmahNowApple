@@ -6,19 +6,25 @@ public struct HeldComment: Identifiable, Hashable, Sendable, Decodable {
     public var text: String
     /// The video or post it was left on.
     public var targetTitle: String
+    /// The target's title per language (`targetTitleLocalized`), when the server has one.
+    public var targetTitleLocalized: LocalizedText?
     /// The author's name as the server resolves it (display name, else first + last); never a handle.
     public var authorName: String
     public var createdAt: Date?
 
-    public init(id: String, text: String, targetTitle: String, authorName: String, createdAt: Date? = nil) {
+    public init(
+        id: String, text: String, targetTitle: String, targetTitleLocalized: LocalizedText? = nil, authorName: String,
+        createdAt: Date? = nil
+    ) {
         self.id = id
         self.text = text
         self.targetTitle = targetTitle
+        self.targetTitleLocalized = targetTitleLocalized
         self.authorName = authorName
         self.createdAt = createdAt
     }
 
-    enum CodingKeys: String, CodingKey { case id, text, targetTitle, author, createdAt }
+    enum CodingKeys: String, CodingKey { case id, text, targetTitle, targetTitleLocalized, author, createdAt }
     /// The author's profile: `resolvedDisplayName` when the server sends it, else display name, else first + last.
     /// The `username` handle is never a name.
     struct Author: Decodable {
@@ -43,12 +49,20 @@ public struct HeldComment: Identifiable, Hashable, Sendable, Decodable {
         id = try c.decode(String.self, forKey: .id)
         text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
         targetTitle = try c.decodeIfPresent(String.self, forKey: .targetTitle) ?? ""
+        targetTitleLocalized = try? c.decodeIfPresent(LocalizedText.self, forKey: .targetTitleLocalized)
         authorName = (try? c.decodeIfPresent(Author.self, forKey: .author))?.name ?? ""
         createdAt = try? c.decodeIfPresent(Date.self, forKey: .createdAt)
     }
 }
 
 /// The first comments of the Held tab and how many are waiting in all.
+extension HeldComment {
+    /// The target's title in the page language, else its plain title (the comment text itself stays as written).
+    public func displayTargetTitle(_ language: AppLanguage) -> String {
+        targetTitleLocalized?.value(for: language, fallback: targetTitle) ?? targetTitle
+    }
+}
+
 public struct HeldComments: Hashable, Sendable {
     public var items: [HeldComment]
     public var total: Int
