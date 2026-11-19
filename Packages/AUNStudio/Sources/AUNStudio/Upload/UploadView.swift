@@ -24,7 +24,6 @@ struct LabeledField: View {
 }
 
 extension View {
-    /// List rows on the theme's surface instead of the system's grouped grey.
     /// Form rows on the raised card surface, as the cards elsewhere in Studio.
     func studioRows() -> some View { listRowBackground(Rectangle().fill(Fanous.surfaceRaised)) }
 }
@@ -45,27 +44,23 @@ struct UploadView: View {
     private var uploadRefusal: Refusal? { session.accountState }
 
     var body: some View {
-        Form {
-            if let refusal = uploadRefusal {
-                // The server would refuse every upload; say why instead of offering the picker.
-                let key = StudioFailure.refusalMessage(refusal) ?? "studio.error.generic"
-                Text(l10n(key)).foregroundStyle(Fanous.textSecondary).studioRows()
-                    .accessibilityIdentifier("upload-refused")
-            } else if let channel = session.channel {
-                filesSection.studioRows()
-                if !composer.files.isEmpty {
-                    SetForAllSection(composer: composer, channel: channel) {
-                        Task { await composer.loadPlaylists(channelID: channel.id, studio: session.services.studio) }
-                    }
-                    sendSection(channel).studioRows()
+        // Two columns when there is room (iPad landscape, Mac): the files, send and queue beside Set for all. One
+        // column otherwise, in the same order as before.
+        GeometryReader { proxy in
+            if proxy.size.width >= 900, setForAllShown {
+                HStack(alignment: .top, spacing: 0) {
+                    Form { mainSections }.formStyle(.grouped).scrollContentBackground(.hidden)
+                    Form { setForAll }.formStyle(.grouped).scrollContentBackground(.hidden)
+                        .frame(width: min(520, proxy.size.width * 0.45))
                 }
             } else {
-                Text(l10n("studio.channel.none")).foregroundStyle(Fanous.textSecondary).studioRows()
+                Form {
+                    mainSections(includingSetForAll: true)
+                }
+                .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
             }
-            UploadQueueSection(session: session).studioRows()
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
         .fanousPage()
         .navigationTitle(l10n("studio.upload.title"))
         .task {
@@ -92,6 +87,37 @@ struct UploadView: View {
         #if os(iOS)
             .onChange(of: photoPicks) { _, items in Task { await loadPhotos(items) } }
         #endif
+    }
+
+    /// Set for all is shown once there are files to send to a channel.
+    private var setForAllShown: Bool { uploadRefusal == nil && session.channel != nil && !composer.files.isEmpty }
+
+    @ViewBuilder private var setForAll: some View {
+        if setForAllShown, let channel = session.channel {
+            SetForAllSection(composer: composer, channel: channel) {
+                Task { await composer.loadPlaylists(channelID: channel.id, studio: session.services.studio) }
+            }
+        }
+    }
+
+    @ViewBuilder private var mainSections: some View { mainSections(includingSetForAll: false) }
+
+    @ViewBuilder private func mainSections(includingSetForAll: Bool) -> some View {
+        if let refusal = uploadRefusal {
+            // The server would refuse every upload; say why instead of offering the picker.
+            let key = StudioFailure.refusalMessage(refusal) ?? "studio.error.generic"
+            Text(l10n(key)).foregroundStyle(Fanous.textSecondary).studioRows()
+                .accessibilityIdentifier("upload-refused")
+        } else if let channel = session.channel {
+            filesSection.studioRows()
+            if !composer.files.isEmpty {
+                if includingSetForAll { setForAll }
+                sendSection(channel).studioRows()
+            }
+        } else {
+            Text(l10n("studio.channel.none")).foregroundStyle(Fanous.textSecondary).studioRows()
+        }
+        UploadQueueSection(session: session).studioRows()
     }
 
     // MARK: Files
