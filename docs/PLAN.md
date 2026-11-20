@@ -50,12 +50,12 @@ QA builds append `.qa`, so both can be installed side by side. Minimum OS: iOS/t
 |---|---|---|
 | Logic and networking | Swift Testing with a stub `URLProtocol` | iOS, tvOS, macOS |
 | Player | Swift Testing against a generated local video (no network) | iOS, tvOS, macOS |
-| Views | swift-snapshot-testing, en + ar, dark + light; iOS 26.4 simulator only | iOS |
+| Views | swift-snapshot-testing, en + ar, dark + light; iOS 27.0 simulator only | iOS |
 | Flows | XCUITest against fixtures (`-AUNUseFixtures YES`), en and ar, asserting RTL geometry | iPhone, iPad, Apple TV, macOS |
 | Live QA | Guarded by `AUN_LIVE_QA=1`, run locally; CI stays hermetic | local |
 | Static | SwiftLint (pinned), swift-format, L10n key parity, WCAG contrast of tokens | CI |
 
-Snapshot references come from CI's toolchain (Xcode 26.6, iOS 26.4.1 simulator), because SwiftUI layout metrics differ slightly between Xcode versions. To update one, take the `failure_*` image from the `results-ios` artifact of a failing run, or record with `TEST_RUNNER_RECORD_SNAPSHOTS=1` under Xcode 26.6.
+Snapshot references come from CI's toolchain (Xcode 27.1, iPhone 17 on the iOS 27.0 simulator), because SwiftUI layout metrics differ slightly between Xcode versions. To update one, take the `failure_*` image from the `results-ios` artifact of a failing run, or record with `TEST_RUNNER_RECORD_SNAPSHOTS=1` under Xcode 27.1.
 
 ## 4. Environments
 

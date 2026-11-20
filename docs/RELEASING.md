@@ -8,6 +8,12 @@ uploads by hand, and nothing is ever submitted for App Review by CI.
 git fetch origin && git tag -a v0.1.0 -m "v0.1.0" origin/main && git push origin v0.1.0
 ```
 
+**Toolchain:** every release job (and CI) runs on the GitHub `xcode-27` runner image and selects Xcode 27.1
+(27A9275) with `xcode-select`, set by `XCODE_VERSION` at the top of each workflow; each job logs `xcodebuild -version`.
+Screenshots and tests use the iOS/tvOS 27.0 simulators (`AUN_IOS_SIM_OS`, `AUN_TVOS_SIM_OS`): that image's iOS 27.1
+runtime only has the iPhone Duo. To move Xcode, change `XCODE_VERSION` in `ci.yml`, `release.yml`, `admin-release.yml`
+and `screenshots.yml` together and re-record the snapshot references on CI.
+
 ## What a release tag does
 
 Nothing fails because a secret or variable is missing: that step builds unsigned (or is skipped) with a `::notice::`
