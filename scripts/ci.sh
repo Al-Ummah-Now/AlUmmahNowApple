@@ -4,8 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-IOS_OS="${AUN_IOS_SIM_OS:-26.4}"
-TVOS_OS="${AUN_TVOS_SIM_OS:-26.4}"
+IOS_OS="${AUN_IOS_SIM_OS:-27.0}"
+TVOS_OS="${AUN_TVOS_SIM_OS:-27.0}"
 DERIVED="${AUN_DERIVED_DATA:-build/DerivedData}"
 COMMON=(-workspace AlUmmahNow.xcworkspace -derivedDataPath "$DERIVED" -configuration Debug
         -skipPackagePluginValidation -skipMacroValidation)
@@ -67,7 +67,7 @@ case "${1:-}" in
     ;;
   tvos)
     xcodebuild test "${COMMON[@]}" -scheme ViewerTV \
-      -destination "platform=tvOS Simulator,name=Apple TV,OS=$TVOS_OS" "${UNSIGNED[@]}"
+      -destination "platform=tvOS Simulator,name=Apple TV 4K (3rd generation),OS=$TVOS_OS" "${UNSIGNED[@]}"
     ;;
   mac)
     xcodebuild test "${COMMON[@]}" -scheme ViewerMac -destination "platform=macOS" "${ADHOC[@]}"

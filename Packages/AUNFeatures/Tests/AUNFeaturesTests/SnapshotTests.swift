@@ -10,7 +10,7 @@
 
     /// Every key screen in every site theme, light and dark, English and Arabic.
     ///
-    /// References come from the CI simulator (iOS 26.4): a missing reference is recorded and fails the run, and CI
+    /// References come from the CI simulator (iPhone 17, iOS 27.0): a missing reference is recorded and fails the run, and CI
     /// uploads `__Snapshots__` as an artifact to commit. `RECORD_SNAPSHOTS=1` re-records them all.
     @MainActor @Suite(.serialized) struct SnapshotTests {
         nonisolated static let themes = FanousThemeID.allCases
