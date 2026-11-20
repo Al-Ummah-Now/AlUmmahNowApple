@@ -72,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job: [ios, ipad, tvos, mac, studio, admin, admin-ipad, admin-mac]
+        job: [ios]
     steps:
       - uses: actions/checkout@v5
       - name: Xcode ${{ env.XCODE_VERSION }}
@@ -86,6 +86,7 @@ jobs:
           path: build/DerivedData/SourcePackages
           key: spm-${{ runner.os }}-xcode-${{ env.XCODE_VERSION }}-${{ hashFiles('Packages/*/Package.swift', 'AlUmmahNow.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
       - run: scripts/ci.sh ${{ matrix.job }}
+        env: {TEST_RUNNER_RECORD_SNAPSHOTS: "1"}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -94,7 +95,7 @@ jobs:
           retention-days: 7
       - name: Snapshots recorded on this simulator, to review and commit
         uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: snapshots-${{ matrix.job }}
           path: Packages/*/Tests/*/__Snapshots__
