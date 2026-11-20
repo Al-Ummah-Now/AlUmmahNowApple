@@ -127,8 +127,8 @@ struct AnalyticsView: View {
             }
             Text(
                 l10n(
-                    "studio.analytics.lifetime", DisplayFormat.count(stats.totalViews, l10n.language),
-                    DisplayFormat.count(stats.totalSubscribers, l10n.language),
+                    "studio.analytics.lifetime", DisplayFormat.views(stats.totalViews, l10n),
+                    DisplayFormat.subscribers(stats.totalSubscribers, l10n),
                     DisplayFormat.percent(stats.engagementRate / 100, l10n.language, fraction: 0...1))
             )
             .fanousFont(.caption)

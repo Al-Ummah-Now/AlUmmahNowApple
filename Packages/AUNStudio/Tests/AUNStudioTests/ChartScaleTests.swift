@@ -26,8 +26,11 @@ struct ChartScaleTests {
     @Test func arabicNumbersUseArabicDigits() {
         #expect(ChartScale.compact(1234, .en) == "1.2K")
         #expect(ChartScale.compact(1234, .ar).contains("١"))
-        #expect(ChartScale.compact(2000, .ar) == "٢\u{00A0}ألفان")
+        #expect(ChartScale.compact(2000, .ar) == "ألفان")
+        #expect(ChartScale.compact(1000, .ar) == "ألف")
+        #expect(ChartScale.compact(1500, .ar) == "١٫٥\u{00A0}ألف")
         #expect(ChartScale.compact(5000, .ar) == "٥\u{00A0}آلاف")
+        #expect(ChartScale.compact(2_000_000, .ar) == "مليونان")
         #expect(ChartScale.compact(3_000_000, .ar) == "٣\u{00A0}ملايين")
         #expect(ChartScale.full(6075, .ar).contains("٦"))
     }

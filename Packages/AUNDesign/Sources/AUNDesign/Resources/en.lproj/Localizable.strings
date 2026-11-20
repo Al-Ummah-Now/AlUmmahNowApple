@@ -24,6 +24,12 @@
 "video.views.few" = "%@ views";
 "video.views.many" = "%@ views";
 "video.views.other" = "%@ views";
+"count.subscribers.zero" = "No subscribers";
+"count.subscribers.one" = "%@ subscriber";
+"count.subscribers.two" = "%@ subscribers";
+"count.subscribers.few" = "%@ subscribers";
+"count.subscribers.many" = "%@ subscribers";
+"count.subscribers.other" = "%@ subscribers";
 "watch.notReady" = "This video is still being processed.";
 "watch.chapters" = "Chapters";
 "watch.description" = "Description";
@@ -244,7 +250,7 @@
 "studio.analytics.likes" = "Likes";
 "studio.analytics.comments" = "Comments";
 "studio.analytics.newSubscribers" = "New subscribers";
-"studio.analytics.lifetime" = "All time: %@ views · %@ subscribers · %@ engagement";
+"studio.analytics.lifetime" = "All time: %@ · %@ · %@ engagement";
 
 /* Plan refusals and account states (api-videos codes) */
 "studio.refusal.channelLimit" = "You've reached your plan's channel limit.";

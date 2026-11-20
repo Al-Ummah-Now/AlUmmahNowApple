@@ -89,8 +89,9 @@ import Testing
         #expect(views(1200, L10n(.en)) == "1.2K views")
     }
 
-    /// Owner rule 2026-11-20 (matches Android): under 1,000 the noun agrees with the full count; from 1K the noun is
-    /// the singular «مشاهدة» and the scale word agrees with the number shown, truncated to one decimal.
+    /// Owner rule 2026-11-20 (same on Android, Apple, Desktop, web): under 1,000 the noun agrees with the full count;
+    /// from 1K the noun is the singular «مشاهدة» and the scale word agrees with the number shown (one decimal,
+    /// truncated). Exactly 1 and 2 drop the digit; 2 before a noun is the construct «ألفا», never a digit + dual.
     static let viewCases: [(count: Int, ar: String, en: String)] = [
         (1, "مشاهدة واحدة", "1 view"),
         (2, "مشاهدتان", "2 views"),
@@ -98,13 +99,24 @@ import Testing
         (8, "٨ مشاهدات", "8 views"),
         (10, "١٠ مشاهدات", "10 views"),
         (11, "١١ مشاهدة", "11 views"),
+        (100, "١٠٠ مشاهدة", "100 views"),
+        (1_000, "ألف مشاهدة", "1K views"),
+        (1_300, "١٫٣ ألف مشاهدة", "1.3K views"),
         (1_310, "١٫٣ ألف مشاهدة", "1.3K views"),
-        (2_000, "٢ ألفان مشاهدة", "2K views"),
+        (2_000, "ألفا مشاهدة", "2K views"),
+        (2_500, "٢٫٥ ألف مشاهدة", "2.5K views"),
+        (3_000, "٣ آلاف مشاهدة", "3K views"),
+        (8_000, "٨ آلاف مشاهدة", "8K views"),
         (8_020, "٨ آلاف مشاهدة", "8K views"),
+        (11_000, "١١ ألف مشاهدة", "11K views"),
         (12_000, "١٢ ألف مشاهدة", "12K views"),
+        (1_000_000, "مليون مشاهدة", "1M views"),
         (1_200_000, "١٫٢ مليون مشاهدة", "1.2M views"),
+        (2_000_000, "مليونا مشاهدة", "2M views"),
         (3_000_000, "٣ ملايين مشاهدة", "3M views"),
         (15_000_000, "١٥ مليون مشاهدة", "15M views"),
+        (2_000_000_000, "مليارا مشاهدة", "2B views"),
+        (3_000_000_000, "٣ مليارات مشاهدة", "3B views"),
     ]
 
     static func visible(_ text: String) -> String {
@@ -119,22 +131,50 @@ import Testing
         #expect(Self.visible(DisplayFormat.views(item.count, L10n(.en))) == item.en)
     }
 
+    /// Compact numbers without a noun (tiles, chart ticks): the dual stands alone.
+    static let tickCases: [(value: Double, ar: String, en: String)] = [
+        (500, "٥٠٠", "500"),
+        (1_000, "ألف", "1K"),
+        (1_500, "١٫٥ ألف", "1.5K"),
+        (2_000, "ألفان", "2K"),
+        (3_000, "٣ آلاف", "3K"),
+        (2_000_000, "مليونان", "2M"),
+    ]
+
+    @Test(arguments: tickCases.indices)
+    func compactLabelsWithoutANoun(_ index: Int) {
+        let item = Self.tickCases[index]
+        #expect(Self.visible(DisplayFormat.compact(item.value, .ar)) == item.ar)
+        #expect(Self.visible(DisplayFormat.compact(item.value, .en)) == item.en)
+        #expect(Self.visible(DisplayFormat.count(Int(item.value), .ar)) == item.ar)
+        #expect(Self.visible(DisplayFormat.count(Int(item.value), .en)) == item.en)
+    }
+
+    @Test func subscribersAgreeLikeViews() {
+        let ar = L10n(.ar)
+        #expect(Self.visible(DisplayFormat.subscribers(1, ar)) == "مشترك واحد")
+        #expect(Self.visible(DisplayFormat.subscribers(5, ar)) == "٥ مشتركين")
+        #expect(Self.visible(DisplayFormat.subscribers(2_000, ar)) == "ألفا مشترك")
+        #expect(Self.visible(DisplayFormat.subscribers(2_000, L10n(.en))) == "2K subscribers")
+        #expect(
+            Self.visible(ar("studio.analytics.lifetime", DisplayFormat.views(2_000, ar), DisplayFormat.subscribers(3, ar), "٥٪"))
+                == "منذ البداية: ألفا مشاهدة • ٣ مشتركين • تفاعل ٥٪")
+    }
+
     @Test func arabicScaleWordAgreesWithTheShownNumber() {
         let ar: (Int) -> String = { Self.visible(DisplayFormat.count($0, .ar)) }
-        #expect(ar(1_000) == "١ ألف")
-        #expect(ar(1_990) == "١٫٩ ألف")  // truncated, not rounded to «٢ ألفان»
-        #expect(ar(2_050) == "٢ ألفان")
+        #expect(ar(1_050) == "ألف")  // truncated to 1.0
+        #expect(ar(1_990) == "١٫٩ ألف")  // truncated, not rounded to «ألفان»
+        #expect(ar(2_050) == "ألفان")
         #expect(ar(10_050) == "١٠ آلاف")
         #expect(ar(10_999) == "١٠٫٩ ألف")
         #expect(ar(11_000) == "١١ ألف")
         #expect(ar(999_999) == "٩٩٩٫٩ ألف")
-        #expect(ar(2_000_000) == "٢ مليونان")
+        #expect(ar(1_000_000) == "مليون")
         #expect(ar(2_500_000_000) == "٢٫٥ مليار")
-        #expect(ar(2_000_000_000) == "٢ ملياران")
+        #expect(ar(2_000_000_000) == "ملياران")
         #expect(ar(7_000_000_000) == "٧ مليارات")
         #expect(ar(999) == "٩٩٩")
-        #expect(Self.visible(DisplayFormat.compact(3_000_000, .ar)) == "٣ ملايين")
-        #expect(Self.visible(DisplayFormat.compact(250, .ar)) == "٢٥٠")
         #expect(DisplayFormat.count(8_020, .en) == "8K")
     }
 
