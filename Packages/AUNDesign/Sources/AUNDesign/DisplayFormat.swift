@@ -27,14 +27,42 @@ public enum DisplayFormat {
         format(value, FloatingPointFormatStyle<Double>.number.precision(.fractionLength(fraction)), language)
     }
 
-    /// A short count for views and subscribers: "1.2K", "١٫٢ ألف".
+    /// A short count for views and subscribers: "1.2K", "١٫٢ ألف", «٨ آلاف», «٢ ألفان».
     public static func count<Value: BinaryInteger>(_ value: Value, _ language: AppLanguage) -> String {
-        format(value, IntegerFormatStyle<Value>().notation(.compactName), language)
+        if language == .ar, let arabic = arabicCompact(Double(value)) { return arabic }
+        return format(value, IntegerFormatStyle<Value>().notation(.compactName), language)
     }
 
     /// A compact number with up to one decimal (chart axes): "1.2K", "١٫٢ ألف".
     public static func compact(_ value: Double, _ language: AppLanguage) -> String {
-        format(value, FloatingPointFormatStyle<Double>.number.notation(.compactName).precision(.fractionLength(0...1)), language)
+        if language == .ar, let arabic = arabicCompact(value) { return arabic }
+        return format(
+            value, FloatingPointFormatStyle<Double>.number.notation(.compactName).precision(.fractionLength(0...1)), language)
+    }
+
+    /// Arabic thousands, millions and billions, or nil under 1,000. Owner rule (2026-11-20, same as Android): the
+    /// number is truncated to one decimal and the scale word agrees with it — whole 1 «ألف», whole 2 «ألفان»,
+    /// whole 3–10 «آلاف», 11 and up or any decimal «ألف» (likewise مليون/مليونان/ملايين, مليار/ملياران/مليارات).
+    /// CLDR's compact Arabic picks the word from the full count, giving «٢ ألف», «١٠ ألف», «٣ مليون».
+    static func arabicCompact(_ value: Double) -> String? {
+        let magnitude = abs(value)
+        guard magnitude.isFinite, magnitude >= 1000 else { return nil }
+        let scales: [(size: Double, one: String, two: String, few: String)] = [
+            (1e9, "مليار", "ملياران", "مليارات"),
+            (1e6, "مليون", "مليونان", "ملايين"),
+            (1e3, "ألف", "ألفان", "آلاف"),
+        ]
+        guard let scale = scales.first(where: { magnitude >= $0.size }) else { return nil }
+        let shown = (magnitude / scale.size * 10).rounded(.towardZero) / 10
+        let word: String
+        switch shown {
+        case 1: word = scale.one
+        case 2: word = scale.two
+        case 3...10 where shown == shown.rounded(.towardZero): word = scale.few
+        default: word = scale.one
+        }
+        let sign = value < 0 ? "-" : ""
+        return sign + number(shown, .ar, fraction: 0...1) + "\u{00A0}" + word
     }
 
     /// A fraction (0.25) as a percentage: "25%", "٢٥٪". `signed` adds "+" to gains.
@@ -146,7 +174,8 @@ public enum DisplayFormat {
 
     /// "1.2K views", «١٫٢ ألف مشاهدة», «مشاهدتان», with the noun agreeing with the count (keys `video.views.*`).
     public static func views(_ count: Int, _ l10n: L10n) -> String {
-        // A compact number ("1.2K", «١٫٢ ألف») takes the "other" form in both languages.
+        // A compact number ("1.2K", «١٫٢ ألف», «٨ آلاف») takes the "other" form in both languages: after ألف/مليون/مليار
+        // the Arabic noun is always the singular «مشاهدة»; only counts under 1,000 agree with the full count.
         let category = count >= 1000 ? "other" : pluralCategory(count, l10n.language)
         return l10n("video.views.\(category)", self.count(count, l10n.language))
     }
