@@ -9,6 +9,7 @@ concurrency:
 permissions: {contents: read}
 env:
   SWIFTLINT_VERSION: 0.65.1
+  XCODEGEN_VERSION: 2.45.3
   AUN_IOS_SIM_OS: "26.4.1"
 jobs:
   lint:
@@ -41,6 +42,21 @@ jobs:
         run: scripts/test-release-version.sh
       - name: Release scripts parse
         run: for f in scripts/*.sh; do bash -n "$f"; done
+  generate:
+    name: project.yml is the full source
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install XcodeGen (pinned)
+        run: |
+          curl -fsSL -o /tmp/xcodegen.zip "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          unzip -q /tmp/xcodegen.zip -d /tmp
+          echo /tmp/xcodegen/bin >> "$GITHUB_PATH"
+      # Xcode moves Info.plist keys into INFOPLIST_KEY_* build settings when it edits a generated project. Those
+      # settings are lost on the next generate, so a stripped Info.plist must never be committed.
+      - name: make generate leaves committed files unchanged
+        run: make check-generate
   test:
     name: ${{ matrix.job }}
     runs-on: macos-26

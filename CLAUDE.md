@@ -5,6 +5,9 @@ Product spec: `docs/native-apps/EPICS.md` in https://github.com/Al-Ummah-Now/AlU
 
 ## Commands
 - `make generate`: create `AlUmmahNow.xcodeproj` from `project.yml` (the project is not committed).
+- `make check-generate` (CI runs it): fails if `make generate` changes or adds a file. Xcode
+  can move Info.plist keys into `INFOPLIST_KEY_*` build settings when it edits the generated project. Never commit a
+  stripped `Apps/*/Info.plist`: put the key in `project.yml` and run `make generate`, which writes the full file back.
 - `make lint`, `make format`.
 - `make test-ios | test-ipad | test-tvos | test-mac`, `make build-all` (these call `scripts/ci.sh`, the same as CI).
 - Open `AlUmmahNow.xcworkspace`.
