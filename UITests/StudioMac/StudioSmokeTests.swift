@@ -80,7 +80,9 @@ final class StudioSmokeTests: XCTestCase {
         let account = identity(app)
         XCTAssertTrue(account.waitForExistence(timeout: 30))
         account.click()
-        app.descendants(matching: .any)["accounts-manage"].firstMatch.click()
+        // macOS 27 menus drop SwiftUI accessibility identifiers on their items: fall back to the item's title.
+        let manage = app.descendants(matching: .any)["accounts-manage"].firstMatch
+        (manage.waitForExistence(timeout: 2) ? manage : app.menuItems["Accounts"].firstMatch).click()
         let signOut = app.buttons["account-sign-out-fixture-creator"]
         XCTAssertTrue(signOut.waitForExistence(timeout: 10))
         signOut.click()
