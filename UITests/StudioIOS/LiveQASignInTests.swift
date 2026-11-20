@@ -61,7 +61,7 @@ class LiveQATestCase: XCTestCase {
     func signOutAll(_ app: XCUIApplication) {
         while app.buttons["account-button"].waitForExistence(timeout: 5) {
             app.buttons["account-button"].tap()
-            app.buttons["accounts-manage"].tap()
+            app.accountsMenuItem.tap()
             let signOut = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'account-sign-out-'")).firstMatch
             guard signOut.waitForExistence(timeout: 10) else { return }
             signOut.tap()
