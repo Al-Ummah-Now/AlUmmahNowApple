@@ -27,17 +27,37 @@ public enum DisplayFormat {
         format(value, FloatingPointFormatStyle<Double>.number.precision(.fractionLength(fraction)), language)
     }
 
-    /// A short count for views and subscribers: "1.2K", "١٫٢ ألف", «ألف», «ألفان», «٨ آلاف».
+    /// A short count for views and subscribers: "1.2K", "33.6K", "١٫٢ ألف", «ألف», «ألفان», «٨ آلاف».
     public static func count<Value: BinaryInteger>(_ value: Value, _ language: AppLanguage) -> String {
-        if language == .ar, let arabic = arabicCompact(Double(value)) { return arabic }
-        return format(value, IntegerFormatStyle<Value>().notation(.compactName), language)
+        compactCount(Double(value), language) ?? format(value, IntegerFormatStyle<Value>(), language)
     }
 
     /// A compact number with up to one decimal (chart axes): "1.2K", "١٫٢ ألف".
     public static func compact(_ value: Double, _ language: AppLanguage) -> String {
-        if language == .ar, let arabic = arabicCompact(value) { return arabic }
-        return format(
-            value, FloatingPointFormatStyle<Double>.number.notation(.compactName).precision(.fractionLength(0...1)), language)
+        compactCount(value, language)
+            ?? format(value, FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...1)), language)
+    }
+
+    /// Thousands, millions and billions in either language, or nil under 1,000. Both languages show the same number:
+    /// truncated to one decimal, a trailing ".0" dropped (33,600 → "33.6K", «٣٣٫٦ ألف»; 1,299 → "1.2K"), as on Android.
+    /// Foundation's compact notation rounds instead and drops the decimal from 10K up ("34K", "21K").
+    static func compactCount(_ value: Double, _ language: AppLanguage) -> String? {
+        switch language {
+        case .ar: return arabicCompact(value)
+        case .en:
+            guard let (shown, scale) = truncatedScale(value) else { return nil }
+            let suffix = [1e9: "B", 1e6: "M", 1e3: "K"][scale] ?? ""
+            return (value < 0 ? "-" : "") + number(shown, .en, fraction: 0...1) + suffix
+        }
+    }
+
+    /// The magnitude in thousands, millions or billions, truncated to one decimal, with its scale; nil under 1,000.
+    /// Multiplies before dividing so whole counts never land just under a tenth (1,300 → 1.3, not 1.2).
+    static func truncatedScale(_ value: Double) -> (shown: Double, scale: Double)? {
+        let magnitude = abs(value)
+        guard magnitude.isFinite, magnitude >= 1000 else { return nil }
+        guard let scale = [1e9, 1e6, 1e3].first(where: { magnitude >= $0 }) else { return nil }
+        return ((magnitude * 10 / scale).rounded(.towardZero) / 10, scale)
     }
 
     /// Arabic thousands, millions and billions, or nil under 1,000. Owner rule (2026-11-20, the same on Android, Apple,
@@ -47,15 +67,13 @@ public enum DisplayFormat {
     /// Likewise مليون/مليونان/ملايين and مليار/ملياران/مليارات. CLDR's compact Arabic picks the word from the full
     /// count instead, giving «٢ ألف», «١٠ ألف», «٣ مليون».
     static func arabicCompact(_ value: Double, beforeNoun: Bool = false) -> String? {
-        let magnitude = abs(value)
-        guard magnitude.isFinite, magnitude >= 1000 else { return nil }
-        let scales: [(size: Double, one: String, two: String, twoConstruct: String, few: String)] = [
-            (1e9, "مليار", "ملياران", "مليارا", "مليارات"),
-            (1e6, "مليون", "مليونان", "مليونا", "ملايين"),
-            (1e3, "ألف", "ألفان", "ألفا", "آلاف"),
+        guard let (shown, size) = truncatedScale(value) else { return nil }
+        let scales: [Double: (one: String, two: String, twoConstruct: String, few: String)] = [
+            1e9: ("مليار", "ملياران", "مليارا", "مليارات"),
+            1e6: ("مليون", "مليونان", "مليونا", "ملايين"),
+            1e3: ("ألف", "ألفان", "ألفا", "آلاف"),
         ]
-        guard let scale = scales.first(where: { magnitude >= $0.size }) else { return nil }
-        let shown = (magnitude / scale.size * 10).rounded(.towardZero) / 10
+        guard let scale = scales[size] else { return nil }
         let digits = number(shown, .ar, fraction: 0...1)
         let text: String
         switch shown {

@@ -150,6 +150,28 @@ import Testing
         #expect(Self.visible(DisplayFormat.count(Int(item.value), .en)) == item.en)
     }
 
+    /// English and Arabic show the same number: truncated to one decimal, ".0" dropped (as on Android).
+    static let truncationCases: [(value: Int, en: String, ar: String)] = [
+        (1_299, "1.2K", "١٫٢ ألف"),
+        (1_300, "1.3K", "١٫٣ ألف"),
+        (33_600, "33.6K", "٣٣٫٦ ألف"),
+        (20_600, "20.6K", "٢٠٫٦ ألف"),
+        (999_999, "999.9K", "٩٩٩٫٩ ألف"),
+        (1_250_000, "1.2M", "١٫٢ مليون"),
+        (15_000_000, "15M", "١٥ مليون"),
+        (12_000, "12K", "١٢ ألف"),
+        (999, "999", "٩٩٩"),
+    ]
+
+    @Test(arguments: truncationCases.indices)
+    func compactCountsTruncateTheSameInBothLanguages(_ index: Int) {
+        let item = Self.truncationCases[index]
+        #expect(Self.visible(DisplayFormat.count(item.value, .en)) == item.en)
+        #expect(Self.visible(DisplayFormat.count(item.value, .ar)) == item.ar)
+        #expect(Self.visible(DisplayFormat.compact(Double(item.value), .en)) == item.en)
+        #expect(Self.visible(DisplayFormat.views(item.value, L10n(.en))) == "\(item.en) views")
+    }
+
     @Test func subscribersAgreeLikeViews() {
         let ar = L10n(.ar)
         #expect(Self.visible(DisplayFormat.subscribers(1, ar)) == "مشترك واحد")
