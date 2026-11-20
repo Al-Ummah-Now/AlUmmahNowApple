@@ -208,9 +208,15 @@ app.
 
 ### 7. App icon
 
-[The app icon PR](https://github.com/Al-Ummah-Now/AlUmmahNowApple/pull/40) adds the icons from the site's lantern logo (the same mark as the Android launcher); it is held
-for your review of the screenshots. App Store Connect rejects uploads without icons, so it must be merged before the
-first signed upload.
+The icons are in (#69, approved 2026-11-20): crops of your own art, resized, built by `scripts/make-app-icons.swift`
+from `art/app-icons/`. Viewer uses the videos art (the lit windows with the play button), Studio the whole videos
+lantern, Admin the octagon art. Home-screen names: "Ummah Now", "Studio", "Admin" («الأمة الآن», «الاستوديو», «الإدارة»).
+
+**Still needed from you: higher-resolution renders.** Your renders are about 554 px across, so the 1024 px App Store
+icon and the Apple TV App Store icon and Top Shelf images (up to 2320 px wide) are enlarged and look soft. Home-screen
+sizes are sharp. Send renders of the videos and octagon art at 2048 px or more (same art, same framing), drop them in
+`icon-candidates/`, then run `swift scripts/make-app-icons.swift crop <icon-candidates>` and
+`swift scripts/make-app-icons.swift apple` and open a PR.
 
 # Releasing Al Ummah Now Admin (staff only)
 
