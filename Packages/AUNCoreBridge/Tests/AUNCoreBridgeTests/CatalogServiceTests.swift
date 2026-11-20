@@ -71,6 +71,19 @@ private func detail(_ id: String, status: String) -> String {
         #expect(text.value(for: .en, fallback: "F") == "E")
     }
 
+    @Test func channelNameFollowsTheLanguageWithAFallback() throws {
+        let json = """
+            {"id":"v","title":"T","channelName":"Al Ummah Now","channelNameLocalized":{"en":"Al Ummah Now","ar":"الأمة الآن"}}
+            """
+        let video = try JSONDecoder().decode(Video.self, from: Data(json.utf8))
+        #expect(video.displayChannelName(.ar) == "الأمة الآن")
+        #expect(video.displayChannelName(.en) == "Al Ummah Now")
+        let plain = Video(id: "p", title: "T", channelName: "Chan", channelNameLocalized: LocalizedText(ar: " "))
+        #expect(plain.displayChannelName(.ar) == "Chan")
+        #expect(Video(id: "n", title: "T").displayChannelName(.ar) == nil)
+        #expect(FixtureCatalogService.videos.allSatisfy { $0.displayChannelName(.ar) == "الأمة الآن" })
+    }
+
     @Test func environmentRejectsMissingOrInsecureValues() {
         #expect(AppEnvironment.fromInfoDictionary(nil) == .qa)
         #expect(AppEnvironment.fromInfoDictionary(["AUNAPIBaseURL": "http://x.test", "AUNEnvironment": "prod"]) == .qa)

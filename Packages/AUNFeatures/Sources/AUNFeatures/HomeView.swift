@@ -42,7 +42,7 @@
                         .foregroundStyle(Fanous.textPrimary)
                         .lineLimit(3)
                         .accessibilityAddTraits(.isHeader)
-                    if let channel = video.channelName {
+                    if let channel = video.displayChannelName(l10n.language) {
                         Text(channel).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
                     }
                     Button(action: open) { Label(l10n("home.watchNow"), systemImage: "play.fill") }
