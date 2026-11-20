@@ -71,7 +71,7 @@ final class StudioSignInTests: XCTestCase {
         let account = identity(app)
         XCTAssertTrue(account.waitForExistence(timeout: 30))
         account.tap()
-        app.buttons["accounts-manage"].tap()
+        app.accountsMenuItem.tap()
         let signOut = app.buttons["account-sign-out-fixture-creator"]
         XCTAssertTrue(signOut.waitForExistence(timeout: 10))
         signOut.tap()
@@ -90,11 +90,11 @@ final class StudioSignInTests: XCTestCase {
         let account = identity(app)
         XCTAssertTrue(account.waitForExistence(timeout: 30))
         account.tap()
-        app.buttons["accounts-manage"].tap()
+        app.accountsMenuItem.tap()
         app.buttons["account-add"].tap()
         XCTAssertTrue(account.waitForExistence(timeout: 20))
         account.tap()
-        app.buttons["accounts-manage"].tap()
+        app.accountsMenuItem.tap()
         let first = app.buttons["account-fixture-creator"]
         XCTAssertTrue(first.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["account-fixture-account-1"].exists)
