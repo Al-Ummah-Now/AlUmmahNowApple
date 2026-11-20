@@ -5,7 +5,7 @@ Product spec: `docs/native-apps/EPICS.md` in https://github.com/Al-Ummah-Now/AlU
 
 ## Commands
 - `make generate`: create `AlUmmahNow.xcodeproj` from `project.yml` (the project is not committed).
-- `make check-generate` (CI runs it): fails if `make generate` changes or adds a file. Xcode
+- `make check-generate` (CI runs it): fails if `make generate` or a package resolve changes or adds a file. Xcode
   can move Info.plist keys into `INFOPLIST_KEY_*` build settings when it edits the generated project. Never commit a
   stripped `Apps/*/Info.plist`: put the key in `project.yml` and run `make generate`, which writes the full file back.
 - `make lint`, `make format`.
@@ -27,7 +27,8 @@ Product spec: `docs/native-apps/EPICS.md` in https://github.com/Al-Ummah-Now/AlU
 - **Autoplay of the next item stays off by default** (spec 21.6). No engagement dark patterns.
 - **Every core call goes through a protocol in `AUNCoreBridge`**, so the Rust XCFramework can replace the temporary
   native implementation without touching features.
-- **APIs must exist in the CI SDK** (Xcode 26.6, macos-26 runner). Local Xcode may be newer.
+- **APIs must exist in the CI SDK** (Xcode 27.1 on the `xcode-27` runner, simulators iOS/tvOS 27.0; `XCODE_VERSION` in the
+  workflows). Deployment targets stay iOS/tvOS 17, macOS 14.
 - **Never upload to TestFlight or the App Store by hand.** Releases are tag-triggered from `main` only (`docs/RELEASING.md`).
 - Every feature is tier-aware once Epic 27 entitlements land; never hard-code plans. Never use Stripe.
 - **UI copy tone (en + ar):** Al Ummah Now is a content-sharing site, not a lectures library. Use YouTube's neutral
