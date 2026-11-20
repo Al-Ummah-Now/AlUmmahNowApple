@@ -58,12 +58,13 @@ case "${1:-}" in
     find Apps Packages UITests -name "*.swift" -not -name Package.swift -not -path "*/.build/*" -print0 | xargs -0 xcrun swift-format lint --strict
     ;;
   ios)
-    xcodebuild test "${COMMON[@]}" -scheme ViewerIOS \
-      -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${UNSIGNED[@]}"
+    UDID=$(settled "$IPHONE")
+    xcodebuild test "${COMMON[@]}" -scheme ViewerIOS -destination "platform=iOS Simulator,id=$UDID" "${UNSIGNED[@]}"
     ;;
   ipad)
+    UDID=$(settled "$IPAD")
     xcodebuild test "${COMMON[@]}" -scheme ViewerIOS -only-testing:ViewerIOSUITests \
-      -destination "platform=iOS Simulator,name=iPad Pro 11-inch (M5),OS=$IOS_OS" "${UNSIGNED[@]}"
+      -destination "platform=iOS Simulator,id=$UDID" "${UNSIGNED[@]}"
     ;;
   tvos)
     xcodebuild test "${COMMON[@]}" -scheme ViewerTV \
@@ -73,15 +74,15 @@ case "${1:-}" in
     xcodebuild test "${COMMON[@]}" -scheme ViewerMac -destination "platform=macOS" "${ADHOC[@]}"
     ;;
   studio)
-    xcodebuild test "${COMMON[@]}" -scheme StudioIOS \
-      -destination "platform=iOS Simulator,name=iPhone 17,OS=$IOS_OS" "${UNSIGNED[@]}"
+    UDID=$(settled "$IPHONE")
+    xcodebuild test "${COMMON[@]}" -scheme StudioIOS -destination "platform=iOS Simulator,id=$UDID" "${UNSIGNED[@]}"
     xcodebuild test "${COMMON[@]}" -scheme StudioMac -destination "platform=macOS" "${ADHOC[@]}"
     ;;
   boot)
     # CI runs this first, so the simulator settles while the job installs tools and builds.
     case "${2:-}" in
-      admin) boot_early "$IPHONE" ;;
-      admin-ipad) boot_early "$IPAD" ;;
+      ios | studio | admin) boot_early "$IPHONE" ;;
+      ipad | admin-ipad) boot_early "$IPAD" ;;
       *) echo "boot: nothing to boot early for ${2:-}" ;;
     esac
     ;;
