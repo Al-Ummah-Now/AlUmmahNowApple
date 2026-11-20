@@ -80,9 +80,15 @@ final class StudioSmokeTests: XCTestCase {
         let account = identity(app)
         XCTAssertTrue(account.waitForExistence(timeout: 30))
         account.click()
-        // macOS 27 menus drop SwiftUI accessibility identifiers on their items: fall back to the item's title.
+        // On macOS 27 the open identity menu is not in the app's accessibility tree, so its items can't be queried.
+        // Accounts is the menu's last item: Up arrow highlights it, Return picks it.
         let manage = app.descendants(matching: .any)["accounts-manage"].firstMatch
-        (manage.waitForExistence(timeout: 2) ? manage : app.menuItems["Accounts"].firstMatch).click()
+        if manage.waitForExistence(timeout: 2) {
+            manage.click()
+        } else {
+            app.typeKey(.upArrow, modifierFlags: [])
+            app.typeKey(.return, modifierFlags: [])
+        }
         let signOut = app.buttons["account-sign-out-fixture-creator"]
         XCTAssertTrue(signOut.waitForExistence(timeout: 10))
         signOut.click()
