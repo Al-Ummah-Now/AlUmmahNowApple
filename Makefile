@@ -1,7 +1,10 @@
 .PHONY: generate check-generate lint format test-ios test-ipad test-tvos test-mac test-admin test-admin-ipad test-admin-mac build-all screenshots check-store
 generate: ; xcodegen generate --quiet
-# Fails when make generate changes or adds any file, i.e. project.yml is not the full source of each Info.plist.
+# Fails when make generate or a package resolve changes or adds any file: project.yml is not the full source of each
+# Info.plist, or the committed Package.resolved is not what this Xcode resolves.
 check-generate: generate
+	xcodebuild -resolvePackageDependencies -workspace AlUmmahNow.xcworkspace -scheme ViewerIOS \
+	  -derivedDataPath build/DerivedData -quiet
 	git diff --exit-code
 	test -z "$$(git status --porcelain)" || { git status --porcelain; exit 1; }
 lint: ; scripts/ci.sh lint

@@ -8,15 +8,21 @@ concurrency:
   cancel-in-progress: true
 permissions: {contents: read}
 env:
+  # Xcode 27.1 (27A9275) on the xcode-27 runner image, the owner's local build. Its iOS 27.1 runtime only has the
+  # iPhone Duo, so simulators run iOS/tvOS 27.0.
+  XCODE_VERSION: "27.1"
   SWIFTLINT_VERSION: 0.65.1
   XCODEGEN_VERSION: 2.45.3
-  AUN_IOS_SIM_OS: "26.4.1"
+  AUN_IOS_SIM_OS: "27.0"
+  AUN_TVOS_SIM_OS: "27.0"
 jobs:
   lint:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+      - name: Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s "/Applications/Xcode_$XCODE_VERSION.app" && xcodebuild -version && xcrun swift --version
       - name: Install SwiftLint (pinned)
         run: |
           curl -fsSL -o /tmp/swiftlint.zip "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/portable_swiftlint.zip"
@@ -44,10 +50,12 @@ jobs:
         run: for f in scripts/*.sh; do bash -n "$f"; done
   generate:
     name: project.yml is the full source
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+      - name: Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s "/Applications/Xcode_$XCODE_VERSION.app" && xcodebuild -version && xcrun swift --version
       - name: Install XcodeGen (pinned)
         run: |
           curl -fsSL -o /tmp/xcodegen.zip "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
@@ -55,11 +63,11 @@ jobs:
           echo /tmp/xcodegen/bin >> "$GITHUB_PATH"
       # Xcode moves Info.plist keys into INFOPLIST_KEY_* build settings when it edits a generated project. Those
       # settings are lost on the next generate, so a stripped Info.plist must never be committed.
-      - name: make generate leaves committed files unchanged
+      - name: make generate and a package resolve leave committed files unchanged
         run: make check-generate
   test:
     name: ${{ matrix.job }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -67,6 +75,8 @@ jobs:
         job: [ios, ipad, tvos, mac, studio, admin, admin-ipad, admin-mac]
     steps:
       - uses: actions/checkout@v5
+      - name: Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s "/Applications/Xcode_$XCODE_VERSION.app" && xcodebuild -version && xcrun swift --version
       - name: Boot the simulator early, so it settles while the job builds
         run: scripts/ci.sh boot ${{ matrix.job }}
       - run: brew install xcodegen
@@ -74,7 +84,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: build/DerivedData/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+          key: spm-${{ runner.os }}-xcode-${{ env.XCODE_VERSION }}-${{ hashFiles('Packages/*/Package.swift', 'AlUmmahNow.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
       - run: scripts/ci.sh ${{ matrix.job }}
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -93,13 +103,15 @@ jobs:
   # Real sign-in through auth.qa with the seeded QA creator. Runs on main and by hand, never on fork PRs.
   live-qa:
     if: github.event_name != 'pull_request'
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 45
     env:
       AUN_QA_EMAIL: qa-creator@delivered.resend.dev
       AUN_QA_PASSWORD: ${{ secrets.QA_SEED_PASSWORD }}
     steps:
       - uses: actions/checkout@v5
+      - name: Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s "/Applications/Xcode_$XCODE_VERSION.app" && xcodebuild -version && xcrun swift --version
       - name: Skip without the QA secret
         id: gate
         run: if [ -n "$AUN_QA_PASSWORD" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; fi
@@ -109,7 +121,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/DerivedData/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+          key: spm-${{ runner.os }}-xcode-${{ env.XCODE_VERSION }}-${{ hashFiles('Packages/*/Package.swift', 'AlUmmahNow.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
       - if: steps.gate.outputs.run == 'true'
         run: scripts/ci.sh live-qa
       - uses: actions/upload-artifact@v4

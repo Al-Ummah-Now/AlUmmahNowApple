@@ -15,6 +15,9 @@ concurrency:
   cancel-in-progress: false
 permissions: {contents: read}
 env:
+  # Xcode 27.1 (27A9275) on the xcode-27 runner image, the owner's local build. Its iOS 27.1 runtime only has the
+  # iPhone Duo, so simulators run iOS/tvOS 27.0.
+  XCODE_VERSION: "27.1"
   ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
   ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
   ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
@@ -69,7 +72,7 @@ jobs:
   build:
     needs: verify
     name: ${{ matrix.scheme }} ${{ matrix.config }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -81,11 +84,13 @@ jobs:
       AUN_BUILD_NUMBER: ${{ needs.verify.outputs.build }}
     steps:
       - uses: actions/checkout@v5
+      - name: Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s "/Applications/Xcode_$XCODE_VERSION.app" && xcodebuild -version && xcrun swift --version
       - run: brew install xcodegen && xcodegen generate
       - uses: actions/cache@v4
         with:
           path: build/DerivedData/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+          key: spm-${{ runner.os }}-xcode-${{ env.XCODE_VERSION }}-${{ hashFiles('Packages/*/Package.swift', 'AlUmmahNow.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
       # A dispatch from a branch never uploads, even with the secrets: store builds come from main tags only.
       - if: needs.verify.outputs.release != 'true'
         run: |
@@ -124,15 +129,18 @@ jobs:
     needs: [verify, build]
     if: needs.verify.outputs.release == 'true' && needs.verify.outputs.listings != '{"include":[]}'
     name: listing ${{ matrix.dir }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.verify.outputs.listings) }}
     env:
-      AUN_IOS_SIM_OS: "26.4.1"
+      AUN_IOS_SIM_OS: "27.0"
+      AUN_TVOS_SIM_OS: "27.0"
     steps:
       - uses: actions/checkout@v5
+      - name: Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s "/Applications/Xcode_$XCODE_VERSION.app" && xcodebuild -version && xcrun swift --version
       - id: gate
         run: |
           missing=()
@@ -148,7 +156,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/DerivedData/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+          key: spm-${{ runner.os }}-xcode-${{ env.XCODE_VERSION }}-${{ hashFiles('Packages/*/Package.swift', 'AlUmmahNow.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
       - if: steps.gate.outputs.run == 'true'
         run: scripts/screenshots.sh ${{ matrix.screenshots }} build/screenshots
       - if: steps.gate.outputs.run == 'true'

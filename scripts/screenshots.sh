@@ -13,8 +13,8 @@ cd "$(dirname "$0")/.."
 
 WHAT="${1:-all}"
 OUT="${2:-build/screenshots}"
-IOS_OS="${AUN_IOS_SIM_OS:-26.4}"
-TVOS_OS="${AUN_TVOS_SIM_OS:-26.4}"
+IOS_OS="${AUN_IOS_SIM_OS:-27.0}"
+TVOS_OS="${AUN_TVOS_SIM_OS:-27.0}"
 DERIVED="${AUN_DERIVED_DATA:-build/DerivedData}"
 RESULTS="build/screenshot-results"
 COMMON=(-workspace AlUmmahNow.xcworkspace -derivedDataPath "$DERIVED" -configuration Debug

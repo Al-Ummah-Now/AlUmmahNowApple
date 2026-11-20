@@ -11,7 +11,11 @@ on:
         options: [all, viewer-ios, viewer-tv, viewer-mac, studio-ios, studio-mac]
 permissions: {contents: read}
 env:
-  AUN_IOS_SIM_OS: "26.4.1"
+  # Xcode 27.1 (27A9275) on the xcode-27 runner image, the owner's local build. Its iOS 27.1 runtime only has the
+  # iPhone Duo, so simulators run iOS/tvOS 27.0.
+  XCODE_VERSION: "27.1"
+  AUN_IOS_SIM_OS: "27.0"
+  AUN_TVOS_SIM_OS: "27.0"
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -30,7 +34,7 @@ jobs:
   shoot:
     needs: plan
     name: ${{ matrix.app }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -38,11 +42,13 @@ jobs:
         app: ${{ fromJSON(needs.plan.outputs.apps) }}
     steps:
       - uses: actions/checkout@v5
+      - name: Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s "/Applications/Xcode_$XCODE_VERSION.app" && xcodebuild -version && xcrun swift --version
       - run: brew install xcodegen && xcodegen generate
       - uses: actions/cache@v4
         with:
           path: build/DerivedData/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+          key: spm-${{ runner.os }}-xcode-${{ env.XCODE_VERSION }}-${{ hashFiles('Packages/*/Package.swift', 'AlUmmahNow.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
       - run: scripts/screenshots.sh ${{ matrix.app }} build/screenshots
       - uses: actions/upload-artifact@v4
         with:
