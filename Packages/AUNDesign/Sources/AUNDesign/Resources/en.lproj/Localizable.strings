@@ -2,6 +2,7 @@
 "studio.name" = "Al Ummah Now Studio";
 "common.retry" = "Try again";
 "common.error.load" = "We couldn't load this right now.";
+"common.sidebar" = "Show or hide the sidebar";
 "common.settings" = "Settings";
 "common.language" = "Language";
 "common.theme" = "Theme";

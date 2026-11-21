@@ -2,6 +2,7 @@
 "studio.name" = "استوديو الأمة الآن";
 "common.retry" = "إعادة المحاولة";
 "common.error.load" = "تعذّر تحميل المحتوى الآن.";
+"common.sidebar" = "إظهار الشريط الجانبي أو إخفاؤه";
 "common.settings" = "الإعدادات";
 "common.language" = "اللغة";
 "common.theme" = "المظهر";
