@@ -8,18 +8,16 @@
     public struct ViewerRootView: View {
         @Environment(\.l10n) private var l10n
         @Environment(\.openWindow) private var openWindow
-        @State private var selection: String? = "home"
         private let core: CoreBridge
 
         public init(core: CoreBridge) { self.core = core }
 
         public var body: some View {
             NavigationSplitView {
-                List(selection: $selection) {
-                    Label(l10n("home.title"), systemImage: "house").tag("home")
-                        .listRowBackground(
-                            selection == "home"
-                                ? FanousSurfaceKind(kind: .active, shape: .rounded(8)).padding(.horizontal, 6) : nil)
+                // One section for now; later sections join it with the same row.
+                List {
+                    FanousSidebarRow(l10n("home.title"), icon: "house", selected: true) {}
+                        .accessibilityIdentifier("section-home")
                 }
                 .scrollContentBackground(.hidden)
                 .fanousMaterial(.rail)

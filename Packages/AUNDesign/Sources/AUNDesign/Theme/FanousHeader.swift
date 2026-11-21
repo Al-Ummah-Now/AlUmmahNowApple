@@ -150,12 +150,30 @@ private struct FanousHeaderBar: ViewModifier {
                 .toolbarBackground(FanousHeader.style(theme), for: .windowToolbar)
                 .toolbarBackground(.visible, for: .windowToolbar)
                 .toolbarColorScheme(.dark, for: .windowToolbar)
+                .background(DarkTitlebar().frame(width: 0, height: 0))
                 .safeAreaInset(edge: .top, spacing: 0) { FanousHeaderEdge() }
         #else
             content.safeAreaInset(edge: .top, spacing: 0) { FanousHeaderEdge() }
         #endif
     }
 }
+
+#if os(macOS)
+    /// The header is dark in every mode, so the title bar takes the dark appearance: `toolbarColorScheme` only reaches the
+    /// toolbar's text, and in light mode the glass behind the title, the sidebar button and menus stayed white.
+    private struct DarkTitlebar: NSViewRepresentable {
+        func makeNSView(context: Context) -> NSView { Probe() }
+        func updateNSView(_ nsView: NSView, context: Context) {}
+
+        final class Probe: NSView {
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                // The close button sits in the title bar view, which also holds the toolbar items.
+                window?.standardWindowButton(.closeButton)?.superview?.appearance = NSAppearance(named: .darkAqua)
+            }
+        }
+    }
+#endif
 
 extension View {
     /// Puts the web header on this screen's bar: the header gradient behind the bar and the status bar, light bar

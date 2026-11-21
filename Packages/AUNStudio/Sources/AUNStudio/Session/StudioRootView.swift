@@ -273,33 +273,9 @@ struct ChannelGate<Content: View>: View {
         var body: some View {
             NavigationSplitView {
                 List(sections) { item in
-                    // The active section in the theme's gold "active" material, not the system accent: a gold accent
-                    // would put white text on gold (below 4.5:1), and blue is not the brand.
-                    let selected = item == (section ?? .home)
-                    Button {
+                    FanousSidebarRow(l10n(item.titleKey), icon: item.icon, selected: item == (section ?? .home)) {
                         section = item
-                    } label: {
-                        Label {
-                            Text(l10n(item.titleKey))
-                                .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerText))
-                                .fontWeight(selected ? .semibold : .regular)
-                        } icon: {
-                            // One icon column: every glyph centred in the same width, so labels line up.
-                            Image(systemName: item.icon)
-                                .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerIcon))
-                                .frame(width: 20, alignment: .center)
-                        }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background {
-                            if selected { FanousSurfaceKind(kind: .active, shape: .rounded(8)) }
-                        }
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .listRowSeparator(.hidden)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
                     .accessibilityIdentifier("section-\(item.rawValue)")
                 }
                 // A list that fits never scrolls, so no section slides under the title bar.
