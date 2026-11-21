@@ -75,23 +75,28 @@ public enum DisplayFormat {
     /// on Android, Apple, Desktop and web): the number is truncated to one decimal, never rounded up. Thousands and
     /// billions take a word that agrees with it: exactly 1 is the word alone («ألف»), exactly 2 the dual alone —
     /// «ألفان» on its own, the construct «ألفا» before a noun (`beforeNoun`), never after a digit — whole 3–10
-    /// «٣ آلاف», and 11 and up or any decimal «١١ ألف», «١٫٣ ألف»; likewise مليار/ملياران/مليارات. Millions are always
-    /// the number and «م»: «١ م», «٢ م», «١٫٢ م مشاهدة», «١٥ م». CLDR's compact Arabic picks the word from the full
-    /// count instead, giving «٢ ألف», «١٠ ألف».
+    /// «٣ آلاف», and 11 and up or any decimal «١١ ألف», «١٫٣ ألف»; likewise مليار/ملياران/مليارات. On its own (a tile,
+    /// a chart tick), a whole number ending in 11–99 takes the accusative: «١٢ ألفًا», «١٢٠ ألفًا», «١٢ مليارًا»; before
+    /// a noun it stays «١٢ ألف مشاهدة», and 100 or a decimal stays «١٠٠ ألف», «١١٫٥ ألف». Millions are always the
+    /// number and «م»: «١ م», «٢ م», «١٫٢ م مشاهدة», «١٥ م». CLDR's compact Arabic picks the word from the full count
+    /// instead, giving «٢ ألف», «١٠ ألف».
     static func arabicCompact(_ value: Double, beforeNoun: Bool = false) -> String? {
         guard let (shown, size) = truncatedScale(value) else { return nil }
         let digits = number(shown, .ar, fraction: 0...1)
         if size == 1e6 { return (value < 0 ? "-" : "") + digits + "\u{00A0}" + millionMark }
-        let scales: [Double: (one: String, two: String, twoConstruct: String, few: String)] = [
-            1e9: ("مليار", "ملياران", "مليارا", "مليارات"),
-            1e3: ("ألف", "ألفان", "ألفا", "آلاف"),
+        let scales: [Double: (one: String, two: String, twoConstruct: String, few: String, accusative: String)] = [
+            1e9: ("مليار", "ملياران", "مليارا", "مليارات", "مليارًا"),
+            1e3: ("ألف", "ألفان", "ألفا", "آلاف", "ألفًا"),
         ]
         guard let scale = scales[size] else { return nil }
+        let whole = shown == shown.rounded(.towardZero)
         let text: String
         switch shown {
         case 1: text = scale.one
         case 2: text = beforeNoun ? scale.twoConstruct : scale.two
-        case 3...10 where shown == shown.rounded(.towardZero): text = digits + "\u{00A0}" + scale.few
+        case 3...10 where whole: text = digits + "\u{00A0}" + scale.few
+        case _ where whole && !beforeNoun && (11...99).contains(Int(shown) % 100):
+            text = digits + "\u{00A0}" + scale.accusative
         default: text = digits + "\u{00A0}" + scale.one
         }
         return (value < 0 ? "-" : "") + text
@@ -180,9 +185,9 @@ public enum DisplayFormat {
         return format(duration, Duration.TimeFormatStyle(pattern: pattern), language)
     }
 
-    /// The separator between values on one line. Arabic uses a bullet: a middle dot «·» looks like the Eastern
-    /// Arabic zero «٠» next to ٠–٩ numbers.
-    public static func separator(_ language: AppLanguage) -> String { language == .ar ? " • " : " · " }
+    /// The separator between values on one line. Arabic uses the Arabic comma «، »: a dot of any size between values
+    /// reads as the Eastern Arabic zero «٠» («عام • ١٢ ألف» as «١٢٠ ألف»).
+    public static func separator(_ language: AppLanguage) -> String { language == .ar ? "، " : " · " }
 
     /// Values on one line ("Al Ummah Now · 1.2K views"), empty ones dropped. Each value is direction-isolated so an
     /// English name inside Arabic text (or the reverse) keeps its order and punctuation; Arabic starts right-to-left.

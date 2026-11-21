@@ -48,10 +48,14 @@
                             ProgressView(value: item.fraction).frame(width: 120)
                             StatusLabel(status: item.status)
                         }
+                        .listRowBackground(Rectangle().fill(Fanous.surface))
                     }
+                    .scrollContentBackground(.hidden)
                 }
             }
             .padding()
+            // The same page wash as every other Studio section, in place of the bare window colour.
+            .fanousPage()
             .fileImporter(isPresented: $importing, allowedContentTypes: [.movie], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result { queue.add(urls) }
             }

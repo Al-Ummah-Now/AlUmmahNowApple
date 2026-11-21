@@ -119,6 +119,9 @@ import Testing
         (8_020, "٨ آلاف مشاهدة", "8K views"),
         (11_000, "١١ ألف مشاهدة", "11K views"),
         (12_000, "١٢ ألف مشاهدة", "12K views"),
+        (11_500, "١١٫٥ ألف مشاهدة", "11.5K views"),
+        (100_000, "١٠٠ ألف مشاهدة", "100K views"),
+        (120_000, "١٢٠ ألف مشاهدة", "120K views"),
         (1_000_000, "١ م مشاهدة", "1M views"),
         (1_200_000, "١٫٢ م مشاهدة", "1.2M views"),
         (2_000_000, "٢ م مشاهدة", "2M views"),
@@ -126,6 +129,7 @@ import Testing
         (15_000_000, "١٥ م مشاهدة", "15M views"),
         (2_000_000_000, "مليارا مشاهدة", "2B views"),
         (3_000_000_000, "٣ مليارات مشاهدة", "3B views"),
+        (12_000_000_000, "١٢ مليار مشاهدة", "12B views"),
     ]
 
     static func visible(_ text: String) -> String {
@@ -140,7 +144,8 @@ import Testing
         #expect(Self.visible(DisplayFormat.views(item.count, L10n(.en))) == item.en)
     }
 
-    /// Compact numbers without a noun (tiles, chart ticks): the dual stands alone.
+    /// Compact numbers without a noun (tiles, chart ticks): the dual stands alone, and a whole number ending in 11–99
+    /// takes the accusative («١٢ ألفًا»); 100 and decimals stay singular (owner rule 2026-11-21).
     static let tickCases: [(value: Double, ar: String, en: String)] = [
         (500, "٥٠٠", "500"),
         (1_000, "ألف", "1K"),
@@ -148,11 +153,17 @@ import Testing
         (2_000, "ألفان", "2K"),
         (3_000, "٣ آلاف", "3K"),
         (4_887, "٤٫٨ ألف", "4.8K"),
+        (11_500, "١١٫٥ ألف", "11.5K"),
+        (12_000, "١٢ ألفًا", "12K"),
+        (100_000, "١٠٠ ألف", "100K"),
+        (111_000, "١١١ ألفًا", "111K"),
+        (120_000, "١٢٠ ألفًا", "120K"),
         (1_000_000, "١ م", "1M"),
         (1_200_000, "١٫٢ م", "1.2M"),
         (2_000_000, "٢ م", "2M"),
         (3_000_000, "٣ م", "3M"),
         (15_000_000, "١٥ م", "15M"),
+        (12_000_000_000, "١٢ مليارًا", "12B"),
     ]
 
     @Test(arguments: tickCases.indices)
@@ -174,7 +185,7 @@ import Testing
         (1_250_000, "1.2M", "١٫٢ م"),
         (1_299_999, "1.2M", "١٫٢ م"),
         (15_000_000, "15M", "١٥ م"),
-        (12_000, "12K", "١٢ ألف"),
+        (12_000, "12K", "١٢ ألفًا"),
         (999, "999", "٩٩٩"),
     ]
 
@@ -195,7 +206,7 @@ import Testing
         #expect(Self.visible(DisplayFormat.subscribers(2_000, L10n(.en))) == "2K subscribers")
         #expect(
             Self.visible(ar("studio.analytics.lifetime", DisplayFormat.views(2_000, ar), DisplayFormat.subscribers(3, ar), "٥٪"))
-                == "منذ البداية: ألفا مشاهدة • ٣ مشتركين • تفاعل ٥٪")
+                == "منذ البداية: ألفا مشاهدة، ٣ مشتركين، تفاعل ٥٪")
     }
 
     @Test func arabicScaleWordAgreesWithTheShownNumber() {
@@ -205,7 +216,7 @@ import Testing
         #expect(ar(2_050) == "ألفان")
         #expect(ar(10_050) == "١٠ آلاف")
         #expect(ar(10_999) == "١٠٫٩ ألف")
-        #expect(ar(11_000) == "١١ ألف")
+        #expect(ar(11_000) == "١١ ألفًا")
         #expect(ar(999_999) == "٩٩٩٫٩ ألف")
         #expect(ar(1_000_000) == "١ م")
         #expect(ar(1_990_000) == "١٫٩ م")  // truncated, never «٢ م»
@@ -219,12 +230,14 @@ import Testing
     @Test func arabicSeparatorIsNotMistakenForZero() {
         let line = DisplayFormat.meta(["عام", "١٫٥ ألف مشاهدة", nil, ""], .ar)
         #expect(!line.contains("·"))
-        #expect(line.contains(" • "))
+        #expect(!line.contains("•"))
+        #expect(Self.visible(line) == "\u{200F}عام، ١٫٥ ألف مشاهدة")
         #expect(line.hasPrefix("\u{200F}"))
         #expect(
             DisplayFormat.meta(["Al Ummah Now", "1.2K views"], .en) == "\u{2068}Al Ummah Now\u{2069} · \u{2068}1.2K views\u{2069}"
         )
-        #expect(!L10n(.ar)("studio.analytics.lifetime", "١", "٢", "٣").contains("·"))
+        let lifetime = L10n(.ar)("studio.analytics.lifetime", "١", "٢", "٣")
+        #expect(!lifetime.contains("·") && !lifetime.contains("•"))
     }
 
     /// Analytics ranges: 3–10 take the plural («٧ أيام»), 11–99 the accusative singular («٢٨ يومًا»), as with views.

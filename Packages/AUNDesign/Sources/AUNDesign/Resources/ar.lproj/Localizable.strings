@@ -257,7 +257,7 @@
 "studio.analytics.likes" = "الإعجابات";
 "studio.analytics.comments" = "التعليقات";
 "studio.analytics.newSubscribers" = "مشتركون جدد";
-"studio.analytics.lifetime" = "منذ البداية: %@ • %@ • تفاعل %@";
+"studio.analytics.lifetime" = "منذ البداية: %@، %@، تفاعل %@";
 
 /* Plan refusals and account states (api-videos codes) */
 "studio.refusal.channelLimit" = "وصلت إلى حد القنوات في خطتك.";

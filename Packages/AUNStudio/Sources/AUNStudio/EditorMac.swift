@@ -223,6 +223,8 @@
                 .frame(height: 96)
             }
             .padding()
+            // The same page wash as every other Studio section, in place of the bare window colour.
+            .fanousPage()
             .fileImporter(isPresented: $importing, allowedContentTypes: [.movie], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result { Task { await importClips(urls) } }
             }
