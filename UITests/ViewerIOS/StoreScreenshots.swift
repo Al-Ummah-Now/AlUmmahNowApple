@@ -24,9 +24,12 @@ final class StoreScreenshots: XCTestCase {
                     // holds two rails, "Trending" with "Recently added" under it, so the frame is full to the bottom.
                     let rail = UIDevice.current.userInterfaceIdiom == .pad ? "rail-trending" : "rail-recent"
                     let more = StoreScreenshot.launch(language, theme, extra: ["-AUNScrollTo", rail])
-                    // The requested rail, which is on screen once scrolled to (the cards above it may be unloaded).
-                    XCTAssertTrue(
-                        more.descendants(matching: .any).matching(identifier: rail).firstMatch.waitForExistence(timeout: 30))
+                    // A card of the requested rail, on screen once scrolled to (cards above it may be unloaded, and the
+                    // rail itself is not an accessibility element).
+                    let card = more.buttons.matching(
+                        NSPredicate(format: "identifier BEGINSWITH %@", "video-card-\(rail.dropFirst(5))-")
+                    ).firstMatch
+                    XCTAssertTrue(card.waitForExistence(timeout: 30))
                     StoreScreenshot.capture(more, self, .init(language: language, theme: theme, index: 3, name: "home-more"))
                     more.terminate()
                 }
