@@ -105,7 +105,8 @@ shoot() { # app scheme destination device themes [udid]
     xcrun xcresulttool export attachments --path "$bundle" --output-path "$RESULTS/$app-$device-$lang" >/dev/null
     python3 scripts/file-screenshots.py "$RESULTS/$app-$device-$lang" "$OUT/$app" "$device"
   done
-  [[ -n "$udid" ]] && { xcrun simctl shutdown "$udid" 2>/dev/null || true; }
+  # An if, not `[[ … ]] && …`: on the Mac (no simulator) that would end the function with status 1 under set -e.
+  if [[ -n "$udid" ]]; then xcrun simctl shutdown "$udid" 2>/dev/null || true; fi
 }
 
 viewer_ios() {
