@@ -82,7 +82,7 @@ shoot() { # app scheme destination device themes [udid]
   fi
   xcodebuild build-for-testing "${COMMON[@]}" -scheme "$scheme" -destination "$destination" "${signing[@]}"
   # One pass per language. On a simulator the system itself switches language (and Eastern Arabic digits), so its own
-  # chrome matches the app: the status bar's app name comes from the app's InfoPlist.strings and the clock reads ٩:٤١.
+  # chrome matches the app: the status bar's app name comes from the app's InfoPlist.strings and the clock uses Arabic digits.
   local lang
   for lang in ${AUN_SCREENSHOT_LANGUAGES//,/ }; do
     local bundle="$RESULTS/$app-$device-$lang.xcresult"
@@ -100,12 +100,14 @@ shoot() { # app scheme destination device themes [udid]
       echo "simulator $udid: $(plutil -extract AppleLanguages json -o - "$prefs") $(plutil -extract AppleLocale raw -o - "$prefs")"
       xcrun simctl boot "$udid" 2>/dev/null || true
       xcrun simctl bootstatus "$udid" -b >/dev/null
-      # An ISO time, so the status bar formats 9:41 itself in the system locale (٩:٤١ in Arabic). A plain string is
-      # drawn as given, in Latin digits.
-      local clock
-      clock="2026-11-20T09:41:00$(date +%z | sed 's/\(..\)$/:\1/')"
-      xcrun simctl status_bar "$udid" override --time "$clock" --dataNetwork wifi --wifiMode active --wifiBars 3 \
-        --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 2>/dev/null || true
+      # The status bar draws any --time override in Latin digits, and simctl rejects an Arabic string. The Arabic
+      # pass therefore keeps the live clock, which the Arabic system draws in its own digits (٩:١٧); English shows 9:41.
+      # Errors are not hidden: a pass without its overrides fails here instead of filing wrong frames.
+      local clock=()
+      [[ "$lang" == ar ]] || clock=(--time "9:41")
+      xcrun simctl status_bar "$udid" clear
+      xcrun simctl status_bar "$udid" override ${clock[@]+"${clock[@]}"} --dataNetwork wifi --wifiMode active --wifiBars 3 \
+        --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
     fi
     # One retry: the shared runner sometimes loses the test runner while it bootstraps, or an app won't terminate.
     local attempt
