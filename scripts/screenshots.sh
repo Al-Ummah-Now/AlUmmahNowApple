@@ -18,10 +18,13 @@ TVOS_OS="${AUN_TVOS_SIM_OS:-27.0}"
 DERIVED="${AUN_DERIVED_DATA:-build/DerivedData}"
 RESULTS="build/screenshot-results"
 COMMON=(-workspace AlUmmahNow.xcworkspace -derivedDataPath "$DERIVED" -configuration Debug
-        -skipPackagePluginValidation -skipMacroValidation)
+        -skipPackagePluginValidation -skipMacroValidation
+        # Store frames show the app's real name: no " QA" suffix in the status bar, Dock or window title.
+        AUN_DISPLAY_SUFFIX=)
 IPHONE="iPhone 17 Pro Max"
 IPAD="iPad Pro 13-inch (M5)"
 TV="Apple TV 4K (3rd generation)"
+AUN_SCREENSHOT_LANGUAGES="${AUN_SCREENSHOT_LANGUAGES:-en,ar}"
 mkdir -p "$OUT" "$RESULTS"
 
 # The simulator's UDID for a device name on a runtime version, created when the runner has none.
@@ -64,6 +67,17 @@ dyld_cache() { # platform version
   echo "dyld shared cache for $runtime: ready after ${waited} s"
 }
 
+# Battery and signal for the store frames. The status bar draws any --time override in Latin digits, and simctl
+# rejects an Arabic string, so the Arabic pass keeps the live clock, which the Arabic system draws in its own digits;
+# English shows 9:41. Errors are not hidden: a pass without its overrides fails instead of filing wrong frames.
+status_bar_overrides() { # udid lang
+  local clock=()
+  [[ "$2" == ar ]] || clock=(--time "9:41")
+  xcrun simctl status_bar "$1" clear &&
+    xcrun simctl status_bar "$1" override ${clock[@]+"${clock[@]}"} --dataNetwork wifi --wifiMode active --wifiBars 3 \
+      --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+}
+
 # Runs one target's StoreScreenshots test and files its attachments as <app>/<locale>/<device>-….png.
 # On a simulator: only that simulator runs (the previous pass's one is shut down), it boots before the build so its
 # first-boot system work settles while xcodebuild compiles, and the test starts once it has finished booting.
@@ -71,8 +85,6 @@ dyld_cache() { # platform version
 # loaded notification", "Timed out while requesting screenshot"; #47).
 shoot() { # app scheme destination device themes [udid]
   local app="$1" scheme="$2" destination="$3" device="$4" themes="$5" udid="${6:-}"
-  local bundle="$RESULTS/$app-$device.xcresult"
-  rm -rf "$bundle" "$RESULTS/$app-$device"
   local signing=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
   [[ "$destination" == "platform=macOS" ]] && signing=(CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=)
   if [[ -n "$udid" ]]; then
@@ -80,17 +92,46 @@ shoot() { # app scheme destination device themes [udid]
     xcrun simctl boot "$udid" 2>/dev/null || true
   fi
   xcodebuild build-for-testing "${COMMON[@]}" -scheme "$scheme" -destination "$destination" "${signing[@]}"
-  if [[ -n "$udid" ]]; then
-    xcrun simctl bootstatus "$udid" -b >/dev/null
-    xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
-      --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 2>/dev/null || true
-  fi
-  TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
-    xcodebuild test-without-building "${COMMON[@]}" -scheme "$scheme" -destination "$destination" \
-    -only-testing:"${scheme}UITests/StoreScreenshots" -resultBundlePath "$bundle" "${signing[@]}"
-  [[ -n "$udid" ]] && { xcrun simctl shutdown "$udid" 2>/dev/null || true; }
-  xcrun xcresulttool export attachments --path "$bundle" --output-path "$RESULTS/$app-$device" >/dev/null
-  python3 scripts/file-screenshots.py "$RESULTS/$app-$device" "$OUT/$app" "$device"
+  # One pass per language. On a simulator the system itself switches language (and Eastern Arabic digits), so its own
+  # chrome matches the app: the status bar's app name comes from the app's InfoPlist.strings and the clock uses Arabic digits.
+  local lang
+  for lang in ${AUN_SCREENSHOT_LANGUAGES//,/ }; do
+    local bundle="$RESULTS/$app-$device-$lang.xcresult"
+    rm -rf "$bundle" "$RESULTS/$app-$device-$lang"
+    if [[ -n "$udid" ]]; then
+      local prefs="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Preferences/.GlobalPreferences.plist"
+      local locale="en_US"
+      [[ "$lang" == ar ]] && locale="ar_SA@calendar=gregorian;numbers=arab"
+      xcrun simctl shutdown "$udid" 2>/dev/null || true
+      # plutil edits the file in place (as fastlane snapshot does); `defaults write` on a path goes through cfprefsd's
+      # cache and the booted simulator never saw it. The log line proves which language the pass runs in.
+      [[ -f "$prefs" ]] || { mkdir -p "$(dirname "$prefs")"; plutil -create xml1 "$prefs"; }
+      plutil -replace AppleLanguages -json "[\"$lang\"]" "$prefs"
+      plutil -replace AppleLocale -string "$locale" "$prefs"
+      echo "simulator $udid: $(plutil -extract AppleLanguages json -o - "$prefs") $(plutil -extract AppleLocale raw -o - "$prefs")"
+      # Boot, wait and set the status bar as one step with one retry: on the shared runner a boot sometimes dies
+      # mid-way, and the status bar call then fails on a shut-down simulator (SimError 405).
+      local booted=0 try
+      for try in 1 2; do
+        xcrun simctl boot "$udid" 2>/dev/null || true
+        if xcrun simctl bootstatus "$udid" -b >/dev/null && xcrun simctl list devices booted | grep -q "$udid" \
+          && status_bar_overrides "$udid" "$lang"; then
+          booted=1
+          break
+        fi
+        echo "simulator $udid did not come up for $lang (try $try)"
+        xcrun simctl shutdown "$udid" 2>/dev/null || true
+      done
+      ((booted)) || { echo "simulator $udid failed to boot twice" >&2; return 1; }
+    fi
+    TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
+      TEST_RUNNER_AUN_SCREENSHOT_LANGUAGES="$lang" \
+      xcodebuild test-without-building "${COMMON[@]}" -scheme "$scheme" -destination "$destination" \
+      -only-testing:"${scheme}UITests/StoreScreenshots" -resultBundlePath "$bundle" "${signing[@]}"
+    xcrun xcresulttool export attachments --path "$bundle" --output-path "$RESULTS/$app-$device-$lang" >/dev/null
+    python3 scripts/file-screenshots.py "$RESULTS/$app-$device-$lang" "$OUT/$app" "$device"
+  done
+  if [[ -n "$udid" ]]; then xcrun simctl shutdown "$udid" 2>/dev/null || true; fi
 }
 
 viewer_ios() {

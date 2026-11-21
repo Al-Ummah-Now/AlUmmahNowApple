@@ -59,7 +59,7 @@ public final class WatchViewModel {
             guard video.isPlayable, let url = video.playURL else { return }
             player.load(
                 PlaybackItem(
-                    url: url, title: video.displayTitle(language), subtitle: video.channelName,
+                    url: url, title: video.displayTitle(language), subtitle: video.displayChannelName(language),
                     resolutions: video.availableResolutions, subtitles: loadedTracks, chapters: loadedChapters),
                 autoplay: autoplay)
         } catch is CancellationError {

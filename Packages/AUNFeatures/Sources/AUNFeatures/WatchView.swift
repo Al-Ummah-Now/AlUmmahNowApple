@@ -71,7 +71,7 @@
 
         private var metadata: String {
             let views = DisplayFormat.views(content.video.views, l10n)
-            return DisplayFormat.meta([content.video.channelName, views], l10n.language)
+            return DisplayFormat.meta([content.video.displayChannelName(l10n.language), views], l10n.language)
         }
     }
 

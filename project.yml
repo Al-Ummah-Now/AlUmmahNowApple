@@ -45,6 +45,8 @@ targetTemplates:
         # Home-screen / Dock name (owner, 2026-11-20): "Ummah Now", "Studio", "Admin"; the store listings keep the
         # full names (store/apple). The Arabic name (AUN_APP_NAME_AR) is written to ar.lproj by the script below.
         CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
+        # The Mac menu bar and window fallbacks use CFBundleName: the same name, never the target name.
+        CFBundleName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
         CFBundleLocalizations: [en, ar]
         AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
         AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
@@ -64,7 +66,8 @@ targetTemplates:
         script: |
           dir="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ar.lproj"
           mkdir -p "$dir"
-          printf '"CFBundleDisplayName" = "%s%s";\n' "$AUN_APP_NAME_AR" "$AUN_DISPLAY_SUFFIX" > "$dir/InfoPlist.strings"
+          printf '"CFBundleDisplayName" = "%s%s";\n"CFBundleName" = "%s%s";\n' \
+            "$AUN_APP_NAME_AR" "$AUN_DISPLAY_SUFFIX" "$AUN_APP_NAME_AR" "$AUN_DISPLAY_SUFFIX" > "$dir/InfoPlist.strings"
 
 targets:
   ViewerIOS:
@@ -85,6 +88,8 @@ targets:
       path: Apps/ViewerIOS/Info.plist
       properties:
         CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
+        # The Mac menu bar and window fallbacks use CFBundleName: the same name, never the target name.
+        CFBundleName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
         CFBundleLocalizations: [en, ar]
         AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
         AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
@@ -242,6 +247,8 @@ targets:
       path: Apps/AdminIOS/Info.plist
       properties:
         CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
+        # The Mac menu bar and window fallbacks use CFBundleName: the same name, never the target name.
+        CFBundleName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
         CFBundleLocalizations: [en, ar]
         AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
         AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
@@ -284,6 +291,8 @@ targets:
       path: Apps/AdminMac/Info.plist
       properties:
         CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
+        # The Mac menu bar and window fallbacks use CFBundleName: the same name, never the target name.
+        CFBundleName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
         CFBundleLocalizations: [en, ar]
         AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
         AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
