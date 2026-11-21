@@ -73,7 +73,7 @@ struct DashboardTests {
         await model.load()
         #expect(model.recentPhase == .ready)
         #expect(model.recent.count <= DashboardModel.rows)
-        #expect(model.recent.first?.title == "Daily reminder")
+        #expect(model.recent.first?.title == "Ramadan reminder")
         #expect(model.recent.first?.studioStatus == .processing)
         let dates = model.recent.map { $0.dateCreated ?? .distantPast }
         #expect(dates == dates.sorted(by: >))

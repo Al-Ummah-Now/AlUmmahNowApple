@@ -72,7 +72,8 @@ public enum FixtureLibrary {
             ("The conditions, pillars and obligations of prayer.", "شروط الصلاة وأركانها وواجباتها."), "fiqh", 0, 2_210,
             status: .drafts, isPublic: false, age: 3),
         item(
-            10, ("Daily reminder", "تذكير اليوم"), ("A short reminder for today.", "تذكير قصير لهذا اليوم."), "reminder", 0, 312,
+            10, ("Ramadan reminder", "تذكير رمضان"), ("A short reminder for Ramadan.", "تذكير قصير لشهر رمضان."), "reminder", 0,
+            312,
             status: .processing, isPublic: false, age: 0),
     ]
 
