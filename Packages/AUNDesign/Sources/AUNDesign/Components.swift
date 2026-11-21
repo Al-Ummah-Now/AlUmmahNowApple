@@ -6,30 +6,69 @@ public struct ThumbnailImage: View {
     @Environment(\.fanous) private var theme
     private let url: URL?
     private let lifted: Bool
+    private let corners: CGFloat?
 
-    public init(url: URL?, lifted: Bool = false) {
+    /// `corners` overrides the theme's large radius (0 for art that fills a card edge to edge).
+    public init(url: URL?, lifted: Bool = false, corners: CGFloat? = nil) {
         self.url = url
         self.lifted = lifted
+        self.corners = corners
     }
 
     public var body: some View {
-        let shape = FanousShape.rounded(theme.radius.lg)
+        let shape = FanousShape.rounded(corners ?? theme.radius.lg)
         Color.clear
             .aspectRatio(16 / 9, contentMode: .fit)
             .background(Fanous.surfaceRaised)
             .overlay { FanousMotif(.loader).frame(width: 40, height: 40).opacity(0.35) }
             .overlay {
-                if let url {
+                if let local = LocalImage.load(url) {
+                    local.resizable().scaledToFill()
+                } else if let url {
                     AsyncImage(url: url) { phase in
                         if case .success(let image) = phase { image.resizable().scaledToFill() }
                     }
                 }
             }
             .clipShape(shape)
-            .overlay { shape.stroke(Color(theme.colors.divider).opacity(0.6), lineWidth: 1) }
+            .overlay { if corners != 0 { shape.stroke(Color(theme.colors.divider).opacity(0.6), lineWidth: 1) } }
             .background { FanousSurface(fills: [], shadows: lifted ? theme.material.thumbEdge : [], shape: shape) }
     }
 }
+
+/// A file on this device (bundled art, a picked video's poster) drawn in the first frame, where `AsyncImage` would
+/// leave the frame empty until a later pass.
+/// Decoded once per file.
+public enum LocalImage {
+    #if canImport(UIKit)
+        private typealias Platform = UIImage
+    #elseif canImport(AppKit)
+        private typealias Platform = NSImage
+    #endif
+    nonisolated(unsafe) private static let cache = NSCache<NSURL, Platform>()
+
+    public static func load(_ url: URL?) -> Image? {
+        guard let url, url.isFileURL else { return nil }
+        if let image = cache.object(forKey: url as NSURL) { return image.swiftUI }
+        #if canImport(UIKit)
+            guard let image = UIImage(contentsOfFile: url.path) else { return nil }
+        #else
+            guard let image = NSImage(contentsOf: url) else { return nil }
+        #endif
+        cache.setObject(image, forKey: url as NSURL)
+        return image.swiftUI
+    }
+}
+
+#if canImport(UIKit)
+    extension UIImage {
+        fileprivate var swiftUI: Image { Image(uiImage: self) }
+    }
+#elseif canImport(AppKit)
+    extension NSImage {
+        fileprivate var swiftUI: Image { Image(nsImage: self) }
+    }
+#endif
 
 /// The duration badge on a thumbnail.
 public struct DurationBadge: View {
@@ -282,6 +321,24 @@ public struct ErrorStateView: View {
 extension View {
     /// The page wash behind a whole screen, under the safe areas.
     public func fanousPage() -> some View { modifier(FanousPageBackground()) }
+
+    /// The page colour over the bottom safe area (the home indicator, the floating tab bar, iPadOS's window corner),
+    /// so scrolled content never sits under them: the last rows scroll up clear of the bar instead. `corner` adds room
+    /// for the iPad window's resize corner.
+    public func fanousBottomEdge(corner: CGFloat = 0) -> some View {
+        overlay {
+            GeometryReader { geometry in
+                FanousSurfaceKind(kind: .page, shape: .rect)
+                    .mask(alignment: .bottom) {
+                        Rectangle().frame(
+                            height: geometry.safeAreaInsets.bottom + (geometry.safeAreaInsets.bottom > 0 ? corner : 0))
+                    }
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
 }
 
 private struct FanousPageBackground: ViewModifier {

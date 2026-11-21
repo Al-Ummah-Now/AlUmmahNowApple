@@ -26,7 +26,7 @@ struct VideoCardContent: View {
                 Text(metadata)
                     .fanousFont(.caption)
                     .foregroundStyle(Fanous.part(\.cardVideoMeta))
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
             .padding(.horizontal, 2)
         }

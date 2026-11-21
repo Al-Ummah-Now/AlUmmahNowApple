@@ -26,8 +26,10 @@
                 .navigationSplitViewColumnWidth(min: 160, ideal: 200)
             } detail: {
                 HomeView(catalog: core.catalog) { openWindow(id: Self.watchWindowID, value: $0.id) }
-                    .toolbar { ToolbarItem { SettingsMenu() } }
+                    .toolbar { ToolbarItem(placement: .primaryAction) { SettingsMenu() } }
                     .navigationTitle(l10n("app.name"))
+                    // The web header's colours on the window toolbar, as on iPhone and iPad, so its icons show in light.
+                    .fanousNavigationBar()
             }
             .frame(minWidth: 900, minHeight: 560)
             // A universal link reuses this window (instead of a new one) and opens the video in its own window.
@@ -55,6 +57,7 @@
             WatchView(videoID: videoID, catalog: core.catalog).frame(minWidth: 860, minHeight: 480)
                 // The window title in the app's language («الأمة الآن»), not the system's bundle name.
                 .navigationTitle(l10n("app.name"))
+                .fanousNavigationBar()
         }
     }
 

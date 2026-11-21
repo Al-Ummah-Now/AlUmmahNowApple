@@ -38,6 +38,13 @@ struct SignInView: View {
         }
         .defaultScrollAnchor(.center)
         .fanousPage()
+        #if os(iOS)
+            // The status bar draws light content everywhere (the header is dark in every theme); with no header on
+            // this screen, the header colour still sits behind it.
+            .overlay(alignment: .top) {
+                FanousHeaderSurface().frame(height: 0).ignoresSafeArea(edges: .top).allowsHitTesting(false)
+            }
+        #endif
     }
 }
 
@@ -395,9 +402,9 @@ struct DashboardContent: View {
             VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
                 NoticeView(session: session)
                 if !model.counts.isEmpty { kpis }
-                // The full width (no reading cap): one column on iPhone, two on iPad, three on Mac.
+                // The full width (no reading cap): one column on iPhone, two on iPad and Mac.
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 320), spacing: FanousScale.spacingLg, alignment: .top)],
+                    columns: [GridItem(.adaptive(minimum: 360), spacing: FanousScale.spacingLg, alignment: .top)],
                     alignment: .leading, spacing: FanousScale.spacingLg
                 ) {
                     recentSection
@@ -442,16 +449,12 @@ struct DashboardContent: View {
         }
     }
 
-    /// The channel's videos by status, as tiles; Failed turns red when there are any.
+    /// The channel's videos by status, as tiles; Failed turns red when there are any. As many per row as fit (three
+    /// on a phone, all five on iPad and Mac), wrapping instead of running off the edge, in either language.
     private var kpis: some View {
-        let tiles = ForEach(StudioStatus.allCases, id: \.self) { status in
-            KPITile(label: l10n("studio.tab.\(status.rawValue)"), value: model.counts[status] ?? 0, alert: status == .failed)
-        }
-        return ViewThatFits(in: .horizontal) {
-            HStack(spacing: FanousScale.spacingMd) { tiles }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: FanousScale.spacingMd) { tiles.frame(width: 120) }
-                    .padding(.vertical, FanousScale.spacingSm)
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: FanousScale.spacingMd)], spacing: FanousScale.spacingMd) {
+            ForEach(StudioStatus.allCases, id: \.self) { status in
+                KPITile(label: l10n("studio.tab.\(status.rawValue)"), value: model.counts[status] ?? 0, alert: status == .failed)
             }
         }
         .accessibilityElement(children: .contain)
@@ -540,7 +543,7 @@ struct KPITile: View {
             Text(DisplayFormat.number(value, l10n.language))
                 .font(.system(size: 26, weight: .bold)).monospacedDigit()
                 .foregroundStyle(alert && value > 0 ? Fanous.errorText : Fanous.textPrimary)
-            Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1)
+            Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1).minimumScaleFactor(0.8)
         }
         .padding(FanousScale.spacingMd)
         .frame(maxWidth: .infinity, alignment: .leading)

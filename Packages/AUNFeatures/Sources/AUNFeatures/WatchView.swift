@@ -93,13 +93,18 @@
             _model = State(initialValue: WatchViewModel(videoID: videoID, catalog: catalog))
         }
 
-        private var usesTwoPanes: Bool {
+        /// The player beside the details only when both fit side by side (iPad landscape, a wide Mac window). iPad in
+        /// portrait stacks them, so the page below the player is never left empty.
+        private func usesTwoPanes(width: CGFloat) -> Bool {
             #if os(iOS)
-                sizeClass == .regular
+                sizeClass == .regular && width >= 1000
             #else
-                true
+                width >= 1000
             #endif
         }
+
+        /// Store screenshots (`-AUNFixturePlayable YES`) open the page before playback, on the video's poster.
+        private static let opensOnPoster = UserDefaults.standard.bool(forKey: "AUNFixturePlayable")
 
         public var body: some View {
             Group {
@@ -109,11 +114,19 @@
                 case .failed:
                     ErrorStateView { Task { await model.load(language: l10n.language) } }
                 case .loaded(let content):
-                    if usesTwoPanes { twoPanes(content) } else { singleColumn(content) }
+                    GeometryReader { geometry in
+                        if usesTwoPanes(width: geometry.size.width) {
+                            twoPanes(content)
+                        } else if sizeIsCompact {
+                            singleColumn(content)
+                        } else {
+                            stacked(content)
+                        }
+                    }
                 }
             }
             .fanousPage()
-            .task { await model.load(language: l10n.language) }
+            .task { await model.load(language: l10n.language, autoplay: !Self.opensOnPoster) }
             .onDisappear { model.player.stop() }
             #if os(macOS)
                 .focusable()
@@ -142,6 +155,7 @@
                 if content.video.isPlayable {
                     PlayerSurface(controller: model.player)
                         .aspectRatio(16 / 9, contentMode: .fit)
+                        .overlay { if showsPoster { poster(content.video) } }
                         .accessibilityIdentifier("player")
                     if model.player.phase == .failed {
                         Text(l10n("player.error")).font(.footnote).foregroundStyle(Fanous.errorText)
@@ -164,6 +178,37 @@
             }
         }
 
+        /// Until playback starts the player shows the video's thumbnail, never an empty rectangle.
+        private var showsPoster: Bool {
+            !model.player.isPlaying && model.player.currentTime < 0.05 && model.player.phase != .failed
+        }
+
+        private func poster(_ video: Video) -> some View {
+            Button {
+                model.player.togglePlayback()
+            } label: {
+                ThumbnailImage(url: video.thumbnailURL, corners: 0)
+                    .overlay {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundStyle(Fanous.onPrimary)
+                            .frame(width: 72, height: 72)
+                            .fanousMaterial(.primary, .circle)
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(l10n("player.play"))
+            .accessibilityIdentifier("player-poster")
+        }
+
+        private var sizeIsCompact: Bool {
+            #if os(iOS)
+                sizeClass != .regular
+            #else
+                false
+            #endif
+        }
+
         private func details(_ content: WatchContent) -> some View {
             WatchDetails(content: content) { model.player.seek(to: $0.startTime) }
         }
@@ -172,6 +217,17 @@
             VStack(spacing: 0) {
                 playerArea(content)
                 ScrollView { details(content).padding() }
+            }
+        }
+
+        /// iPad in portrait: the player, then the details, in one scrolling page.
+        private func stacked(_ content: WatchContent) -> some View {
+            ScrollView {
+                VStack(spacing: FanousScale.spacingMd) {
+                    playerArea(content).padding(.top, 8)
+                    details(content).padding(.horizontal)
+                }
+                .padding(.bottom)
             }
         }
 

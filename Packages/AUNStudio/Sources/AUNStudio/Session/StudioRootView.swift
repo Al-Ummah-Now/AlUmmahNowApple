@@ -188,6 +188,7 @@ struct ChannelGate<Content: View>: View {
                     .toolbarTitleDisplayMode(.inlineLarge)
                     .toolbar { StudioToolbar(title: title, session: session, showingAccounts: $showingAccounts) }
                     .studioNavigationBar()
+                    .fanousBottomEdge(corner: UIDevice.current.userInterfaceIdiom == .pad ? 12 : 0)
             }
         }
 
@@ -234,11 +235,11 @@ struct ChannelGate<Content: View>: View {
             }
         }
 
-        /// iOS 18+: the adaptable tab view, so iPad gets the sidebar and iPhone the (Liquid Glass) tab bar, which
-        /// shrinks while scrolling down on iOS 26. iOS 17 keeps the classic tab bar.
+        /// iOS 18+: the adaptable tab view, so iPad gets the sidebar and iPhone the (Liquid Glass) tab bar, always at
+        /// full size so every tab stays labelled in both languages. iOS 17 keeps the classic tab bar.
         @ViewBuilder private var tabs: some View {
             if #available(iOS 18, *) {
-                let adaptable = TabView(selection: $tab) {
+                TabView(selection: $tab) {
                     ForEach(ordered, id: \.self) { item in
                         SwiftUI.Tab(title(item), systemImage: icon(item), value: item) { page(item) }
                             .badge(item == .upload ? activeUploads : 0)
@@ -248,11 +249,6 @@ struct ChannelGate<Content: View>: View {
                 .tabViewStyle(.sidebarAdaptable)
                 // iPad opens on the sidebar (the approved layout); iPhone keeps the tab bar.
                 .defaultAdaptableTabBarPlacement(.sidebar)
-                if #available(iOS 26, *) {
-                    adaptable.tabBarMinimizeBehavior(.onScrollDown)
-                } else {
-                    adaptable
-                }
             } else {
                 TabView(selection: $tab) {
                     ForEach(ordered, id: \.self) { item in
