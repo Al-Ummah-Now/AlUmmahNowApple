@@ -8,13 +8,12 @@
     public struct ViewerRootView: View {
         @Environment(\.l10n) private var l10n
         @Environment(\.openWindow) private var openWindow
-        @State private var columns = NavigationSplitViewVisibility.all
         private let core: CoreBridge
 
         public init(core: CoreBridge) { self.core = core }
 
         public var body: some View {
-            NavigationSplitView(columnVisibility: $columns) {
+            NavigationSplitView {
                 // One section for now; later sections join it with the same row.
                 List {
                     FanousSidebarRow(l10n("home.title"), icon: "house", selected: true) {}
@@ -22,12 +21,12 @@
                 }
                 .scrollContentBackground(.hidden)
                 .fanousMaterial(.rail)
-                .navigationSplitViewColumnWidth(min: 160, ideal: 200)
                 .toolbar(removing: .sidebarToggle)
+                .navigationSplitViewColumnWidth(min: 160, ideal: 200)
             } detail: {
                 HomeView(catalog: core.catalog) { openWindow(id: Self.watchWindowID, value: $0.id) }
                     .toolbar {
-                        FanousSidebarToggle(columns: $columns)
+                        FanousSidebarToggle()
                         ToolbarItem(placement: .primaryAction) { SettingsMenu() }
                     }
                     .navigationTitle(l10n("app.name"))

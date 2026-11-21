@@ -1,13 +1,13 @@
 #if os(macOS)
+    import AppKit
     import SwiftUI
 
     /// The Mac sidebar button in the header's own icon colour, with no glass behind it. The system button's glass
     /// follows the window, so in light mode it was a white circle on the dark header, and in a right-to-left window
-    /// its glyph went white on white.
+    /// its glyph went white on white. It sends the same action as View > Toggle Sidebar, so the split view keeps
+    /// its own column state and widths (a bound column visibility opened the sidebar below its minimum width).
     public struct FanousSidebarToggle: ToolbarContent {
-        @Binding private var columns: NavigationSplitViewVisibility
-
-        public init(columns: Binding<NavigationSplitViewVisibility>) { _columns = columns }
+        public init() {}
 
         public var body: some ToolbarContent {
             if #available(macOS 26, *) {
@@ -18,18 +18,17 @@
         }
 
         private var item: some ToolbarContent {
-            ToolbarItem(placement: .navigation) { SidebarButton(columns: $columns) }
+            ToolbarItem(placement: .navigation) { SidebarButton() }
         }
     }
 
     private struct SidebarButton: View {
         @Environment(\.fanous) private var theme
         @Environment(\.l10n) private var l10n
-        @Binding var columns: NavigationSplitViewVisibility
 
         var body: some View {
             Button {
-                withAnimation { columns = columns == .detailOnly ? .all : .detailOnly }
+                NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
             } label: {
                 Image(systemName: "sidebar.leading")
                     .foregroundStyle(Color(theme.parts.navIcon))

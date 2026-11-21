@@ -276,12 +276,11 @@ struct ChannelGate<Content: View>: View {
         let session: StudioSession
         @State private var section: StudioSection? = .home
         @State private var showingAccounts = false
-        @State private var columns = NavigationSplitViewVisibility.all
         @State private var encodes = EncodeQueue(
             outputDirectory: URL.moviesDirectory.appending(path: "Al Ummah Now Studio"))
 
         var body: some View {
-            NavigationSplitView(columnVisibility: $columns) {
+            NavigationSplitView {
                 List(sections) { item in
                     FanousSidebarRow(l10n(item.titleKey), icon: item.icon, selected: item == (section ?? .home)) {
                         section = item
@@ -296,10 +295,9 @@ struct ChannelGate<Content: View>: View {
                         .padding(.horizontal, FanousScale.spacingSm)
                         .padding(.bottom, FanousScale.spacingSm)
                 }
-                // Wide enough for the longest section and the channel name: with the column visibility bound, the
-                // split view opens the sidebar at its minimum.
-                .navigationSplitViewColumnWidth(min: 240, ideal: 240)
                 .toolbar(removing: .sidebarToggle)
+                // Wide enough for the longest section and the channel name, so none is cut short.
+                .navigationSplitViewColumnWidth(min: 240, ideal: 240)
             } detail: {
                 NavigationStack {
                     Group {
@@ -317,7 +315,7 @@ struct ChannelGate<Content: View>: View {
                         }
                     }
                     .toolbar {
-                        FanousSidebarToggle(columns: $columns)
+                        FanousSidebarToggle()
                         StudioToolbar(
                             title: l10n((section ?? .home).titleKey), session: session, showingAccounts: $showingAccounts)
                     }
