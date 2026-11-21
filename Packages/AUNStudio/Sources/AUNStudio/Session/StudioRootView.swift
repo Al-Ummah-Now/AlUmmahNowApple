@@ -296,7 +296,9 @@ struct ChannelGate<Content: View>: View {
                         .padding(.horizontal, FanousScale.spacingSm)
                         .padding(.bottom, FanousScale.spacingSm)
                 }
-                .navigationSplitViewColumnWidth(min: 190, ideal: 220)
+                // Wide enough for the longest section and the channel name: with the column visibility bound, the
+                // split view opens the sidebar at its minimum.
+                .navigationSplitViewColumnWidth(min: 240, ideal: 240)
                 .toolbar(removing: .sidebarToggle)
             } detail: {
                 NavigationStack {

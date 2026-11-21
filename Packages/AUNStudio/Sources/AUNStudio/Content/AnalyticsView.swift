@@ -42,10 +42,12 @@ struct AnalyticsView: View {
                         if let current {
                             tiles(current)
                             // The chart beside the top videos when there is room (iPad, Mac), one under the other on iPhone.
+                            // ViewThatFits picks by ideal width, so each side's ideal is the width it takes once laid
+                            // out: the side by side row is only chosen when both fit, never wider than the window.
                             ViewThatFits(in: .horizontal) {
                                 HStack(alignment: .top, spacing: FanousScale.spacingLg) {
-                                    chart(current).frame(minWidth: 460, maxWidth: .infinity)
-                                    topVideos(current).frame(minWidth: 300, maxWidth: 420)
+                                    chart(current).frame(minWidth: 460, idealWidth: 460, maxWidth: .infinity)
+                                    topVideos(current).frame(minWidth: 420, idealWidth: 420, maxWidth: 420)
                                 }
                                 VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
                                     chart(current)
