@@ -68,11 +68,11 @@ final class StudioManageTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
         field.typeText("khut")
-        let suggestion = app.buttons["suggestion-video:fixture-content-3"]
+        let suggestion = app.buttons["suggestion-video:fixture-content-1"]
         XCTAssertTrue(suggestion.waitForExistence(timeout: 10))
         keep("search-en")
-        XCTAssertTrue(row(app, "fixture-content-3").waitForExistence(timeout: 10))
-        XCTAssertFalse(row(app, "fixture-content-1").exists)
+        XCTAssertTrue(row(app, "fixture-content-1").waitForExistence(timeout: 10))
+        XCTAssertFalse(row(app, "fixture-content-2").exists)
     }
 
     /// Bulk schedule shows only with the `bulkSchedule` feature (owner rule 2026-11-16), in English and Arabic. Themes

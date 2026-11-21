@@ -41,9 +41,9 @@ private struct ProcessingCatalog: CatalogServicing {
     }
 
     @Test func watchPassesLocalizedTitleAndTracksToPlayer() async {
-        let model = WatchViewModel(videoID: "fixture-1", catalog: FixtureCatalogService())
+        let model = WatchViewModel(videoID: "fixture-7", catalog: FixtureCatalogService())
         await model.load(language: .ar, autoplay: false)
-        #expect(model.player.item?.title == "مقدمة في التفسير، الجزء ١")
+        #expect(model.player.item?.title == "تلاوة سورة الكهف")
         #expect(model.player.item?.subtitles.count == 2)
         #expect(model.player.item?.chapters.count == 2)
         #expect(model.player.isPlaying == false)

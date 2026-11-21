@@ -5,29 +5,21 @@ actor FixtureContentStore {
     var videos: [StudioVideo]
     var deleted: [DeletedVideo] = []
 
+    /// Every video of the fixture channel (`FixtureLibrary`), as the Viewer shows the published public ones.
     init() {
-        let titles: [(String, String, StudioStatus, Bool)] = [
-            ("Tafsir of Surah Al-Kahf, part 1", "تفسير سورة الكهف، الجزء الأول", .published, true),
-            ("Tafsir of Surah Al-Kahf, part 2", "تفسير سورة الكهف، الجزء الثاني", .published, true),
-            ("Friday khutbah: patience", "خطبة الجمعة: الصبر", .published, false),
-            ("Seerah, part 4", "السيرة النبوية، الجزء الرابع", .scheduled, false),
-            ("Fiqh of fasting (draft)", "فقه الصيام (مسودة)", .drafts, false),
-            ("Seerah, part 5", "السيرة النبوية، الجزء الخامس", .processing, false),
-        ]
-        videos = titles.enumerated().map { index, item in
+        let now = Date()
+        videos = FixtureLibrary.items.map { item in
             StudioVideo(
-                id: "fixture-content-\(index + 1)", title: item.0, titleLocalized: LocalizedText(en: item.0, ar: item.1),
-                description: "", channelID: "fixture-channel", isPublic: item.3, isDraft: item.2 == .drafts,
-                tags: index < 2 ? ["tafsir"] : [], category: index < 2 ? VideoCategory.quranTafsir.rawValue : nil,
-                durationSeconds: Double(600 + index * 120), views: 1500 - index * 200, likes: 40 - index, comments: 5,
-                dateCreated: Self.created(index, item.2), studioStatus: item.2,
-                scheduledPublishDate: item.2 == .scheduled ? Date(timeIntervalSince1970: 1_800_000_000) : nil)
+                id: item.studioID, title: item.titleEN, titleLocalized: item.title, description: item.summary.en ?? "",
+                descriptionLocalized: item.summary, thumbnailURL: FixtureLibrary.thumbnail(item.thumb),
+                channelID: "fixture-channel", isPublic: item.isPublic, isDraft: item.status == .drafts,
+                tags: item.thumb.hasPrefix("kahf") || item.thumb == "tafsir" ? ["tafsir"] : [],
+                category: VideoCategory.quranTafsir.rawValue, durationSeconds: item.seconds, views: item.views,
+                likes: item.likes, comments: item.comments, dateCreated: FixtureLibrary.uploaded(item, now: now),
+                uploadStatus: item.status == .processing ? "processing" : "ready", studioStatus: item.status,
+                scheduledPublishDate: item.status == .scheduled
+                    ? FixtureLibrary.today(now).addingTimeInterval(4 * 86_400 + 15 * 3600) : nil)
         }
-    }
-
-    /// One day apart, newest first; the video still processing is the latest upload.
-    static func created(_ index: Int, _ status: StudioStatus) -> Date {
-        Date(timeIntervalSince1970: status == .processing ? 1_794_003_600 : 1_794_000_000 - Double(index) * 86_400)
     }
 
     func page(_ query: ContentQuery) -> [StudioVideo] {
@@ -242,36 +234,46 @@ public struct FixtureStudioService: StudioServicing {
 
     public func purgeVideos(_ ids: [String]) async throws -> BulkResult { await store.purge(ids) }
 
+    /// The channel's days from `FixtureLibrary`'s daily model: period totals, top videos and lifetime numbers all come
+    /// from it, so they agree (lifetime views are at least any period's, top videos add up to at most the period).
     public func channelStats(channelID: String, period: DateInterval) async throws -> ChannelStats {
         try refuseIfOff("analytics")
-        let daily = Self.fixtureDays(period)
-        let videos = await store.videos.filter { $0.studioStatus == .published }
+        let published = await store.videos.filter { $0.studioStatus == .published }
+        let items = FixtureLibrary.items.filter { item in published.contains { $0.id == item.studioID } }
+        let daily = FixtureLibrary.daily(items, period)
+        let top = items.map { item in Self.stats(item, published.first { $0.id == item.studioID }, period) }
+            .filter { $0.periodViews > 0 }.sorted { $0.periodViews > $1.periodViews }
+        let views = daily.reduce(0) { $0 + $1.views }
+        let engagement = daily.reduce(0) { $0 + $1.likes + $1.comments }
         return ChannelStats(
-            totalViews: daily.reduce(0) { $0 + $1.views }, totalVideos: videos.count, totalSubscribers: 120, totalLikes: 90,
-            totalComments: 25, engagementRate: 4.2,
-            topVideos: videos.map {
-                VideoStats(
-                    videoID: $0.id, title: $0.title, views: $0.views / 4, watchTime: 7200, averageViewDuration: 310,
-                    titleLocalized: $0.titleLocalized)
-            }, daily: daily)
+            totalViews: published.reduce(0) { $0 + $1.views }, totalVideos: published.count,
+            totalSubscribers: FixtureLibrary.subscribers, totalLikes: published.reduce(0) { $0 + $1.likes },
+            totalComments: published.reduce(0) { $0 + $1.comments },
+            engagementRate: views > 0 ? (Double(engagement) / Double(views) * 1000).rounded() / 10 : 0,
+            topVideos: Array(top.prefix(5)), daily: daily)
     }
 
     public func videoStats(videoID: String, period: DateInterval) async throws -> VideoStats {
         try refuseIfOff("analytics")
         let video = await store.videos.first { $0.id == videoID }
-        return VideoStats(
-            videoID: videoID, title: video?.title ?? "", views: (video?.views ?? 0) / 4, likes: 12, comments: 3, shares: 2,
-            watchTime: 7200, averageViewDuration: 310, engagementRate: 5.1, rangeViews: (video?.views ?? 0) / 8,
-            rangeLikes: 6, rangeComments: 2, daily: Self.fixtureDays(period), titleLocalized: video?.titleLocalized)
+        guard let item = FixtureLibrary.items.first(where: { $0.studioID == videoID }) else {
+            return VideoStats(videoID: videoID, title: video?.title ?? "", views: video?.views ?? 0)
+        }
+        return Self.stats(item, video, period)
     }
 
-    /// One UTC day per day of `period`, both ends counted, as the API answers.
-    static func fixtureDays(_ period: DateInterval) -> [DailyMetric] {
-        let days = max(1, Int((period.duration / 86_400).rounded(.up)))
-        return (0..<min(days, 28)).map { day in
-            DailyMetric(
-                date: period.start.addingTimeInterval(Double(day) * 86_400).ISO8601Format().prefix(10).description,
-                views: 40 + (day * 7) % 30, likes: 3, comments: 1, subscribers: day % 3, watchTime: Double(3600 + day * 120))
-        }
+    /// One video's lifetime and period numbers, with its days.
+    static func stats(_ item: FixtureLibrary.Item, _ video: StudioVideo?, _ period: DateInterval) -> VideoStats {
+        let daily = FixtureLibrary.daily([item], period)
+        let views = daily.reduce(0) { $0 + $1.views }
+        let likes = daily.reduce(0) { $0 + $1.likes }
+        let comments = daily.reduce(0) { $0 + $1.comments }
+        return VideoStats(
+            videoID: item.studioID, title: video?.title ?? item.titleEN, views: video?.views ?? item.views,
+            likes: item.likes, comments: item.comments, shares: item.views / 400,
+            watchTime: daily.reduce(0) { $0 + $1.watchTime }, averageViewDuration: item.seconds * FixtureLibrary.averageWatched,
+            engagementRate: views > 0 ? (Double(likes + comments) / Double(views) * 1000).rounded() / 10 : 0,
+            thumbnailURL: FixtureLibrary.thumbnail(item.thumb), rangeViews: views, rangeLikes: likes, rangeComments: comments,
+            daily: daily, titleLocalized: video?.titleLocalized ?? item.title)
     }
 }

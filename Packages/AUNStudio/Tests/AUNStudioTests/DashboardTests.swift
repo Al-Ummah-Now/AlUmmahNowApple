@@ -73,15 +73,15 @@ struct DashboardTests {
         await model.load()
         #expect(model.recentPhase == .ready)
         #expect(model.recent.count <= DashboardModel.rows)
-        #expect(model.recent.first?.title == "Seerah, part 5")
+        #expect(model.recent.first?.title == "Daily reminder")
         #expect(model.recent.first?.studioStatus == .processing)
         let dates = model.recent.map { $0.dateCreated ?? .distantPast }
         #expect(dates == dates.sorted(by: >))
         #expect(model.heldPhase == .ready)
         #expect(model.held.items.count == 2)
         #expect(model.queuePhase == .ready)
-        #expect(model.drafts.map(\.title) == ["Fiqh of fasting (draft)"])
-        #expect(model.scheduled.map(\.title) == ["Seerah, part 4"])
+        #expect(model.drafts.map(\.title) == ["Fiqh of Prayer"])
+        #expect(model.scheduled.map(\.title) == ["Seerah overview"])
         #expect(!model.isHollow && !hollow)
     }
 

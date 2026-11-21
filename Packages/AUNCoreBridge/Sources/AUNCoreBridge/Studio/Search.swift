@@ -28,12 +28,12 @@ public protocol SearchSuggesting: Sendable {
     func matches(_ text: String, query: String) -> Bool
 }
 
-/// Suggestions from the fixture titles, with plain case-insensitive matching.
+/// Suggestions from the fixture channel's public titles (`FixtureLibrary`), with plain case-insensitive matching.
 public struct FixtureSearchService: SearchSuggesting {
     public init() {}
 
     public func suggestions(_ text: String, channelID: String?) async throws -> [StudioSuggestion] {
-        let titles = ["Tafsir of Surah Al-Kahf, part 1", "Tafsir of Surah Al-Kahf, part 2", "Friday khutbah: patience"]
+        let titles = FixtureLibrary.watchable.map(\.titleEN)
         return titles.filter { matches($0, query: text) }.map { StudioSuggestion(text: $0, kind: .query) }
     }
 
