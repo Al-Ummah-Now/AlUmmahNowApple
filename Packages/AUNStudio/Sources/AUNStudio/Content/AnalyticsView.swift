@@ -60,7 +60,8 @@ struct AnalyticsView: View {
                 .padding(FanousScale.spacingLg)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .scrollsToRequestedSection(proxy, among: ["analytics-daily"], ready: current != nil)
+            .scrollsToRequestedSection(
+                proxy, among: ["analytics-daily"], aliases: ["analytics-table": "analytics-daily"], ready: current != nil)
         }
         .fanousPage()
         .navigationTitle(l10n("studio.analytics.title"))
@@ -110,24 +111,13 @@ struct AnalyticsView: View {
 
     /// Period numbers from the daily series, each against the period before it; lifetime totals underneath.
     private func tiles(_ stats: ChannelStats) -> some View {
-        func change(_ value: (ChannelStats) -> Double) -> Double? { previous.flatMap { periodChange(value(stats), value($0)) } }
-        return VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
-            // One row of equal tiles where they fit (every language the same height), else one under the other.
-            let tiles = Group {
-                StatTile(
-                    title: l10n("studio.analytics.views"), value: DisplayFormat.count(stats.periodViews, l10n.language),
-                    change: change { Double($0.periodViews) })
-                StatTile(
-                    title: l10n("studio.analytics.watchTime"), value: ChartScale.watchTime(stats.watchTime, l10n.language),
-                    change: change(\.watchTime))
-                StatTile(
-                    title: l10n("studio.analytics.newSubscribers"),
-                    value: DisplayFormat.count(stats.periodSubscribers, l10n.language),
-                    change: change { Double($0.periodSubscribers) })
-            }
+        VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+            // One row of equal tiles where they fit (every language the same height), else one under the other, tighter, so
+            // the chart and its table control stay above the iPhone tab bar in Arabic's taller type too.
             ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: FanousScale.spacingMd) { tiles }.fixedSize(horizontal: false, vertical: true)
-                VStack(spacing: FanousScale.spacingMd) { tiles }
+                HStack(alignment: .top, spacing: FanousScale.spacingMd) { statTiles(stats, stacked: false) }
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: FanousScale.spacingSm) { statTiles(stats, stacked: true) }
             }
             Text(
                 l10n(
@@ -139,6 +129,23 @@ struct AnalyticsView: View {
             .foregroundStyle(Fanous.textSecondary)
             .accessibilityIdentifier("analytics-lifetime")
         }
+    }
+
+    @ViewBuilder
+    private func statTiles(_ stats: ChannelStats, stacked: Bool) -> some View {
+        let change = { (value: (ChannelStats) -> Double) -> Double? in
+            previous.flatMap { periodChange(value(stats), value($0)) }
+        }
+        StatTile(
+            title: l10n("studio.analytics.views"), value: DisplayFormat.count(stats.periodViews, l10n.language),
+            change: change { Double($0.periodViews) }, stacked: stacked)
+        StatTile(
+            title: l10n("studio.analytics.watchTime"), value: ChartScale.watchTime(stats.watchTime, l10n.language),
+            change: change(\.watchTime), stacked: stacked)
+        StatTile(
+            title: l10n("studio.analytics.newSubscribers"),
+            value: DisplayFormat.count(stats.periodSubscribers, l10n.language),
+            change: change { Double($0.periodSubscribers) }, stacked: stacked)
     }
 
     private func chart(_ stats: ChannelStats) -> some View {
@@ -204,6 +211,8 @@ struct StatTile: View {
     let title: String
     let value: String
     let change: Double?
+    /// One of a column of tiles (iPhone): less padding, so the column takes less of the screen.
+    var stacked = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
@@ -220,7 +229,8 @@ struct StatTile: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(FanousScale.spacingMd)
+        .padding(.horizontal, FanousScale.spacingMd)
+        .padding(.vertical, stacked ? FanousScale.spacingSm : FanousScale.spacingMd)
         .fanousMaterial(.card) { .rounded($0.md) }
         .accessibilityElement(children: .combine)
     }

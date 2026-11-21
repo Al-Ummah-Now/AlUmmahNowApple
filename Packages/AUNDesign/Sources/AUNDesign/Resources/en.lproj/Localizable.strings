@@ -50,6 +50,9 @@
 "player.skipForward" = "Forward %@ seconds";
 "player.skipBack" = "Back %@ seconds";
 "player.error" = "This video can't play right now. Check your connection and try again.";
+"watch.upNext" = "Up next";
+"player.position" = "Position";
+"player.time" = "%1$@ / %2$@";
 "studio.upload.title" = "Upload";
 "studio.upload.add" = "Add videos";
 "studio.upload.start" = "Start upload";

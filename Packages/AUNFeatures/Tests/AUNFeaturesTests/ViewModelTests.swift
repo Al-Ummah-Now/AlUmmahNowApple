@@ -50,6 +50,20 @@ private struct ProcessingCatalog: CatalogServicing {
         model.player.stop()
     }
 
+    @Test func watchListsOtherVideosUpNext() async throws {
+        let model = WatchViewModel(videoID: "fixture-7", catalog: FixtureCatalogService())
+        await model.load(language: .en, autoplay: false)
+        guard case .loaded(let content) = model.state else {
+            Issue.record("expected content")
+            return
+        }
+        let ids = content.upNext.map(\.id)
+        #expect(!ids.isEmpty && ids.count <= 6)
+        #expect(!ids.contains("fixture-7"))
+        #expect(Set(ids).count == ids.count)
+        model.player.stop()
+    }
+
     @Test func unfinishedVideoDoesNotStartPlayer() async {
         let model = WatchViewModel(videoID: "x", catalog: ProcessingCatalog())
         await model.load(language: .en)

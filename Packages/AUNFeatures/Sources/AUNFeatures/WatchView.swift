@@ -7,8 +7,9 @@
     /// Title, description and chapters. Separate from the player so it can be snapshot-tested.
     struct WatchDetails: View {
         @Environment(\.l10n) private var l10n
-        @Environment(\.fanous) private var theme
         let content: WatchContent
+        /// Off where the page shows the chapters elsewhere (under the player, beside these details).
+        var showsChapters = true
         let seek: (Chapter) -> Void
 
         var body: some View {
@@ -29,17 +30,30 @@
                         .fanousMaterial(.card) { .rounded($0.lg) }
                         .accessibilityIdentifier("watch-description")
                 }
-                if !content.chapters.isEmpty { chapters }
+                if showsChapters, !content.chapters.isEmpty { ChapterList(chapters: content.chapters, seek: seek) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        private var chapters: some View {
+        private var metadata: String {
+            let views = DisplayFormat.views(content.video.views, l10n)
+            return DisplayFormat.meta([content.video.displayChannelName(l10n.language), views], l10n.language)
+        }
+    }
+
+    /// The chapters card: each row starts with its time (the leading edge, the right in Arabic) and seeks there.
+    struct ChapterList: View {
+        @Environment(\.l10n) private var l10n
+        @Environment(\.fanous) private var theme
+        let chapters: [Chapter]
+        let seek: (Chapter) -> Void
+
+        var body: some View {
             VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
                 Text(l10n("watch.chapters")).fanousFont(.label).fontWeight(.bold).foregroundStyle(Fanous.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 VStack(spacing: 0) {
-                    ForEach(Array(content.chapters.enumerated()), id: \.element.id) { index, chapter in
+                    ForEach(Array(chapters.enumerated()), id: \.element.id) { index, chapter in
                         if index > 0 { Rectangle().fill(Fanous.divider).frame(height: 1).padding(.horizontal, 12) }
                         Button {
                             seek(chapter)
@@ -67,11 +81,7 @@
                 .clipShape(FanousShape.rounded(theme.radius.lg))
                 .fanousMaterial(.card) { .rounded($0.lg) }
             }
-        }
-
-        private var metadata: String {
-            let views = DisplayFormat.views(content.video.views, l10n)
-            return DisplayFormat.meta([content.video.displayChannelName(l10n.language), views], l10n.language)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -82,15 +92,48 @@
         }
     }
 
+    /// "Up next": other videos as cards, as many columns as fit, each opening its own watch page.
+    struct UpNextSection: View {
+        @Environment(\.l10n) private var l10n
+        let videos: [Video]
+        let open: (Video) -> Void
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: FanousScale.spacingMd) {
+                Text(l10n("watch.upNext")).fanousFont(.title).fontWeight(.bold).foregroundStyle(Fanous.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityAddTraits(.isHeader)
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 220), spacing: FanousScale.spacingLg, alignment: .top)],
+                    alignment: .leading, spacing: FanousScale.spacingLg
+                ) {
+                    ForEach(videos) { video in
+                        Button {
+                            open(video)
+                        } label: {
+                            VideoCardContent(video: video)
+                        }
+                        .buttonStyle(VideoCardButtonStyle())
+                        .accessibilityIdentifier("up-next-\(video.id)")
+                    }
+                }
+            }
+            .accessibilityIdentifier("watch-up-next")
+        }
+    }
+
     public struct WatchView: View {
         @Environment(\.l10n) private var l10n
         #if os(iOS)
             @Environment(\.horizontalSizeClass) private var sizeClass
         #endif
         @State private var model: WatchViewModel
+        private let open: (String) -> Void
 
-        public init(videoID: String, catalog: any CatalogServicing) {
+        /// `open` shows another video's page, from "Up next".
+        public init(videoID: String, catalog: any CatalogServicing, open: @escaping (String) -> Void = { _ in }) {
             _model = State(initialValue: WatchViewModel(videoID: videoID, catalog: catalog))
+            self.open = open
         }
 
         /// The player beside the details when both fit side by side. iPad: only in landscape (an 11-inch iPad in
@@ -163,7 +206,8 @@
                         Text(l10n("player.error")).font(.footnote).foregroundStyle(Fanous.errorText)
                             .accessibilityIdentifier("player-error")
                     }
-                    PlayerControlsBar(controller: model.player).padding(.horizontal)
+                    PlayerControlsBar(controller: model.player, knownDuration: content.video.durationSeconds)
+                        .padding(.horizontal)
                 } else {
                     VStack(spacing: 12) {
                         FanousMotif(.loader).frame(width: 44, height: 44)
@@ -211,32 +255,67 @@
             #endif
         }
 
-        private func details(_ content: WatchContent) -> some View {
-            WatchDetails(content: content) { model.player.seek(to: $0.startTime) }
+        private func details(_ content: WatchContent, showsChapters: Bool = true) -> some View {
+            WatchDetails(content: content, showsChapters: showsChapters) { model.player.seek(to: $0.startTime) }
+        }
+
+        @ViewBuilder
+        private func upNext(_ content: WatchContent) -> some View {
+            if !content.upNext.isEmpty { UpNextSection(videos: content.upNext) { open($0.id) } }
         }
 
         private func singleColumn(_ content: WatchContent) -> some View {
             VStack(spacing: 0) {
                 playerArea(content)
-                ScrollView { details(content).padding() }
+                ScrollView {
+                    VStack(spacing: FanousScale.spacingXl) {
+                        details(content)
+                        upNext(content)
+                    }
+                    .padding()
+                }
             }
         }
 
-        /// iPad in portrait: the player, then the details, in one scrolling page.
+        /// iPad in portrait: the player right under the header, then the details and "Up next", in one scrolling page.
         private func stacked(_ content: WatchContent) -> some View {
             ScrollView {
                 VStack(spacing: FanousScale.spacingMd) {
-                    playerArea(content).padding(.top, 8)
-                    details(content).padding(.horizontal)
+                    playerArea(content)
+                    VStack(spacing: FanousScale.spacingXl) {
+                        details(content)
+                        upNext(content)
+                    }
+                    .padding(.horizontal)
                 }
                 .padding(.bottom)
             }
         }
 
+        /// Mac and iPad in landscape: the player with its chapters under it, and beside them the title, description and
+        /// "Up next". Both columns reach the bottom of the window, and the title, channel row, description and chapters
+        /// are all on screen without scrolling.
         private func twoPanes(_ content: WatchContent) -> some View {
             HStack(alignment: .top, spacing: 0) {
-                playerArea(content).frame(maxWidth: .infinity).padding(.top, 8)
-                ScrollView { details(content).padding() }.frame(width: 340)
+                ScrollView {
+                    VStack(spacing: FanousScale.spacingLg) {
+                        playerArea(content)
+                        if !content.chapters.isEmpty {
+                            ChapterList(chapters: content.chapters) { model.player.seek(to: $0.startTime) }
+                                .padding(.horizontal)
+                        }
+                    }
+                    .padding(.bottom)
+                }
+                .frame(maxWidth: .infinity)
+                ScrollView {
+                    VStack(spacing: FanousScale.spacingXl) {
+                        details(content, showsChapters: false)
+                        upNext(content)
+                    }
+                    .padding()
+                }
+                .frame(width: 340)
             }
         }
     }

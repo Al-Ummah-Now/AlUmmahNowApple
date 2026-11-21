@@ -67,12 +67,40 @@ dyld_cache() { # platform version
   echo "dyld shared cache for $runtime: ready after ${waited} s"
 }
 
-# Battery and signal for the store frames. The status bar draws any --time override in Latin digits, and simctl
-# rejects an Arabic string, so the Arabic pass keeps the live clock, which the Arabic system draws in its own digits;
-# English shows 9:41. Errors are not hidden: a pass without its overrides fails instead of filing wrong frames.
+# The status bar clock at 9:41 in every language. simctl's --time draws Latin digits and rejects an Arabic string, so
+# with AUN_FREEZE_CLOCK=1 (the CI workflow) the clock itself is held at 09:41 today: the simulator follows the host
+# clock, and each language's system draws it in its own digits, «٩:٤١» in Arabic. A background loop sets the host
+# back to 09:41:00 every 20 seconds during the simulator passes, so the minute never turns, and network time is
+# restored when the script exits. Only on an ephemeral GitHub-hosted runner, never on someone's own Mac.
+freeze_clock_pid=""
+freeze_clock() {
+  [[ "${AUN_FREEZE_CLOCK:-0}" == 1 ]] || return 0
+  if [[ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]]; then
+    echo "AUN_FREEZE_CLOCK needs a GitHub-hosted runner; keeping the live clock" >&2
+    return 0
+  fi
+  sudo systemsetup -setusingnetworktime off >/dev/null 2>&1 || true
+  (while :; do sudo date "$(date +%m%d)0941$(date +%y)" >/dev/null; sleep 20; done) &
+  freeze_clock_pid=$!
+  sleep 1
+  echo "clock held at $(date)"
+}
+thaw_clock() {
+  [[ -n "$freeze_clock_pid" ]] || return 0
+  kill "$freeze_clock_pid" 2>/dev/null || true
+  wait "$freeze_clock_pid" 2>/dev/null || true
+  freeze_clock_pid=""
+  sudo sntp -sS time.apple.com >/dev/null 2>&1 || true
+  sudo systemsetup -setusingnetworktime on >/dev/null 2>&1 || true
+  echo "clock restored: $(date)"
+}
+trap thaw_clock EXIT
+
+# Battery, signal and, unless the clock is held (above), a 9:41 override for English. Errors are not hidden: a pass
+# without its overrides fails instead of filing wrong frames.
 status_bar_overrides() { # udid lang
   local clock=()
-  [[ "$2" == ar ]] || clock=(--time "9:41")
+  [[ "$2" == ar || -n "$freeze_clock_pid" ]] || clock=(--time "9:41")
   xcrun simctl status_bar "$1" clear &&
     xcrun simctl status_bar "$1" override ${clock[@]+"${clock[@]}"} --dataNetwork wifi --wifiMode active --wifiBars 3 \
       --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
@@ -95,6 +123,7 @@ shoot() { # app scheme destination device themes [udid]
   # One pass per language. On a simulator the system itself switches language (and Eastern Arabic digits), so its own
   # chrome matches the app: the status bar's app name comes from the app's InfoPlist.strings and the clock uses Arabic digits.
   local lang
+  [[ -z "$udid" ]] || freeze_clock
   for lang in ${AUN_SCREENSHOT_LANGUAGES//,/ }; do
     local bundle="$RESULTS/$app-$device-$lang.xcresult"
     rm -rf "$bundle" "$RESULTS/$app-$device-$lang"
@@ -109,6 +138,15 @@ shoot() { # app scheme destination device themes [udid]
       plutil -replace AppleLanguages -json "[\"$lang\"]" "$prefs"
       plutil -replace AppleLocale -string "$locale" "$prefs"
       echo "simulator $udid: $(plutil -extract AppleLanguages json -o - "$prefs") $(plutil -extract AppleLocale raw -o - "$prefs")"
+      # iPad apps full screen: with windowed multitasking (Stage Manager style windows) on, every iPad frame showed the
+      # window's resize corner. SpringBoard reads these when it starts, so they are written before the boot.
+      if [[ "$device" == ipad ]]; then
+        local board="${prefs%/*}/com.apple.springboard.plist"
+        [[ -f "$board" ]] || plutil -create xml1 "$board"
+        plutil -replace SBChamoisWindowingEnabled -bool NO "$board"
+        plutil -replace SBMedusaMultitaskingEnabled -bool NO "$board"
+        echo "simulator $udid: windowing $(plutil -extract SBChamoisWindowingEnabled raw -o - "$board")"
+      fi
       # Boot, wait and set the status bar as one step with one retry: on the shared runner a boot sometimes dies
       # mid-way, and the status bar call then fails on a shut-down simulator (SimError 405).
       local booted=0 try
@@ -142,6 +180,7 @@ shoot() { # app scheme destination device themes [udid]
     python3 scripts/file-screenshots.py "$RESULTS/$app-$device-$lang" "$OUT/$app" "$device"
   done
   if [[ -n "$udid" ]]; then xcrun simctl shutdown "$udid" 2>/dev/null || true; fi
+  thaw_clock
 }
 
 viewer_ios() {

@@ -27,7 +27,7 @@
                     .fanousNavigationBar()
                     .fanousBottomEdge(corner: Self.corner)
                     .navigationDestination(for: String.self) { id in
-                        WatchView(videoID: id, catalog: core.catalog)
+                        WatchView(videoID: id, catalog: core.catalog) { path.append($0) }
                             .navigationBarTitleDisplayMode(.inline)
                             .fanousNavigationBar()
                             .fanousBottomEdge(corner: Self.corner)

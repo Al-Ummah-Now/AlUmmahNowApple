@@ -47,6 +47,7 @@
     /// One video window. Space plays or pauses, and arrow keys skip in the reading direction.
     public struct WatchWindow: View {
         @Environment(\.l10n) private var l10n
+        @Environment(\.openWindow) private var openWindow
         private let videoID: String
         private let core: CoreBridge
 
@@ -56,7 +57,8 @@
         }
 
         public var body: some View {
-            WatchView(videoID: videoID, catalog: core.catalog).frame(minWidth: 860, minHeight: 480)
+            WatchView(videoID: videoID, catalog: core.catalog) { openWindow(id: ViewerRootView.watchWindowID, value: $0) }
+                .frame(minWidth: 860, minHeight: 480)
                 // The window title in the app's language («الأمة الآن»), not the system's bundle name.
                 .navigationTitle(l10n("app.name"))
                 .fanousNavigationBar()

@@ -50,6 +50,9 @@
 "player.skipForward" = "تقديم %@ ثوانٍ";
 "player.skipBack" = "رجوع %@ ثوانٍ";
 "player.error" = "تعذّر تشغيل هذا المرئي الآن. تحقق من اتصالك وحاول مجددًا.";
+"watch.upNext" = "التالي";
+"player.position" = "موضع التشغيل";
+"player.time" = "%1$@ / %2$@";
 "studio.upload.title" = "رفع";
 "studio.upload.add" = "إضافة مرئيات";
 "studio.upload.start" = "بدء الرفع";

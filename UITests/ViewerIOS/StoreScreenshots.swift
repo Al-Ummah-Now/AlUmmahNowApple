@@ -20,8 +20,10 @@ final class StoreScreenshots: XCTestCase {
                 StoreScreenshot.capture(app, self, .init(language: language, theme: theme, index: 2, name: "watch"))
                 app.terminate()
                 if StoreScreenshot.reviewShots {
-                    // Home scrolled to "Recently added" (`-AUNScrollTo`), so the frame starts at a section edge.
-                    let more = StoreScreenshot.launch(language, theme, extra: ["-AUNScrollTo", "rail-recent"])
+                    // Home scrolled to a section edge (`-AUNScrollTo`): "Recently added" on iPhone; on iPad, whose screen
+                    // holds two rails, "Trending" with "Recently added" under it, so the frame is full to the bottom.
+                    let rail = UIDevice.current.userInterfaceIdiom == .pad ? "rail-trending" : "rail-recent"
+                    let more = StoreScreenshot.launch(language, theme, extra: ["-AUNScrollTo", rail])
                     XCTAssertTrue(StoreScreenshot.firstTrendingCard(more).waitForExistence(timeout: 30))
                     StoreScreenshot.capture(more, self, .init(language: language, theme: theme, index: 3, name: "home-more"))
                     more.terminate()

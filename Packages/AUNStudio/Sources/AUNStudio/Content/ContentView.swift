@@ -150,9 +150,14 @@ struct ContentView: View {
     }
 
     private func label(for status: StudioStatus) -> String {
-        let name = l10n("studio.tab.\(status.rawValue)")
-        guard let count = model.counts[status] else { return name }
-        return "\(name) \(DisplayFormat.number(count, l10n.language))"
+        Self.chipTitle(l10n("studio.tab.\(status.rawValue)"), status: status, counts: model.counts, language: l10n.language)
+    }
+
+    /// A status chip's title with its count. The counts leave out empty statuses, so once they have loaded a missing
+    /// one is 0, shown like the others ("Failed 0", «فشلت ٠»); before they load the chip shows its name alone.
+    static func chipTitle(_ name: String, status: StudioStatus, counts: ContentCounts, language: AppLanguage) -> String {
+        guard !counts.isEmpty else { return name }
+        return "\(name) \(DisplayFormat.number(counts[status] ?? 0, language))"
     }
 
     @ViewBuilder private var list: some View {

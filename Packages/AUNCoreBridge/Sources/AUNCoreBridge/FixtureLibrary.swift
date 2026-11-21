@@ -5,8 +5,10 @@ import Foundation
 /// and the same numbers: the Viewer lists the published public videos, Studio lists them all.
 ///
 /// Video `n` is `fixture-n` in the Viewer and `fixture-content-n` in Studio (the ids UI tests already use).
-/// Every number comes from one daily model (``views(of:daysAgo:)``): a long-tail audience after upload, a weekly rhythm
-/// (Friday highest, the day Surat Al-Kahf is read), day-to-day noise, and launch spikes from new uploads. Period totals,
+/// Every number comes from one daily model (``views(of:daysAgo:)``): a launch spike that settles into a long tail, a
+/// gentle weekly rhythm and day-to-day noise. Every published upload is older than the 28-day window, at irregular
+/// gaps, so the window shows only long tails and no 28-day count can pass a lifetime one; only the video still
+/// processing is new. Period totals,
 /// top videos and lifetime counts are sums of that model, so they always agree.
 public enum FixtureLibrary {
     public struct Item: Sendable {
@@ -42,21 +44,21 @@ public enum FixtureLibrary {
         item(
             1, ("Friday khutbah: patience", "خطبة الجمعة: الصبر"),
             ("This week's Friday khutbah on patience.", "خطبة الجمعة لهذا الأسبوع عن الصبر."), "khutbah", 8_020, 1_934,
-            age: 9),
+            age: 33),
         item(
             2, ("Tafsir of Surah Al-Kahf, part 2", "تفسير سورة الكهف، الجزء الثاني"),
-            ("Verses 32–59: the owner of the two gardens.", "الآيات ٣٢–٥٩: صاحب الجنتين."), "kahf2", 2_031, 1_512, age: 16),
+            ("Verses 32–59: the owner of the two gardens.", "الآيات ٣٢–٥٩: صاحب الجنتين."), "kahf2", 2_031, 1_512, age: 41),
         item(
             3, ("Tafsir of Surah Al-Kahf, part 1", "تفسير سورة الكهف، الجزء الأول"),
-            ("Verses 1–31: the people of the cave.", "الآيات ١–٣١: أصحاب الكهف."), "kahf1", 11_400, 1_468, age: 23),
+            ("Verses 1–31: the people of the cave.", "الآيات ١–٣١: أصحاب الكهف."), "kahf1", 11_400, 1_468, age: 46),
         item(
             4, ("Patience in hardship", "الصبر عند الشدائد"),
             ("How the Prophet ﷺ met hardship with patience.", "كيف واجه النبي ﷺ الشدائد بالصبر."), "patience", 1_004, 738,
-            age: 40),
+            age: 58),
         item(
             5, ("Ramadan reminders", "تذكيرات رمضان"),
             ("Short daily reminders for the month of Ramadan.", "تذكيرات يومية قصيرة لشهر رمضان."), "ramadan", 1_310, 524,
-            age: 75),
+            age: 77),
         item(
             6, ("Introduction to Tafsir", "مقدمة في التفسير"),
             ("An introduction to the sources of tafsir.", "مقدمة في مصادر التفسير."), "tafsir", 2_040_000, 1_275, age: 300),
@@ -67,14 +69,14 @@ public enum FixtureLibrary {
         item(
             8, ("Seerah overview", "نظرة عامة على السيرة"),
             ("The life of the Prophet ﷺ from Makkah to Madinah.", "سيرة النبي ﷺ من مكة إلى المدينة."), "seerah", 0, 2_895,
-            status: .scheduled, isPublic: false, age: 2),
+            status: .scheduled, isPublic: false, age: 30),
         item(
             9, ("Fiqh of Prayer", "فقه الصلاة"),
             ("The conditions, pillars and obligations of prayer.", "شروط الصلاة وأركانها وواجباتها."), "fiqh", 0, 2_210,
-            status: .drafts, isPublic: false, age: 3),
+            status: .drafts, isPublic: false, age: 37),
         item(
-            10, ("Ramadan reminder", "تذكير رمضان"), ("A short reminder for Ramadan.", "تذكير قصير لشهر رمضان."), "reminder", 0,
-            312,
+            10, ("Laylat al-Qadr", "ليلة القدر"),
+            ("What Laylat al-Qadr is and how to seek it.", "ما ليلة القدر وكيف نتحرّاها."), "qadr", 0, 312,
             status: .processing, isPublic: false, age: 0),
     ]
 
@@ -144,10 +146,11 @@ public enum FixtureLibrary {
     /// Days since 1970-01-01 (UTC) of today.
     private static func dayNumber(_ now: Date) -> Int { Int((today(now).timeIntervalSince1970 / 86_400).rounded()) }
 
-    /// Weekly rhythm, averaging 1: Friday highest, Thursday evening next, Saturday and Sunday lowest.
+    /// A gentle weekly rhythm, averaging 1: Friday a little higher, the weekend a little lower. Kept small next to the
+    /// day-to-day noise, so the chart has no spikes exactly a week apart.
     static func weekday(_ day: Int) -> Double {
         // 1970-01-01 was a Thursday: 0 Thu, 1 Fri, 2 Sat, 3 Sun, 4 Mon, 5 Tue, 6 Wed.
-        [1.15, 1.55, 0.85, 0.8, 0.88, 0.87, 0.9][((day % 7) + 7) % 7]
+        [1.03, 1.07, 0.97, 0.95, 0.98, 1.0, 1.0][((day % 7) + 7) % 7]
     }
 
     /// A repeatable 0.85–1.15 factor per day and video.

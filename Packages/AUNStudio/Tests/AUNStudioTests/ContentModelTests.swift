@@ -26,6 +26,15 @@ struct ContentModelTests {
         #expect(model.items.map(\.id) == ["fixture-content-9"])
     }
 
+    /// Every chip has a count once they load, an empty status too: "Failed 0", «فشلت ٠».
+    @Test func emptyStatusChipsShowZero() {
+        let counts: ContentCounts = [.published: 7, .drafts: 1]
+        #expect(ContentView.chipTitle("Failed", status: .failed, counts: counts, language: .en) == "Failed 0")
+        #expect(ContentView.chipTitle("فشلت", status: .failed, counts: counts, language: .ar) == "فشلت ٠")
+        #expect(ContentView.chipTitle("Published", status: .published, counts: counts, language: .en) == "Published 7")
+        #expect(ContentView.chipTitle("Failed", status: .failed, counts: [:], language: .en) == "Failed")
+    }
+
     @Test func softDeleteThenRestoreFromRecentlyDeleted() async throws {
         let services = StudioServices.fixtures(signedIn: true)
         let model = ContentModel(channelID: "fixture-channel", services: services)

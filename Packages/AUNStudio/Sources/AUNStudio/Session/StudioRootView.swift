@@ -281,19 +281,22 @@ struct ChannelGate<Content: View>: View {
 
         var body: some View {
             NavigationSplitView {
-                List(sections) { item in
-                    FanousSidebarRow(l10n(item.titleKey), icon: item.icon, selected: item == (section ?? .home)) {
-                        section = item
-                    }
-                    .accessibilityIdentifier("section-\(item.rawValue)")
-                }
-                // A list that fits never scrolls, so no section slides under the title bar.
-                .scrollBounceBehavior(.basedOnSize)
-                // Identity at the head of the sidebar: the only identity control on the Mac.
-                .safeAreaInset(edge: .top, spacing: 0) {
+                // Identity at the head of the sidebar, the only identity control on the Mac, then the sections. A plain
+                // stack, not a list inset: the inset drew a scroll-edge divider under the card in one language only, and
+                // put the card against the title bar. Here it has the same gap above as at its sides, in every language.
+                VStack(spacing: 0) {
                     IdentityMenu(session: session, showingAccounts: $showingAccounts, style: .sidebar)
-                        .padding(.horizontal, FanousScale.spacingSm)
+                        .padding([.horizontal, .top], FanousScale.spacingSm)
                         .padding(.bottom, FanousScale.spacingSm)
+                    List(sections) { item in
+                        FanousSidebarRow(l10n(item.titleKey), icon: item.icon, selected: item == (section ?? .home)) {
+                            section = item
+                        }
+                        .accessibilityIdentifier("section-\(item.rawValue)")
+                    }
+                    // A list that fits never scrolls, so no section slides under the card.
+                    .scrollBounceBehavior(.basedOnSize)
+                    .scrollEdgeEffectHiddenIfAvailable()
                 }
                 .toolbar(removing: .sidebarToggle)
                 // Wide enough for the longest section and the channel name, so none is cut short.
@@ -379,6 +382,20 @@ struct ChannelGate<Content: View>: View {
                 content.toolbar(removing: .title)
             } else {
                 content
+            }
+        }
+    }
+#endif
+
+#if os(macOS)
+    extension View {
+        /// No scroll-edge line at the top of the sidebar list (macOS 26 draws one under whatever sits above a list).
+        @ViewBuilder
+        fileprivate func scrollEdgeEffectHiddenIfAvailable() -> some View {
+            if #available(macOS 26, *) {
+                scrollEdgeEffectHidden(true, for: .top)
+            } else {
+                self
             }
         }
     }

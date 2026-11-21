@@ -13,6 +13,9 @@ final class StoreScreenshots: XCTestCase {
         "ar": [("content", "المحتوى"), ("upload", "رفع"), ("analytics", "الإحصاءات")],
     ]
 
+    /// The Dashboard tab's title (`studio.home.title`).
+    private let dashboard = ["en": "Dashboard", "ar": "لوحة التحكم"]
+
     @MainActor
     private func open(_ app: XCUIApplication, tab: String) {
         // iPhone has a bottom tab bar; iPad opens on the sidebar, whose rows are cells (or buttons on some releases).
@@ -20,8 +23,9 @@ final class StoreScreenshots: XCTestCase {
             app.tabBars.buttons[tab], app.buttons[tab].firstMatch, app.cells[tab].firstMatch,
             app.cells.containing(.staticText, identifier: tab).firstMatch,
         ]
-        let deadline = Date().addingTimeInterval(15)
-        while Date() < deadline {
+        // Uptime, not the wall clock: CI holds the clock at 09:41 for the status bar (scripts/screenshots.sh).
+        let deadline = ProcessInfo.processInfo.systemUptime + 15
+        while ProcessInfo.processInfo.systemUptime < deadline {
             if let hit = candidates.first(where: { $0.exists && $0.isHittable }) {
                 hit.tap()
                 return
@@ -38,6 +42,10 @@ final class StoreScreenshots: XCTestCase {
                 let app = StoreScreenshot.launch(language, theme, extra: ["-AUNFixtureSignedIn", "YES"])
                 let card = app.descendants(matching: .any).matching(identifier: "account-button").firstMatch
                 XCTAssertTrue(card.waitForExistence(timeout: 30))
+                // iPad opens with the sidebar over the page. Choosing another tab closes it, as a person would, and the
+                // top tab bar brings Dashboard back, so the frame shows the whole dashboard. iPhone just switches tabs.
+                open(app, tab: (tabs[language] ?? tabs["en"]!)[0].label)
+                open(app, tab: dashboard[language] ?? "Dashboard")
                 StoreScreenshot.capture(app, self, .init(language: language, theme: theme, index: 1, name: "dashboard"))
                 for (offset, tab) in (tabs[language] ?? tabs["en"]!).enumerated() {
                     open(app, tab: tab.label)
@@ -45,9 +53,9 @@ final class StoreScreenshots: XCTestCase {
                 }
                 app.terminate()
                 if StoreScreenshot.reviewShots {
-                    // Analytics scrolled to the daily chart and top videos (`-AUNScrollTo`).
+                    // Analytics scrolled to the daily chart with its table open (`-AUNScrollTo analytics-table`).
                     let lower = StoreScreenshot.launch(
-                        language, theme, extra: ["-AUNFixtureSignedIn", "YES", "-AUNScrollTo", "analytics-daily"])
+                        language, theme, extra: ["-AUNFixtureSignedIn", "YES", "-AUNScrollTo", "analytics-table"])
                     XCTAssertTrue(
                         lower.descendants(matching: .any).matching(identifier: "account-button").firstMatch
                             .waitForExistence(timeout: 30))

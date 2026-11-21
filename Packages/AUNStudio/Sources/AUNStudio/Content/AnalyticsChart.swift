@@ -196,9 +196,11 @@ struct DailyChart: View {
 struct DailyTable: View {
     @Environment(\.l10n) private var l10n
     let series: ChartSeries
+    /// Closed, unless UI automation asked for the table (`-AUNScrollTo analytics-table`), the lower analytics shot.
+    @State private var expanded = ScrollTarget.requested == "analytics-table"
 
     var body: some View {
-        DisclosureGroup(l10n("studio.analytics.table")) {
+        DisclosureGroup(l10n("studio.analytics.table"), isExpanded: $expanded) {
             ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
                 LabeledContent(
                     ChartScale.day(point.day, l10n.language), value: series.fullLabel(point.value, l10n.language))

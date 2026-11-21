@@ -20,9 +20,9 @@ final class StoreScreenshots: XCTestCase {
                 }
                 app.terminate()
                 if StoreScreenshot.reviewShots {
-                    // Analytics scrolled to the daily chart and top videos (`-AUNScrollTo`), as on iPhone and iPad.
+                    // Analytics scrolled to the daily chart with its table open (`-AUNScrollTo analytics-table`), as on iPhone and iPad.
                     let lower = StoreScreenshot.launch(
-                        language, theme, extra: ["-AUNFixtureSignedIn", "YES", "-AUNScrollTo", "analytics-daily"])
+                        language, theme, extra: ["-AUNFixtureSignedIn", "YES", "-AUNScrollTo", "analytics-table"])
                     XCTAssertTrue(lower.descendants(matching: .any)["section-home"].waitForExistence(timeout: 30))
                     lower.descendants(matching: .any)["section-analytics"].click()
                     StoreScreenshot.capture(

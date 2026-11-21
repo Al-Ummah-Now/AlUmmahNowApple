@@ -17,16 +17,29 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
 }
 
 #if os(iOS) || os(macOS)
-    /// Quality, speed, subtitles, skip and AirPlay. HStack order mirrors automatically in RTL.
+    /// The scrubber with the elapsed and total time, then skip, quality, speed, subtitles and AirPlay. HStack order
+    /// mirrors automatically in RTL, the scrubber filling from the right.
     public struct PlayerControlsBar: View {
         @Environment(\.l10n) private var l10n
         let controller: PlayerController
+        /// The video's length from the catalog, shown until the player has loaded the asset's own.
+        let knownDuration: Double?
 
-        public init(controller: PlayerController) { self.controller = controller }
+        public init(controller: PlayerController, knownDuration: Double? = nil) {
+            self.controller = controller
+            self.knownDuration = knownDuration
+        }
 
         private var skipSeconds: String { DisplayFormat.number(Int(PlayerController.skipInterval), l10n.language) }
 
         public var body: some View {
+            VStack(spacing: FanousScale.spacingXs) {
+                PlayerTimeline(controller: controller, knownDuration: knownDuration)
+                buttons
+            }
+        }
+
+        private var buttons: some View {
             HStack(spacing: 16) {
                 Button {
                     controller.skip(by: -PlayerController.skipInterval)
@@ -99,6 +112,41 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
                 Image(systemName: "captions.bubble").accessibilityLabel(l10n("player.subtitles"))
             }
             .accessibilityIdentifier("subtitles-menu")
+        }
+    }
+
+    /// The scrubber and «elapsed / total», «٠:٠٠ / ٢١:١٥» paused at the start.
+    struct PlayerTimeline: View {
+        @Environment(\.l10n) private var l10n
+        let controller: PlayerController
+        let knownDuration: Double?
+
+        private var total: Double { controller.duration > 0 ? controller.duration : max(knownDuration ?? 0, 0) }
+
+        var body: some View {
+            HStack(spacing: FanousScale.spacingMd) {
+                Slider(
+                    value: Binding(get: { min(controller.currentTime, total) }, set: { controller.seek(to: $0) }),
+                    in: 0...max(total, 1)
+                )
+                .tint(Fanous.primary)
+                .disabled(total <= 0)
+                .accessibilityLabel(l10n("player.position"))
+                .accessibilityValue(time)
+                .accessibilityIdentifier("player-scrubber")
+                Text(time)
+                    .fanousFont(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(Fanous.textSecondary)
+                    .fixedSize()
+                    .accessibilityIdentifier("player-time")
+            }
+        }
+
+        private var time: String {
+            l10n(
+                "player.time", DisplayFormat.duration(controller.currentTime, l10n.language),
+                DisplayFormat.duration(total, l10n.language))
         }
     }
 
