@@ -184,6 +184,9 @@ import Testing
         #expect(DisplayFormat.shortDay(date, .en, now: date, calendar: calendar) == "Nov 6")
         #expect(DisplayFormat.shortDay(date, .en, now: later, calendar: calendar) == "Nov 6, 2026")
         #expect(!DisplayFormat.shortDay(date, .ar, now: date, calendar: calendar).contains("6"))
+        // No comma before the year in Arabic: rows join values with «، », so it would read as two values.
+        let arabic = DisplayFormat.shortDay(date, .ar, now: later, calendar: calendar)
+        #expect(arabic.contains("٢٠٢٦") && arabic.contains("نوفمبر") && !arabic.contains("،"))
     }
 
     /// The light page is the web's cream, with no gold wash over it (the old iPad yellow).

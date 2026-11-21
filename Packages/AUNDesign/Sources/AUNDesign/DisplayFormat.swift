@@ -128,14 +128,16 @@ public enum DisplayFormat {
         self.date(date, .dateTime.day().month().year(), language)
     }
 
-    /// Day and month, with the year only when it is not this year: "Nov 6", "٦ نوفمبر", "Nov 6, 2025".
-    /// For list rows, where the date sits in its own column and must never wrap.
+    /// Day and month, with the year only when it is not this year: "Nov 6", "٦ نوفمبر", "Nov 6, 2025", «٦ نوفمبر ٢٠٢٥».
+    /// For list rows, where the date sits in its own column and must never wrap. Arabic drops CLDR's comma before the
+    /// year («٦ نوفمبر، ٢٠٢٥»): rows join values with «، », so it would split one date into two values.
     public static func shortDay(
         _ date: Date, _ language: AppLanguage, now: Date = .now, calendar: Calendar = gregorian
     ) -> String {
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
         let style: Date.FormatStyle = .dateTime.day().month(.abbreviated)
-        return self.date(date, sameYear ? style : style.year(), language)
+        let text = self.date(date, sameYear ? style : style.year(), language)
+        return language == .ar ? text.replacingOccurrences(of: "،", with: "") : text
     }
 
     /// Date and time: "10/15/2026, 9:41 AM", "١٥‏/١٠‏/٢٠٢٦، ٩:٤١ ص".
