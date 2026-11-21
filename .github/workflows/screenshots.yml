@@ -18,6 +18,8 @@ env:
   AUN_TVOS_SIM_OS: "27.0"
   # The simulator status bar clock at 09:41 in English and Arabic alike (scripts/screenshots.sh, freeze_clock).
   AUN_FREEZE_CLOCK: "1"
+  AUN_SCREENSHOT_THEMES: dark,light
+  AUN_REVIEW_SHOTS: "1"
 jobs:
   plan:
     runs-on: ubuntu-latest
