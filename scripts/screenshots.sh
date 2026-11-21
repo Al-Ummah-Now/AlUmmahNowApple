@@ -90,7 +90,7 @@ shoot() { # app scheme destination device themes [udid]
     if [[ -n "$udid" ]]; then
       local prefs="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Preferences/.GlobalPreferences.plist"
       local locale="en_US"
-      [[ "$lang" == ar ]] && locale="ar_SA@numbers=arab"
+      [[ "$lang" == ar ]] && locale="ar_SA@calendar=gregorian;numbers=arab"
       xcrun simctl shutdown "$udid" 2>/dev/null || true
       # plutil edits the file in place (as fastlane snapshot does); `defaults write` on a path goes through cfprefsd's
       # cache and the booted simulator never saw it. The log line proves which language the pass runs in.
