@@ -201,9 +201,16 @@ struct DailyTable: View {
 
     var body: some View {
         DisclosureGroup(l10n("studio.analytics.table"), isExpanded: $expanded) {
+            // The day at the leading edge and its value at the trailing edge, on every platform (the Mac's
+            // LabeledContent set both side by side at one edge).
             ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
-                LabeledContent(
-                    ChartScale.day(point.day, l10n.language), value: series.fullLabel(point.value, l10n.language))
+                HStack {
+                    Text(ChartScale.day(point.day, l10n.language))
+                    Spacer(minLength: FanousScale.spacingMd)
+                    Text(series.fullLabel(point.value, l10n.language)).monospacedDigit()
+                }
+                .padding(.vertical, 2)
+                .accessibilityElement(children: .combine)
             }
         }
         .fanousFont(.label)

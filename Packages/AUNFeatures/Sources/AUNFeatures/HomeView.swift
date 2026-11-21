@@ -96,7 +96,7 @@
                                 }
                             }
                             .padding(.horizontal)
-                            .id("rail-\(rail.kind.rawValue)")
+                            .scrollSection("rail-\(rail.kind.rawValue)")
                             .accessibilityIdentifier("rail-\(rail.kind.rawValue)")
                         }
                     }

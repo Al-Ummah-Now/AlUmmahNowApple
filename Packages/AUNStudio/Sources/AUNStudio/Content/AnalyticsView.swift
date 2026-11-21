@@ -168,7 +168,7 @@ struct AnalyticsView: View {
         }
         .padding(FanousScale.spacingLg)
         .fanousMaterial(.card) { .rounded($0.xl) }
-        .id("analytics-daily")
+        .scrollSection("analytics-daily")
     }
 
     @ViewBuilder private func topVideos(_ stats: ChannelStats) -> some View {

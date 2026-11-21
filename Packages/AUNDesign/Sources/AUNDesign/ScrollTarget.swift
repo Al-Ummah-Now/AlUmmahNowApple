@@ -7,6 +7,14 @@ public enum ScrollTarget {
 }
 
 extension View {
+    /// Marks the top edge of a section `-AUNScrollTo` can land on. The id sits on a 1-point marker, not on the section:
+    /// `ScrollViewProxy.scrollTo` does not reliably put the top of a target taller than the screen at the top.
+    public func scrollSection(_ id: String) -> some View {
+        overlay(alignment: .top) {
+            Color.clear.frame(height: 1).id(id).allowsHitTesting(false).accessibilityHidden(true)
+        }
+    }
+
     /// Scrolls `proxy` to the requested section, if this screen has it, once `ready`. `aliases` name other targets that
     /// land on one of `ids` (a target that also opens something inside that section).
     ///
