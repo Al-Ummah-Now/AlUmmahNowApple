@@ -12,13 +12,20 @@ final class StoreScreenshots: XCTestCase {
         for language in StoreScreenshot.languages {
             for theme in StoreScreenshot.themes {
                 let app = StoreScreenshot.launch(language, theme)
-                let card = app.buttons["video-card-trending-fixture-1"]
+                let card = StoreScreenshot.firstTrendingCard(app)
                 XCTAssertTrue(card.waitForExistence(timeout: 30))
                 StoreScreenshot.capture(app, self, .init(language: language, theme: theme, index: 1, name: "home"))
                 card.tap()
                 XCTAssertTrue(app.staticTexts["watch-title"].waitForExistence(timeout: 20))
                 StoreScreenshot.capture(app, self, .init(language: language, theme: theme, index: 2, name: "watch"))
                 app.terminate()
+                if StoreScreenshot.reviewShots {
+                    // Home scrolled to "Recently added" (`-AUNScrollTo`), so the frame starts at a section edge.
+                    let more = StoreScreenshot.launch(language, theme, extra: ["-AUNScrollTo", "rail-recent"])
+                    XCTAssertTrue(StoreScreenshot.firstTrendingCard(more).waitForExistence(timeout: 30))
+                    StoreScreenshot.capture(more, self, .init(language: language, theme: theme, index: 3, name: "home-more"))
+                    more.terminate()
+                }
             }
         }
     }

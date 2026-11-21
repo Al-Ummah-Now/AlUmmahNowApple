@@ -18,6 +18,7 @@ struct AnalyticsView: View {
     @State private var metric: ChartMetric = .views
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
                 // The range as chips, the selected one gold (a system segmented control can't take the gradient).
@@ -60,6 +61,8 @@ struct AnalyticsView: View {
             }
             .padding(FanousScale.spacingLg)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollsToRequestedSection(proxy, among: ["analytics-daily"], ready: current != nil)
         }
         .fanousPage()
         .navigationTitle(l10n("studio.analytics.title"))
@@ -159,6 +162,7 @@ struct AnalyticsView: View {
         }
         .padding(FanousScale.spacingLg)
         .fanousMaterial(.card) { .rounded($0.xl) }
+        .id("analytics-daily")
     }
 
     @ViewBuilder private func topVideos(_ stats: ChannelStats) -> some View {

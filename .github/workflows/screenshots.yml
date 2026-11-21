@@ -16,6 +16,8 @@ env:
   XCODE_VERSION: "27.1"
   AUN_IOS_SIM_OS: "27.0"
   AUN_TVOS_SIM_OS: "27.0"
+  AUN_SCREENSHOT_THEMES: dark,light
+  AUN_REVIEW_SHOTS: "1"
 jobs:
   plan:
     runs-on: ubuntu-latest

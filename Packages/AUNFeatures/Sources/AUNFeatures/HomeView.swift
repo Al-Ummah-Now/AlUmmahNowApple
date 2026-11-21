@@ -66,6 +66,7 @@
         let open: (Video) -> Void
 
         var body: some View {
+            ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: FanousScale.spacingXl) {
                     if let featured = rails.first?.videos.first {
@@ -90,10 +91,13 @@
                                 .padding(.vertical, 4)
                             }
                         }
+                        .id("rail-\(rail.kind.rawValue)")
                         .accessibilityIdentifier("rail-\(rail.kind.rawValue)")
                     }
                 }
                 .padding(.vertical)
+            }
+            .scrollsToRequestedSection(proxy, among: rails.map { "rail-\($0.kind.rawValue)" }, ready: !rails.isEmpty)
             }
             .fanousPage()
         }
