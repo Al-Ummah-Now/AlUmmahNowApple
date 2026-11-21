@@ -37,6 +37,7 @@ public struct Video: Identifiable, Hashable, Sendable, Decodable {
     public var playURL: URL?
     public var channelID: String?
     public var channelName: String?
+    public var channelNameLocalized: LocalizedText?
     public var views: Int
     public var durationSeconds: Double?
     public var category: String?
@@ -46,7 +47,7 @@ public struct Video: Identifiable, Hashable, Sendable, Decodable {
     public var isLive: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, title, titleLocalized, description, descriptionLocalized, channelName, views, category
+        case id, title, titleLocalized, description, descriptionLocalized, channelName, channelNameLocalized, views, category
         case dateCreated, availableResolutions, uploadStatus, isLive
         case thumbnailURL = "thumbnailUrl"
         case playURL = "playUrl"
@@ -57,7 +58,7 @@ public struct Video: Identifiable, Hashable, Sendable, Decodable {
     public init(
         id: String, title: String, titleLocalized: LocalizedText? = nil, description: String? = nil,
         descriptionLocalized: LocalizedText? = nil, thumbnailURL: URL? = nil, playURL: URL? = nil,
-        channelID: String? = nil, channelName: String? = nil, views: Int = 0, durationSeconds: Double? = nil,
+        channelID: String? = nil, channelName: String? = nil, channelNameLocalized: LocalizedText? = nil, views: Int = 0, durationSeconds: Double? = nil,
         category: String? = nil, dateCreated: Date? = nil, availableResolutions: [String] = [],
         uploadStatus: String? = "ready", isLive: Bool = false
     ) {
@@ -70,6 +71,7 @@ public struct Video: Identifiable, Hashable, Sendable, Decodable {
         self.playURL = playURL
         self.channelID = channelID
         self.channelName = channelName
+        self.channelNameLocalized = channelNameLocalized
         self.views = views
         self.durationSeconds = durationSeconds
         self.category = category
@@ -90,6 +92,7 @@ public struct Video: Identifiable, Hashable, Sendable, Decodable {
         playURL = try? c.decodeIfPresent(URL.self, forKey: .playURL)
         channelID = try c.decodeIfPresent(String.self, forKey: .channelID)
         channelName = try c.decodeIfPresent(String.self, forKey: .channelName)
+        channelNameLocalized = try c.decodeIfPresent(LocalizedText.self, forKey: .channelNameLocalized)
         views = try c.decodeIfPresent(Int.self, forKey: .views) ?? 0
         durationSeconds = try c.decodeIfPresent(Double.self, forKey: .durationSeconds)
         category = try c.decodeIfPresent(String.self, forKey: .category)
@@ -109,6 +112,16 @@ public struct Video: Identifiable, Hashable, Sendable, Decodable {
         let plain = description ?? ""
         return descriptionLocalized?.value(for: language, fallback: plain) ?? plain
     }
+
+    /// The channel name in `language`, falling back to the plain `channelName`. Nil when the video has no channel name.
+    public func displayChannelName(_ language: AppLanguage) -> String? {
+        guard let plain = channelName else { return channelNameLocalized?.value(for: language, fallback: "").nilIfEmpty }
+        return channelNameLocalized?.value(for: language, fallback: plain) ?? plain
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 public enum HomeRailKind: String, CaseIterable, Hashable, Sendable {
