@@ -84,7 +84,7 @@
                                     ],
                                     alignment: .leading, spacing: FanousScale.spacingLg
                                 ) {
-                                    ForEach(rail.videos) { video in
+                                    ForEach(rails.cards(of: rail)) { video in
                                         Button {
                                             open(video)
                                         } label: {
@@ -105,13 +105,6 @@
                 .scrollsToRequestedSection(proxy, among: rails.map { "rail-\($0.kind.rawValue)" }, ready: !rails.isEmpty)
             }
             .fanousPage()
-        }
-    }
-
-    extension HomeRailsContent {
-        /// The featured video is already the hero, so the first rail starts with the next one.
-        func shown(_ rail: HomeRail) -> [Video] {
-            rail.id == rails.first?.id ? Array(rail.videos.dropFirst()) : rail.videos
         }
     }
 

@@ -99,3 +99,10 @@ extension View {
         #endif
     }
 }
+
+extension [HomeRail] {
+    /// The cards a rail shows under the hero: the hero is the first rail's first video, so that rail starts with the next.
+    func cards(of rail: HomeRail) -> [Video] {
+        rail.id == first?.id ? [Video](rail.videos.dropFirst()) : rail.videos
+    }
+}
