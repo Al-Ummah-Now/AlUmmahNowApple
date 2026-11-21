@@ -54,7 +54,7 @@ final class StudioManageTests: XCTestCase {
         app.buttons["edit-save"].tap()
         XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 10))
         XCTAssertTrue(
-            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "part 1 (revised)")).firstMatch
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "patience (revised)")).firstMatch
                 .waitForExistence(timeout: 10))
     }
 
@@ -68,11 +68,11 @@ final class StudioManageTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
         field.typeText("khut")
-        let suggestion = app.buttons["suggestion-video:fixture-content-3"]
+        let suggestion = app.buttons["suggestion-video:fixture-content-1"]
         XCTAssertTrue(suggestion.waitForExistence(timeout: 10))
         keep("search-en")
-        XCTAssertTrue(row(app, "fixture-content-3").waitForExistence(timeout: 10))
-        XCTAssertFalse(row(app, "fixture-content-1").exists)
+        XCTAssertTrue(row(app, "fixture-content-1").waitForExistence(timeout: 10))
+        XCTAssertFalse(row(app, "fixture-content-2").exists)
     }
 
     /// Bulk schedule shows only with the `bulkSchedule` feature (owner rule 2026-11-16), in English and Arabic. Themes
@@ -151,7 +151,7 @@ final class StudioManageTests: XCTestCase {
         tab(app, "المحتوى")
         let first = row(app, "fixture-content-1")
         XCTAssertTrue(first.waitForExistence(timeout: 20))
-        XCTAssertTrue(first.label.contains("تفسير سورة الكهف"), first.label)
+        XCTAssertTrue(first.label.contains("خطبة الجمعة"), first.label)
         XCTAssertGreaterThan(first.frame.maxX, app.windows.firstMatch.frame.midX)
         keep("content-ar")
         tab(app, "الإحصاءات")

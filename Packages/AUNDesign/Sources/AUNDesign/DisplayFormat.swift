@@ -7,6 +7,10 @@ import Foundation
 /// whatever the device region or numbering settings say. `AppLanguage.locale` pins the numbering system
 /// (`ar@numbers=arab`), and every helper here formats with that locale. English keeps Arabic numerals 0–9.
 ///
+/// Arabic numbers are never grouped («٦٠٧٥», not «٦٬٠٧٥»): SF Arabic draws the thousands mark «٬» and the decimal mark
+/// «٫» as the same comma, so «٢٠٬٣٢٥» beside «١٢٨٫٨ ألف» read alike. Without grouping the only such mark is the
+/// decimal one. Large values are compact (ألف، م), so ungrouped numbers stay short. English keeps "6,075".
+///
 /// Code, ids, URLs, version and build numbers, CSV and wire formats stay as they are and do not use this.
 /// Text the user types is normalised back to 0–9 with ``normalizeDigits(_:)``.
 /// The `display_format` SwiftLint rule rejects display formatting outside this file.
@@ -14,10 +18,14 @@ public enum DisplayFormat {
     /// Any `FormatStyle` in the app language: the escape hatch for styles the helpers below don't cover.
     public static func format<Style: FormatStyle>(_ value: Style.FormatInput, _ style: Style, _ language: AppLanguage) -> String
     where Style.FormatOutput == String {
-        style.locale(language.locale).format(value)
+        let text = style.locale(language.locale).format(value)
+        return language == .ar ? text.replacingOccurrences(of: arabicGroupingMark, with: "") : text
     }
 
-    /// A whole number with grouping: "6,075", "٦٬٠٧٥".
+    /// U+066C ARABIC THOUSANDS SEPARATOR, which no Arabic text from here carries.
+    static let arabicGroupingMark = "\u{066C}"
+
+    /// A whole number, grouped in English only: "6,075", «٦٠٧٥».
     public static func number<Value: BinaryInteger>(_ value: Value, _ language: AppLanguage, grouping: Bool = true) -> String {
         format(value, IntegerFormatStyle<Value>().grouping(grouping ? .automatic : .never), language)
     }
@@ -27,14 +35,66 @@ public enum DisplayFormat {
         format(value, FloatingPointFormatStyle<Double>.number.precision(.fractionLength(fraction)), language)
     }
 
-    /// A short count for views and subscribers: "1.2K", "١٫٢ ألف".
+    /// A short count for views and subscribers: "1.2K", "33.6K", "١٫٢ ألف", «ألف», «ألفان», «٨ آلاف».
     public static func count<Value: BinaryInteger>(_ value: Value, _ language: AppLanguage) -> String {
-        format(value, IntegerFormatStyle<Value>().notation(.compactName), language)
+        compactCount(Double(value), language) ?? format(value, IntegerFormatStyle<Value>(), language)
     }
 
     /// A compact number with up to one decimal (chart axes): "1.2K", "١٫٢ ألف".
     public static func compact(_ value: Double, _ language: AppLanguage) -> String {
-        format(value, FloatingPointFormatStyle<Double>.number.notation(.compactName).precision(.fractionLength(0...1)), language)
+        compactCount(value, language)
+            ?? format(value, FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...1)), language)
+    }
+
+    /// Thousands, millions and billions in either language, or nil under 1,000. Both languages show the same number:
+    /// truncated to one decimal, a trailing ".0" dropped (33,600 → "33.6K", «٣٣٫٦ ألف»; 1,299 → "1.2K"), as on Android.
+    /// Foundation's compact notation rounds instead and drops the decimal from 10K up ("34K", "21K").
+    static func compactCount(_ value: Double, _ language: AppLanguage) -> String? {
+        switch language {
+        case .ar: return arabicCompact(value)
+        case .en:
+            guard let (shown, scale) = truncatedScale(value) else { return nil }
+            let suffix = [1e9: "B", 1e6: "M", 1e3: "K"][scale] ?? ""
+            return (value < 0 ? "-" : "") + number(shown, .en, fraction: 0...1) + suffix
+        }
+    }
+
+    /// The Arabic millions mark, after the number in every form: «١ م», «١٫٢ م مشاهدة».
+    static let millionMark = "م"
+
+    /// The magnitude in thousands, millions or billions, truncated to one decimal, with its scale; nil under 1,000.
+    /// Multiplies before dividing so whole counts never land just under a tenth (1,300 → 1.3, not 1.2).
+    static func truncatedScale(_ value: Double) -> (shown: Double, scale: Double)? {
+        let magnitude = abs(value)
+        guard magnitude.isFinite, magnitude >= 1000 else { return nil }
+        guard let scale = [1e9, 1e6, 1e3].first(where: { magnitude >= $0 }) else { return nil }
+        return ((magnitude * 10 / scale).rounded(.towardZero) / 10, scale)
+    }
+
+    /// Arabic thousands, millions and billions, or nil under 1,000. Owner rules (2026-11-20 and 2026-11-21, the same
+    /// on Android, Apple, Desktop and web): the number is truncated to one decimal, never rounded up. Thousands and
+    /// billions take a word that agrees with it: exactly 1 is the word alone («ألف»), exactly 2 the dual alone —
+    /// «ألفان» on its own, the construct «ألفا» before a noun (`beforeNoun`), never after a digit — whole 3–10
+    /// «٣ آلاف», and 11 and up or any decimal «١١ ألف», «١٫٣ ألف»; likewise مليار/ملياران/مليارات. Millions are always
+    /// the number and «م»: «١ م», «٢ م», «١٫٢ م مشاهدة», «١٥ م». CLDR's compact Arabic picks the word from the full
+    /// count instead, giving «٢ ألف», «١٠ ألف».
+    static func arabicCompact(_ value: Double, beforeNoun: Bool = false) -> String? {
+        guard let (shown, size) = truncatedScale(value) else { return nil }
+        let digits = number(shown, .ar, fraction: 0...1)
+        if size == 1e6 { return (value < 0 ? "-" : "") + digits + "\u{00A0}" + millionMark }
+        let scales: [Double: (one: String, two: String, twoConstruct: String, few: String)] = [
+            1e9: ("مليار", "ملياران", "مليارا", "مليارات"),
+            1e3: ("ألف", "ألفان", "ألفا", "آلاف"),
+        ]
+        guard let scale = scales[size] else { return nil }
+        let text: String
+        switch shown {
+        case 1: text = scale.one
+        case 2: text = beforeNoun ? scale.twoConstruct : scale.two
+        case 3...10 where shown == shown.rounded(.towardZero): text = digits + "\u{00A0}" + scale.few
+        default: text = digits + "\u{00A0}" + scale.one
+        }
+        return (value < 0 ? "-" : "") + text
     }
 
     /// A fraction (0.25) as a percentage: "25%", "٢٥٪". `signed` adds "+" to gains.
@@ -46,10 +106,17 @@ public enum DisplayFormat {
         return format(fraction, style, language)
     }
 
-    /// A date or time in any `Date.FormatStyle`: "Oct 15, 2026", "١٥ أكتوبر ٢٠٢٦".
+    /// A date or time in any `Date.FormatStyle`: "Oct 15, 2026", "١٥ أكتوبر ٢٠٢٦". Always the Gregorian calendar, as
+    /// on the web: a device set to an Arabic region (ar_SA) would otherwise show Hijri dates in Arabic only, so the
+    /// two languages would disagree («٢ جمادى الآخرة» beside "Nov 12").
     public static func date(_ date: Date, _ style: Date.FormatStyle, _ language: AppLanguage) -> String {
-        format(date, style, language)
+        var style = style
+        style.calendar = gregorian
+        return format(date, style, language)
     }
+
+    /// The Gregorian calendar every displayed date uses.
+    public static let gregorian = Calendar(identifier: .gregorian)
 
     /// Day, month and year: "Oct 15, 2026", "١٥ أكتوبر ٢٠٢٦".
     public static func day(_ date: Date, _ language: AppLanguage) -> String {
@@ -59,7 +126,7 @@ public enum DisplayFormat {
     /// Day and month, with the year only when it is not this year: "Nov 6", "٦ نوفمبر", "Nov 6, 2025".
     /// For list rows, where the date sits in its own column and must never wrap.
     public static func shortDay(
-        _ date: Date, _ language: AppLanguage, now: Date = .now, calendar: Calendar = .current
+        _ date: Date, _ language: AppLanguage, now: Date = .now, calendar: Calendar = gregorian
     ) -> String {
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
         let style: Date.FormatStyle = .dateTime.day().month(.abbreviated)
@@ -78,6 +145,7 @@ public enum DisplayFormat {
     ) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = language.locale
+        formatter.calendar = gregorian
         formatter.unitsStyle = unitsStyle
         return formatter.localizedString(for: date, relativeTo: now)
     }
@@ -145,10 +213,24 @@ public enum DisplayFormat {
     }
 
     /// "1.2K views", «١٫٢ ألف مشاهدة», «مشاهدتان», with the noun agreeing with the count (keys `video.views.*`).
-    public static func views(_ count: Int, _ l10n: L10n) -> String {
-        // A compact number ("1.2K", «١٫٢ ألف») takes the "other" form in both languages.
+    public static func views(_ count: Int, _ l10n: L10n) -> String { counted(count, "video.views", l10n) }
+
+    /// "1.2K subscribers", «ألفا مشترك», «٣ مشتركين» (keys `count.subscribers.*`).
+    public static func subscribers(_ count: Int, _ l10n: L10n) -> String { counted(count, "count.subscribers", l10n) }
+
+    /// "7 days", «٧ أيام», «٢٨ يومًا», «يومان», with the noun agreeing with the count (keys `count.days.*`).
+    public static func days(_ count: Int, _ l10n: L10n) -> String { counted(count, "count.days", l10n) }
+
+    /// A count with its noun from the plural keys `<key>.zero|one|two|few|many|other`.
+    static func counted(_ count: Int, _ key: String, _ l10n: L10n) -> String {
+        // A compact number ("1.2K", «١٫٢ ألف», «٨ آلاف») takes the "other" form in both languages: after ألف/م/مليار
+        // the Arabic noun is always singular («ألف مشاهدة», «ألفا مشاهدة»); only counts under 1,000 agree with the
+        // full count.
         let category = count >= 1000 ? "other" : pluralCategory(count, l10n.language)
-        return l10n("video.views.\(category)", self.count(count, l10n.language))
+        let number =
+            l10n.language == .ar
+            ? arabicCompact(Double(count), beforeNoun: true) ?? self.count(count, .ar) : self.count(count, l10n.language)
+        return l10n("\(key).\(category)", number)
     }
 
     /// Text the user typed, with Eastern Arabic (Hindi) ٠–٩ and Persian ۰–۹ digits turned into 0–9, for

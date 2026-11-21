@@ -44,6 +44,18 @@ final class StoreScreenshots: XCTestCase {
                     StoreScreenshot.capture(app, self, .init(language: language, theme: theme, index: offset + 2, name: tab.key))
                 }
                 app.terminate()
+                if StoreScreenshot.reviewShots {
+                    // Analytics scrolled to the daily chart and top videos (`-AUNScrollTo`).
+                    let lower = StoreScreenshot.launch(
+                        language, theme, extra: ["-AUNFixtureSignedIn", "YES", "-AUNScrollTo", "analytics-daily"])
+                    XCTAssertTrue(
+                        lower.descendants(matching: .any).matching(identifier: "account-button").firstMatch
+                            .waitForExistence(timeout: 30))
+                    open(lower, tab: (tabs[language] ?? tabs["en"]!)[2].label)
+                    StoreScreenshot.capture(
+                        lower, self, .init(language: language, theme: theme, index: 5, name: "analytics-lower"))
+                    lower.terminate()
+                }
             }
         }
     }

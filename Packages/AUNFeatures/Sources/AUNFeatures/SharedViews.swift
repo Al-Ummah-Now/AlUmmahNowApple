@@ -26,7 +26,7 @@ struct VideoCardContent: View {
                 Text(metadata)
                     .fanousFont(.caption)
                     .foregroundStyle(Fanous.part(\.cardVideoMeta))
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
             .padding(.horizontal, 2)
         }
@@ -97,5 +97,12 @@ extension View {
         #else
             fanousHeaderBar()
         #endif
+    }
+}
+
+extension [HomeRail] {
+    /// The cards a rail shows under the hero: the hero is the first rail's first video, so that rail starts with the next.
+    func cards(of rail: HomeRail) -> [Video] {
+        rail.id == first?.id ? [Video](rail.videos.dropFirst()) : rail.videos
     }
 }

@@ -40,7 +40,7 @@ enum ChartScale {
     /// 1234 → "1.2K" (en), "١٫٢ ألف" (ar).
     static func compact(_ value: Double, _ language: AppLanguage) -> String { DisplayFormat.compact(value, language) }
 
-    /// A whole number with grouping: "6,075", "٦٬٠٧٥".
+    /// A whole number, grouped in English only: "6,075", «٦٠٧٥».
     static func full(_ value: Double, _ language: AppLanguage) -> String {
         DisplayFormat.number(value, language, fraction: 0...1)
     }
@@ -54,12 +54,14 @@ enum ChartScale {
     /// Hours once the largest value reaches two hours, minutes below that.
     static func watchUnit(largestSeconds: Double) -> WatchUnit { largestSeconds >= 2 * 3600 ? .hour : .minute }
 
-    /// A value already in `unit`, with the unit: "3.1 min", "12.5 hr", "٣٫١ د".
+    /// A value already in `unit`, with the unit: "3.1 min", "12.5 hr", "٣٫١ د", "2,246 hr", «٢٢٤٦ س». From 100 up the
+    /// decimal is dropped, as a tenth of a large total says nothing.
     static func format(_ value: Double, in unit: WatchUnit, _ language: AppLanguage) -> String {
         DisplayFormat.format(
             Measurement(value: value, unit: unit == .hour ? UnitDuration.hours : UnitDuration.minutes),
             Measurement<UnitDuration>.FormatStyle(
-                width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(0...1))),
+                width: .abbreviated, usage: .asProvided,
+                numberFormatStyle: .number.precision(.fractionLength(abs(value) >= 100 ? 0...0 : 0...1))),
             language)
     }
 

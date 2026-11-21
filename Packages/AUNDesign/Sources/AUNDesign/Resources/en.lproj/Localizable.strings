@@ -2,6 +2,7 @@
 "studio.name" = "Al Ummah Now Studio";
 "common.retry" = "Try again";
 "common.error.load" = "We couldn't load this right now.";
+"common.sidebar" = "Show or hide the sidebar";
 "common.settings" = "Settings";
 "common.language" = "Language";
 "common.theme" = "Theme";
@@ -24,9 +25,22 @@
 "video.views.few" = "%@ views";
 "video.views.many" = "%@ views";
 "video.views.other" = "%@ views";
+"count.subscribers.zero" = "No subscribers";
+"count.subscribers.one" = "%@ subscriber";
+"count.subscribers.two" = "%@ subscribers";
+"count.subscribers.few" = "%@ subscribers";
+"count.subscribers.many" = "%@ subscribers";
+"count.subscribers.other" = "%@ subscribers";
+"count.days.zero" = "No days";
+"count.days.one" = "%@ day";
+"count.days.two" = "%@ days";
+"count.days.few" = "%@ days";
+"count.days.many" = "%@ days";
+"count.days.other" = "%@ days";
 "watch.notReady" = "This video is still being processed.";
 "watch.chapters" = "Chapters";
 "watch.description" = "Description";
+"player.play" = "Play";
 "player.quality" = "Quality";
 "player.quality.auto" = "Auto";
 "player.speed" = "Speed";
@@ -234,7 +248,6 @@
 "studio.deleted.purged" = "%@ queued for permanent deletion";
 "studio.analytics.title" = "Analytics";
 "studio.analytics.range" = "Period";
-"studio.analytics.days" = "%@ days";
 "studio.analytics.views" = "Views";
 "studio.analytics.day" = "Day";
 "studio.analytics.topVideos" = "Top videos";
@@ -244,7 +257,7 @@
 "studio.analytics.likes" = "Likes";
 "studio.analytics.comments" = "Comments";
 "studio.analytics.newSubscribers" = "New subscribers";
-"studio.analytics.lifetime" = "All time: %@ views · %@ subscribers · %@ engagement";
+"studio.analytics.lifetime" = "All time: %@ · %@ · %@ engagement";
 
 /* Plan refusals and account states (api-videos codes) */
 "studio.refusal.channelLimit" = "You've reached your plan's channel limit.";

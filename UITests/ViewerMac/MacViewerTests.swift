@@ -11,7 +11,7 @@ final class MacViewerTests: XCTestCase {
         return app
     }
 
-    private let card = "video-card-trending-fixture-1"
+    private let card = "video-card-trending-fixture-6"
 
     @MainActor
     func testEnglishHome() {

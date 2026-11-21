@@ -8,26 +8,30 @@
     public struct ViewerRootView: View {
         @Environment(\.l10n) private var l10n
         @Environment(\.openWindow) private var openWindow
-        @State private var selection: String? = "home"
         private let core: CoreBridge
 
         public init(core: CoreBridge) { self.core = core }
 
         public var body: some View {
             NavigationSplitView {
-                List(selection: $selection) {
-                    Label(l10n("home.title"), systemImage: "house").tag("home")
-                        .listRowBackground(
-                            selection == "home"
-                                ? FanousSurfaceKind(kind: .active, shape: .rounded(8)).padding(.horizontal, 6) : nil)
+                // One section for now; later sections join it with the same row.
+                List {
+                    FanousSidebarRow(l10n("home.title"), icon: "house", selected: true) {}
+                        .accessibilityIdentifier("section-home")
                 }
                 .scrollContentBackground(.hidden)
                 .fanousMaterial(.rail)
+                .toolbar(removing: .sidebarToggle)
                 .navigationSplitViewColumnWidth(min: 160, ideal: 200)
             } detail: {
                 HomeView(catalog: core.catalog) { openWindow(id: Self.watchWindowID, value: $0.id) }
-                    .toolbar { ToolbarItem { SettingsMenu() } }
+                    .toolbar {
+                        FanousSidebarToggle()
+                        ToolbarItem(placement: .primaryAction) { SettingsMenu() }
+                    }
                     .navigationTitle(l10n("app.name"))
+                    // The web header's colours on the window toolbar, as on iPhone and iPad, so its icons show in light.
+                    .fanousNavigationBar()
             }
             .frame(minWidth: 900, minHeight: 560)
             // A universal link reuses this window (instead of a new one) and opens the video in its own window.
@@ -55,6 +59,7 @@
             WatchView(videoID: videoID, catalog: core.catalog).frame(minWidth: 860, minHeight: 480)
                 // The window title in the app's language («الأمة الآن»), not the system's bundle name.
                 .navigationTitle(l10n("app.name"))
+                .fanousNavigationBar()
         }
     }
 

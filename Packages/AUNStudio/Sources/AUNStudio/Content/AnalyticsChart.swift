@@ -98,6 +98,9 @@ struct DailyChart: View {
     var body: some View {
         chart
             .frame(height: height)
+            // The top value label straddles the top gridline; Arabic digits and «آلاف» stand taller than Latin, so
+            // leave room above it for the metric chips.
+            .padding(.top, FanousScale.spacingMd)
             // The plot is laid out left to right on purpose; positions and the axis side carry the direction.
             .environment(\.layoutDirection, .leftToRight)
             .overlay {
@@ -143,11 +146,12 @@ struct DailyChart: View {
             }
         }
         .chartYScale(domain: 0...series.scale.top)
-        .chartXScale(domain: 0...max(1, count - 1))
+        // Room at both ends, so the line never runs into the value labels beside the plot.
+        .chartXScale(domain: 0...max(1, count - 1), range: .plotDimension(startPadding: 12, endPadding: 12))
         .chartYAxis {
             AxisMarks(position: rtl ? .trailing : .leading, values: series.scale.ticks) { value in
                 AxisGridLine().foregroundStyle(Fanous.divider)
-                AxisValueLabel {
+                AxisValueLabel(horizontalSpacing: 10) {
                     if let number = value.as(Double.self) {
                         Text(series.label(number, language)).foregroundStyle(Fanous.textSecondary)
                     }
@@ -202,9 +206,40 @@ struct DailyTable: View {
         }
         .fanousFont(.label)
         .foregroundStyle(Fanous.textPrimary)
+        #if os(macOS)
+            .disclosureGroupStyle(ReadingDirectionDisclosure())
+        #endif
         .accessibilityIdentifier("analytics-table")
     }
 }
+
+#if os(macOS)
+    /// The Mac's disclosure triangle always points right; this one points the reading direction (‹ in Arabic, as on
+    /// iPhone and iPad) and turns down when open.
+    struct ReadingDirectionDisclosure: DisclosureGroupStyle {
+        @Environment(\.layoutDirection) private var direction
+
+        func makeBody(configuration: Configuration) -> some View {
+            VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { configuration.isExpanded.toggle() }
+                } label: {
+                    HStack(spacing: FanousScale.spacingSm) {
+                        Image(systemName: "chevron.forward")
+                            .font(.caption.weight(.semibold))
+                            .rotationEffect(.degrees(configuration.isExpanded ? (direction == .rightToLeft ? -90 : 90) : 0))
+                            .accessibilityHidden(true)
+                        configuration.label
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if configuration.isExpanded { configuration.content }
+            }
+        }
+    }
+#endif
 
 /// VoiceOver's audio graph and data table for a daily chart.
 struct ChartAudioGraph: AXChartDescriptorRepresentable {

@@ -98,26 +98,17 @@ struct ContentView: View {
     private var statusPicker: some View {
         VStack(spacing: FanousScale.spacingXs) {
             // Status chips: the selected one in the gold primary material, the rest outlined (a system segmented
-            // control can't take the gradient).
-            // A row wider than the screen fades at both edges (so a cut chip reads as "more"), and the chosen chip
-            // scrolls fully into view.
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: FanousScale.spacingSm) {
-                        ForEach(StudioStatus.allCases, id: \.self) { status in
-                            StatusChip(title: label(for: status), selected: model.status == status) { model.status = status }
-                                .id(status)
-                                .accessibilityIdentifier("status-\(status.rawValue)")
-                        }
-                    }
-                    .padding(.horizontal, FanousScale.spacingLg)
-                    .padding(.vertical, 2)
-                }
-                .mask(EdgeFade(width: FanousScale.spacingLg))
-                .onChange(of: model.status) { _, status in
-                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(status, anchor: .center) }
+            // control can't take the gradient). They wrap onto a second line rather than run off the edge, the same in
+            // English and Arabic.
+            FlowLayout {
+                ForEach(StudioStatus.allCases, id: \.self) { status in
+                    StatusChip(title: label(for: status), selected: model.status == status) { model.status = status }
+                        .accessibilityIdentifier("status-\(status.rawValue)")
                 }
             }
+            .padding(.horizontal, FanousScale.spacingLg)
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(l10n("studio.content.status"))
             .accessibilityIdentifier("content-status")
@@ -259,6 +250,8 @@ struct ContentView: View {
         return ViewThatFits {
             HStack(spacing: FanousScale.spacingMd) { bulkButtons(count) }
             ScrollView(.horizontal) { HStack(spacing: FanousScale.spacingMd) { bulkButtons(count) } }
+                // Not the page's bottom margin for the iPad resize corner: this bar is one row high.
+                .contentMargins(.bottom, 0, for: .scrollContent)
         }
         .padding(FanousScale.spacingMd)
         .frame(maxWidth: .infinity)
@@ -294,42 +287,52 @@ struct VideoRow: View {
     var showsStatus = false
 
     var body: some View {
-        HStack(spacing: FanousScale.spacingMd) {
+        HStack(alignment: .top, spacing: FanousScale.spacingMd) {
             ThumbnailImage(url: video.thumbnailURL)
                 .frame(width: 96)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
-                // Three lines before truncating: long Arabic titles otherwise lose the part that tells them apart ("…الجزء").
-                Text(video.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(3)
-                // Up to two lines: narrow cards (the Mac Dashboard's half-width column) wrap rather than cut the
-                // status and views. The date has its own column, so it never wraps ("Nov / 6, 2026").
-                Text(details).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(2)
+                // Two lines, then truncated; the date moved into the details so the title has the full width.
+                Text(video.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(2)
+                // The details on one line when they fit; otherwise status and visibility on one line and the count
+                // (or the publish date) on the next, so no line ends on a separator and a number never leaves its noun.
+                ViewThatFits(in: .horizontal) {
+                    detailLine(parts)
+                    VStack(alignment: .leading, spacing: 2) {
+                        detailLine(Array(parts.dropLast()))
+                        detailLine(Array(parts.suffix(1)))
+                    }
+                    VStack(alignment: .leading, spacing: 2) { ForEach(parts, id: \.self) { detailLine([$0]) } }
+                }
             }
-            // Its own height, not the thumbnail's: the title and details wrap instead of truncating to one line.
+            // Its own height, not the thumbnail's: the title wraps instead of truncating to one line.
             .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: FanousScale.spacingSm)
-            if let date = video.dateCreated {
-                Text(DisplayFormat.shortDay(date, l10n.language))
-                    .fanousFont(.caption).foregroundStyle(Fanous.textMuted)
-                    .lineLimit(1).fixedSize()
-                    .frame(maxHeight: .infinity, alignment: .top)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, FanousScale.spacingXs)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("video-\(video.id)")
     }
 
-    private var details: String {
+    private func detailLine(_ parts: [String]) -> some View {
+        Text(DisplayFormat.meta(parts, l10n.language))
+            .fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+            .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// Status (on the Dashboard, which lists mixed statuses), visibility, the upload date, then views or the publish
+    /// date. Each part keeps its words together (no break inside «٨ آلاف مشاهدة»).
+    private var parts: [String] {
         var parts = [l10n(video.isPublic ? "visibility.public" : "visibility.private")]
         if showsStatus, let status = video.studioStatus { parts.insert(l10n("studio.tab.\(status.rawValue)"), at: 0) }
+        if let date = video.dateCreated { parts.append(DisplayFormat.shortDay(date, l10n.language)) }
         if let date = video.scheduledPublishDate, video.studioStatus == .scheduled {
             parts.append(l10n("studio.content.publishes", DisplayFormat.shortDay(date, l10n.language)))
         } else {
             parts.append(DisplayFormat.views(video.views, l10n))
         }
-        return DisplayFormat.meta(parts, l10n.language)
+        return parts.map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }
     }
 }
 
@@ -412,18 +415,5 @@ struct StatusChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
-/// A horizontal mask that fades both edges of a scrolling row over `width` points.
-private struct EdgeFade: View {
-    let width: CGFloat
-
-    var body: some View {
-        HStack(spacing: 0) {
-            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: width)
-            Rectangle().fill(.black)
-            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: width)
-        }
     }
 }

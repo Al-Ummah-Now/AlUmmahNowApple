@@ -124,10 +124,20 @@ shoot() { # app scheme destination device themes [udid]
       done
       ((booted)) || { echo "simulator $udid failed to boot twice" >&2; return 1; }
     fi
-    TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
-      TEST_RUNNER_AUN_SCREENSHOT_LANGUAGES="$lang" \
-      xcodebuild test-without-building "${COMMON[@]}" -scheme "$scheme" -destination "$destination" \
-      -only-testing:"${scheme}UITests/StoreScreenshots" -resultBundlePath "$bundle" "${signing[@]}"
+    # One retry: the shared runner sometimes loses the test runner while it bootstraps, or an app won't terminate.
+    local attempt
+    for attempt in 1 2; do
+      rm -rf "$bundle"
+      if TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_REVIEW_SHOTS="${AUN_REVIEW_SHOTS:-0}" \
+        TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
+        TEST_RUNNER_AUN_SCREENSHOT_LANGUAGES="$lang" \
+        xcodebuild test-without-building "${COMMON[@]}" -scheme "$scheme" -destination "$destination" \
+        -only-testing:"${scheme}UITests/StoreScreenshots" -resultBundlePath "$bundle" "${signing[@]}"; then
+        break
+      fi
+      ((attempt == 2)) && return 1
+      echo "screenshot pass $app $device $lang failed, retrying once"
+    done
     xcrun xcresulttool export attachments --path "$bundle" --output-path "$RESULTS/$app-$device-$lang" >/dev/null
     python3 scripts/file-screenshots.py "$RESULTS/$app-$device-$lang" "$OUT/$app" "$device"
   done

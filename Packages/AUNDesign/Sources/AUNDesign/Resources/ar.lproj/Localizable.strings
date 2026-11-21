@@ -2,6 +2,7 @@
 "studio.name" = "استوديو الأمة الآن";
 "common.retry" = "إعادة المحاولة";
 "common.error.load" = "تعذّر تحميل المحتوى الآن.";
+"common.sidebar" = "إظهار الشريط الجانبي أو إخفاؤه";
 "common.settings" = "الإعدادات";
 "common.language" = "اللغة";
 "common.theme" = "المظهر";
@@ -24,9 +25,22 @@
 "video.views.few" = "%@ مشاهدات";
 "video.views.many" = "%@ مشاهدة";
 "video.views.other" = "%@ مشاهدة";
+"count.subscribers.zero" = "لا مشتركين";
+"count.subscribers.one" = "مشترك واحد";
+"count.subscribers.two" = "مشتركان";
+"count.subscribers.few" = "%@ مشتركين";
+"count.subscribers.many" = "%@ مشتركًا";
+"count.subscribers.other" = "%@ مشترك";
+"count.days.zero" = "لا أيام";
+"count.days.one" = "يوم واحد";
+"count.days.two" = "يومان";
+"count.days.few" = "%@ أيام";
+"count.days.many" = "%@ يومًا";
+"count.days.other" = "%@ يوم";
 "watch.notReady" = "ما زال هذا المرئي قيد المعالجة.";
 "watch.chapters" = "الفصول";
 "watch.description" = "الوصف";
+"player.play" = "تشغيل";
 "player.quality" = "الجودة";
 "player.quality.auto" = "تلقائي";
 "player.speed" = "السرعة";
@@ -234,7 +248,6 @@
 "studio.deleted.purged" = "أُضيف %@ إلى قائمة الحذف النهائي";
 "studio.analytics.title" = "الإحصاءات";
 "studio.analytics.range" = "الفترة";
-"studio.analytics.days" = "%@ يومًا";
 "studio.analytics.views" = "المشاهدات";
 "studio.analytics.day" = "اليوم";
 "studio.analytics.topVideos" = "أبرز المرئيات";
@@ -244,7 +257,7 @@
 "studio.analytics.likes" = "الإعجابات";
 "studio.analytics.comments" = "التعليقات";
 "studio.analytics.newSubscribers" = "مشتركون جدد";
-"studio.analytics.lifetime" = "منذ البداية: %@ مشاهدة • %@ مشترك • تفاعل %@";
+"studio.analytics.lifetime" = "منذ البداية: %@ • %@ • تفاعل %@";
 
 /* Plan refusals and account states (api-videos codes) */
 "studio.refusal.channelLimit" = "وصلت إلى حد القنوات في خطتك.";

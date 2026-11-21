@@ -12,50 +12,51 @@
 
         var body: some View {
             let shape = FanousShape.rounded(theme.radius.xl)
-            VStack(alignment: .leading, spacing: 0) {
-                Button(action: open) {
-                    Color.clear.aspectRatio(16 / 9, contentMode: .fit)
-                        .background(Fanous.surfaceRaised)
-                        .overlay { FanousMotif(.loader).frame(width: 56, height: 56).opacity(0.35) }
-                        .overlay {
-                            if let url = video.thumbnailURL {
-                                AsyncImage(url: url) { phase in
-                                    if case .success(let image) = phase { image.resizable().scaledToFill() }
-                                }
-                            }
-                        }
-                        .overlay {
-                            LinearGradient(
-                                stops: [
-                                    .init(color: Color(theme.colors.surfaceRaised).opacity(0.8), location: 0),
-                                    .init(color: .clear, location: 0.4),
-                                ], startPoint: .bottom, endPoint: .top)
-                        }
-                        .clipped()
+            // The art beside the text where there is room (iPad landscape, Mac), above it on a phone. The art keeps its
+            // own colours to its edge: no fade into the page, which in light themes washed it out to a white band.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 0) {
+                    art.frame(minWidth: 440, maxWidth: 720)
+                    details.frame(minWidth: 280, maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(video.displayTitle(l10n.language))
-                VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
-                    Text(l10n("home.featured")).fanousFont(.caption).fontWeight(.semibold).foregroundStyle(Fanous.link)
-                    Text(video.displayTitle(l10n.language))
-                        .fanousFont(.headline)
-                        .foregroundStyle(Fanous.textPrimary)
-                        .lineLimit(3)
-                        .accessibilityAddTraits(.isHeader)
-                    if let channel = video.displayChannelName(l10n.language) {
-                        Text(channel).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
-                    }
-                    Button(action: open) { Label(l10n("home.watchNow"), systemImage: "play.fill") }
-                        .buttonStyle(FanousButtonStyle(.primary))
-                        .padding(.top, FanousScale.spacingSm)
-                        .accessibilityIdentifier("hero-watch")
+                VStack(alignment: .leading, spacing: 0) {
+                    art
+                    details
                 }
-                .padding(FanousScale.spacingLg)
             }
             .clipShape(FanousShape.rounded(theme.radius.xl - 1))
             .padding(1)
             .fanousMaterial(.hero, shape)
             .accessibilityIdentifier("home-hero")
+        }
+
+        private var art: some View {
+            Button(action: open) {
+                ThumbnailImage(url: video.thumbnailURL, corners: 0)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(video.displayTitle(l10n.language))
+        }
+
+        private var details: some View {
+            VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                Text(l10n("home.featured")).fanousFont(.caption).fontWeight(.semibold).foregroundStyle(Fanous.link)
+                Text(video.displayTitle(l10n.language))
+                    .fanousFont(.headline)
+                    .foregroundStyle(Fanous.textPrimary)
+                    .lineLimit(3)
+                    .accessibilityAddTraits(.isHeader)
+                Text(
+                    DisplayFormat.meta(
+                        [video.displayChannelName(l10n.language), DisplayFormat.views(video.views, l10n)], l10n.language)
+                )
+                .fanousFont(.body).foregroundStyle(Fanous.textSecondary)
+                Button(action: open) { Label(l10n("home.watchNow"), systemImage: "play.fill") }
+                    .buttonStyle(FanousButtonStyle(.primary))
+                    .padding(.top, FanousScale.spacingSm)
+                    .accessibilityIdentifier("hero-watch")
+            }
+            .padding(FanousScale.spacingLg)
         }
     }
 
@@ -66,34 +67,42 @@
         let open: (Video) -> Void
 
         var body: some View {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: FanousScale.spacingXl) {
-                    if let featured = rails.first?.videos.first {
-                        HomeHero(video: featured) { open(featured) }.padding(.horizontal)
-                    }
-                    ForEach(rails) { rail in
-                        VStack(alignment: .leading, spacing: FanousScale.spacingMd) {
-                            RailHeader(kind: rail.kind).padding(.horizontal)
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                LazyHStack(alignment: .top, spacing: FanousScale.spacingLg) {
-                                    ForEach(rail.videos) { video in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: FanousScale.spacingXl) {
+                        if let featured = rails.first?.videos.first {
+                            HomeHero(video: featured) { open(featured) }.padding(.horizontal)
+                        }
+                        // Each rail as a grid of whole cards: one full-width column on a phone, as many as fit on iPad and
+                        // Mac. No card is ever cut by the screen or window edge, in either reading direction.
+                        ForEach(rails) { rail in
+                            VStack(alignment: .leading, spacing: FanousScale.spacingMd) {
+                                RailHeader(kind: rail.kind)
+                                LazyVGrid(
+                                    columns: [
+                                        GridItem(.adaptive(minimum: cardWidth), spacing: FanousScale.spacingLg, alignment: .top)
+                                    ],
+                                    alignment: .leading, spacing: FanousScale.spacingLg
+                                ) {
+                                    ForEach(rails.cards(of: rail)) { video in
                                         Button {
                                             open(video)
                                         } label: {
-                                            VideoCardContent(video: video).frame(width: cardWidth)
+                                            VideoCardContent(video: video)
                                         }
                                         .buttonStyle(VideoCardButtonStyle())
                                         .accessibilityIdentifier("video-card-\(rail.kind.rawValue)-\(video.id)")
                                     }
                                 }
-                                .padding(.horizontal)
-                                .padding(.vertical, 4)
                             }
+                            .padding(.horizontal)
+                            .id("rail-\(rail.kind.rawValue)")
+                            .accessibilityIdentifier("rail-\(rail.kind.rawValue)")
                         }
-                        .accessibilityIdentifier("rail-\(rail.kind.rawValue)")
                     }
+                    .padding(.vertical)
                 }
-                .padding(.vertical)
+                .scrollsToRequestedSection(proxy, among: rails.map { "rail-\($0.kind.rawValue)" }, ready: !rails.isEmpty)
             }
             .fanousPage()
         }

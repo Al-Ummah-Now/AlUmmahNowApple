@@ -52,9 +52,18 @@ struct StudioToolbar: ToolbarContent {
                 identity
             }
         #else
-            ToolbarItem(placement: .navigation) { FanousHeaderTitle(title) }
+            // The title is text on the header, not a control: no glass capsule behind it on macOS 26.
+            if #available(macOS 26, *) {
+                macTitle.sharedBackgroundVisibility(.hidden)
+            } else {
+                macTitle
+            }
         #endif
     }
+
+    #if os(macOS)
+        private var macTitle: some ToolbarContent { ToolbarItem(placement: .navigation) { FanousHeaderTitle(title) } }
+    #endif
 }
 
 extension View {
@@ -188,6 +197,7 @@ struct ChannelGate<Content: View>: View {
                     .toolbarTitleDisplayMode(.inlineLarge)
                     .toolbar { StudioToolbar(title: title, session: session, showingAccounts: $showingAccounts) }
                     .studioNavigationBar()
+                    .fanousBottomEdge(corner: UIDevice.current.userInterfaceIdiom == .pad ? 12 : 0)
             }
         }
 
@@ -234,11 +244,11 @@ struct ChannelGate<Content: View>: View {
             }
         }
 
-        /// iOS 18+: the adaptable tab view, so iPad gets the sidebar and iPhone the (Liquid Glass) tab bar, which
-        /// shrinks while scrolling down on iOS 26. iOS 17 keeps the classic tab bar.
+        /// iOS 18+: the adaptable tab view, so iPad gets the sidebar and iPhone the (Liquid Glass) tab bar, always at
+        /// full size so every tab stays labelled in both languages. iOS 17 keeps the classic tab bar.
         @ViewBuilder private var tabs: some View {
             if #available(iOS 18, *) {
-                let adaptable = TabView(selection: $tab) {
+                TabView(selection: $tab) {
                     ForEach(ordered, id: \.self) { item in
                         SwiftUI.Tab(title(item), systemImage: icon(item), value: item) { page(item) }
                             .badge(item == .upload ? activeUploads : 0)
@@ -248,11 +258,6 @@ struct ChannelGate<Content: View>: View {
                 .tabViewStyle(.sidebarAdaptable)
                 // iPad opens on the sidebar (the approved layout); iPhone keeps the tab bar.
                 .defaultAdaptableTabBarPlacement(.sidebar)
-                if #available(iOS 26, *) {
-                    adaptable.tabBarMinimizeBehavior(.onScrollDown)
-                } else {
-                    adaptable
-                }
             } else {
                 TabView(selection: $tab) {
                     ForEach(ordered, id: \.self) { item in
@@ -277,33 +282,9 @@ struct ChannelGate<Content: View>: View {
         var body: some View {
             NavigationSplitView {
                 List(sections) { item in
-                    // The active section in the theme's gold "active" material, not the system accent: a gold accent
-                    // would put white text on gold (below 4.5:1), and blue is not the brand.
-                    let selected = item == (section ?? .home)
-                    Button {
+                    FanousSidebarRow(l10n(item.titleKey), icon: item.icon, selected: item == (section ?? .home)) {
                         section = item
-                    } label: {
-                        Label {
-                            Text(l10n(item.titleKey))
-                                .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerText))
-                                .fontWeight(selected ? .semibold : .regular)
-                        } icon: {
-                            // One icon column: every glyph centred in the same width, so labels line up.
-                            Image(systemName: item.icon)
-                                .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerIcon))
-                                .frame(width: 20, alignment: .center)
-                        }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background {
-                            if selected { FanousSurfaceKind(kind: .active, shape: .rounded(8)) }
-                        }
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .listRowSeparator(.hidden)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
                     .accessibilityIdentifier("section-\(item.rawValue)")
                 }
                 // A list that fits never scrolls, so no section slides under the title bar.
@@ -314,7 +295,9 @@ struct ChannelGate<Content: View>: View {
                         .padding(.horizontal, FanousScale.spacingSm)
                         .padding(.bottom, FanousScale.spacingSm)
                 }
-                .navigationSplitViewColumnWidth(min: 190, ideal: 220)
+                .toolbar(removing: .sidebarToggle)
+                // Wide enough for the longest section and the channel name, so none is cut short.
+                .navigationSplitViewColumnWidth(min: 240, ideal: 240)
             } detail: {
                 NavigationStack {
                     Group {
@@ -332,6 +315,7 @@ struct ChannelGate<Content: View>: View {
                         }
                     }
                     .toolbar {
+                        FanousSidebarToggle()
                         StudioToolbar(
                             title: l10n((section ?? .home).titleKey), session: session, showingAccounts: $showingAccounts)
                     }
