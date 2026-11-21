@@ -225,4 +225,15 @@ import Testing
         #expect(Self.visible(DisplayFormat.days(7, L10n(.en))) == "7 days")
         #expect(Self.visible(DisplayFormat.days(1, L10n(.en))) == "1 day")
     }
+
+    /// Arabic dates are Gregorian whatever the device's calendar, like English («١٢ نوفمبر», never «جمادى»).
+    @Test func arabicDatesAreGregorian() throws {
+        let date = try Date("2026-11-12T09:00:00Z", strategy: .iso8601)
+        var islamic = Date.FormatStyle.dateTime.day().month().year()
+        islamic.calendar = Calendar(identifier: .islamicUmmAlQura)
+        islamic.timeZone = .gmt
+        let text = Self.visible(DisplayFormat.date(date, islamic, .ar))
+        #expect(text.contains("نوفمبر") && text.contains("٢٠٢٦"), "\(text)")
+        #expect(DisplayFormat.shortDay(date, .ar, now: date).contains("نوفمبر"))
+    }
 }

@@ -94,10 +94,17 @@ public enum DisplayFormat {
         return format(fraction, style, language)
     }
 
-    /// A date or time in any `Date.FormatStyle`: "Oct 15, 2026", "١٥ أكتوبر ٢٠٢٦".
+    /// A date or time in any `Date.FormatStyle`: "Oct 15, 2026", "١٥ أكتوبر ٢٠٢٦". Always the Gregorian calendar, as
+    /// on the web: a device set to an Arabic region (ar_SA) would otherwise show Hijri dates in Arabic only, so the
+    /// two languages would disagree («٢ جمادى الآخرة» beside "Nov 12").
     public static func date(_ date: Date, _ style: Date.FormatStyle, _ language: AppLanguage) -> String {
-        format(date, style, language)
+        var style = style
+        style.calendar = gregorian
+        return format(date, style, language)
     }
+
+    /// The Gregorian calendar every displayed date uses.
+    public static let gregorian = Calendar(identifier: .gregorian)
 
     /// Day, month and year: "Oct 15, 2026", "١٥ أكتوبر ٢٠٢٦".
     public static func day(_ date: Date, _ language: AppLanguage) -> String {
@@ -107,7 +114,7 @@ public enum DisplayFormat {
     /// Day and month, with the year only when it is not this year: "Nov 6", "٦ نوفمبر", "Nov 6, 2025".
     /// For list rows, where the date sits in its own column and must never wrap.
     public static func shortDay(
-        _ date: Date, _ language: AppLanguage, now: Date = .now, calendar: Calendar = .current
+        _ date: Date, _ language: AppLanguage, now: Date = .now, calendar: Calendar = gregorian
     ) -> String {
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
         let style: Date.FormatStyle = .dateTime.day().month(.abbreviated)
@@ -126,6 +133,7 @@ public enum DisplayFormat {
     ) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = language.locale
+        formatter.calendar = gregorian
         formatter.unitsStyle = unitsStyle
         return formatter.localizedString(for: date, relativeTo: now)
     }

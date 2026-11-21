@@ -54,7 +54,7 @@ final class StudioManageTests: XCTestCase {
         app.buttons["edit-save"].tap()
         XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 10))
         XCTAssertTrue(
-            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "part 1 (revised)")).firstMatch
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "patience (revised)")).firstMatch
                 .waitForExistence(timeout: 10))
     }
 
@@ -151,7 +151,7 @@ final class StudioManageTests: XCTestCase {
         tab(app, "المحتوى")
         let first = row(app, "fixture-content-1")
         XCTAssertTrue(first.waitForExistence(timeout: 20))
-        XCTAssertTrue(first.label.contains("تفسير سورة الكهف"), first.label)
+        XCTAssertTrue(first.label.contains("خطبة الجمعة"), first.label)
         XCTAssertGreaterThan(first.frame.maxX, app.windows.firstMatch.frame.midX)
         keep("content-ar")
         tab(app, "الإحصاءات")

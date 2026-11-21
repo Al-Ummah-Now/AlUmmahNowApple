@@ -11,7 +11,7 @@ final class ViewerFlowTests: XCTestCase {
         return app
     }
 
-    private let firstCard = "video-card-trending-fixture-7"
+    private let firstCard = "video-card-trending-fixture-6"
 
     @MainActor
     private func card(_ app: XCUIApplication) -> XCUIElement {
@@ -43,7 +43,7 @@ final class ViewerFlowTests: XCTestCase {
         card(app).tap()
         let title = app.staticTexts["watch-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 20))
-        XCTAssertEqual(title.label, "تلاوة سورة الكهف")
+        XCTAssertEqual(title.label, "مقدمة في التفسير")
         XCTAssertTrue(app.buttons["chapter-c1"].exists)
         XCTAssertTrue(app.buttons["subtitles-menu"].exists)
         XCTAssertTrue(app.buttons["speed-menu"].exists)

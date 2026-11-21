@@ -108,6 +108,13 @@
         }
     }
 
+    extension HomeRailsContent {
+        /// The featured video is already the hero, so the first rail starts with the next one.
+        func shown(_ rail: HomeRail) -> [Video] {
+            rail.id == rails.first?.id ? Array(rail.videos.dropFirst()) : rail.videos
+        }
+    }
+
     /// Skeleton of the hero and one rail, while home loads.
     struct HomeSkeleton: View {
         var body: some View {
