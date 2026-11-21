@@ -52,9 +52,18 @@ struct StudioToolbar: ToolbarContent {
                 identity
             }
         #else
-            ToolbarItem(placement: .navigation) { FanousHeaderTitle(title) }
+            // The title is text on the header, not a control: no glass capsule behind it on macOS 26.
+            if #available(macOS 26, *) {
+                macTitle.sharedBackgroundVisibility(.hidden)
+            } else {
+                macTitle
+            }
         #endif
     }
+
+    #if os(macOS)
+        private var macTitle: some ToolbarContent { ToolbarItem(placement: .navigation) { FanousHeaderTitle(title) } }
+    #endif
 }
 
 extension View {

@@ -166,10 +166,30 @@ private struct FanousHeaderBar: ViewModifier {
         func updateNSView(_ nsView: NSView, context: Context) {}
 
         final class Probe: NSView {
+            private var observer: NSObjectProtocol?
+
             override func viewDidMoveToWindow() {
                 super.viewDidMoveToWindow()
-                // The close button sits in the title bar view, which also holds the toolbar items.
-                window?.standardWindowButton(.closeButton)?.superview?.appearance = NSAppearance(named: .darkAqua)
+                // Leaving the window (also on the way out) stops the observation.
+                if let observer { NotificationCenter.default.removeObserver(observer) }
+                observer = nil
+                guard let window else { return }
+                Self.apply(to: window)
+                // The title bar is rebuilt when the toolbar changes (Studio's split view mounts after sign-in) and the
+                // chosen colour scheme resets appearances, so keep asserting it; it only writes when it differs.
+                observer = NotificationCenter.default.addObserver(
+                    forName: NSWindow.didUpdateNotification, object: window, queue: .main
+                ) { [weak window] _ in
+                    MainActor.assumeIsolated {
+                        if let window { Probe.apply(to: window) }
+                    }
+                }
+            }
+
+            // The close button sits in the title bar view, which also holds the toolbar items.
+            @MainActor static func apply(to window: NSWindow) {
+                guard let bar = window.standardWindowButton(.closeButton)?.superview else { return }
+                if bar.appearance?.name != .darkAqua { bar.appearance = NSAppearance(named: .darkAqua) }
             }
         }
     }
