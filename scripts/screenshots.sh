@@ -67,6 +67,17 @@ dyld_cache() { # platform version
   echo "dyld shared cache for $runtime: ready after ${waited} s"
 }
 
+# Battery and signal for the store frames. The status bar draws any --time override in Latin digits, and simctl
+# rejects an Arabic string, so the Arabic pass keeps the live clock, which the Arabic system draws in its own digits;
+# English shows 9:41. Errors are not hidden: a pass without its overrides fails instead of filing wrong frames.
+status_bar_overrides() { # udid lang
+  local clock=()
+  [[ "$2" == ar ]] || clock=(--time "9:41")
+  xcrun simctl status_bar "$1" clear &&
+    xcrun simctl status_bar "$1" override ${clock[@]+"${clock[@]}"} --dataNetwork wifi --wifiMode active --wifiBars 3 \
+      --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+}
+
 # Runs one target's StoreScreenshots test and files its attachments as <app>/<locale>/<device>-….png.
 # On a simulator: only that simulator runs (the previous pass's one is shut down), it boots before the build so its
 # first-boot system work settles while xcodebuild compiles, and the test starts once it has finished booting.
@@ -98,16 +109,20 @@ shoot() { # app scheme destination device themes [udid]
       plutil -replace AppleLanguages -json "[\"$lang\"]" "$prefs"
       plutil -replace AppleLocale -string "$locale" "$prefs"
       echo "simulator $udid: $(plutil -extract AppleLanguages json -o - "$prefs") $(plutil -extract AppleLocale raw -o - "$prefs")"
-      xcrun simctl boot "$udid" 2>/dev/null || true
-      xcrun simctl bootstatus "$udid" -b >/dev/null
-      # The status bar draws any --time override in Latin digits, and simctl rejects an Arabic string. The Arabic
-      # pass therefore keeps the live clock, which the Arabic system draws in its own digits (٩:١٧); English shows 9:41.
-      # Errors are not hidden: a pass without its overrides fails here instead of filing wrong frames.
-      local clock=()
-      [[ "$lang" == ar ]] || clock=(--time "9:41")
-      xcrun simctl status_bar "$udid" clear
-      xcrun simctl status_bar "$udid" override ${clock[@]+"${clock[@]}"} --dataNetwork wifi --wifiMode active --wifiBars 3 \
-        --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+      # Boot, wait and set the status bar as one step with one retry: on the shared runner a boot sometimes dies
+      # mid-way, and the status bar call then fails on a shut-down simulator (SimError 405).
+      local booted=0 try
+      for try in 1 2; do
+        xcrun simctl boot "$udid" 2>/dev/null || true
+        if xcrun simctl bootstatus "$udid" -b >/dev/null && xcrun simctl list devices booted | grep -q "$udid" \
+          && status_bar_overrides "$udid" "$lang"; then
+          booted=1
+          break
+        fi
+        echo "simulator $udid did not come up for $lang (try $try)"
+        xcrun simctl shutdown "$udid" 2>/dev/null || true
+      done
+      ((booted)) || { echo "simulator $udid failed to boot twice" >&2; return 1; }
     fi
     TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
       TEST_RUNNER_AUN_SCREENSHOT_LANGUAGES="$lang" \
