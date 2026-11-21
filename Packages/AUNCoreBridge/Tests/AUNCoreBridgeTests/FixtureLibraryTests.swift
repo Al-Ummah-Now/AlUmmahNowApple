@@ -32,11 +32,20 @@ struct FixtureLibraryTests {
         #expect(rails[0].videos.map(\.views) == rails[0].videos.map(\.views).sorted(by: >))
     }
 
-    @Test func everyThumbnailIsBundled() {
+    @Test(arguments: [false, true])
+    func everyThumbnailIsBundledInBothLanguages(_ arabic: Bool) {
         for item in FixtureLibrary.items {
-            let url = try? #require(FixtureLibrary.thumbnail(item.thumb))
+            let url = try? #require(FixtureLibrary.thumbnail(item.thumb, arabic: arabic))
             #expect(url.map { FileManager.default.fileExists(atPath: $0.path) } == true, "\(item.thumb)")
         }
+    }
+
+    /// The card is text, so it follows the page: English pages get the English card, Arabic pages the Arabic one.
+    @Test func titleCardsFollowTheLanguage() {
+        let english = FixtureCatalogService.videos(arabic: false).compactMap(\.thumbnailURL?.lastPathComponent)
+        let arabic = FixtureCatalogService.videos(arabic: true).compactMap(\.thumbnailURL?.lastPathComponent)
+        #expect(!english.isEmpty && english.allSatisfy { $0.hasSuffix("-en.jpg") })
+        #expect(arabic.count == english.count && arabic.allSatisfy { !$0.hasSuffix("-en.jpg") })
     }
 
     @Test(arguments: AnalyticsRange.allCases)

@@ -93,15 +93,15 @@
             _model = State(initialValue: WatchViewModel(videoID: videoID, catalog: catalog))
         }
 
-        /// The player beside the details only when both fit side by side (iPad landscape, a wide Mac window). iPad in
-        /// portrait stacks them, so the page below the player is never left empty.
-        /// An 11-inch iPad in portrait is 1032 points wide, so width alone is not enough: the window must be landscape.
+        /// The player beside the details when both fit side by side. iPad: only in landscape (an 11-inch iPad in
+        /// portrait is 1032 points wide, so width alone is not enough), so portrait stacks them and the page below the
+        /// player is never left empty. Mac: whenever the 340-point details column leaves the player a usable width, so
+        /// the title, the channel row and the chapters are on screen beside the player, never under the fold.
         private func usesTwoPanes(_ size: CGSize) -> Bool {
-            let wide = size.width >= 1000 && size.width > size.height
             #if os(iOS)
-                return sizeClass == .regular && wide
+                return sizeClass == .regular && size.width >= 1000 && size.width > size.height
             #else
-                return wide
+                return size.width >= 720
             #endif
         }
 

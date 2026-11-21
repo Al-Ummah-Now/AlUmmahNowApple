@@ -19,13 +19,16 @@ public struct FixtureCatalogService: CatalogServicing {
     }
 
     /// The fixture channel's published public videos (`FixtureLibrary`), most viewed first; the ones Studio holds as
-    /// drafts, scheduled or still processing never show here.
-    public static var videos: [Video] {
+    /// drafts, scheduled or still processing never show here. Title cards follow the app's language.
+    public static var videos: [Video] { videos(arabic: FixtureLibrary.prefersArabic()) }
+
+    /// The same videos with title cards in Arabic or English.
+    public static func videos(arabic: Bool) -> [Video] {
         let now = Date()
         return FixtureLibrary.watchable.sorted { $0.views > $1.views }.map { item in
             Video(
                 id: item.viewerID, title: item.titleEN, titleLocalized: item.title, description: item.summary.en,
-                descriptionLocalized: item.summary, thumbnailURL: FixtureLibrary.thumbnail(item.thumb),
+                descriptionLocalized: item.summary, thumbnailURL: FixtureLibrary.thumbnail(item.thumb, arabic: arabic),
                 playURL: URL(string: "https://fixtures.invalid/\(item.index)/playlist.m3u8"), channelID: "fixture-channel",
                 channelName: FixtureLibrary.channelName.en, channelNameLocalized: FixtureLibrary.channelName,
                 views: item.views, durationSeconds: item.seconds, category: "quran_tafsir",

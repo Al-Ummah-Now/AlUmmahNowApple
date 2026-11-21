@@ -13,7 +13,8 @@ public enum FixtureLibrary {
         public let index: Int
         public let title: LocalizedText
         public let summary: LocalizedText
-        /// The bundled title card (`Resources/thumbs/<thumb>.jpg`, the art Android's review fixtures use).
+        /// The bundled title card: `Resources/thumbs/<thumb>.jpg` in Arabic (the art Android's review fixtures use) and
+        /// its English twin `<thumb>-en.jpg`.
         public let thumb: String
         /// Lifetime views; the daily model hands them out over the video's life.
         public let views: Int
@@ -100,9 +101,9 @@ public enum FixtureLibrary {
     /// The published public videos, as the Viewer lists them.
     public static var watchable: [Item] { items.filter(\.isWatchable) }
 
-    /// A bundled title card.
-    public static func thumbnail(_ name: String) -> URL? {
-        Bundle.module.url(forResource: name, withExtension: "jpg", subdirectory: "thumbs")
+    /// A bundled title card in the app's language: the art is text, so an English page never shows an Arabic card.
+    public static func thumbnail(_ name: String, arabic: Bool = prefersArabic()) -> URL? {
+        Bundle.module.url(forResource: arabic ? name : "\(name)-en", withExtension: "jpg", subdirectory: "thumbs")
     }
 
     /// Today at 00:00 UTC, the day every fixture date counts from.

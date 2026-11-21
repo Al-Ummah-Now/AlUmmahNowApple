@@ -30,5 +30,7 @@ struct ViewerMacApp: App {
                     .environment(settings)
             }
         }
+        // Wide enough for the player with the title, channel and chapters beside it.
+        .defaultSize(width: 1100, height: 680)
     }
 }

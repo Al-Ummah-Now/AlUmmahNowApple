@@ -41,16 +41,18 @@
             }
         }
 
-        private var rails: [HomeRail] {
-            [
-                HomeRail(kind: .trending, videos: Array(FixtureCatalogService.videos.prefix(3))),
-                HomeRail(kind: .recent, videos: Array(FixtureCatalogService.videos.suffix(3))),
+        /// Title cards in the snapshot's language, as the app shows them.
+        private func rails(_ language: AppLanguage) -> [HomeRail] {
+            let videos = FixtureCatalogService.videos(arabic: language == .ar)
+            return [
+                HomeRail(kind: .trending, videos: Array(videos.prefix(3))),
+                HomeRail(kind: .recent, videos: Array(videos.suffix(3))),
             ]
         }
 
-        private var content: WatchContent {
+        private func content(_ language: AppLanguage) -> WatchContent {
             WatchContent(
-                video: FixtureCatalogService.videos[0],
+                video: FixtureCatalogService.videos(arabic: language == .ar)[0],
                 chapters: [
                     Chapter(
                         id: "1", startTime: 0, title: "Introduction",
@@ -64,7 +66,8 @@
         func home(theme: FanousThemeID, language: AppLanguage) {
             for style in Self.styles {
                 assertView(
-                    HomeRailsContent(rails: rails, open: { _ in }), name: "home", theme: theme, language: language, style: style)
+                    HomeRailsContent(rails: rails(language), open: { _ in }), name: "home", theme: theme, language: language,
+                    style: style)
             }
         }
 
@@ -85,8 +88,10 @@
         func watchDetails(theme: FanousThemeID, language: AppLanguage) {
             for style in Self.styles {
                 assertView(
-                    WatchDetails(content: content, seek: { _ in }).padding().frame(maxHeight: .infinity, alignment: .top)
-                        .fanousMaterial(.page),
+                    WatchDetails(content: content(language), seek: { _ in }).padding().frame(
+                        maxHeight: .infinity, alignment: .top
+                    )
+                    .fanousMaterial(.page),
                     name: "watch", theme: theme, language: language, style: style)
             }
         }
