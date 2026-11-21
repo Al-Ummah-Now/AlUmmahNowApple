@@ -9,7 +9,7 @@ import Foundation
 ///
 /// Arabic numbers are never grouped («٦٠٧٥», not «٦٬٠٧٥»): SF Arabic draws the thousands mark «٬» and the decimal mark
 /// «٫» as the same comma, so «٢٠٬٣٢٥» beside «١٢٨٫٨ ألف» read alike. Without grouping the only such mark is the
-/// decimal one. Large values are compact (ألف، مليون), so ungrouped numbers stay short. English keeps "6,075".
+/// decimal one. Large values are compact (ألف، م), so ungrouped numbers stay short. English keeps "6,075".
 ///
 /// Code, ids, URLs, version and build numbers, CSV and wire formats stay as they are and do not use this.
 /// Text the user types is normalised back to 0–9 with ``normalizeDigits(_:)``.
@@ -59,6 +59,9 @@ public enum DisplayFormat {
         }
     }
 
+    /// The Arabic millions mark, after the number in every form: «١ م», «١٫٢ م مشاهدة».
+    static let millionMark = "م"
+
     /// The magnitude in thousands, millions or billions, truncated to one decimal, with its scale; nil under 1,000.
     /// Multiplies before dividing so whole counts never land just under a tenth (1,300 → 1.3, not 1.2).
     static func truncatedScale(_ value: Double) -> (shown: Double, scale: Double)? {
@@ -68,21 +71,22 @@ public enum DisplayFormat {
         return ((magnitude * 10 / scale).rounded(.towardZero) / 10, scale)
     }
 
-    /// Arabic thousands, millions and billions, or nil under 1,000. Owner rule (2026-11-20, the same on Android, Apple,
-    /// Desktop and web): the number is truncated to one decimal and the scale word agrees with it. Exactly 1 is the
-    /// word alone («ألف»), exactly 2 the dual alone — «ألفان» on its own, the construct «ألفا» before a noun
-    /// (`beforeNoun`), never after a digit — whole 3–10 «٣ آلاف», and 11 and up or any decimal «١١ ألف», «١٫٣ ألف».
-    /// Likewise مليون/مليونان/ملايين and مليار/ملياران/مليارات. CLDR's compact Arabic picks the word from the full
-    /// count instead, giving «٢ ألف», «١٠ ألف», «٣ مليون».
+    /// Arabic thousands, millions and billions, or nil under 1,000. Owner rules (2026-11-20 and 2026-11-21, the same
+    /// on Android, Apple, Desktop and web): the number is truncated to one decimal, never rounded up. Thousands and
+    /// billions take a word that agrees with it: exactly 1 is the word alone («ألف»), exactly 2 the dual alone —
+    /// «ألفان» on its own, the construct «ألفا» before a noun (`beforeNoun`), never after a digit — whole 3–10
+    /// «٣ آلاف», and 11 and up or any decimal «١١ ألف», «١٫٣ ألف»; likewise مليار/ملياران/مليارات. Millions are always
+    /// the number and «م»: «١ م», «٢ م», «١٫٢ م مشاهدة», «١٥ م». CLDR's compact Arabic picks the word from the full
+    /// count instead, giving «٢ ألف», «١٠ ألف».
     static func arabicCompact(_ value: Double, beforeNoun: Bool = false) -> String? {
         guard let (shown, size) = truncatedScale(value) else { return nil }
+        let digits = number(shown, .ar, fraction: 0...1)
+        if size == 1e6 { return (value < 0 ? "-" : "") + digits + "\u{00A0}" + millionMark }
         let scales: [Double: (one: String, two: String, twoConstruct: String, few: String)] = [
             1e9: ("مليار", "ملياران", "مليارا", "مليارات"),
-            1e6: ("مليون", "مليونان", "مليونا", "ملايين"),
             1e3: ("ألف", "ألفان", "ألفا", "آلاف"),
         ]
         guard let scale = scales[size] else { return nil }
-        let digits = number(shown, .ar, fraction: 0...1)
         let text: String
         switch shown {
         case 1: text = scale.one
@@ -219,7 +223,7 @@ public enum DisplayFormat {
 
     /// A count with its noun from the plural keys `<key>.zero|one|two|few|many|other`.
     static func counted(_ count: Int, _ key: String, _ l10n: L10n) -> String {
-        // A compact number ("1.2K", «١٫٢ ألف», «٨ آلاف») takes the "other" form in both languages: after ألف/مليون/مليار
+        // A compact number ("1.2K", «١٫٢ ألف», «٨ آلاف») takes the "other" form in both languages: after ألف/م/مليار
         // the Arabic noun is always singular («ألف مشاهدة», «ألفا مشاهدة»); only counts under 1,000 agree with the
         // full count.
         let category = count >= 1000 ? "other" : pluralCategory(count, l10n.language)

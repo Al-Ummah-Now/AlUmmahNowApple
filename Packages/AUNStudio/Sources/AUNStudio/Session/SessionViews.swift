@@ -531,7 +531,7 @@ struct DashboardSection<Rows: View>: View {
     }
 }
 
-/// A count tile: the number large, the status under it, in the card material.
+/// A count tile: the number large (compact from 1,000, as every stat tile), the status under it, in the card material.
 struct KPITile: View {
     @Environment(\.l10n) private var l10n
     let label: String
@@ -540,7 +540,7 @@ struct KPITile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(DisplayFormat.number(value, l10n.language))
+            Text(DisplayFormat.count(value, l10n.language))
                 .font(.system(size: 26, weight: .bold)).monospacedDigit()
                 .foregroundStyle(alert && value > 0 ? Fanous.errorText : Fanous.textPrimary)
             Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1).minimumScaleFactor(0.8)

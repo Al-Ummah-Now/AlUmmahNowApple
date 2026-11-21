@@ -30,8 +30,9 @@ struct ChartScaleTests {
         #expect(ChartScale.compact(1000, .ar) == "ألف")
         #expect(ChartScale.compact(1500, .ar) == "١٫٥\u{00A0}ألف")
         #expect(ChartScale.compact(5000, .ar) == "٥\u{00A0}آلاف")
-        #expect(ChartScale.compact(2_000_000, .ar) == "مليونان")
-        #expect(ChartScale.compact(3_000_000, .ar) == "٣\u{00A0}ملايين")
+        #expect(ChartScale.compact(1_000_000, .ar) == "١\u{00A0}م")
+        #expect(ChartScale.compact(2_000_000, .ar) == "٢\u{00A0}م")
+        #expect(ChartScale.compact(2_500_000, .ar) == "٢٫٥\u{00A0}م")
         #expect(ChartScale.full(6075, .ar).contains("٦"))
     }
 
