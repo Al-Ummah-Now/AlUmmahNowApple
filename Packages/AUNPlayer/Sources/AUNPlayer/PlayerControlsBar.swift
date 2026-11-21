@@ -22,7 +22,7 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
     public struct PlayerControlsBar: View {
         @Environment(\.l10n) private var l10n
         let controller: PlayerController
-        /// The video's length from the catalog, shown until the player has loaded the asset's own.
+        /// The video's length from the catalog, the same as its card shows; the asset's own length when it has none.
         let knownDuration: Double?
 
         public init(controller: PlayerController, knownDuration: Double? = nil) {
@@ -115,13 +115,14 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
         }
     }
 
-    /// The scrubber and «elapsed / total», «٠:٠٠ / ٢١:١٥» paused at the start.
+    /// The scrubber and «elapsed / total», «٠:٠٠ / ٢٧:٢٢» paused at the start.
     struct PlayerTimeline: View {
         @Environment(\.l10n) private var l10n
         let controller: PlayerController
         let knownDuration: Double?
 
-        private var total: Double { controller.duration > 0 ? controller.duration : max(knownDuration ?? 0, 0) }
+        /// The catalog length, so the page and the video's card agree; else the asset's, once it has loaded.
+        private var total: Double { knownDuration.flatMap { $0 > 0 ? $0 : nil } ?? controller.duration }
 
         var body: some View {
             HStack(spacing: FanousScale.spacingMd) {
