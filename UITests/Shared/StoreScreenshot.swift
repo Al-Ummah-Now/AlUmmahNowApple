@@ -28,6 +28,9 @@ enum StoreScreenshot {
             [
                 "-AUNUseFixtures", "YES", "-AUNFixturePlayable", "YES", "-AUNLanguage", language, "-AUNTheme", theme,
                 "-ApplePersistenceIgnoreState", "YES",
+                // The system's own text for this app (Mac window and menu names from InfoPlist.strings) in the same
+                // language; scripts/screenshots.sh also switches the simulator's language for the status bar.
+                "-AppleLanguages", "(\(language))", "-AppleLocale", language == "ar" ? "ar_SA@numbers=arab" : "en_US",
             ] + extra
         app.launch()
         return app

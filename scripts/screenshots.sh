@@ -22,6 +22,7 @@ COMMON=(-workspace AlUmmahNow.xcworkspace -derivedDataPath "$DERIVED" -configura
 IPHONE="iPhone 17 Pro Max"
 IPAD="iPad Pro 13-inch (M5)"
 TV="Apple TV 4K (3rd generation)"
+AUN_SCREENSHOT_LANGUAGES="${AUN_SCREENSHOT_LANGUAGES:-en,ar}"
 mkdir -p "$OUT" "$RESULTS"
 
 # The simulator's UDID for a device name on a runtime version, created when the runner has none.
@@ -71,8 +72,6 @@ dyld_cache() { # platform version
 # loaded notification", "Timed out while requesting screenshot"; #47).
 shoot() { # app scheme destination device themes [udid]
   local app="$1" scheme="$2" destination="$3" device="$4" themes="$5" udid="${6:-}"
-  local bundle="$RESULTS/$app-$device.xcresult"
-  rm -rf "$bundle" "$RESULTS/$app-$device"
   local signing=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
   [[ "$destination" == "platform=macOS" ]] && signing=(CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=)
   if [[ -n "$udid" ]]; then
@@ -80,17 +79,32 @@ shoot() { # app scheme destination device themes [udid]
     xcrun simctl boot "$udid" 2>/dev/null || true
   fi
   xcodebuild build-for-testing "${COMMON[@]}" -scheme "$scheme" -destination "$destination" "${signing[@]}"
-  if [[ -n "$udid" ]]; then
-    xcrun simctl bootstatus "$udid" -b >/dev/null
-    xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
-      --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 2>/dev/null || true
-  fi
-  TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
-    xcodebuild test-without-building "${COMMON[@]}" -scheme "$scheme" -destination "$destination" \
-    -only-testing:"${scheme}UITests/StoreScreenshots" -resultBundlePath "$bundle" "${signing[@]}"
+  # One pass per language. On a simulator the system itself switches language (and Eastern Arabic digits), so its own
+  # chrome matches the app: the status bar's app name comes from the app's InfoPlist.strings and the clock reads ٩:٤١.
+  local lang
+  for lang in ${AUN_SCREENSHOT_LANGUAGES//,/ }; do
+    local bundle="$RESULTS/$app-$device-$lang.xcresult"
+    rm -rf "$bundle" "$RESULTS/$app-$device-$lang"
+    if [[ -n "$udid" ]]; then
+      local prefs="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Preferences/.GlobalPreferences.plist"
+      local locale="en_US" clock="9:41"
+      [[ "$lang" == ar ]] && locale="ar_SA@numbers=arab" clock="٩:٤١"
+      xcrun simctl shutdown "$udid" 2>/dev/null || true
+      defaults write "$prefs" AppleLanguages -array "$lang"
+      defaults write "$prefs" AppleLocale -string "$locale"
+      xcrun simctl boot "$udid" 2>/dev/null || true
+      xcrun simctl bootstatus "$udid" -b >/dev/null
+      xcrun simctl status_bar "$udid" override --time "$clock" --dataNetwork wifi --wifiMode active --wifiBars 3 \
+        --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 2>/dev/null || true
+    fi
+    TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
+      TEST_RUNNER_AUN_SCREENSHOT_LANGUAGES="$lang" \
+      xcodebuild test-without-building "${COMMON[@]}" -scheme "$scheme" -destination "$destination" \
+      -only-testing:"${scheme}UITests/StoreScreenshots" -resultBundlePath "$bundle" "${signing[@]}"
+    xcrun xcresulttool export attachments --path "$bundle" --output-path "$RESULTS/$app-$device-$lang" >/dev/null
+    python3 scripts/file-screenshots.py "$RESULTS/$app-$device-$lang" "$OUT/$app" "$device"
+  done
   [[ -n "$udid" ]] && { xcrun simctl shutdown "$udid" 2>/dev/null || true; }
-  xcrun xcresulttool export attachments --path "$bundle" --output-path "$RESULTS/$app-$device" >/dev/null
-  python3 scripts/file-screenshots.py "$RESULTS/$app-$device" "$OUT/$app" "$device"
 }
 
 viewer_ios() {
