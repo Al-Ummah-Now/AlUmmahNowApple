@@ -40,9 +40,9 @@ struct ChartScaleTests {
         #expect(ChartScale.watchUnit(largestSeconds: 7200) == .hour)
         #expect(ChartScale.watchTime(186, .en).contains("3.1"))
         #expect(ChartScale.watchTime(45_000, .en).contains("12.5"))
-        // From 100 up no decimal, so Arabic never shows «٬» and «٫» together («٢٬٢٤٦», not «٢٬٢٤٥٫٩»).
+        // From 100 up no decimal; Arabic is never grouped, so «٢٢٤٦», not «٢٬٢٤٥٫٩».
         let large = ChartScale.watchTime(2_245.9 * 3600, .ar)
-        #expect(large.contains("٢٬٢٤٦") && !large.contains("٫"), "\(large)")
+        #expect(large.contains("٢٢٤٦") && !large.contains("٫") && !large.contains("٬"), "\(large)")
         #expect(ChartScale.watchTime(2_245.9 * 3600, .en).contains("2,246"))
     }
 

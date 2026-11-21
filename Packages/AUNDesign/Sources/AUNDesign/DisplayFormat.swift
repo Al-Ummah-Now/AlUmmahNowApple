@@ -7,6 +7,10 @@ import Foundation
 /// whatever the device region or numbering settings say. `AppLanguage.locale` pins the numbering system
 /// (`ar@numbers=arab`), and every helper here formats with that locale. English keeps Arabic numerals 0–9.
 ///
+/// Arabic numbers are never grouped («٦٠٧٥», not «٦٬٠٧٥»): SF Arabic draws the thousands mark «٬» and the decimal mark
+/// «٫» as the same comma, so «٢٠٬٣٢٥» beside «١٢٨٫٨ ألف» read alike. Without grouping the only such mark is the
+/// decimal one. Large values are compact (ألف، مليون), so ungrouped numbers stay short. English keeps "6,075".
+///
 /// Code, ids, URLs, version and build numbers, CSV and wire formats stay as they are and do not use this.
 /// Text the user types is normalised back to 0–9 with ``normalizeDigits(_:)``.
 /// The `display_format` SwiftLint rule rejects display formatting outside this file.
@@ -14,10 +18,14 @@ public enum DisplayFormat {
     /// Any `FormatStyle` in the app language: the escape hatch for styles the helpers below don't cover.
     public static func format<Style: FormatStyle>(_ value: Style.FormatInput, _ style: Style, _ language: AppLanguage) -> String
     where Style.FormatOutput == String {
-        style.locale(language.locale).format(value)
+        let text = style.locale(language.locale).format(value)
+        return language == .ar ? text.replacingOccurrences(of: arabicGroupingMark, with: "") : text
     }
 
-    /// A whole number with grouping: "6,075", "٦٬٠٧٥".
+    /// U+066C ARABIC THOUSANDS SEPARATOR, which no Arabic text from here carries.
+    static let arabicGroupingMark = "\u{066C}"
+
+    /// A whole number, grouped in English only: "6,075", «٦٠٧٥».
     public static func number<Value: BinaryInteger>(_ value: Value, _ language: AppLanguage, grouping: Bool = true) -> String {
         format(value, IntegerFormatStyle<Value>().grouping(grouping ? .automatic : .never), language)
     }

@@ -56,9 +56,18 @@ import Testing
     }
 
     @Test func arabicExamples() {
-        #expect(DisplayFormat.number(6075, .ar) == "٦٬٠٧٥")
+        #expect(DisplayFormat.number(6075, .ar) == "٦٠٧٥")
         #expect(DisplayFormat.duration(75, .ar) == "١:١٥")
         #expect(DisplayFormat.timecode(milliseconds: 15_000, .ar) == "٠:١٥٫٠")
+    }
+
+    /// SF Arabic draws «٬» and «٫» alike, so the decimal mark must be the only one in Arabic text.
+    @Test func arabicNumbersNeverCarryTheThousandsMark() {
+        for text in Self.samples(.ar) { #expect(!text.contains("\u{066C}"), "\(text)") }
+        #expect(DisplayFormat.number(20_325, .ar) == "٢٠٣٢٥")
+        #expect(DisplayFormat.number(1_234.5, .ar, fraction: 1...1) == "١٢٣٤٫٥")
+        #expect(DisplayFormat.count(128_800, .ar).contains("١٢٨٫٨"))
+        #expect(DisplayFormat.number(20_325, .en) == "20,325")
     }
 
     @Test func pinnedLocaleIgnoresTheDeviceNumberingSystem() {
