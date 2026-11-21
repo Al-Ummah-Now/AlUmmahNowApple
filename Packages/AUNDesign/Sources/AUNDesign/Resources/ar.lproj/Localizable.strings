@@ -30,9 +30,16 @@
 "count.subscribers.few" = "%@ مشتركين";
 "count.subscribers.many" = "%@ مشتركًا";
 "count.subscribers.other" = "%@ مشترك";
+"count.days.zero" = "لا أيام";
+"count.days.one" = "يوم واحد";
+"count.days.two" = "يومان";
+"count.days.few" = "%@ أيام";
+"count.days.many" = "%@ يومًا";
+"count.days.other" = "%@ يوم";
 "watch.notReady" = "ما زال هذا المرئي قيد المعالجة.";
 "watch.chapters" = "الفصول";
 "watch.description" = "الوصف";
+"player.play" = "تشغيل";
 "player.quality" = "الجودة";
 "player.quality.auto" = "تلقائي";
 "player.speed" = "السرعة";
@@ -240,7 +247,6 @@
 "studio.deleted.purged" = "أُضيف %@ إلى قائمة الحذف النهائي";
 "studio.analytics.title" = "الإحصاءات";
 "studio.analytics.range" = "الفترة";
-"studio.analytics.days" = "%@ يومًا";
 "studio.analytics.views" = "المشاهدات";
 "studio.analytics.day" = "اليوم";
 "studio.analytics.topVideos" = "أبرز المرئيات";

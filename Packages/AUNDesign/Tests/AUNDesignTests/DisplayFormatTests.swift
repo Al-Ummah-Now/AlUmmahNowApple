@@ -28,7 +28,7 @@ import Testing
             DisplayFormat.duration(3661, language),
             DisplayFormat.timecode(milliseconds: 15_000, language),
             DisplayFormat.timecode(milliseconds: 3_725_400, language),
-            L10n(language)("studio.analytics.days", DisplayFormat.number(28, language)),
+            DisplayFormat.days(28, L10n(language)),
             L10n(language)("player.skipForward", DisplayFormat.number(10, language)),
         ]
     }
@@ -209,5 +209,20 @@ import Testing
             DisplayFormat.meta(["Al Ummah Now", "1.2K views"], .en) == "\u{2068}Al Ummah Now\u{2069} · \u{2068}1.2K views\u{2069}"
         )
         #expect(!L10n(.ar)("studio.analytics.lifetime", "١", "٢", "٣").contains("·"))
+    }
+
+    /// Analytics ranges: 3–10 take the plural («٧ أيام»), 11–99 the accusative singular («٢٨ يومًا»), as with views.
+    @Test func dayRangesTakeTheCountNounRules() {
+        let ar = L10n(.ar)
+        #expect(Self.visible(DisplayFormat.days(7, ar)) == "٧ أيام")
+        #expect(Self.visible(DisplayFormat.days(3, ar)) == "٣ أيام")
+        #expect(Self.visible(DisplayFormat.days(10, ar)) == "١٠ أيام")
+        #expect(Self.visible(DisplayFormat.days(28, ar)) == "٢٨ يومًا")
+        #expect(Self.visible(DisplayFormat.days(90, ar)) == "٩٠ يومًا")
+        #expect(Self.visible(DisplayFormat.days(365, ar)) == "٣٦٥ يومًا")
+        #expect(Self.visible(DisplayFormat.days(1, ar)) == "يوم واحد")
+        #expect(Self.visible(DisplayFormat.days(2, ar)) == "يومان")
+        #expect(Self.visible(DisplayFormat.days(7, L10n(.en))) == "7 days")
+        #expect(Self.visible(DisplayFormat.days(1, L10n(.en))) == "1 day")
     }
 }

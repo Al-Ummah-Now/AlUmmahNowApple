@@ -198,6 +198,9 @@ public enum DisplayFormat {
     /// "1.2K subscribers", «ألفا مشترك», «٣ مشتركين» (keys `count.subscribers.*`).
     public static func subscribers(_ count: Int, _ l10n: L10n) -> String { counted(count, "count.subscribers", l10n) }
 
+    /// "7 days", «٧ أيام», «٢٨ يومًا», «يومان», with the noun agreeing with the count (keys `count.days.*`).
+    public static func days(_ count: Int, _ l10n: L10n) -> String { counted(count, "count.days", l10n) }
+
     /// A count with its noun from the plural keys `<key>.zero|one|two|few|many|other`.
     static func counted(_ count: Int, _ key: String, _ l10n: L10n) -> String {
         // A compact number ("1.2K", «١٫٢ ألف», «٨ آلاف») takes the "other" form in both languages: after ألف/مليون/مليار

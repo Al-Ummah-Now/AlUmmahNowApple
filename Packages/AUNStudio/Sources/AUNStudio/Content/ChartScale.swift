@@ -54,12 +54,15 @@ enum ChartScale {
     /// Hours once the largest value reaches two hours, minutes below that.
     static func watchUnit(largestSeconds: Double) -> WatchUnit { largestSeconds >= 2 * 3600 ? .hour : .minute }
 
-    /// A value already in `unit`, with the unit: "3.1 min", "12.5 hr", "٣٫١ د".
+    /// A value already in `unit`, with the unit: "3.1 min", "12.5 hr", "٣٫١ د", "2,246 hr". From 100 up the decimal
+    /// is dropped: in Arabic the thousands separator «٬» and the decimal separator «٫» look alike, so «٢٬٢٤٥٫٩» would
+    /// read as three groups.
     static func format(_ value: Double, in unit: WatchUnit, _ language: AppLanguage) -> String {
         DisplayFormat.format(
             Measurement(value: value, unit: unit == .hour ? UnitDuration.hours : UnitDuration.minutes),
             Measurement<UnitDuration>.FormatStyle(
-                width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(0...1))),
+                width: .abbreviated, usage: .asProvided,
+                numberFormatStyle: .number.precision(.fractionLength(abs(value) >= 100 ? 0...0 : 0...1))),
             language)
     }
 
