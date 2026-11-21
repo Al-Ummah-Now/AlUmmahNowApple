@@ -58,7 +58,8 @@ public struct Video: Identifiable, Hashable, Sendable, Decodable {
     public init(
         id: String, title: String, titleLocalized: LocalizedText? = nil, description: String? = nil,
         descriptionLocalized: LocalizedText? = nil, thumbnailURL: URL? = nil, playURL: URL? = nil,
-        channelID: String? = nil, channelName: String? = nil, channelNameLocalized: LocalizedText? = nil, views: Int = 0, durationSeconds: Double? = nil,
+        channelID: String? = nil, channelName: String? = nil, channelNameLocalized: LocalizedText? = nil,
+        views: Int = 0, durationSeconds: Double? = nil,
         category: String? = nil, dateCreated: Date? = nil, availableResolutions: [String] = [],
         uploadStatus: String? = "ready", isLive: Bool = false
     ) {
