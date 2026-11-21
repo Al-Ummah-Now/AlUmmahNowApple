@@ -18,7 +18,9 @@ TVOS_OS="${AUN_TVOS_SIM_OS:-27.0}"
 DERIVED="${AUN_DERIVED_DATA:-build/DerivedData}"
 RESULTS="build/screenshot-results"
 COMMON=(-workspace AlUmmahNow.xcworkspace -derivedDataPath "$DERIVED" -configuration Debug
-        -skipPackagePluginValidation -skipMacroValidation)
+        -skipPackagePluginValidation -skipMacroValidation
+        # Store frames show the app's real name: no " QA" suffix in the status bar, Dock or window title.
+        AUN_DISPLAY_SUFFIX=)
 IPHONE="iPhone 17 Pro Max"
 IPAD="iPad Pro 13-inch (M5)"
 TV="Apple TV 4K (3rd generation)"
@@ -87,14 +89,19 @@ shoot() { # app scheme destination device themes [udid]
     rm -rf "$bundle" "$RESULTS/$app-$device-$lang"
     if [[ -n "$udid" ]]; then
       local prefs="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Preferences/.GlobalPreferences.plist"
-      local locale="en_US" clock="9:41"
-      [[ "$lang" == ar ]] && locale="ar_SA@numbers=arab" clock="٩:٤١"
+      local locale="en_US"
+      [[ "$lang" == ar ]] && locale="ar_SA@numbers=arab"
       xcrun simctl shutdown "$udid" 2>/dev/null || true
-      defaults write "$prefs" AppleLanguages -array "$lang"
-      defaults write "$prefs" AppleLocale -string "$locale"
+      # plutil edits the file in place (as fastlane snapshot does); `defaults write` on a path goes through cfprefsd's
+      # cache and the booted simulator never saw it. The log line proves which language the pass runs in.
+      [[ -f "$prefs" ]] || { mkdir -p "$(dirname "$prefs")"; plutil -create xml1 "$prefs"; }
+      plutil -replace AppleLanguages -json "[\"$lang\"]" "$prefs"
+      plutil -replace AppleLocale -string "$locale" "$prefs"
+      echo "simulator $udid: $(plutil -extract AppleLanguages json -o - "$prefs") $(plutil -extract AppleLocale raw -o - "$prefs")"
       xcrun simctl boot "$udid" 2>/dev/null || true
       xcrun simctl bootstatus "$udid" -b >/dev/null
-      xcrun simctl status_bar "$udid" override --time "$clock" --dataNetwork wifi --wifiMode active --wifiBars 3 \
+      # The time is parsed and drawn in the system's own locale, so the Arabic pass shows ٩:٤١ in Eastern Arabic digits.
+      xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
         --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 2>/dev/null || true
     fi
     TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
