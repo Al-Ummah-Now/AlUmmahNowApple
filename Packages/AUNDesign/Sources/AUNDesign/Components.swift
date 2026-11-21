@@ -324,9 +324,10 @@ extension View {
 
     /// The page colour over the bottom safe area (the home indicator, the floating tab bar, iPadOS's window corner),
     /// so scrolled content never sits under them: the last rows scroll up clear of the bar instead. `corner` adds room
-    /// for the iPad window's resize corner.
+    /// for the iPad window's resize corner, and scroll content ends that much higher again, so the last row's text never
+    /// meets the corner's arc.
     public func fanousBottomEdge(corner: CGFloat = 0) -> some View {
-        overlay {
+        contentMargins(.bottom, corner * 2, for: .scrollContent).overlay {
             GeometryReader { geometry in
                 FanousSurfaceKind(kind: .page, shape: .rect)
                     .mask(alignment: .bottom) {

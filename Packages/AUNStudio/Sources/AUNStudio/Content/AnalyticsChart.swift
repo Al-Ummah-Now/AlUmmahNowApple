@@ -98,6 +98,9 @@ struct DailyChart: View {
     var body: some View {
         chart
             .frame(height: height)
+            // The top value label straddles the top gridline; Arabic digits and «آلاف» stand taller than Latin, so
+            // leave room above it for the metric chips.
+            .padding(.top, FanousScale.spacingMd)
             // The plot is laid out left to right on purpose; positions and the axis side carry the direction.
             .environment(\.layoutDirection, .leftToRight)
             .overlay {

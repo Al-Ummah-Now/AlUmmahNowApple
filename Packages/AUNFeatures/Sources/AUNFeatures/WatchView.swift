@@ -95,11 +95,13 @@
 
         /// The player beside the details only when both fit side by side (iPad landscape, a wide Mac window). iPad in
         /// portrait stacks them, so the page below the player is never left empty.
-        private func usesTwoPanes(width: CGFloat) -> Bool {
+        /// An 11-inch iPad in portrait is 1032 points wide, so width alone is not enough: the window must be landscape.
+        private func usesTwoPanes(_ size: CGSize) -> Bool {
+            let wide = size.width >= 1000 && size.width > size.height
             #if os(iOS)
-                sizeClass == .regular && width >= 1000
+                return sizeClass == .regular && wide
             #else
-                width >= 1000
+                return wide
             #endif
         }
 
@@ -115,7 +117,7 @@
                     ErrorStateView { Task { await model.load(language: l10n.language) } }
                 case .loaded(let content):
                     GeometryReader { geometry in
-                        if usesTwoPanes(width: geometry.size.width) {
+                        if usesTwoPanes(geometry.size) {
                             twoPanes(content)
                         } else if sizeIsCompact {
                             singleColumn(content)

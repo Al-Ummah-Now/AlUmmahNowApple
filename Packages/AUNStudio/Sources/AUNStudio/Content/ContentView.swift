@@ -250,6 +250,8 @@ struct ContentView: View {
         return ViewThatFits {
             HStack(spacing: FanousScale.spacingMd) { bulkButtons(count) }
             ScrollView(.horizontal) { HStack(spacing: FanousScale.spacingMd) { bulkButtons(count) } }
+                // Not the page's bottom margin for the iPad resize corner: this bar is one row high.
+                .contentMargins(.bottom, 0, for: .scrollContent)
         }
         .padding(FanousScale.spacingMd)
         .frame(maxWidth: .infinity)
