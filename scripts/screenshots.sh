@@ -87,8 +87,11 @@ shoot() { # app scheme destination device themes [udid]
     rm -rf "$bundle" "$RESULTS/$app-$device-$lang"
     if [[ -n "$udid" ]]; then
       local prefs="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Preferences/.GlobalPreferences.plist"
-      local locale="en_US" clock="9:41"
-      [[ "$lang" == ar ]] && locale="ar_SA@numbers=arab" clock="٩:٤١"
+      local locale="en_US" clock
+      # An ISO time, so the status bar formats 9:41 itself in the system locale (٩:٤١ in Arabic); a plain "٩:٤١"
+      # string is not taken.
+      clock="2026-11-20T09:41:00$(date +%z | sed 's/\(..\)$/:\1/')"
+      [[ "$lang" == ar ]] && locale="ar_SA@numbers=arab"
       xcrun simctl shutdown "$udid" 2>/dev/null || true
       defaults write "$prefs" AppleLanguages -array "$lang"
       defaults write "$prefs" AppleLocale -string "$locale"
@@ -97,11 +100,20 @@ shoot() { # app scheme destination device themes [udid]
       xcrun simctl status_bar "$udid" override --time "$clock" --dataNetwork wifi --wifiMode active --wifiBars 3 \
         --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 2>/dev/null || true
     fi
-    TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_REVIEW_SHOTS="${AUN_REVIEW_SHOTS:-0}" \
-      TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
-      TEST_RUNNER_AUN_SCREENSHOT_LANGUAGES="$lang" \
-      xcodebuild test-without-building "${COMMON[@]}" -scheme "$scheme" -destination "$destination" \
-      -only-testing:"${scheme}UITests/StoreScreenshots" -resultBundlePath "$bundle" "${signing[@]}"
+    # One retry: the shared runner sometimes loses the test runner while it bootstraps, or an app won't terminate.
+    local attempt
+    for attempt in 1 2; do
+      rm -rf "$bundle"
+      if TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_REVIEW_SHOTS="${AUN_REVIEW_SHOTS:-0}" \
+        TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
+        TEST_RUNNER_AUN_SCREENSHOT_LANGUAGES="$lang" \
+        xcodebuild test-without-building "${COMMON[@]}" -scheme "$scheme" -destination "$destination" \
+        -only-testing:"${scheme}UITests/StoreScreenshots" -resultBundlePath "$bundle" "${signing[@]}"; then
+        break
+      fi
+      ((attempt == 2)) && return 1
+      echo "screenshot pass $app $device $lang failed, retrying once"
+    done
     xcrun xcresulttool export attachments --path "$bundle" --output-path "$RESULTS/$app-$device-$lang" >/dev/null
     python3 scripts/file-screenshots.py "$RESULTS/$app-$device-$lang" "$OUT/$app" "$device"
   done
