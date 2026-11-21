@@ -100,8 +100,11 @@ shoot() { # app scheme destination device themes [udid]
       echo "simulator $udid: $(plutil -extract AppleLanguages json -o - "$prefs") $(plutil -extract AppleLocale raw -o - "$prefs")"
       xcrun simctl boot "$udid" 2>/dev/null || true
       xcrun simctl bootstatus "$udid" -b >/dev/null
-      # The time is parsed and drawn in the system's own locale, so the Arabic pass shows ٩:٤١ in Eastern Arabic digits.
-      xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
+      # An ISO time, so the status bar formats 9:41 itself in the system locale (٩:٤١ in Arabic). A plain string is
+      # drawn as given, in Latin digits.
+      local clock
+      clock="2026-11-20T09:41:00$(date +%z | sed 's/\(..\)$/:\1/')"
+      xcrun simctl status_bar "$udid" override --time "$clock" --dataNetwork wifi --wifiMode active --wifiBars 3 \
         --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 2>/dev/null || true
     fi
     TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
