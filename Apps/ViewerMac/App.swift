@@ -9,6 +9,12 @@ struct ViewerMacApp: App {
     @State private var siteTheme = SiteThemeStore.live()
     private let core = ViewerBootstrap.makeCore()
 
+    init() {
+        // The window chrome in the app's language: in Arabic the traffic lights, title and toolbar mirror, and the
+        // settings menu stays in the toolbar (an AppKit left-to-right window under a right-to-left view dropped it).
+        AppKitLayoutDirection.match(AppSettings().language)
+    }
+
     var body: some Scene {
         WindowGroup {
             ViewerRootView(core: core)

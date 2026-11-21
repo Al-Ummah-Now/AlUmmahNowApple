@@ -186,9 +186,11 @@ private struct FanousHeaderBar: ViewModifier {
                 }
             }
 
-            // The close button sits in the title bar view, which also holds the toolbar items.
+            // The close button sits in the title bar view; its container also holds the split view's sidebar items
+            // (where right-to-left windows put the sidebar button).
             @MainActor static func apply(to window: NSWindow) {
-                guard let bar = window.standardWindowButton(.closeButton)?.superview else { return }
+                guard let titlebar = window.standardWindowButton(.closeButton)?.superview else { return }
+                let bar = titlebar.superview ?? titlebar
                 if bar.appearance?.name != .darkAqua { bar.appearance = NSAppearance(named: .darkAqua) }
             }
         }
