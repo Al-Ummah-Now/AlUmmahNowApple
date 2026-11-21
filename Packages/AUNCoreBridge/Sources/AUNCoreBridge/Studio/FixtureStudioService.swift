@@ -96,17 +96,26 @@ public struct FixtureStudioService: StudioServicing {
         return features
     }
 
-    public static let heldComments = [
-        HeldComment(
-            id: "fixture-held-1", text: "Jazakum Allah khayran, is there a part 3?",
-            targetTitle: "Tafsir of Surah Al-Kahf, part 2",
-            targetTitleLocalized: LocalizedText(en: "Tafsir of Surah Al-Kahf, part 2", ar: "تفسير سورة الكهف، الجزء الثاني"),
-            authorName: "Maryam Haddad", createdAt: Date(timeIntervalSince1970: 1_794_010_000)),
-        HeldComment(
-            id: "fixture-held-2", text: "ما المرجع المذكور في الدقيقة العاشرة؟", targetTitle: "Friday khutbah: patience",
-            targetTitleLocalized: LocalizedText(en: "Friday khutbah: patience", ar: "خطبة الجمعة: الصبر"),
-            authorName: "Omar Saleh", createdAt: Date(timeIntervalSince1970: 1_794_000_000)),
-    ]
+    /// Two held comments in the app's language, as the server resolves display names per locale.
+    public static var heldComments: [HeldComment] { heldComments(arabic: FixtureLibrary.prefersArabic()) }
+
+    static func heldComments(arabic: Bool) -> [HeldComment] {
+        func pick(_ en: String, _ ar: String) -> String { arabic ? ar : en }
+        return [
+            HeldComment(
+                id: "fixture-held-1",
+                text: pick("Jazakum Allah khayran, is there a part 3?", "جزاكم الله خيرًا، هل هناك جزء ثالث؟"),
+                targetTitle: "Tafsir of Surah Al-Kahf, part 2",
+                targetTitleLocalized: LocalizedText(en: "Tafsir of Surah Al-Kahf, part 2", ar: "تفسير سورة الكهف، الجزء الثاني"),
+                authorName: pick("Maryam Haddad", "مريم حداد"), createdAt: Date(timeIntervalSince1970: 1_794_010_000)),
+            HeldComment(
+                id: "fixture-held-2",
+                text: pick("Which reference was mentioned at minute ten?", "ما المرجع المذكور في الدقيقة العاشرة؟"),
+                targetTitle: "Friday khutbah: patience",
+                targetTitleLocalized: LocalizedText(en: "Friday khutbah: patience", ar: "خطبة الجمعة: الصبر"),
+                authorName: pick("Omar Saleh", "عمر صالح"), createdAt: Date(timeIntervalSince1970: 1_794_000_000)),
+        ]
+    }
 
     /// Two held comments; `-AUNFixtureFeaturesOff comments` makes the route answer `feature_off`.
     public func heldComments(channelID: String, limit: Int) async throws -> HeldComments {

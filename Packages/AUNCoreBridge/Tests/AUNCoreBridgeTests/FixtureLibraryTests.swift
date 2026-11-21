@@ -63,4 +63,22 @@ struct FixtureLibraryTests {
         let average = Double(views.reduce(0, +)) / Double(views.count)
         #expect(Double(fridays.reduce(0, +)) / Double(fridays.count) > average * 1.2)
     }
+
+    @Test func heldCommentsFollowTheAppLanguage() {
+        let latin = /[A-Za-z0-9]/
+        for comment in FixtureStudioService.heldComments(arabic: true) {
+            #expect(comment.authorName.firstMatch(of: latin) == nil, "\(comment.authorName)")
+            #expect(comment.text.firstMatch(of: latin) == nil, "\(comment.text)")
+        }
+        #expect(FixtureStudioService.heldComments(arabic: false).map(\.authorName) == ["Maryam Haddad", "Omar Saleh"])
+    }
+
+    @Test func theLanguageRuleMatchesAppSettings() throws {
+        let defaults = try #require(UserDefaults(suiteName: "fixture-language-\(UUID())"))
+        #expect(FixtureLibrary.prefersArabic(defaults: defaults, preferredLanguages: ["fr", "ar-SA", "en"]))
+        #expect(!FixtureLibrary.prefersArabic(defaults: defaults, preferredLanguages: ["en-US", "ar"]))
+        #expect(!FixtureLibrary.prefersArabic(defaults: defaults, preferredLanguages: ["fr"]))
+        defaults.set("ar", forKey: "AUNLanguage")
+        #expect(FixtureLibrary.prefersArabic(defaults: defaults, preferredLanguages: ["en"]))
+    }
 }

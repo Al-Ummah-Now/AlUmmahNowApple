@@ -87,6 +87,15 @@ public enum FixtureLibrary {
             thumb: thumb, views: views, seconds: seconds, status: status, isPublic: isPublic, age: age)
     }
 
+    /// Whether the app runs in Arabic: the stored choice (`AUNLanguage`), else the first of Arabic or English the device
+    /// prefers, the same rule as `AppSettings`.
+    public static func prefersArabic(
+        defaults: UserDefaults = .standard, preferredLanguages: [String] = Locale.preferredLanguages
+    ) -> Bool {
+        if let stored = defaults.string(forKey: "AUNLanguage") { return stored == "ar" }
+        return preferredLanguages.first { $0.hasPrefix("ar") || $0.hasPrefix("en") }?.hasPrefix("ar") ?? false
+    }
+
     /// The published public videos, as the Viewer lists them.
     public static var watchable: [Item] { items.filter(\.isWatchable) }
 
