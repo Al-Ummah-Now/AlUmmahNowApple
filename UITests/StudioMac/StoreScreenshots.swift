@@ -19,6 +19,16 @@ final class StoreScreenshots: XCTestCase {
                     StoreScreenshot.capture(app, self, .init(language: language, theme: theme, index: index + 1, name: section))
                 }
                 app.terminate()
+                if StoreScreenshot.reviewShots {
+                    // Analytics scrolled to the daily chart and top videos (`-AUNScrollTo`), as on iPhone and iPad.
+                    let lower = StoreScreenshot.launch(
+                        language, theme, extra: ["-AUNFixtureSignedIn", "YES", "-AUNScrollTo", "analytics-daily"])
+                    XCTAssertTrue(lower.descendants(matching: .any)["section-home"].waitForExistence(timeout: 30))
+                    lower.descendants(matching: .any)["section-analytics"].click()
+                    StoreScreenshot.capture(
+                        lower, self, .init(language: language, theme: theme, index: 6, name: "analytics-lower"))
+                    lower.terminate()
+                }
             }
         }
     }

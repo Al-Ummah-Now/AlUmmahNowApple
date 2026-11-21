@@ -18,7 +18,9 @@ TVOS_OS="${AUN_TVOS_SIM_OS:-27.0}"
 DERIVED="${AUN_DERIVED_DATA:-build/DerivedData}"
 RESULTS="build/screenshot-results"
 COMMON=(-workspace AlUmmahNow.xcworkspace -derivedDataPath "$DERIVED" -configuration Debug
-        -skipPackagePluginValidation -skipMacroValidation)
+        -skipPackagePluginValidation -skipMacroValidation
+        # Store frames show the app's real name: no " QA" suffix in the status bar, Dock or window title.
+        AUN_DISPLAY_SUFFIX=)
 IPHONE="iPhone 17 Pro Max"
 IPAD="iPad Pro 13-inch (M5)"
 TV="Apple TV 4K (3rd generation)"
@@ -87,16 +89,21 @@ shoot() { # app scheme destination device themes [udid]
     rm -rf "$bundle" "$RESULTS/$app-$device-$lang"
     if [[ -n "$udid" ]]; then
       local prefs="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Preferences/.GlobalPreferences.plist"
-      local locale="en_US" clock
-      # An ISO time, so the status bar formats 9:41 itself in the system locale (٩:٤١ in Arabic); a plain "٩:٤١"
-      # string is not taken.
-      clock="2026-11-20T09:41:00$(date +%z | sed 's/\(..\)$/:\1/')"
+      local locale="en_US"
       [[ "$lang" == ar ]] && locale="ar_SA@numbers=arab"
       xcrun simctl shutdown "$udid" 2>/dev/null || true
-      defaults write "$prefs" AppleLanguages -array "$lang"
-      defaults write "$prefs" AppleLocale -string "$locale"
+      # plutil edits the file in place (as fastlane snapshot does); `defaults write` on a path goes through cfprefsd's
+      # cache and the booted simulator never saw it. The log line proves which language the pass runs in.
+      [[ -f "$prefs" ]] || { mkdir -p "$(dirname "$prefs")"; plutil -create xml1 "$prefs"; }
+      plutil -replace AppleLanguages -json "[\"$lang\"]" "$prefs"
+      plutil -replace AppleLocale -string "$locale" "$prefs"
+      echo "simulator $udid: $(plutil -extract AppleLanguages json -o - "$prefs") $(plutil -extract AppleLocale raw -o - "$prefs")"
       xcrun simctl boot "$udid" 2>/dev/null || true
       xcrun simctl bootstatus "$udid" -b >/dev/null
+      # An ISO time, so the status bar formats 9:41 itself in the system locale (٩:٤١ in Arabic). A plain string is
+      # drawn as given, in Latin digits.
+      local clock
+      clock="2026-11-20T09:41:00$(date +%z | sed 's/\(..\)$/:\1/')"
       xcrun simctl status_bar "$udid" override --time "$clock" --dataNetwork wifi --wifiMode active --wifiBars 3 \
         --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 2>/dev/null || true
     fi
@@ -117,7 +124,6 @@ shoot() { # app scheme destination device themes [udid]
     xcrun xcresulttool export attachments --path "$bundle" --output-path "$RESULTS/$app-$device-$lang" >/dev/null
     python3 scripts/file-screenshots.py "$RESULTS/$app-$device-$lang" "$OUT/$app" "$device"
   done
-  # An if, not `[[ … ]] && …`: on the Mac (no simulator) that would end the function with status 1 under set -e.
   if [[ -n "$udid" ]]; then xcrun simctl shutdown "$udid" 2>/dev/null || true; fi
 }
 
