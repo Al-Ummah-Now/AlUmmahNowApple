@@ -9,6 +9,9 @@ enum StoreScreenshot {
 
     static var enabled: Bool { environment["AUN_SCREENSHOTS"] == "1" }
 
+    /// `AUN_REVIEW_SHOTS=1` adds review-only frames of the lower part of long screens (not for the store listing).
+    static var reviewShots: Bool { environment["AUN_REVIEW_SHOTS"] == "1" }
+
     /// `AUN_SCREENSHOT_LANGUAGES` (default `en,ar`).
     static var languages: [String] { list("AUN_SCREENSHOT_LANGUAGES", default: ["en", "ar"]) }
 
@@ -35,6 +38,12 @@ enum StoreScreenshot {
             ] + extra
         app.launch()
         return app
+    }
+
+    /// The first card of the Trending rail, whichever fixture video leads it.
+    @MainActor
+    static func firstTrendingCard(_ app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "video-card-trending-")).firstMatch
     }
 
     /// Which screenshot: language, theme, position in the store listing and screen name.

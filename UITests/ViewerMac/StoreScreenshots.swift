@@ -12,7 +12,7 @@ final class StoreScreenshots: XCTestCase {
         for language in StoreScreenshot.languages {
             for theme in StoreScreenshot.themes {
                 let app = StoreScreenshot.launch(language, theme)
-                XCTAssertTrue(app.buttons["video-card-trending-fixture-1"].waitForExistence(timeout: 30))
+                XCTAssertTrue(StoreScreenshot.firstTrendingCard(app).waitForExistence(timeout: 30))
                 StoreScreenshot.capture(app, self, .init(language: language, theme: theme, index: 1, name: "home"))
                 // The hero's Watch now opens the video in its own window, which comes to the front.
                 let watch = app.buttons[language == "ar" ? "شاهد الآن" : "Watch now"].firstMatch

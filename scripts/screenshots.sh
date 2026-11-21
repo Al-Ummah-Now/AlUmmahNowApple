@@ -124,7 +124,8 @@ shoot() { # app scheme destination device themes [udid]
       done
       ((booted)) || { echo "simulator $udid failed to boot twice" >&2; return 1; }
     fi
-    TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
+    TEST_RUNNER_AUN_SCREENSHOTS=1 TEST_RUNNER_AUN_REVIEW_SHOTS="${AUN_REVIEW_SHOTS:-0}" \
+      TEST_RUNNER_AUN_SCREENSHOT_THEMES="${AUN_SCREENSHOT_THEMES:-$themes}" \
       TEST_RUNNER_AUN_SCREENSHOT_LANGUAGES="$lang" \
       xcodebuild test-without-building "${COMMON[@]}" -scheme "$scheme" -destination "$destination" \
       -only-testing:"${scheme}UITests/StoreScreenshots" -resultBundlePath "$bundle" "${signing[@]}"
