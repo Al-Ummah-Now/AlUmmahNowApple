@@ -153,13 +153,13 @@ struct UploadView: View {
                 #endif
             }
         } header: {
-            Text(l10n("studio.upload.files"))
+            FormHeader(l10n("studio.upload.files"))
         } footer: {
             if composer.files.isEmpty {
                 #if os(macOS)
-                    Text(l10n("studio.upload.empty"))
+                    FormFooter(l10n("studio.upload.empty"))
                 #else
-                    Text(l10n("studio.upload.emptyMobile"))
+                    FormFooter(l10n("studio.upload.emptyMobile"))
                 #endif
             }
         }
@@ -328,9 +328,9 @@ private struct SetForAllSection: View {
                 label: l10n("studio.upload.tags"), text: $composer.tagsText, prompt: l10n("studio.upload.tagsHint"),
                 identifier: "upload-tags")
         } header: {
-            Text(l10n(composer.files.count > 1 ? "studio.upload.setForAll" : "studio.upload.details"))
+            FormHeader(l10n(composer.files.count > 1 ? "studio.upload.setForAll" : "studio.upload.details"))
         } footer: {
-            Text(l10n("studio.upload.tokensHelp"))
+            FormFooter(l10n("studio.upload.tokensHelp"))
         }
         .studioRows()
         playlistsSection.studioRows()
@@ -402,7 +402,7 @@ struct UploadQueueSection: View {
                 ForEach(jobs) { job in UploadJobRow(job: job, queue: session.uploads) }
             } header: {
                 HStack {
-                    Text(l10n("studio.upload.queue"))
+                    FormHeader(l10n("studio.upload.queue"))
                     Spacer()
                     if jobs.contains(where: { $0.state == .done }) {
                         Button(l10n("studio.upload.clearDone")) { session.uploads.clearFinished() }
@@ -476,5 +476,29 @@ private struct UploadJobRow: View {
         }
         .buttonStyle(.borderless)
         .fanousFont(.caption)
+    }
+}
+
+/// A form section's title in the Fanous label role, in a line box that holds an English and an Arabic line alike, so
+/// the card under it starts at the same height in both languages (the system header's Arabic line was taller).
+struct FormHeader: View {
+    private let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text).fanousFont(.label).foregroundStyle(Fanous.textSecondary).fanousLineBox(.label)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// A form section's note, in the Fanous caption role.
+struct FormFooter: View {
+    private let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
     }
 }

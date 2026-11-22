@@ -543,7 +543,9 @@ struct KPITile: View {
             Text(DisplayFormat.count(value, l10n.language))
                 .font(.system(size: 26, weight: .bold)).monospacedDigit()
                 .foregroundStyle(alert && value > 0 ? Fanous.errorText : Fanous.textPrimary)
-            Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1).minimumScaleFactor(0.8)
+            // No minimum scale: with the exact line height (iOS 26) a shrinkable one-line label was cut mid-word
+            // ("Processir") instead of shrinking; every status name fits the narrowest tile at the caption size.
+            Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1)
         }
         .padding(FanousScale.spacingMd)
         .frame(maxWidth: .infinity, alignment: .leading)
