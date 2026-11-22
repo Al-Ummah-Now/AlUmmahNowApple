@@ -23,6 +23,9 @@ import SwiftUI
                     Text(title)
                         .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerText))
                         .fontWeight(selected ? .semibold : .regular)
+                        // A fixed line box: the taller Arabic line made each row half a point taller, so the
+                        // sections and the selection sat lower and lower down the sidebar in Arabic.
+                        .fanousLineBox(.caption)
                 } icon: {
                     // One icon column: every glyph centred in the same width, so labels line up.
                     Image(systemName: icon)
