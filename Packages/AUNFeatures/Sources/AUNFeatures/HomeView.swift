@@ -96,7 +96,7 @@
                                 }
                             }
                             .padding(.horizontal)
-                            .scrollSection("rail-\(rail.kind.rawValue)")
+                            .id("rail-\(rail.kind.rawValue)")
                             .accessibilityIdentifier("rail-\(rail.kind.rawValue)")
                         }
                         ScrollTargetRoom(among: rails.map { "rail-\($0.kind.rawValue)" })
