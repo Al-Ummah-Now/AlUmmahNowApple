@@ -54,8 +54,11 @@ struct AnalyticsView: View {
                                     topVideos(current)
                                 }
                             }
+                            // The chart's top edge in either layout.
+                            .scrollSection("analytics-daily")
                         }
                     }
+                    ScrollTargetRoom(among: ["analytics-daily"], aliases: ["analytics-table": "analytics-daily"])
                 }
                 .padding(FanousScale.spacingLg)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -168,7 +171,6 @@ struct AnalyticsView: View {
         }
         .padding(FanousScale.spacingLg)
         .fanousMaterial(.card) { .rounded($0.xl) }
-        .scrollSection("analytics-daily")
     }
 
     @ViewBuilder private func topVideos(_ stats: ChannelStats) -> some View {

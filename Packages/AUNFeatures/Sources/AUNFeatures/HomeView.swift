@@ -99,6 +99,7 @@
                             .scrollSection("rail-\(rail.kind.rawValue)")
                             .accessibilityIdentifier("rail-\(rail.kind.rawValue)")
                         }
+                        ScrollTargetRoom(among: rails.map { "rail-\($0.kind.rawValue)" })
                     }
                     .padding(.vertical)
                 }
