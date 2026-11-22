@@ -40,6 +40,15 @@ enum StoreScreenshot {
         return app
     }
 
+    #if os(macOS)
+        /// Whether the front window opened at `height` points (`-AUNWindowHeight`): a window that reopened at another
+        /// height would move every frame edge.
+        @MainActor
+        static func frontWindow(_ app: XCUIApplication, isTall height: CGFloat) -> Bool {
+            abs(app.windows.firstMatch.frame.height - height) < 1
+        }
+    #endif
+
     /// The first card of the Trending rail, whichever fixture video leads it.
     @MainActor
     static func firstTrendingCard(_ app: XCUIApplication) -> XCUIElement {

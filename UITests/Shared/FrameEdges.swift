@@ -74,10 +74,13 @@ enum FrameEdges {
         }
         // A tall button that is not a card is a picture (the player): only its own text would count, and it has none.
         if item.elementType == .button, frame.height > 60 { return edges }
-        // A line box takes in its leading: up to 3 points of it past an edge shows no glyph (a line wholly under the
-        // tab bar but for its leading is hidden, not cut).
+        // A row whose lines are their own elements is checked line by line, through them.
+        if item.children.contains(where: { isText($0.elementType) }) { return edges }
+        // A line box takes in its leading, about a fifth of one line's height (at most 6 points), and the leading past
+        // an edge shows no glyph: a line wholly under the tab bar but for its leading is hidden, not cut.
+        let leading = max(3, min(frame.height, 30) * 0.2)
         if frame.minY < top, frame.maxY > top + 3 { edges.append("top") }
-        if frame.minY < bottom - 3, frame.maxY > bottom - gap { edges.append("bottom") }
+        if frame.minY < bottom - leading, frame.maxY > bottom - gap { edges.append("bottom") }
         return edges
     }
 
@@ -99,7 +102,7 @@ enum FrameEdges {
                 return
             case .statusBar, .menuBar, .scrollBar:
                 return
-            case .staticText, .button, .link, .textField, .searchField, .checkBox, .popUpButton, .slider:
+            case let type where isText(type):
                 items.append(node)
                 if isVideoCard(node) { return }
             default:
@@ -108,6 +111,11 @@ enum FrameEdges {
             for child in node.children { collect(child, into: &items, top: &top, bottom: &bottom, window: window) }
         }
     #endif
+
+    /// Elements that draw text of their own.
+    private static func isText(_ type: XCUIElement.ElementType) -> Bool {
+        [.staticText, .button, .link, .textField, .searchField, .checkBox, .popUpButton, .slider].contains(type)
+    }
 
     /// A video card (a rail's or Up next's: art with its title on it, then the title and meta under it), or the home
     /// hero's art.

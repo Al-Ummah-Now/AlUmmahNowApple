@@ -30,9 +30,15 @@ final class StoreScreenshots: XCTestCase {
     @MainActor
     private func launch(_ language: String, _ theme: String, height: CGFloat, extra: [String] = []) -> XCUIApplication {
         let size = ["-AUNWindowHeight", "\(Int(height))"]
-        let app = StoreScreenshot.launch(language, theme, extra: ["-AUNFixtureSignedIn", "YES"] + size + extra)
-        XCTAssertTrue(app.descendants(matching: .any)["section-home"].waitForExistence(timeout: 30))
-        return app
+        // Up to three launches until the window has that height; the frame is never taken at another.
+        for _ in 0..<3 {
+            let app = StoreScreenshot.launch(language, theme, extra: ["-AUNFixtureSignedIn", "YES"] + size + extra)
+            XCTAssertTrue(app.descendants(matching: .any)["section-home"].waitForExistence(timeout: 30))
+            if StoreScreenshot.frontWindow(app, isTall: height) { return app }
+            app.terminate()
+        }
+        XCTFail("the window never opened \(Int(height)) points tall")
+        return XCUIApplication()
     }
 
     @MainActor

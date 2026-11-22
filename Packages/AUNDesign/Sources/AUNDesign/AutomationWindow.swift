@@ -11,6 +11,16 @@ public enum AutomationWindow {
     /// The watch window's height (the Viewer opens each video in its own window).
     public static func watchHeight(_ standard: CGFloat) -> CGFloat { value("AUNWatchWindowHeight") ?? standard }
 
+    /// Under an automation height, forgets the window frames AppKit saved on earlier launches: a saved frame wins over
+    /// the default size, so a launch reopened at the previous launch's height. Call before any window opens.
+    public static func forgetSavedFrames() {
+        guard value("AUNWindowHeight") != nil || value("AUNWatchWindowHeight") != nil else { return }
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("NSWindow Frame") {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     private static func value(_ key: String) -> CGFloat? {
         let points = UserDefaults.standard.double(forKey: key)
         return points > 0 ? CGFloat(points) : nil

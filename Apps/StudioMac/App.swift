@@ -12,6 +12,7 @@ struct StudioMacApp: App {
 
     init() {
         AppKitLayoutDirection.match(AppSettings().language)
+        AutomationWindow.forgetSavedFrames()
     }
 
     var body: some Scene {

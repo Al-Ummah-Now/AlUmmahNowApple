@@ -13,6 +13,7 @@ struct ViewerMacApp: App {
         // The window chrome in the app's language: in Arabic the traffic lights, title and toolbar mirror, and the
         // settings menu stays in the toolbar (an AppKit left-to-right window under a right-to-left view dropped it).
         AppKitLayoutDirection.match(AppSettings().language)
+        AutomationWindow.forgetSavedFrames()
     }
 
     var body: some Scene {
