@@ -45,7 +45,9 @@ private struct ProcessingCatalog: CatalogServicing {
         await model.load(language: .ar, autoplay: false)
         #expect(model.player.item?.title == "تلاوة سورة الكهف")
         #expect(model.player.item?.subtitles.count == 2)
-        #expect(model.player.item?.chapters.count == 2)
+        // The recitation's own chapters: verses 1–31, 32–59, 60–110.
+        #expect(model.player.item?.chapters.count == 3)
+        #expect(model.player.item?.chapters.first?.titleLocalized?.ar == "الآيات ١–٣١")
         #expect(model.player.isPlaying == false)
         model.player.stop()
     }

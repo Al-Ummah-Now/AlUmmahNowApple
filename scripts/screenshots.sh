@@ -210,16 +210,20 @@ viewer_tv() {
 hidpi_display() {
   [[ "${AUN_REVIEW_SHOTS:-0}" == 1 && "${RUNNER_ENVIRONMENT:-}" == github-hosted ]] || return 0
   command -v displayplacer >/dev/null || brew install -q displayplacer >/dev/null 2>&1 || return 0
+  # Never fails the run: without a HiDPI mode the review frames are the window at the display's own scale, cropped,
+  # with no upscaling and no letterbox (scripts/file-screenshots.py).
   local list id mode
-  list=$(displayplacer list)
-  echo "$list" | grep -E "Persistent screen id|Resolution|scaling:on" | head -20
-  id=$(echo "$list" | awk '/Persistent screen id:/ {print $4; exit}')
-  mode=$(echo "$list" | grep -E "mode [0-9]+: res:(1440x900|1680x1050|1512x982|1470x956|1920x1080|1280x800) .*scaling:on" |
-    head -1 | sed -E 's/^ *mode ([0-9]+):.*/\1/')
+  list=$(displayplacer list 2>&1 || true)
+  echo "displays:"
+  printf '%s\n' "$list" | grep -E "Persistent screen id|Resolution:|Scaling|mode [0-9]+:" | head -60 || true
+  id=$(printf '%s\n' "$list" | awk '/Persistent screen id:/ {print $4; exit}' || true)
+  mode=$(printf '%s\n' "$list" |
+    grep -E "mode [0-9]+: res:(1440x900|1680x1050|1512x982|1470x956|1920x1080|1280x800) .*scaling:on" |
+    head -1 | sed -E 's/^ *mode ([0-9]+):.*/\1/' || true)
   if [[ -n "$id" && -n "$mode" ]]; then
     displayplacer "id:$id mode:$mode" || true
     sleep 3
-    echo "display: $(system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Resolution|UI Looks like' | head -2 | xargs)"
+    echo "display: $(system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Resolution|UI Looks like' | head -2 | xargs || true)"
   else
     echo "no HiDPI display mode on this runner; Mac review frames stay at the display's scale"
   fi

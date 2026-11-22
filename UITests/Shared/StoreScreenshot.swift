@@ -57,10 +57,10 @@ enum StoreScreenshot {
     /// Saves the screen (the app's front window on the Mac) as a kept attachment.
     @MainActor
     static func capture(_ app: XCUIApplication, _ test: XCTestCase, _ shot: Shot) {
-        // Images and fonts settle after the first frame, and the tab bar's selection bubble finishes its spring. Timed
-        // on uptime: CI holds the wall clock at 09:41 (scripts/screenshots.sh), so a wall-clock wait can end early.
-        let settled = ProcessInfo.processInfo.systemUptime + 3
-        while ProcessInfo.processInfo.systemUptime < settled { RunLoop.current.run(until: Date().addingTimeInterval(0.25)) }
+        // Images and fonts settle after the first frame, and the tab bar's selection bubble finishes its spring. XCTest's
+        // own waiter: spinning the run loop by hand stalled XCUITest on CI (the app "failed to terminate"). CI's held
+        // clock only ever steps back, so this wait can run long, never short.
+        _ = XCTWaiter().wait(for: [XCTestExpectation(description: "settle")], timeout: 3)
         #if os(macOS)
             let screenshot = app.windows.firstMatch.screenshot()
         #else
