@@ -3,6 +3,7 @@ import AUNDesign
 import SwiftUI
 
 /// Card content shared by phone, tablet, desktop and TV: the web's `.video-card`, a lifted thumbnail over plain text.
+/// The title and meta lines sit in fixed line boxes, so a card is the same height in English and Arabic.
 struct VideoCardContent: View {
     @Environment(\.l10n) private var l10n
     let video: Video
@@ -21,12 +22,12 @@ struct VideoCardContent: View {
                     .fanousFont(.label)
                     .fontWeight(.semibold)
                     .foregroundStyle(Fanous.part(\.cardVideoTitle))
-                    .lineLimit(2)
                     .multilineTextAlignment(.leading)
+                    .fanousLineBox(.label, lines: 2)
                 Text(metadata)
                     .fanousFont(.caption)
                     .foregroundStyle(Fanous.part(\.cardVideoMeta))
-                    .lineLimit(2)
+                    .fanousLineBox(.caption)
             }
             .padding(.horizontal, 2)
         }
@@ -57,7 +58,7 @@ struct RailHeader: View {
             .fanousFont(.title)
             .fontWeight(.bold)
             .foregroundStyle(Fanous.textPrimary)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .fanousLineBox(.title)
             .accessibilityAddTraits(.isHeader)
     }
 }

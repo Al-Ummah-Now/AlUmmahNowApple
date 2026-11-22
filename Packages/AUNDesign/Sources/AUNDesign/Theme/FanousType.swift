@@ -86,16 +86,31 @@ public enum FanousTypeface {
     private static let leadings = OSAllocatedUnfairLock<[LeadingKey: CGFloat]>(initialState: [:])
 
     private static func measureLeading(family: String?, style: FanousTypeStyle) -> CGFloat {
+        max(0, style.size * style.lineHeight - naturalLine(family: family, size: style.size))
+    }
+
+    /// The face's own line height at `size`: ascent, descent and leading.
+    private static func naturalLine(family: String?, size: Double) -> CGFloat {
         register()
         let font: CTFont? =
             family.map {
                 let descriptor = CTFontDescriptorCreateWithAttributes([kCTFontFamilyNameAttribute: $0] as CFDictionary)
-                return CTFontCreateWithFontDescriptor(descriptor, style.size, nil)
-            } ?? CTFontCreateUIFontForLanguage(.system, style.size, nil)
-        guard let font else { return 0 }
-        let natural = CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)
-        return max(0, style.size * style.lineHeight - natural)
+                return CTFontCreateWithFontDescriptor(descriptor, size, nil)
+            } ?? CTFontCreateUIFontForLanguage(.system, size, nil)
+        guard let font else { return size }
+        return CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)
     }
+
+    /// How tall one line of `style` in `family` is drawn: the scale's line height, or the face's own when that is taller.
+    static func drawnLine(family: String?, style: FanousTypeStyle) -> CGFloat {
+        let key = LeadingKey(family: family, size: style.size, lineHeight: style.lineHeight)
+        if let known = lines.withLock({ $0[key] }) { return known }
+        let value = max(style.size * style.lineHeight, naturalLine(family: family, size: style.size))
+        lines.withLock { $0[key] = value }
+        return value
+    }
+
+    private static let lines = OSAllocatedUnfairLock<[LeadingKey: CGFloat]>(initialState: [:])
 
     static func weight(_ value: Int) -> Font.Weight {
         switch value {
@@ -141,4 +156,47 @@ private struct FanousFontModifier: ViewModifier {
 extension View {
     /// Text in a token type role, in the site theme's typeface and the language's scale.
     public func fanousFont(_ role: FanousTextRole) -> some View { modifier(FanousFontModifier(role: role)) }
+}
+
+extension FanousTheme {
+    /// One line of `role` at the default text size: the taller of the theme's Latin and Arabic lines, so a box sized
+    /// from it is the same in both languages and fits either script.
+    public func lineBox(_ role: FanousTextRole) -> CGFloat {
+        let latin = FanousTypeface.drawnLine(family: FanousTypeface.family(tokens.font.latin), style: role.style(arabic: false))
+        let arabic = FanousTypeface.drawnLine(
+            family: FanousTypeface.family(tokens.font.arabic), style: role.style(arabic: true))
+        return max(latin, arabic).rounded(.up)
+    }
+}
+
+private struct FanousLineBoxModifier: ViewModifier {
+    @Environment(\.fanous) private var theme
+    /// Dynamic Type's factor for the role, as a percentage of the default size.
+    @ScaledMetric private var percent: CGFloat
+    let role: FanousTextRole
+    let lines: Int
+    let alignment: Alignment
+
+    init(role: FanousTextRole, lines: Int, alignment: Alignment) {
+        _percent = ScaledMetric(wrappedValue: 100, relativeTo: role.textStyle)
+        self.role = role
+        self.lines = lines
+        self.alignment = alignment
+    }
+
+    func body(content: Content) -> some View {
+        let height = (theme.lineBox(role) * percent / 100 * CGFloat(lines)).rounded(.up)
+        content
+            .lineLimit(lines)
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: alignment)
+    }
+}
+
+extension View {
+    /// Text in a fixed box of `lines` lines of `role`, the same height in English and Arabic, so the taller Arabic
+    /// line can never push what follows further down the page. The box follows the theme's faces and Dynamic Type;
+    /// the text is limited to `lines` lines.
+    public func fanousLineBox(_ role: FanousTextRole, lines: Int = 1, alignment: Alignment = .topLeading) -> some View {
+        modifier(FanousLineBoxModifier(role: role, lines: lines, alignment: alignment))
+    }
 }

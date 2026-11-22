@@ -40,17 +40,21 @@
 
         private var details: some View {
             VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                // Fixed line boxes: the hero is the same height in English and Arabic, so the rails under it start at
+                // the same place in both.
                 Text(l10n("home.featured")).fanousFont(.caption).fontWeight(.semibold).foregroundStyle(Fanous.link)
+                    .fanousLineBox(.caption)
                 Text(video.displayTitle(l10n.language))
                     .fanousFont(.headline)
                     .foregroundStyle(Fanous.textPrimary)
-                    .lineLimit(3)
+                    .fanousLineBox(.headline, lines: 2)
                     .accessibilityAddTraits(.isHeader)
                 Text(
                     DisplayFormat.meta(
                         [video.displayChannelName(l10n.language), DisplayFormat.views(video.views, l10n)], l10n.language)
                 )
                 .fanousFont(.body).foregroundStyle(Fanous.textSecondary)
+                .fanousLineBox(.body)
                 Button(action: open) { Label(l10n("home.watchNow"), systemImage: "play.fill") }
                     .buttonStyle(FanousButtonStyle(.primary))
                     .padding(.top, FanousScale.spacingSm)
