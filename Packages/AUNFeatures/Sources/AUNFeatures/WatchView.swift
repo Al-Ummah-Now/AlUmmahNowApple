@@ -48,6 +48,10 @@
         let chapters: [Chapter]
         let seek: (Chapter) -> Void
 
+        private var widestStart: String {
+            chapters.map { DisplayFormat.duration($0.startTime, l10n.language) }.max { $0.count < $1.count } ?? ""
+        }
+
         var body: some View {
             VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
                 Text(l10n("watch.chapters")).fanousFont(.label).fontWeight(.bold).foregroundStyle(Fanous.textPrimary)
@@ -59,14 +63,18 @@
                             seek(chapter)
                         } label: {
                             HStack(spacing: FanousScale.spacingMd) {
-                                Text(DisplayFormat.duration(chapter.startTime, l10n.language))
-                                    .fanousFont(.caption)
-                                    .monospacedDigit()
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(Fanous.link)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .fanousMaterial(.control) { .rounded($0.sm) }
+                                // Every badge is as wide as the longest start time, so the titles form one column.
+                                ZStack {
+                                    Text(widestStart).hidden()
+                                    Text(DisplayFormat.duration(chapter.startTime, l10n.language))
+                                }
+                                .fanousFont(.caption)
+                                .monospacedDigit()
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Fanous.link)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .fanousMaterial(.control) { .rounded($0.sm) }
                                 Text(chapter.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
                                 Spacer(minLength: 0)
                             }

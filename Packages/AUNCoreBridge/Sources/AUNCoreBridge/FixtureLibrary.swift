@@ -64,7 +64,7 @@ public enum FixtureLibrary {
             ("An introduction to the sources of tafsir.", "مقدمة في مصادر التفسير."), "tafsir", 2_040_000, 1_275, age: 300),
         item(
             7, ("Surat Al-Kahf recitation", "تلاوة سورة الكهف"),
-            ("The full recitation of Surat Al-Kahf for Friday.", "تلاوة كاملة لسورة الكهف ليوم الجمعة."), "kahf",
+            ("Recited in full for Friday.", "تلاوة كاملة لسورة الكهف ليوم الجمعة."), "kahf",
             3_012_400, 1_642, age: 410),
         item(
             8, ("Seerah overview", "نظرة عامة على السيرة"),
