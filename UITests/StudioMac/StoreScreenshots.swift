@@ -7,23 +7,55 @@ final class StoreScreenshots: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Each section with the window height (points) at which its frame ends below whole content: the window bottom is
+    /// a crop, so it falls in the gap between two cards, never through one (UITests/Shared/FrameEdges.swift). The width
+    /// stays 1100, so the layout above the edge is the same as at the default height. Every launch names its height
+    /// (680 is the default): a launch without one once opened at the previous launch's height.
+    private let sections: [(name: String, height: CGFloat)] = [
+        // Between Recent uploads (to 584) and Drafts and scheduled (from 600).
+        ("home", 592),
+        // Between the sixth and seventh video (cards to 635 and from 644).
+        ("content", 640),
+        ("upload", 680),
+        // Between the daily chart (to 648) and Top videos (from 665).
+        ("analytics", 656),
+        ("encode", 680),
+    ]
+
+    /// The lower analytics frame: the daily chart scrolled to the top with its table open (`-AUNScrollTo
+    /// analytics-table`), as on iPhone and iPad. The table is taller than any window, so the bottom edge falls between
+    /// two of its rows (to 669 and from 681) at the default height.
+    private let lowerHeight: CGFloat = 680
+
+    @MainActor
+    private func launch(_ language: String, _ theme: String, height: CGFloat, extra: [String] = []) -> XCUIApplication {
+        let size = ["-AUNWindowHeight", "\(Int(height))"]
+        let app = StoreScreenshot.launch(language, theme, extra: ["-AUNFixtureSignedIn", "YES"] + size + extra)
+        XCTAssertTrue(app.descendants(matching: .any)["section-home"].waitForExistence(timeout: 30))
+        return app
+    }
+
     @MainActor
     func testStoreScreenshots() {
         for language in StoreScreenshot.languages {
             for theme in StoreScreenshot.themes {
-                let app = StoreScreenshot.launch(language, theme, extra: ["-AUNFixtureSignedIn", "YES"])
-                let home = app.descendants(matching: .any)["section-home"]
-                XCTAssertTrue(home.waitForExistence(timeout: 30))
-                for (index, section) in ["home", "content", "upload", "analytics", "encode"].enumerated() {
-                    app.descendants(matching: .any)["section-\(section)"].click()
-                    StoreScreenshot.capture(app, self, .init(language: language, theme: theme, index: index + 1, name: section))
+                // One launch per window height: a window keeps the size it opened at.
+                var app: XCUIApplication?
+                var openHeight: CGFloat?
+                for (index, section) in sections.enumerated() {
+                    if openHeight != section.height {
+                        app?.terminate()
+                        app = launch(language, theme, height: section.height)
+                        openHeight = section.height
+                    }
+                    guard let app else { continue }
+                    app.descendants(matching: .any)["section-\(section.name)"].click()
+                    StoreScreenshot.capture(
+                        app, self, .init(language: language, theme: theme, index: index + 1, name: section.name))
                 }
-                app.terminate()
+                app?.terminate()
                 if StoreScreenshot.reviewShots {
-                    // Analytics scrolled to the daily chart with its table open (`-AUNScrollTo analytics-table`), as on iPhone and iPad.
-                    let lower = StoreScreenshot.launch(
-                        language, theme, extra: ["-AUNFixtureSignedIn", "YES", "-AUNScrollTo", "analytics-table"])
-                    XCTAssertTrue(lower.descendants(matching: .any)["section-home"].waitForExistence(timeout: 30))
+                    let lower = launch(language, theme, height: lowerHeight, extra: ["-AUNScrollTo", "analytics-table"])
                     lower.descendants(matching: .any)["section-analytics"].click()
                     StoreScreenshot.capture(
                         lower, self, .init(language: language, theme: theme, index: 6, name: "analytics-lower"))

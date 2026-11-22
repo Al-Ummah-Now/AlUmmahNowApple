@@ -1,7 +1,8 @@
 // Review screenshots only (scripts/screenshots.sh, `hidpi_display`): GitHub's hosted macOS runner has one 1x display
-// with no HiDPI mode, so the Mac windows were captured at 1x. This keeps a 1440x900 pt HiDPI (2x) virtual display alive
+// with no HiDPI mode, so the Mac windows were captured at 1x. This keeps a 1440x1100 pt HiDPI (2x) virtual display alive
 // until it is killed, so the Mac review frames are the window at its native 2x. CoreGraphics' virtual display classes
-// are not in the public headers; their interfaces are declared here. Never part of an app target.
+// are not in the public headers; their interfaces are declared here. Never part of an app target. 1100 pt tall, not
+// 900: the watch window's review frame is 958 pt, the height at which both its columns end on whole cards.
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
 
@@ -38,8 +39,8 @@ int main(void) {
         descriptor.queue = dispatch_get_main_queue();
         descriptor.name = @"Review 2x";
         descriptor.maxPixelsWide = 2880;
-        descriptor.maxPixelsHigh = 1800;
-        descriptor.sizeInMillimeters = CGSizeMake(331, 207);
+        descriptor.maxPixelsHigh = 2200;
+        descriptor.sizeInMillimeters = CGSizeMake(331, 253);
         descriptor.vendorID = 0x1234;
         descriptor.productID = 0x5678;
         descriptor.serialNum = 1;
@@ -52,7 +53,7 @@ int main(void) {
         }
         CGVirtualDisplaySettings *settings = [[CGVirtualDisplaySettings alloc] init];
         settings.hiDPI = 1;
-        settings.modes = @[ [[CGVirtualDisplayMode alloc] initWithWidth:1440 height:900 refreshRate:60] ];
+        settings.modes = @[ [[CGVirtualDisplayMode alloc] initWithWidth:1440 height:1100 refreshRate:60] ];
         if (![display applySettings:settings]) {
             fprintf(stderr, "virtual display: settings refused\n");
             return 1;

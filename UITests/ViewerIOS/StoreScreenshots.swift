@@ -7,11 +7,18 @@ final class StoreScreenshots: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// iPhone home starts 95 points down (`-AUNScrollTo home-hero+94`; the hero lands 1 point under the page's top
+    /// gap): at the top, the screen's bottom edge cut the title drawn on the next card's art. This far down, the hero's
+    /// own art title is under the header and the next card's is whole, 56 points above the edge. iPad home fits.
+    private var home: [String] {
+        UIDevice.current.userInterfaceIdiom == .pad ? [] : ["-AUNScrollTo", "home-hero+94"]
+    }
+
     @MainActor
     func testStoreScreenshots() {
         for language in StoreScreenshot.languages {
             for theme in StoreScreenshot.themes {
-                let app = StoreScreenshot.launch(language, theme)
+                let app = StoreScreenshot.launch(language, theme, extra: home)
                 let card = StoreScreenshot.firstTrendingCard(app)
                 XCTAssertTrue(card.waitForExistence(timeout: 30))
                 StoreScreenshot.capture(app, self, .init(language: language, theme: theme, index: 1, name: "home"))
@@ -22,8 +29,14 @@ final class StoreScreenshots: XCTestCase {
                 if StoreScreenshot.reviewShots {
                     // Home scrolled to a section edge (`-AUNScrollTo`): "Recently added" on iPhone; on iPad, whose screen
                     // holds two rails, "Trending" with "Recently added" under it, so the frame is full to the bottom.
-                    let rail = UIDevice.current.userInterfaceIdiom == .pad ? "rail-trending" : "rail-recent"
-                    let more = StoreScreenshot.launch(language, theme, extra: ["-AUNScrollTo", rail])
+                    // iPad lands by the hero, 300 points down the page (`home-hero+300`; a rail's landing takes no
+                    // offset): landing on "Trending" itself left it 2 points under the header and ran the screen's
+                    // bottom edge through the duration badge of Recently added's third row. Here "Trending" sits about
+                    // as far under the header as the home frame's hero, and that badge and the title under the art
+                    // are just off screen.
+                    let pad = UIDevice.current.userInterfaceIdiom == .pad
+                    let rail = pad ? "rail-trending" : "rail-recent"
+                    let more = StoreScreenshot.launch(language, theme, extra: ["-AUNScrollTo", pad ? "home-hero+300" : rail])
                     // A card of the requested rail, on screen once scrolled to (cards above it may be unloaded, and the
                     // rail itself is not an accessibility element).
                     let card = more.buttons.matching(

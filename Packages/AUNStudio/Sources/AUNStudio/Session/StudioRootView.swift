@@ -346,7 +346,9 @@ struct ChannelGate<Content: View>: View {
                     .fanousHeaderBar()
                 }
             }
-            .frame(minWidth: 960, minHeight: 600)
+            // The content's minimum, under the 52-point toolbar: low enough for the review frames' 592-point window
+            // (AutomationWindow), which a higher minimum would stretch.
+            .frame(minWidth: 960, minHeight: 520)
             .sheet(isPresented: $showingAccounts) { AccountsView(session: session) }
             .task(id: session.linkSerial) {
                 guard let linked = session.linkedSection else { return }

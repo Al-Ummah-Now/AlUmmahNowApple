@@ -57,10 +57,20 @@ enum StoreScreenshot {
     /// Saves the screen (the app's front window on the Mac) as a kept attachment.
     @MainActor
     static func capture(_ app: XCUIApplication, _ test: XCTestCase, _ shot: Shot) {
+        let name = "\(shot.language)_\(shot.theme)_\(String(format: "%02d", shot.index))_\(shot.name)"
         let attachment = XCTAttachment(screenshot: settledScreenshot(app))
-        attachment.name = "store_\(shot.language)_\(shot.theme)_\(String(format: "%02d", shot.index))_\(shot.name)"
+        attachment.name = "store_\(name)"
         attachment.lifetime = .keepAlways
         test.add(attachment)
+        // Text cut by an edge: kept as its own attachment, which scripts/file-screenshots.py reports and fails the run
+        // on once every frame is filed (a failing test here would lose the frames: the script retries, then stops).
+        let edges = FrameEdges.read(app)
+        if !edges.cuts.isEmpty || reviewShots {
+            let report = XCTAttachment(string: (edges.cuts.map { "CUT \($0)" } + edges.layout).joined(separator: "\n"))
+            report.name = "\(edges.cuts.isEmpty ? "layout" : "fold")_\(name)"
+            report.lifetime = .keepAlways
+            test.add(report)
+        }
     }
 
     /// The screen once two frames half a second apart are identical. Images and fonts settle after the first frame, the

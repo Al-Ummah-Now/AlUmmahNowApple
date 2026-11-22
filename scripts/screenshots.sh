@@ -121,6 +121,7 @@ status_bar_overrides() { # udid lang
 # first-boot system work settles while xcodebuild compiles, and the test starts once it has finished booting.
 # Two simulators, or a freshly booted one, on the 3-vCPU runner timed out the iPad pass ("Timed out waiting for AX
 # loaded notification", "Timed out while requesting screenshot"; #47).
+filing_failed=0
 shoot() { # app scheme destination device themes [udid]
   local app="$1" scheme="$2" destination="$3" device="$4" themes="$5" udid="${6:-}"
   local signing=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
@@ -187,7 +188,8 @@ shoot() { # app scheme destination device themes [udid]
       echo "screenshot pass $app $device $lang failed, retrying once"
     done
     xcrun xcresulttool export attachments --path "$bundle" --output-path "$RESULTS/$app-$device-$lang" >/dev/null
-    python3 scripts/file-screenshots.py "$RESULTS/$app-$device-$lang" "$OUT/$app" "$device"
+    # A frame with text cut by its edge fails the run at the end, once every pass has filed its frames.
+    python3 scripts/file-screenshots.py "$RESULTS/$app-$device-$lang" "$OUT/$app" "$device" || filing_failed=1
   done
   if [[ -n "$udid" ]]; then xcrun simctl shutdown "$udid" 2>/dev/null || true; fi
   thaw_clock
@@ -227,13 +229,13 @@ hidpi_display() {
     vid=$(head -1 "$ids" | grep -E '^[0-9]+$' || true)
   fi
   # displayplacer needs a mode for every screen it is given: the physical one keeps its current mode, the virtual one
-  # takes its 1440x900 HiDPI mode (scaling:on), as displayplacer itself lists them once the display exists.
+  # takes its 1440x1100 HiDPI mode (scaling:on), as displayplacer itself lists them once the display exists.
   local vmode="" pmode="" after
   if [[ -n "$vid" && -n "$phys" ]]; then
     after=$(displayplacer list 2>&1 || true)
     printf '%s\n' "$after" | awk -v id="$vid" '/Contextual screen id:/ {on = ($4 == id)} on && /mode [0-9]+:/' | head -8 || true
     vmode=$(printf '%s\n' "$after" | awk -v id="$vid" '/Contextual screen id:/ {on = ($4 == id)}
-      on && /mode [0-9]+: res:1440x900 .*scaling:on/ {sub(/:$/, "", $2); print $2; exit}' || true)
+      on && /mode [0-9]+: res:1440x1100 .*scaling:on/ {sub(/:$/, "", $2); print $2; exit}' || true)
     pmode=$(printf '%s\n' "$after" | awk -v id="$phys" '/Contextual screen id:/ {on = ($4 == id)}
       on && /current mode/ {sub(/:$/, "", $2); print $2; exit}' || true)
   fi
@@ -279,3 +281,4 @@ case "$WHAT" in
   *) echo "usage: $0 [all|viewer-ios|viewer-tv|viewer-mac|studio-ios|studio-mac] [out-dir]" >&2; exit 2 ;;
 esac
 find "$OUT" -name "*.png" | sort
+((filing_failed == 0)) || { echo "::error::some frames failed filing (see the errors above)" >&2; exit 1; }

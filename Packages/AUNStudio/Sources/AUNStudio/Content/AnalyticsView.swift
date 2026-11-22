@@ -17,6 +17,9 @@ struct AnalyticsView: View {
     @State private var opened: VideoStats?
     @State private var metric: ChartMetric = .views
 
+    /// Where `-AUNScrollTo` can land: the page's top (the range chips) and the daily chart.
+    private static let sections = ["analytics-range", "analytics-daily"]
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -33,6 +36,9 @@ struct AnalyticsView: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(l10n("studio.analytics.range"))
                     .accessibilityIdentifier("analytics-range")
+                    // The page's top edge, for a review frame that starts a few points down it
+                    // (`-AUNScrollTo analytics-range+<points>`).
+                    .scrollSection("analytics-range")
                     switch phase {
                     case .loading where current == nil:
                         ThemeLoader().frame(maxWidth: .infinity, minHeight: 200)
@@ -58,13 +64,13 @@ struct AnalyticsView: View {
                             .scrollSection("analytics-daily")
                         }
                     }
-                    ScrollTargetRoom(among: ["analytics-daily"], aliases: ["analytics-table": "analytics-daily"])
+                    ScrollTargetRoom(among: Self.sections, aliases: ["analytics-table": "analytics-daily"])
                 }
                 .padding(FanousScale.spacingLg)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollsToRequestedSection(
-                proxy, among: ["analytics-daily"], aliases: ["analytics-table": "analytics-daily"], ready: current != nil)
+                proxy, among: Self.sections, aliases: ["analytics-table": "analytics-daily"], ready: current != nil)
         }
         .fanousPage()
         .navigationTitle(l10n("studio.analytics.title"))
@@ -233,8 +239,10 @@ struct StatTile: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, FanousScale.spacingMd)
         .padding(.vertical, stacked ? FanousScale.spacingSm : FanousScale.spacingMd)
-        .fanousMaterial(.card) { .rounded($0.md) }
+        // Combined inside the card: outside it, the element's frame took in the card's shadow and VoiceOver's
+        // outline (and the review edge check) ran far past the card.
         .accessibilityElement(children: .combine)
+        .fanousMaterial(.card) { .rounded($0.md) }
     }
 }
 

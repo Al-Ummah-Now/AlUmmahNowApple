@@ -27,7 +27,7 @@ struct StudioMacApp: App {
             .studioWindowTitleHidden()
         }
         // Fits a 1280x800 screen (and CI's), so the bulk bar at the bottom of Content is on screen in a fresh window.
-        .defaultSize(width: 1100, height: 680)
+        .defaultSize(width: 1100, height: AutomationWindow.height(680))
     }
 }
 

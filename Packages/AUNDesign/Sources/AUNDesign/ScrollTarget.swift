@@ -3,7 +3,19 @@ import SwiftUI
 /// UI automation (`-AUNScrollTo <id>`): a screen with that section scrolls it to the top once its content is in, so
 /// a screenshot of the lower part starts at a section edge instead of mid-card.
 public enum ScrollTarget {
-    public static var requested: String? { UserDefaults.standard.string(forKey: "AUNScrollTo") }
+    /// The requested section's id.
+    public static var requested: String? { request?.id }
+
+    /// Points to scroll past the section's landing edge (`-AUNScrollTo <id>+<points>`), so a review frame's bottom edge
+    /// falls between two rows instead of through one. Zero without an offset.
+    public static var offset: CGFloat { request?.offset ?? 0 }
+
+    private static var request: (id: String, offset: CGFloat)? {
+        guard let raw = UserDefaults.standard.string(forKey: "AUNScrollTo"), !raw.isEmpty else { return nil }
+        let parts = raw.split(separator: "+", maxSplits: 1)
+        guard parts.count == 2, let points = Double(parts[1]) else { return (raw, 0) }
+        return (String(parts[0]), CGFloat(points))
+    }
 
     /// Space between the header and a section scrolled to the top: the page's own top padding.
     public static let landingGap = FanousScale.spacingLg
@@ -40,7 +52,7 @@ extension View {
         overlay(alignment: .top) {
             Color.clear.frame(height: ScrollTarget.landingGap)
                 .id(id)
-                .padding(.top, -ScrollTarget.landingGap)
+                .padding(.top, -ScrollTarget.landingGap + ScrollTarget.offset)
                 .allowsHitTesting(false).accessibilityHidden(true)
         }
     }

@@ -52,7 +52,9 @@ jobs:
           path: build/DerivedData/SourcePackages
           key: spm-${{ runner.os }}-xcode-${{ env.XCODE_VERSION }}-${{ hashFiles('Packages/*/Package.swift', 'AlUmmahNow.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
       - run: scripts/screenshots.sh ${{ matrix.app }} build/screenshots
+      # Also when a frame failed the edge check, so the frames can be looked at.
       - uses: actions/upload-artifact@v4
+        if: success() || failure()
         with:
           name: store-screenshots-${{ matrix.app }}
           path: build/screenshots/${{ matrix.app }}

@@ -63,8 +63,10 @@ struct NoticeView: View {
             .fanousFont(.label)
             .foregroundStyle(Fanous.errorText)
             .padding(FanousScale.spacingMd)
-            .fanousMaterial(.card) { .rounded($0.md) }
+            // Combined inside the card: outside it, the element's frame took in the card's shadow and VoiceOver's
+            // outline (and the review edge check) ran far past the card.
             .accessibilityElement(children: .combine)
+            .fanousMaterial(.card) { .rounded($0.md) }
             .accessibilityIdentifier("notice")
         }
     }
@@ -397,23 +399,33 @@ struct DashboardContent: View {
         _model = State(initialValue: model)
     }
 
+    /// The sections' top edge (`-AUNScrollTo dashboard-sections`): the iPhone review frame starts there, so it ends
+    /// between two cards above the tab bar instead of through a comment.
+    private static let sections = "dashboard-sections"
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-                NoticeView(session: session)
-                if !model.counts.isEmpty { kpis }
-                // The full width (no reading cap): one column on iPhone, two on iPad and Mac.
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 360), spacing: FanousScale.spacingLg, alignment: .top)],
-                    alignment: .leading, spacing: FanousScale.spacingLg
-                ) {
-                    recentSection
-                    heldSection
-                    queueSection
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
+                    NoticeView(session: session)
+                    if !model.counts.isEmpty { kpis }
+                    // The full width (no reading cap): one column on iPhone, two on iPad and Mac.
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 360), spacing: FanousScale.spacingLg, alignment: .top)],
+                        alignment: .leading, spacing: FanousScale.spacingLg
+                    ) {
+                        recentSection
+                        heldSection
+                        queueSection
+                    }
+                    .scrollSection(Self.sections)
+                    ScrollTargetRoom(among: [Self.sections])
                 }
+                .padding(FanousScale.spacingLg)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(FanousScale.spacingLg)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollsToRequestedSection(
+                proxy, among: [Self.sections], ready: model.recentPhase != .idle && !model.recentPhase.isLoading)
         }
         .refreshable { await model.load() }
         .task { if model.recentPhase == .idle { await model.load() } }
@@ -549,8 +561,10 @@ struct KPITile: View {
         }
         .padding(FanousScale.spacingMd)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .fanousMaterial(.card) { .rounded($0.lg) }
+        // Combined inside the card: outside it, the element's frame took in the card's shadow and VoiceOver's
+        // outline (and the review edge check) ran far past the card.
         .accessibilityElement(children: .combine)
+        .fanousMaterial(.card) { .rounded($0.lg) }
     }
 }
 

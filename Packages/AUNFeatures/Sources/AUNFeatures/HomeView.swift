@@ -70,12 +70,18 @@
         var cardWidth: CGFloat = 260
         let open: (Video) -> Void
 
+        /// Where `-AUNScrollTo` can land: the hero and each rail.
+        private var sections: [String] { ["home-hero"] + rails.map { "rail-\($0.kind.rawValue)" } }
+
         var body: some View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FanousScale.spacingXl) {
                         if let featured = rails.first?.videos.first {
                             HomeHero(video: featured) { open(featured) }.padding(.horizontal)
+                                // The top of home, for a review frame that starts a set distance down it
+                                // (`-AUNScrollTo home-hero+<points>`). Always built, so the lazy stack knows the id.
+                                .scrollSection("home-hero")
                         }
                         // Each rail as a grid of whole cards: one full-width column on a phone, as many as fit on iPad and
                         // Mac. No card is ever cut by the screen or window edge, in either reading direction.
@@ -103,11 +109,11 @@
                             .id("rail-\(rail.kind.rawValue)")
                             .accessibilityIdentifier("rail-\(rail.kind.rawValue)")
                         }
-                        ScrollTargetRoom(among: rails.map { "rail-\($0.kind.rawValue)" })
+                        ScrollTargetRoom(among: sections)
                     }
                     .padding(.vertical)
                 }
-                .scrollsToRequestedSection(proxy, among: rails.map { "rail-\($0.kind.rawValue)" }, ready: !rails.isEmpty)
+                .scrollsToRequestedSection(proxy, among: sections, ready: !rails.isEmpty)
             }
             .fanousPage()
         }
