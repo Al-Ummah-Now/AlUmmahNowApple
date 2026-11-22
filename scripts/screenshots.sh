@@ -226,12 +226,23 @@ hidpi_display() {
     sleep 3
     vid=$(head -1 "$ids" | grep -E '^[0-9]+$' || true)
   fi
-  if [[ -n "$vid" && -n "$phys" ]] &&
-    displayplacer "id:$vid res:1440x900 scaling:on origin:(0,0) degree:0" "id:$phys origin:(1440,0) degree:0"; then
+  # displayplacer needs a mode for every screen it is given: the physical one keeps its current mode, the virtual one
+  # takes its 1440x900 HiDPI mode (scaling:on), as displayplacer itself lists them once the display exists.
+  local vmode="" pmode="" after
+  if [[ -n "$vid" && -n "$phys" ]]; then
+    after=$(displayplacer list 2>&1 || true)
+    printf '%s\n' "$after" | awk -v id="$vid" '/Contextual screen id:/ {on = ($4 == id)} on && /mode [0-9]+:/' | head -8 || true
+    vmode=$(printf '%s\n' "$after" | awk -v id="$vid" '/Contextual screen id:/ {on = ($4 == id)}
+      on && /mode [0-9]+: res:1440x900 .*scaling:on/ {sub(/:$/, "", $2); print $2; exit}' || true)
+    pmode=$(printf '%s\n' "$after" | awk -v id="$phys" '/Contextual screen id:/ {on = ($4 == id)}
+      on && /current mode/ {sub(/:$/, "", $2); print $2; exit}' || true)
+  fi
+  if [[ -n "$vmode" && -n "$pmode" ]] &&
+    displayplacer "id:$vid mode:$vmode origin:(0,0) degree:0" "id:$phys mode:$pmode origin:(1440,0) degree:0"; then
     sleep 3
     echo "virtual HiDPI display $vid is the main display"
   else
-    echo "virtual display: $(cat "$ids" 2>/dev/null | head -2 | xargs || true)"
+    echo "virtual display: ${vid:-$(head -2 "$ids" 2>/dev/null | xargs || true)} mode ${vmode:-none}, physical mode ${pmode:-none}"
     stop_virtual_display
     virtual_display_pid=""
     big=$(printf '%s\n' "$list" | grep -E "mode [0-9]+: res:1920x1080" | head -1 | sed -E 's/^ *mode ([0-9]+):.*/\1/' || true)
