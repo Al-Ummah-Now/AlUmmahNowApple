@@ -73,12 +73,17 @@ dyld_cache() { # platform version
 # back to 09:41:00 every 20 seconds during the simulator passes, so the minute never turns, and network time is
 # restored when the script exits. Only on an ephemeral GitHub-hosted runner, never on someone's own Mac.
 freeze_clock_pid=""
+freeze_real_start=0
+freeze_mono_start=0
 freeze_clock() {
   [[ "${AUN_FREEZE_CLOCK:-0}" == 1 ]] || return 0
   if [[ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]]; then
     echo "AUN_FREEZE_CLOCK needs a GitHub-hosted runner; keeping the live clock" >&2
     return 0
   fi
+  # The real time and a monotonic reading, so thaw_clock can put the real time back without the network.
+  freeze_real_start=$(date -u +%s)
+  freeze_mono_start=$(python3 -I -c 'import time; print(int(time.monotonic()))')
   sudo systemsetup -setusingnetworktime off >/dev/null 2>&1 || true
   (while :; do sudo date "$(date +%m%d)0941$(date +%y)" >/dev/null; sleep 20; done) &
   freeze_clock_pid=$!
@@ -90,6 +95,9 @@ thaw_clock() {
   kill "$freeze_clock_pid" 2>/dev/null || true
   wait "$freeze_clock_pid" 2>/dev/null || true
   freeze_clock_pid=""
+  local real
+  real=$((freeze_real_start + $(python3 -I -c 'import time; print(int(time.monotonic()))') - freeze_mono_start))
+  sudo date -u "$(date -u -r "$real" +%m%d%H%M%Y.%S)" >/dev/null
   sudo sntp -sS time.apple.com >/dev/null 2>&1 || true
   sudo systemsetup -setusingnetworktime on >/dev/null 2>&1 || true
   echo "clock restored: $(date)"

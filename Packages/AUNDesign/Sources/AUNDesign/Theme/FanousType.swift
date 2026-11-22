@@ -171,6 +171,7 @@ extension FanousTheme {
 
 private struct FanousLineBoxModifier: ViewModifier {
     @Environment(\.fanous) private var theme
+    @Environment(\.locale) private var locale
     /// Dynamic Type's factor for the role, as a percentage of the default size.
     @ScaledMetric private var percent: CGFloat
     let role: FanousTextRole
@@ -185,18 +186,49 @@ private struct FanousLineBoxModifier: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        let height = (theme.lineBox(role) * percent / 100 * CGFloat(lines)).rounded(.up)
-        content
-            .lineLimit(lines)
-            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: alignment)
+        let arabic = locale.language.languageCode == .arabic
+        let family = FanousTypeface.family(arabic ? theme.tokens.font.arabic : theme.tokens.font.latin)
+        let scale = percent / 100
+        LineBoxLayout(
+            box: theme.lineBox(role) * scale,
+            drawn: FanousTypeface.drawnLine(family: family, style: role.style(arabic: arabic)) * scale
+        ) {
+            content.lineLimit(lines).frame(maxWidth: .infinity, alignment: alignment)
+        }
+    }
+}
+
+/// Lays text out at its width and gives it `box` points for each line it draws, whatever the script's own line.
+private struct LineBoxLayout: Layout {
+    let box: CGFloat
+    let drawn: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let text = subviews.first else { return .zero }
+        let natural = text.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: proposal.width ?? natural.width, height: height(natural.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let text = subviews.first else { return }
+        let natural = text.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+        // The text's lines centred in their boxes, so a taller script overflows its box evenly, never into the next row.
+        let top = bounds.minY + (bounds.height - natural.height) / 2
+        text.place(at: CGPoint(x: bounds.minX, y: top), proposal: ProposedViewSize(width: bounds.width, height: nil))
+    }
+
+    /// Whole lines drawn: n lines are n script lines less the spacing after the last one, so rounding finds n.
+    private func height(_ natural: CGFloat) -> CGFloat {
+        let lines = max(1, (natural / max(drawn, 1)).rounded())
+        return (lines * box).rounded(.up)
     }
 }
 
 extension View {
-    /// Text in a fixed box of `lines` lines of `role`, the same height in English and Arabic, so the taller Arabic
-    /// line can never push what follows further down the page. The box follows the theme's faces and Dynamic Type;
-    /// the text is limited to `lines` lines.
-    public func fanousLineBox(_ role: FanousTextRole, lines: Int = 1, alignment: Alignment = .topLeading) -> some View {
+    /// Text in boxes of a fixed line height, the same in English and Arabic: each line the text draws (at most `lines`)
+    /// takes `role`'s line box, the taller of the theme's Latin and Arabic lines. The taller Arabic line can then never
+    /// push what follows further down the page. The boxes follow the theme's faces and Dynamic Type.
+    public func fanousLineBox(_ role: FanousTextRole, lines: Int = 1, alignment: Alignment = .leading) -> some View {
         modifier(FanousLineBoxModifier(role: role, lines: lines, alignment: alignment))
     }
 }
