@@ -102,7 +102,9 @@ thaw_clock() {
   sudo systemsetup -setusingnetworktime on >/dev/null 2>&1 || true
   echo "clock restored: $(date)"
 }
-trap thaw_clock EXIT
+virtual_display_pid=""
+stop_virtual_display() { [[ -z "$virtual_display_pid" ]] || kill "$virtual_display_pid" 2>/dev/null || true; }
+trap 'thaw_clock; stop_virtual_display' EXIT
 
 # Battery, signal and, unless the clock is held (above), a 9:41 override for English. Errors are not hidden: a pass
 # without its overrides fails instead of filing wrong frames.
@@ -205,28 +207,38 @@ viewer_tv() {
   udid=$(simulator "$TV" tvOS "$TVOS_OS")
   shoot viewer-tv ViewerTV "platform=tvOS Simulator,id=$udid" tv dark "$udid"
 }
-# Review frames of the Mac window at a 2× backing scale: a GitHub-hosted runner's display starts at 1×, so a window
-# shot is soft once it is enlarged. Switches the main display to a HiDPI mode when it has one, and logs the modes.
+# Mac review frames at the window's native 2x. GitHub's hosted runner has one 1x display (1024x768, 1x modes up to
+# 1920x1080, none HiDPI), so a HiDPI virtual display (scripts/virtual-display.m) becomes the main one and the windows
+# open there. If the runner refuses it, the display goes to 1920x1080 so the window keeps its full 1100x680 pt size at
+# 1x. Never fails the run; the frames are cropped to the window with no upscaling and no letterbox
+# (scripts/file-screenshots.py).
 hidpi_display() {
   [[ "${AUN_REVIEW_SHOTS:-0}" == 1 && "${RUNNER_ENVIRONMENT:-}" == github-hosted ]] || return 0
   command -v displayplacer >/dev/null || brew install -q displayplacer >/dev/null 2>&1 || return 0
-  # Never fails the run: without a HiDPI mode the review frames are the window at the display's own scale, cropped,
-  # with no upscaling and no letterbox (scripts/file-screenshots.py).
-  local list id mode
+  local list phys vid="" big tool="build/virtual-display" ids="build/virtual-display.id"
   list=$(displayplacer list 2>&1 || true)
-  echo "displays:"
-  printf '%s\n' "$list" | grep -E "Persistent screen id|Resolution:|Scaling|mode [0-9]+:" | head -60 || true
-  id=$(printf '%s\n' "$list" | awk '/Persistent screen id:/ {print $4; exit}' || true)
-  mode=$(printf '%s\n' "$list" |
-    grep -E "mode [0-9]+: res:(1440x900|1680x1050|1512x982|1470x956|1920x1080|1280x800) .*scaling:on" |
-    head -1 | sed -E 's/^ *mode ([0-9]+):.*/\1/' || true)
-  if [[ -n "$id" && -n "$mode" ]]; then
-    displayplacer "id:$id mode:$mode" || true
+  printf '%s\n' "$list" | grep -E "Persistent screen id|Contextual screen id|Resolution:|Scaling" | head -12 || true
+  phys=$(printf '%s\n' "$list" | awk '/Contextual screen id:/ {print $4; exit}' || true)
+  mkdir -p build
+  if clang -fobjc-arc -framework Foundation -framework CoreGraphics scripts/virtual-display.m -o "$tool" 2>&1; then
+    "$tool" >"$ids" 2>&1 &
+    virtual_display_pid=$!
     sleep 3
-    echo "display: $(system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Resolution|UI Looks like' | head -2 | xargs || true)"
-  else
-    echo "no HiDPI display mode on this runner; Mac review frames stay at the display's scale"
+    vid=$(head -1 "$ids" | grep -E '^[0-9]+$' || true)
   fi
+  if [[ -n "$vid" && -n "$phys" ]] &&
+    displayplacer "id:$vid res:1440x900 scaling:on origin:(0,0) degree:0" "id:$phys origin:(1440,0) degree:0"; then
+    sleep 3
+    echo "virtual HiDPI display $vid is the main display"
+  else
+    echo "virtual display: $(cat "$ids" 2>/dev/null | head -2 | xargs || true)"
+    stop_virtual_display
+    virtual_display_pid=""
+    big=$(printf '%s\n' "$list" | grep -E "mode [0-9]+: res:1920x1080" | head -1 | sed -E 's/^ *mode ([0-9]+):.*/\1/' || true)
+    [[ -z "$phys" || -z "$big" ]] || displayplacer "id:$phys mode:$big" || true
+    sleep 3
+  fi
+  echo "display: $(system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Resolution|UI Looks like|Main Display' | head -6 | xargs || true)"
 }
 
 viewer_mac() {
