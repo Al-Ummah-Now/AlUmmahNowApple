@@ -50,16 +50,10 @@
             ]
         }
 
+        /// The first video with its own chapters, as the watch page loads them.
         private func content(_ language: AppLanguage) -> WatchContent {
-            WatchContent(
-                video: FixtureCatalogService.videos(arabic: language == .ar)[0],
-                chapters: [
-                    Chapter(
-                        id: "1", startTime: 0, title: "Introduction",
-                        titleLocalized: LocalizedText(en: "Introduction", ar: "المقدمة")),
-                    Chapter(
-                        id: "2", startTime: 90, title: "Sources", titleLocalized: LocalizedText(en: "Sources", ar: "المصادر")),
-                ])
+            let video = FixtureCatalogService.videos(arabic: language == .ar)[0]
+            return WatchContent(video: video, chapters: FixtureLibrary.chapters(viewerID: video.id))
         }
 
         @Test(arguments: themes, languages)

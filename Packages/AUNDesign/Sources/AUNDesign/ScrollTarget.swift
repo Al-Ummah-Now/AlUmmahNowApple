@@ -5,6 +5,9 @@ import SwiftUI
 public enum ScrollTarget {
     public static var requested: String? { UserDefaults.standard.string(forKey: "AUNScrollTo") }
 
+    /// Space between the header and a section scrolled to the top: the page's own top padding.
+    public static let landingGap = FanousScale.spacingLg
+
     /// The section to land on among `ids`, following `aliases` (a target that also opens something in that section).
     public static func target(among ids: [String], aliases: [String: String] = [:]) -> String? {
         requested.map { aliases[$0] ?? $0 }.flatMap { ids.contains($0) ? $0 : nil }
@@ -28,15 +31,17 @@ public struct ScrollTargetRoom: View {
 }
 
 extension View {
-    /// Marks the top edge of a section `-AUNScrollTo` can land on, with a 1-point marker one spacing step above it, so
-    /// the section lands with air under the header. Never put one inside a `ViewThatFits`: it keeps every candidate
+    /// Marks the top edge of a section `-AUNScrollTo` can land on. The marker spans the page's top gap above the
+    /// section (negative padding keeps it out of the layout), so the section lands that gap below the header, as the
+    /// first section does at the top of the page. Never put one inside a `ViewThatFits`: it keeps every candidate
     /// layout, so the id would exist once per candidate. Mark the `ViewThatFits` itself. In a lazy stack use `.id` on
     /// the `ForEach` child instead: the stack only knows those ids before a row is built.
     public func scrollSection(_ id: String) -> some View {
         overlay(alignment: .top) {
-            Color.clear.frame(height: 1)
-                .alignmentGuide(.top) { $0[.top] + FanousScale.spacingMd }
-                .id(id).allowsHitTesting(false).accessibilityHidden(true)
+            Color.clear.frame(height: ScrollTarget.landingGap)
+                .id(id)
+                .padding(.top, -ScrollTarget.landingGap)
+                .allowsHitTesting(false).accessibilityHidden(true)
         }
     }
 

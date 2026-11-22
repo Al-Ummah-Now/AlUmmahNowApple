@@ -126,12 +126,10 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
 
         var body: some View {
             HStack(spacing: FanousScale.spacingMd) {
-                Slider(
-                    value: Binding(get: { min(controller.currentTime, total) }, set: { controller.seek(to: $0) }),
-                    in: 0...max(total, 1)
+                PlayerScrubber(
+                    value: min(controller.currentTime, total), total: max(total, 1), enabled: total > 0,
+                    seek: { controller.seek(to: $0) }
                 )
-                .tint(Fanous.primary)
-                .disabled(total <= 0)
                 .accessibilityLabel(l10n("player.position"))
                 .accessibilityValue(time)
                 .accessibilityIdentifier("player-scrubber")
@@ -148,6 +146,56 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
             l10n(
                 "player.time", DisplayFormat.duration(controller.currentTime, l10n.language),
                 DisplayFormat.duration(total, l10n.language))
+        }
+    }
+
+    /// The position track, drawn in Fanous parts so it reads on every page: the rest of the track in `outline` and the
+    /// played part and the thumb in `link`, the theme's strongest accent on its background (the system slider's grey
+    /// track and gold fill nearly vanished on the light themes' cream). It fills from the leading edge, so from the
+    /// right in RTL; VoiceOver gets the system slider, so it adjusts like any other.
+    struct PlayerScrubber: View {
+        @Environment(\.layoutDirection) private var direction
+        let value: Double
+        let total: Double
+        let enabled: Bool
+        let seek: (Double) -> Void
+
+        private static let track: CGFloat = 4
+        private static let thumb: CGFloat = 14
+        /// The whole control is at least this tall, so the thumb is easy to catch.
+        private static let target: CGFloat = 28
+
+        var body: some View {
+            GeometryReader { proxy in
+                let usable = max(proxy.size.width - Self.thumb, 1)
+                let played = usable * CGFloat(min(max(value / total, 0), 1))
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Fanous.outline).frame(height: Self.track)
+                    HStack(spacing: 0) {
+                        Capsule().fill(Fanous.link).frame(width: played + Self.thumb / 2, height: Self.track)
+                            .padding(.trailing, -Self.thumb / 2)
+                        Circle().fill(Fanous.link)
+                            .overlay(Circle().strokeBorder(Fanous.background, lineWidth: 2))
+                            .frame(width: Self.thumb, height: Self.thumb)
+                        Spacer(minLength: 0)
+                    }
+                }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0).onChanged { drag in
+                        // The gesture reports the physical x; the track runs from the leading edge.
+                        let x = direction == .rightToLeft ? proxy.size.width - drag.location.x : drag.location.x
+                        let fraction = min(max((x - Self.thumb / 2) / usable, 0), 1)
+                        seek(Double(fraction) * total)
+                    },
+                    including: enabled ? .all : .none)
+            }
+            .frame(height: Self.target)
+            .opacity(enabled ? 1 : 0.5)
+            .accessibilityRepresentation {
+                Slider(value: Binding(get: { value }, set: seek), in: 0...total).disabled(!enabled)
+            }
         }
     }
 

@@ -91,6 +91,40 @@ public enum FixtureLibrary {
             thumb: thumb, views: views, seconds: seconds, status: status, isPublic: isPublic, age: age)
     }
 
+    /// Each published video's own chapters (start in seconds, en, ar): the recitation by verse ranges, a khutbah by its
+    /// two parts, and so on. Unknown ids have none.
+    public static func chapters(viewerID: String) -> [Chapter] {
+        let marks: [(Double, String, String)]
+        switch viewerID {
+        case "fixture-1": marks = [(0, "First khutbah", "الخطبة الأولى"), (1_110, "Second khutbah", "الخطبة الثانية")]
+        case "fixture-2":
+            marks = [
+                (0, "Verses 32–44: the two gardens", "الآيات ٣٢–٤٤: الجنتان"),
+                (760, "Verses 45–59: the life of this world", "الآيات ٤٥–٥٩: مثل الحياة الدنيا"),
+            ]
+        case "fixture-3":
+            marks = [
+                (0, "Verses 1–8: the opening", "الآيات ١–٨: الافتتاح"),
+                (420, "Verses 9–31: the people of the cave", "الآيات ٩–٣١: أصحاب الكهف"),
+            ]
+        case "fixture-4":
+            marks = [(0, "Patience in the Quran", "الصبر في القرآن"), (370, "The Prophet's example", "هدي النبي ﷺ")]
+        case "fixture-5": marks = [(0, "Fasting", "الصيام"), (280, "The last ten nights", "العشر الأواخر")]
+        case "fixture-6": marks = [(0, "Introduction", "المقدمة"), (30, "Sources", "المصادر")]
+        case "fixture-7":
+            marks = [
+                (0, "Verses 1–31", "الآيات ١–٣١"), (505, "Verses 32–59", "الآيات ٣٢–٥٩"), (930, "Verses 60–110", "الآيات ٦٠–١١٠"),
+            ]
+        default: marks = []
+        }
+        return marks.enumerated().map { index, mark in
+            Chapter(
+                id: "c\(index + 1)", startTime: mark.0,
+                endTime: index + 1 < marks.count ? marks[index + 1].0 : nil, title: mark.1,
+                titleLocalized: LocalizedText(en: mark.1, ar: mark.2))
+        }
+    }
+
     /// Whether the app runs in Arabic: the stored choice (`AUNLanguage`), else the first of Arabic or English the device
     /// prefers, the same rule as `AppSettings`.
     public static func prefersArabic(

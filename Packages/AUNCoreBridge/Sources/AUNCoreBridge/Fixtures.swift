@@ -58,14 +58,7 @@ public struct FixtureCatalogService: CatalogServicing {
         ]
     }
 
-    public func chapters(videoID: String) async throws -> [Chapter] {
-        [
-            Chapter(
-                id: "c1", startTime: 0, endTime: 30, title: "Introduction",
-                titleLocalized: LocalizedText(en: "Introduction", ar: "المقدمة")),
-            Chapter(id: "c2", startTime: 30, title: "Sources", titleLocalized: LocalizedText(en: "Sources", ar: "المصادر")),
-        ]
-    }
+    public func chapters(videoID: String) async throws -> [Chapter] { FixtureLibrary.chapters(viewerID: videoID) }
 
     public func subtitleText(url: URL) async throws -> String {
         "WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nFixture cue\n"

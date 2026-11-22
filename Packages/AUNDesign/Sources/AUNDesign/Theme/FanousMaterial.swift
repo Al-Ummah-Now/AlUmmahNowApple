@@ -71,17 +71,21 @@ public enum FanousPaint {
     }
 
     /// Draws background layers into `path`. CSS lists the top layer first, so they are painted in reverse.
-    public static func fill(_ fills: [FanousFill], path: Path, rect: CGRect, rtl: Bool, in context: GraphicsContext) {
+    /// `mirrorsAll` mirrors physical positions and angles too, for a surface whose content swaps sides in RTL.
+    public static func fill(
+        _ fills: [FanousFill], path: Path, rect: CGRect, rtl: Bool, mirrorsAll: Bool = false, in context: GraphicsContext
+    ) {
         for fill in fills.reversed() {
             switch fill {
             case .solid(let color):
                 context.fill(path, with: .color(Color(color)))
             case .linear(let angle, let logical, let stops):
-                let (start, end) = linearPoints(angle: logical && rtl ? -angle : angle, in: rect)
+                let (start, end) = linearPoints(angle: (logical || mirrorsAll) && rtl ? -angle : angle, in: rect)
                 context.fill(path, with: .linearGradient(gradient(stops), startPoint: start, endPoint: end))
             case .radial(let circle, let extent, let unit, let logicalX, let stops):
                 let center = CGPoint(
-                    x: rect.minX + rect.width * (logicalX && rtl ? 1 - unit.x : unit.x), y: rect.minY + rect.height * unit.y)
+                    x: rect.minX + rect.width * ((logicalX || mirrorsAll) && rtl ? 1 - unit.x : unit.x),
+                    y: rect.minY + rect.height * unit.y)
                 let (rx, ry) = radialRadii(circle: circle, extent: extent, center: center, in: rect)
                 guard rx > 0.01, ry > 0.01 else { continue }
                 var layer = context
@@ -136,12 +140,16 @@ public struct FanousSurface: View {
     public var shadows: [FanousBoxShadow]
     public var shape: FanousShape
     public var blur: FanousBlur?
+    /// Mirrors every fill in RTL, physical ones included: for a surface whose layout swaps sides (the home hero), so a
+    /// glow stays on the same part of the content.
+    public var mirrorsAll: Bool
     @Environment(\.layoutDirection) private var direction
 
     public init(
         fills: [FanousFill], border: [FanousFill] = [], shadows: [FanousBoxShadow] = [], shape: FanousShape,
-        blur: FanousBlur? = nil
+        blur: FanousBlur? = nil, mirrorsAll: Bool = false
     ) {
+        self.mirrorsAll = mirrorsAll
         self.fills = fills
         self.border = border
         self.shadows = shadows
@@ -159,13 +167,14 @@ public struct FanousSurface: View {
                 guard rect.width > 0, rect.height > 0 else { return }
                 FanousPaint.outerShadows(shadows, shape: shape, rect: rect, in: context)
                 let inner = border.isEmpty ? shape.path(in: rect) : shape.path(in: rect, expand: -1)
-                FanousPaint.fill(fills, path: inner, rect: rect, rtl: rtl, in: context)
+                FanousPaint.fill(fills, path: inner, rect: rect, rtl: rtl, mirrorsAll: mirrorsAll, in: context)
                 if !border.isEmpty {
                     var ring = shape.path(in: rect)
                     ring.addPath(inner)
                     var edge = context
                     edge.clip(to: ring, style: FillStyle(eoFill: true))
-                    FanousPaint.fill(border, path: shape.path(in: rect), rect: rect, rtl: rtl, in: edge)
+                    FanousPaint.fill(
+                        border, path: shape.path(in: rect), rect: rect, rtl: rtl, mirrorsAll: mirrorsAll, in: edge)
                 }
                 FanousPaint.insetShadows(shadows, shape: shape, rect: rect, in: context)
             }
@@ -214,7 +223,7 @@ private struct FanousMaterialBackground: ViewModifier {
         content.background {
             FanousSurface(
                 fills: recipe.fills, border: recipe.border, shadows: recipe.shadows, shape: shape(theme.radius),
-                blur: kind.blurs ? theme.tokens.blur : nil)
+                blur: kind.blurs ? theme.tokens.blur : nil, mirrorsAll: kind == .hero)
         }
     }
 }

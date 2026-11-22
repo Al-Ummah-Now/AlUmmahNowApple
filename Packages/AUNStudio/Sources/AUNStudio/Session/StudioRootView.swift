@@ -67,10 +67,11 @@ struct StudioToolbar: ToolbarContent {
 }
 
 extension View {
-    /// The web header on the bar (opaque), so content never shows through the bar's controls as it scrolls.
-    func studioNavigationBar() -> some View {
+    /// The web header on the bar (opaque), so content never shows through the bar's controls as it scrolls. `large`
+    /// is the large leading title; iPad's tab roots turn it off, their tabs taking the middle of the bar instead.
+    func studioNavigationBar(large: Bool = true) -> some View {
         #if os(iOS)
-            modifier(SolidNavigationBar())
+            modifier(SolidNavigationBar(large: large))
         #else
             self
         #endif
@@ -79,10 +80,12 @@ extension View {
 
 #if os(iOS)
     private struct SolidNavigationBar: ViewModifier {
+        let large: Bool
+
         func body(content: Content) -> some View {
             // Every Studio screen, pushed ones included, uses the same large leading title (a pushed screen left on the
-            // automatic mode drew no visible title on the iOS 26 header).
-            let solid = content.toolbarTitleDisplayMode(.inlineLarge).fanousHeaderBar()
+            // automatic mode drew no visible title on the iOS 26 header). A large title leaves no room for a middle item.
+            let solid = content.toolbarTitleDisplayMode(large ? .inlineLarge : .inline).fanousHeaderBar()
             if #available(iOS 26, *) {
                 // Hard edges: scrolled text never shows through the header or the glass tab bar.
                 solid.scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
@@ -151,6 +154,12 @@ struct ChannelGate<Content: View>: View {
         @State private var showingAccounts = false
         @State private var tab: Tab = .home
 
+        /// iPad shows the tabs on the header as `HeaderTabs`, in the header's own colours. The system's floating bar
+        /// there took a light or a dark glass screen by screen (only the screen with a search field came out dark), with
+        /// the selected label at 2.5–3:1 on the light themes, and no public setting reached it. iPhone keeps the
+        /// system tab bar, which sits on the page.
+        private var pad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
         var body: some View {
             tabs
                 .safeAreaInset(edge: .top, spacing: 0) { AccountStateBanner(session: session) }
@@ -194,10 +203,19 @@ struct ChannelGate<Content: View>: View {
             NavigationStack {
                 content()
                     .navigationTitle(title)
-                    .toolbarTitleDisplayMode(.inlineLarge)
+                    .toolbarTitleDisplayMode(pad ? .inline : .inlineLarge)
                     .toolbar { StudioToolbar(title: title, session: session, showingAccounts: $showingAccounts) }
-                    .studioNavigationBar()
-                    .fanousBottomEdge(corner: UIDevice.current.userInterfaceIdiom == .pad ? 12 : 0)
+                    .studioNavigationBar(large: !pad)
+                    .fanousBottomEdge(corner: pad ? 12 : 0)
+                    .toolbar(pad ? .hidden : .automatic, for: .tabBar)
+                    .toolbar {
+                        if pad {
+                            HeaderTabsItem(
+                                tabs: HeaderTabs(
+                                    tabs: ordered.map { HeaderTabs.Item(id: $0, title: self.title($0)) },
+                                    selection: $tab, badged: .upload, badge: activeUploads))
+                        }
+                    }
             }
         }
 
@@ -244,20 +262,19 @@ struct ChannelGate<Content: View>: View {
             }
         }
 
-        /// iOS 18+: the adaptable tab view, so iPad gets the sidebar and iPhone the (Liquid Glass) tab bar, always at
-        /// full size so every tab stays labelled in both languages. iOS 17 keeps the classic tab bar.
+        /// iOS 18+: iPhone gets the (Liquid Glass) tab bar, always at full size so every tab stays labelled in both
+        /// languages; iPad only switches pages, its tabs being `HeaderTabs` on the header. iOS 17 keeps the classic tab
+        /// view, its bar hidden on iPad the same way.
         @ViewBuilder private var tabs: some View {
             if #available(iOS 18, *) {
-                TabView(selection: $tab) {
+                let view = TabView(selection: $tab) {
                     ForEach(ordered, id: \.self) { item in
                         SwiftUI.Tab(title(item), systemImage: icon(item), value: item) { page(item) }
                             .badge(item == .upload ? activeUploads : 0)
                             .accessibilityIdentifier("tab-\(item)")
                     }
                 }
-                .tabViewStyle(.sidebarAdaptable)
-                // iPad opens on the sidebar (the approved layout); iPhone keeps the tab bar.
-                .defaultAdaptableTabBarPlacement(.sidebar)
+                if pad { view.tabViewStyle(.tabBarOnly) } else { view.tabViewStyle(.sidebarAdaptable) }
             } else {
                 TabView(selection: $tab) {
                     ForEach(ordered, id: \.self) { item in

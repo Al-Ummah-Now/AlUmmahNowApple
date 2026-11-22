@@ -125,4 +125,16 @@ struct FixtureLibraryTests {
         defaults.set("ar", forKey: "AUNLanguage")
         #expect(FixtureLibrary.prefersArabic(defaults: defaults, preferredLanguages: ["en"]))
     }
+
+    @Test func everyPublishedVideoHasItsOwnChapters() {
+        let lists = FixtureLibrary.watchable.map { FixtureLibrary.chapters(viewerID: $0.viewerID) }
+        #expect(lists.allSatisfy { $0.count >= 2 && $0.first?.startTime == 0 })
+        let titles = lists.map { $0.map(\.title) }
+        #expect(Set(titles).count == titles.count)
+        for (item, chapters) in zip(FixtureLibrary.watchable, lists) {
+            #expect(chapters.allSatisfy { $0.startTime < item.seconds && $0.titleLocalized?.ar?.isEmpty == false })
+        }
+        let recitation = FixtureLibrary.chapters(viewerID: "fixture-7").map(\.title)
+        #expect(recitation == ["Verses 1–31", "Verses 32–59", "Verses 60–110"])
+    }
 }

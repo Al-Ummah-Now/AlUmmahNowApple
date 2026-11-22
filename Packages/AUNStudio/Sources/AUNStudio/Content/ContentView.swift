@@ -98,9 +98,9 @@ struct ContentView: View {
     private var statusPicker: some View {
         VStack(spacing: FanousScale.spacingXs) {
             // Status chips: the selected one in the gold primary material, the rest outlined (a system segmented
-            // control can't take the gradient). They wrap onto a second line rather than run off the edge, the same in
-            // English and Arabic.
-            FlowLayout {
+            // control can't take the gradient). They wrap onto a second line rather than run off the edge, spread evenly
+            // so English and Arabic break at the same chip.
+            FlowLayout(balanced: true) {
                 ForEach(StudioStatus.allCases, id: \.self) { status in
                     StatusChip(title: label(for: status), selected: model.status == status) { model.status = status }
                         .accessibilityIdentifier("status-\(status.rawValue)")
@@ -211,6 +211,9 @@ struct ContentView: View {
                 }
                 .scrollContentBackground(.hidden)
                 #if os(iOS)
+                    // The grouped list's own top margin left a band of empty page above the first card; the first card
+                    // sits a small gap under the sort row instead.
+                    .contentMargins(.top, FanousScale.spacingXs, for: .scrollContent)
                     .environment(\.editMode, $editMode)
                 #else
                     .contextMenu(forSelectionType: String.self) { ids in

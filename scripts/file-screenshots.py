@@ -7,6 +7,7 @@ Attachments named store_<en|ar>_<theme>_<NN>_<screen> become <out>/<en-US|ar-SA>
 Each image must have an App Store size for its device; Mac windows are scaled and centred on a 2880×1800 canvas.
 """
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -67,10 +68,13 @@ def main() -> int:
         target = out / LOCALES[language] / f"{device}-{index}-{screen}-{theme}.png"
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / exported, target)
-        if device == "mac":
+        # Review frames (AUN_REVIEW_SHOTS=1) keep the Mac window as captured, cropped to the window at the display's
+        # backing scale, with no scaling or letterbox. Store frames go on the 2880×1800 canvas.
+        review_mac = device == "mac" and os.environ.get("AUN_REVIEW_SHOTS") == "1"
+        if device == "mac" and not review_mac:
             fit_mac(target, theme)
         got = size(target)
-        if got not in SIZES[device]:
+        if not review_mac and got not in SIZES[device]:
             errors.append(f"{target}: {got[0]}×{got[1]} is not an App Store size for {device}")
         filed += 1
     for error in errors:

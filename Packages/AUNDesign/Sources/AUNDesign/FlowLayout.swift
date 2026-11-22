@@ -5,10 +5,14 @@ import SwiftUI
 public struct FlowLayout: Layout {
     private let spacing: CGFloat
     private let lineSpacing: CGFloat
+    private let balanced: Bool
 
-    public init(spacing: CGFloat = FanousScale.spacingSm, lineSpacing: CGFloat? = nil) {
+    /// `balanced` keeps the number of lines but spreads the items evenly over them (five chips on two lines: 3 + 2),
+    /// so English and Arabic, whose words differ in width, wrap at the same item when they need the same lines.
+    public init(spacing: CGFloat = FanousScale.spacingSm, lineSpacing: CGFloat? = nil, balanced: Bool = false) {
         self.spacing = spacing
         self.lineSpacing = lineSpacing ?? spacing
+        self.balanced = balanced
     }
 
     public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -40,6 +44,27 @@ public struct FlowLayout: Layout {
     }
 
     private func lines(for subviews: Subviews, width: CGFloat) -> [Line] {
+        let greedy = greedyLines(for: subviews, width: width)
+        guard balanced, greedy.count > 1 else { return greedy }
+        let perLine = Int((Double(subviews.count) / Double(greedy.count)).rounded(.up))
+        var lines: [Line] = []
+        for start in stride(from: 0, to: subviews.count, by: perLine) {
+            var line = Line()
+            for index in start..<min(start + perLine, subviews.count) {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                let itemWidth = min(size.width, width)
+                line.width = line.indices.isEmpty ? itemWidth : line.width + spacing + itemWidth
+                line.height = max(line.height, size.height)
+                line.indices.append(index)
+            }
+            // An even line that would run off the edge: keep the plain wrapping.
+            if line.width > width { return greedy }
+            lines.append(line)
+        }
+        return lines
+    }
+
+    private func greedyLines(for subviews: Subviews, width: CGFloat) -> [Line] {
         var lines: [Line] = []
         var current = Line()
         for index in subviews.indices {

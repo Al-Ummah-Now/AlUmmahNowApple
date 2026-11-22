@@ -193,10 +193,11 @@ shoot() { # app scheme destination device themes [udid]
 
 viewer_ios() {
   dyld_cache iOS "$IOS_OS"
-  shoot viewer-ios ViewerIOS "platform=iOS Simulator,id=$(simulator "$IPHONE" iOS "$IOS_OS")" iphone "dark,light" \
-    "$(simulator "$IPHONE" iOS "$IOS_OS")"
+  # iPad first: after the iPhone pass, GitHub's runner cancelled the job while the iPad simulator ran (#75).
   shoot viewer-ios ViewerIOS "platform=iOS Simulator,id=$(simulator "$IPAD" iOS "$IOS_OS")" ipad dark \
     "$(simulator "$IPAD" iOS "$IOS_OS")"
+  shoot viewer-ios ViewerIOS "platform=iOS Simulator,id=$(simulator "$IPHONE" iOS "$IOS_OS")" iphone "dark,light" \
+    "$(simulator "$IPHONE" iOS "$IOS_OS")"
 }
 viewer_tv() {
   local udid
@@ -204,15 +205,42 @@ viewer_tv() {
   udid=$(simulator "$TV" tvOS "$TVOS_OS")
   shoot viewer-tv ViewerTV "platform=tvOS Simulator,id=$udid" tv dark "$udid"
 }
-viewer_mac() { shoot viewer-mac ViewerMac "platform=macOS" mac dark; }
+# Review frames of the Mac window at a 2× backing scale: a GitHub-hosted runner's display starts at 1×, so a window
+# shot is soft once it is enlarged. Switches the main display to a HiDPI mode when it has one, and logs the modes.
+hidpi_display() {
+  [[ "${AUN_REVIEW_SHOTS:-0}" == 1 && "${RUNNER_ENVIRONMENT:-}" == github-hosted ]] || return 0
+  command -v displayplacer >/dev/null || brew install -q displayplacer >/dev/null 2>&1 || return 0
+  local list id mode
+  list=$(displayplacer list)
+  echo "$list" | grep -E "Persistent screen id|Resolution|scaling:on" | head -20
+  id=$(echo "$list" | awk '/Persistent screen id:/ {print $4; exit}')
+  mode=$(echo "$list" | grep -E "mode [0-9]+: res:(1440x900|1680x1050|1512x982|1470x956|1920x1080|1280x800) .*scaling:on" |
+    head -1 | sed -E 's/^ *mode ([0-9]+):.*/\1/')
+  if [[ -n "$id" && -n "$mode" ]]; then
+    displayplacer "id:$id mode:$mode" || true
+    sleep 3
+    echo "display: $(system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Resolution|UI Looks like' | head -2 | xargs)"
+  else
+    echo "no HiDPI display mode on this runner; Mac review frames stay at the display's scale"
+  fi
+}
+
+viewer_mac() {
+  hidpi_display
+  shoot viewer-mac ViewerMac "platform=macOS" mac dark
+}
 studio_ios() {
   dyld_cache iOS "$IOS_OS"
-  shoot studio-ios StudioIOS "platform=iOS Simulator,id=$(simulator "$IPHONE" iOS "$IOS_OS")" iphone "dark,light" \
-    "$(simulator "$IPHONE" iOS "$IOS_OS")"
+  # iPad first: after the iPhone pass, GitHub's runner cancelled the job while the iPad simulator ran (#75).
   shoot studio-ios StudioIOS "platform=iOS Simulator,id=$(simulator "$IPAD" iOS "$IOS_OS")" ipad dark \
     "$(simulator "$IPAD" iOS "$IOS_OS")"
+  shoot studio-ios StudioIOS "platform=iOS Simulator,id=$(simulator "$IPHONE" iOS "$IOS_OS")" iphone "dark,light" \
+    "$(simulator "$IPHONE" iOS "$IOS_OS")"
 }
-studio_mac() { shoot studio-mac StudioMac "platform=macOS" mac dark; }
+studio_mac() {
+  hidpi_display
+  shoot studio-mac StudioMac "platform=macOS" mac dark
+}
 
 case "$WHAT" in
   all) viewer_ios; viewer_tv; viewer_mac; studio_ios; studio_mac ;;
