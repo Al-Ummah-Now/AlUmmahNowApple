@@ -57,18 +57,40 @@ enum StoreScreenshot {
     /// Saves the screen (the app's front window on the Mac) as a kept attachment.
     @MainActor
     static func capture(_ app: XCUIApplication, _ test: XCTestCase, _ shot: Shot) {
-        // Images and fonts settle after the first frame, and the tab bar's selection bubble finishes its spring. XCTest's
-        // own waiter: spinning the run loop by hand stalled XCUITest on CI (the app "failed to terminate"). CI's held
-        // clock only ever steps back, so this wait can run long, never short.
-        _ = XCTWaiter().wait(for: [XCTestExpectation(description: "settle")], timeout: 3)
-        #if os(macOS)
-            let screenshot = app.windows.firstMatch.screenshot()
-        #else
-            let screenshot = XCUIScreen.main.screenshot()
-        #endif
-        let attachment = XCTAttachment(screenshot: screenshot)
+        let attachment = XCTAttachment(screenshot: settledScreenshot(app))
         attachment.name = "store_\(shot.language)_\(shot.theme)_\(String(format: "%02d", shot.index))_\(shot.name)"
         attachment.lifetime = .keepAlways
         test.add(attachment)
+    }
+
+    /// The screen once two frames half a second apart are identical. Images and fonts settle after the first frame, the
+    /// tab bar's selection lens finishes its spring and a Mac card redraws around a table that opened, each at its own
+    /// pace on a loaded runner: a fixed wait caught the lens still raised in some frames. At most about 15 s.
+    @MainActor
+    private static func settledScreenshot(_ app: XCUIApplication) -> XCUIScreenshot {
+        pause(1.5)
+        var last = screenshot(app)
+        for _ in 0..<20 {
+            pause(0.5)
+            let next = screenshot(app)
+            if next.pngRepresentation == last.pngRepresentation { return next }
+            last = next
+        }
+        return last
+    }
+
+    @MainActor
+    private static func screenshot(_ app: XCUIApplication) -> XCUIScreenshot {
+        #if os(macOS)
+            return app.windows.firstMatch.screenshot()
+        #else
+            return XCUIScreen.main.screenshot()
+        #endif
+    }
+
+    /// XCTest's own waiter: spinning the run loop by hand stalled XCUITest on CI (the app "failed to terminate"). CI's
+    /// held clock only ever steps back, so a pause can run long, never short.
+    private static func pause(_ seconds: TimeInterval) {
+        _ = XCTWaiter().wait(for: [XCTestExpectation(description: "settle")], timeout: seconds)
     }
 }
