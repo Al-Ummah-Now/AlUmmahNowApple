@@ -162,7 +162,10 @@ struct DailyChart: View {
             AxisMarks(values: labelled) { value in
                 AxisValueLabel(anchor: anchor(value.as(Int.self))) {
                     if let position = value.as(Int.self), let index = series.index(atPosition: position, rtl: rtl) {
+                        // A fixed line box: the plot's height is the chart's less this row, so the taller Arabic line
+                        // would otherwise shorten the plot and move every gridline up.
                         Text(ChartScale.day(series.points[index].day, language)).foregroundStyle(Fanous.textSecondary)
+                            .fanousLineBox(.caption)
                     }
                 }
             }
