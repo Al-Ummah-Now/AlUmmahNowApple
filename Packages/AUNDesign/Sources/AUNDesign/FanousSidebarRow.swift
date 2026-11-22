@@ -19,18 +19,20 @@ import SwiftUI
 
         public var body: some View {
             Button(action: action) {
-                Label {
+                // Icon and title centred on each other, not a Label: a Label sets the icon on the title's baseline, which
+                // sits at a different height in the Arabic line, so the rows came out a pixel taller in Arabic.
+                HStack(spacing: 8) {
+                    // One icon column: every glyph centred in the same width, so labels line up.
+                    Image(systemName: icon)
+                        .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerIcon))
+                        .frame(width: 20, alignment: .center)
+                        .accessibilityHidden(true)
                     Text(title)
                         .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerText))
                         .fontWeight(selected ? .semibold : .regular)
                         // A fixed line box: the taller Arabic line made each row half a point taller, so the
                         // sections and the selection sat lower and lower down the sidebar in Arabic.
                         .fanousLineBox(.caption)
-                } icon: {
-                    // One icon column: every glyph centred in the same width, so labels line up.
-                    Image(systemName: icon)
-                        .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerIcon))
-                        .frame(width: 20, alignment: .center)
                 }
                 .padding(.vertical, 6)
                 .padding(.horizontal, 8)
