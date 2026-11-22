@@ -76,11 +76,12 @@ enum FrameEdges {
         if item.elementType == .button, frame.height > 60 { return edges }
         // A row whose lines are their own elements is checked line by line, through them.
         if item.children.contains(where: { isText($0.elementType) }) { return edges }
-        // A line box takes in its leading, about a fifth of one line's height (at most 6 points), and the leading past
-        // an edge shows no glyph: a line wholly under the tab bar but for its leading is hidden, not cut.
+        // A line box takes in its leading, about a fifth of one line's height (at most 6 points) at each end, and the
+        // leading shows no glyph: a line wholly under the tab bar but for its leading is hidden, not cut, and the gap
+        // above the bottom edge is measured from the last glyphs.
         let leading = max(3, min(frame.height, 30) * 0.2)
         if frame.minY < top, frame.maxY > top + 3 { edges.append("top") }
-        if frame.minY < bottom - leading, frame.maxY > bottom - gap { edges.append("bottom") }
+        if frame.minY < bottom - leading, frame.maxY - leading > bottom - gap { edges.append("bottom") }
         return edges
     }
 

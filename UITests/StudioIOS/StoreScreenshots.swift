@@ -46,8 +46,10 @@ final class StoreScreenshots: XCTestCase {
 
     private var scroll: Scroll {
         UIDevice.current.userInterfaceIdiom == .pad
-            // iPad: the dashboard and analytics fit; the lower frame's last row (Nov 19) ends 10 points up.
-            ? Scroll(dashboard: nil, analytics: nil, lower: "analytics-table+21")
+            // iPad: the dashboard and analytics fit. The lower frame's cards start 4 points under the header, whole
+            // (further up they slid under it; further down the "All time" line straddled it), and its last row
+            // (Nov 20) ends its glyphs 9 points above the screen bottom, with Nov 21 just below it.
+            ? Scroll(dashboard: nil, analytics: nil, lower: "analytics-table+15")
             // iPhone: at the top, a comment straddled the tab bar whatever the offset, so the dashboard starts at its
             // sections and ends between the comments and the drafts. Analytics moves 14 points so the chart's dates
             // clear the tab bar; the lower frame 12, so Nov 5 does.

@@ -29,14 +29,15 @@ final class StoreScreenshots: XCTestCase {
                 if StoreScreenshot.reviewShots {
                     // Home scrolled to a section edge (`-AUNScrollTo`): "Recently added" on iPhone; on iPad, whose screen
                     // holds two rails, "Trending" with "Recently added" under it, so the frame is full to the bottom.
-                    // iPad lands by the hero, 300 points down the page (`home-hero+300`; a rail's landing takes no
-                    // offset): landing on "Trending" itself left it 2 points under the header and ran the screen's
-                    // bottom edge through the duration badge of Recently added's third row. Here "Trending" sits about
-                    // as far under the header as the home frame's hero, and that badge and the title under the art
-                    // are just off screen.
+                    // Both land by the hero, a set distance down the page (a rail's landing takes no offset, and left
+                    // the rail's title 2 points under the header). iPad, 300 points down: "Trending" sits about as far
+                    // under the header as the home frame's hero, and the duration badge and title of Recently added's
+                    // third row are just off screen. iPhone, 2,311 points down: "Recently added" sits 20 points under
+                    // the header, and its third card's badge is off screen below the whole title on its art.
                     let pad = UIDevice.current.userInterfaceIdiom == .pad
                     let rail = pad ? "rail-trending" : "rail-recent"
-                    let more = StoreScreenshot.launch(language, theme, extra: ["-AUNScrollTo", pad ? "home-hero+300" : rail])
+                    let more = StoreScreenshot.launch(
+                        language, theme, extra: ["-AUNScrollTo", pad ? "home-hero+300" : "home-hero+2311"])
                     // A card of the requested rail, on screen once scrolled to (cards above it may be unloaded, and the
                     // rail itself is not an accessibility element).
                     let card = more.buttons.matching(
