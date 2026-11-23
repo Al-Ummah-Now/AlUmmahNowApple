@@ -21,4 +21,9 @@ public enum ViewerLinks {
         AUNLog.network.info("Universal link without a viewer screen, opening Home")
         return nil
     }
+
+    public static func liveStreamID(for url: URL) -> String? {
+        guard let link = AppLink.parse(url) else { return nil }
+        return link.liveStreamID
+    }
 }

@@ -3,7 +3,8 @@ import Foundation
 /// A user-facing feature the server may switch off for this person (`GET /api/me/features`, shared-types
 /// `USER_FEATURE_KEYS`). Off means invisible: no tab, button or text about it.
 public enum UserFeature: String, CaseIterable, Sendable {
-    case upload, createChannel, live, captionsTranscribe, captionsTranslate, inlineTranslate, viewerTranslatedTitles
+    case upload, createChannel, live, liveChat, livePremieres, liveReminders, liveEvents
+    case captionsTranscribe, captionsTranslate, inlineTranslate, viewerTranslatedTitles
     case quranEditions, quranText, audioTracks, siteDomains, socialAutopost, youtubeImport, aiCategorySuggest, bulkSchedule
 }
 

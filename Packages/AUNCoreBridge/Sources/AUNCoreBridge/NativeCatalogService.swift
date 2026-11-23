@@ -20,6 +20,10 @@ public struct NativeCatalogService: CatalogServicing {
     }
 
     private struct DataEnvelope<T: Decodable>: Decodable { let data: T }
+    private struct ResultEnvelope<T: Decodable>: Decodable { let result: T }
+    private struct StreamBox: Decodable { let stream: LiveStream }
+    private struct MessageBox: Decodable { let message: LiveChatMessage }
+    private struct ViewersBox: Decodable { let viewers: Int? }
     private struct TracksBody: Decodable { let tracks: [SubtitleTrack] }
     private struct ChaptersEnvelope: Decodable {
         struct Inner: Decodable { let chapters: [Chapter] }
@@ -33,12 +37,44 @@ public struct NativeCatalogService: CatalogServicing {
         return try await fetch(url)
     }
 
+    private func sendJSON(_ method: String, path: String, body: [String: Any]? = nil, contentType: String = "application/json")
+        async throws -> Data
+    {
+        let url = baseURL.appending(path: path)
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setAUNClient()
+        if let body {
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+        let (data, response) = try await session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            if status == 404,
+                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                (obj["code"] as? String) == Refusal.featureOff
+            {
+                throw CoreError.featureOff
+            }
+            if let refusal = Refusal.parse(data) { throw CoreError.refused(refusal) }
+            throw status == 404 ? CoreError.notFound : CoreError.http(status: status)
+        }
+        return data
+    }
+
     private func fetch(_ url: URL) async throws -> Data {
         var request = URLRequest(url: url)
         request.setAUNClient()
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
+            if status == 404,
+                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                (obj["code"] as? String) == Refusal.featureOff
+            {
+                throw CoreError.featureOff
+            }
             AUNLog.network.error("GET \(url.path, privacy: .public) failed: \(status)")
             throw status == 404 ? CoreError.notFound : CoreError.http(status: status)
         }
@@ -117,6 +153,94 @@ public struct NativeCatalogService: CatalogServicing {
     public func subtitleText(url: URL) async throws -> String {
         guard let text = String(data: try await fetch(url), encoding: .utf8) else { throw CoreError.decoding }
         return text
+    }
+
+    public func liveStreams(
+        status: LiveStreamStatus? = .live, eventType: LiveEventType? = nil, limit: Int = 20
+    ) async throws -> [LiveStream] {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let status { query.append(URLQueryItem(name: "status", value: status.rawValue)) }
+        if let eventType { query.append(URLQueryItem(name: "eventType", value: eventType.rawValue)) }
+        let data = try await get("/api/live-streams", query: query)
+        if let wrapped = try? decode(ResultEnvelope<DataEnvelope<[LiveStream]>>.self, from: data) {
+            return wrapped.result.data
+        }
+        return try decode(DataEnvelope<[LiveStream]>.self, from: data).data
+    }
+
+    public func liveStream(id: String) async throws -> LiveStream {
+        let data = try await get("/api/live-streams/\(id)")
+        if let wrapped = try? decode(ResultEnvelope<StreamBox>.self, from: data) {
+            return wrapped.result.stream
+        }
+        return try decode(LiveStream.self, from: data)
+    }
+
+    public func liveStreamState(id: String) async throws -> LiveStreamState {
+        let data = try await get("/api/live-streams/\(id)/state")
+        if let wrapped = try? decode(ResultEnvelope<LiveStreamState>.self, from: data) {
+            return wrapped.result
+        }
+        return try decode(LiveStreamState.self, from: data)
+    }
+
+    public func beatLiveViewer(streamID: String, viewerID: String, leaving: Bool = false) async throws -> Int? {
+        var payload: [String: Any] = ["viewerId": viewerID]
+        if leaving { payload["leaving"] = true }
+        let data = try await sendJSON(
+            "POST", path: "/api/live-streams/\(streamID)/viewers", body: payload, contentType: "text/plain")
+        return (try? decode(ResultEnvelope<ViewersBox>.self, from: data))?.result.viewers
+    }
+
+    public func liveChatMessages(
+        streamID: String, afterID: String? = nil, afterOffsetMs: Int? = nil, toOffsetMs: Int? = nil, limit: Int = 50
+    ) async throws -> LiveChatPage {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let afterID { query.append(URLQueryItem(name: "afterId", value: afterID)) }
+        if let afterOffsetMs { query.append(URLQueryItem(name: "afterOffsetMs", value: String(afterOffsetMs))) }
+        if let toOffsetMs { query.append(URLQueryItem(name: "toOffsetMs", value: String(toOffsetMs))) }
+        let data = try await get("/api/live-streams/\(streamID)/chat", query: query)
+        if let wrapped = try? decode(ResultEnvelope<LiveChatPage>.self, from: data) {
+            return wrapped.result
+        }
+        return try decode(LiveChatPage.self, from: data)
+    }
+
+    public func postLiveChatMessage(streamID: String, text: String) async throws -> LiveChatMessage {
+        let data = try await sendJSON("POST", path: "/api/live-streams/\(streamID)/chat", body: ["text": text])
+        if let wrapped = try? decode(ResultEnvelope<MessageBox>.self, from: data) {
+            return wrapped.result.message
+        }
+        return try decode(LiveChatMessage.self, from: data)
+    }
+
+    public func moderateLiveChatMessage(
+        streamID: String, messageID: String, action: LiveModerationAction
+    ) async throws {
+        _ = try await sendJSON(
+            "POST", path: "/api/live-streams/\(streamID)/chat/\(messageID)/moderate",
+            body: ["action": action.rawValue])
+    }
+
+    public func reportLiveChatMessage(
+        messageID: String, reason: LiveReportReason, description: String? = nil
+    ) async throws {
+        var payload: [String: Any] = [
+            "entityType": "live_chat",
+            "entityId": messageID,
+            "reason": reason.rawValue,
+        ]
+        if let description, !description.isEmpty { payload["description"] = description }
+        _ = try await sendJSON("POST", path: "/api/reports", body: payload)
+    }
+
+    public func setLiveReminder(streamID: String, subscribed: Bool) async throws -> LiveReminderStatus {
+        let data = try await sendJSON(
+            subscribed ? "POST" : "DELETE", path: "/api/live-streams/\(streamID)/reminders")
+        if let wrapped = try? decode(ResultEnvelope<LiveReminderStatus>.self, from: data) {
+            return wrapped.result
+        }
+        return try decode(LiveReminderStatus.self, from: data)
     }
 }
 

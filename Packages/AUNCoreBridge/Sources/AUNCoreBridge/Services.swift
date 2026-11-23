@@ -102,6 +102,53 @@ public protocol CatalogServicing: Sendable {
     func subtitles(videoID: String) async throws -> [SubtitleTrack]
     func chapters(videoID: String) async throws -> [Chapter]
     func subtitleText(url: URL) async throws -> String
+    func liveStreams(status: LiveStreamStatus?, eventType: LiveEventType?, limit: Int) async throws -> [LiveStream]
+    func liveStream(id: String) async throws -> LiveStream
+    func liveStreamState(id: String) async throws -> LiveStreamState
+    func beatLiveViewer(streamID: String, viewerID: String, leaving: Bool) async throws -> Int?
+    func liveChatMessages(
+        streamID: String, afterID: String?, afterOffsetMs: Int?, toOffsetMs: Int?, limit: Int
+    ) async throws -> LiveChatPage
+    func postLiveChatMessage(streamID: String, text: String) async throws -> LiveChatMessage
+    func moderateLiveChatMessage(streamID: String, messageID: String, action: LiveModerationAction) async throws
+    func reportLiveChatMessage(messageID: String, reason: LiveReportReason, description: String?) async throws
+    func setLiveReminder(streamID: String, subscribed: Bool) async throws -> LiveReminderStatus
+}
+
+extension CatalogServicing {
+    public func liveStreams(
+        status: LiveStreamStatus? = .live, eventType: LiveEventType? = nil, limit: Int = 20
+    ) async throws -> [LiveStream] { [] }
+
+    public func liveStream(id: String) async throws -> LiveStream { throw CoreError.notFound }
+
+    public func liveStreamState(id: String) async throws -> LiveStreamState { throw CoreError.notFound }
+
+    public func beatLiveViewer(streamID: String, viewerID: String, leaving: Bool = false) async throws -> Int? { nil }
+
+    public func liveChatMessages(
+        streamID: String, afterID: String? = nil, afterOffsetMs: Int? = nil, toOffsetMs: Int? = nil, limit: Int = 50
+    ) async throws -> LiveChatPage { LiveChatPage() }
+
+    public func postLiveChatMessage(streamID: String, text: String) async throws -> LiveChatMessage {
+        throw CoreError.featureOff
+    }
+
+    public func moderateLiveChatMessage(
+        streamID: String, messageID: String, action: LiveModerationAction
+    ) async throws {
+        throw CoreError.featureOff
+    }
+
+    public func reportLiveChatMessage(
+        messageID: String, reason: LiveReportReason, description: String? = nil
+    ) async throws {
+        throw CoreError.featureOff
+    }
+
+    public func setLiveReminder(streamID: String, subscribed: Bool) async throws -> LiveReminderStatus {
+        throw CoreError.featureOff
+    }
 }
 
 /// Sign-in state. `aun-auth` (OAuth 2 + PKCE, device flow) replaces `GuestAuthSession`.

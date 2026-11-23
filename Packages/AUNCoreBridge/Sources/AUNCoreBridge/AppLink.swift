@@ -8,6 +8,7 @@ import Foundation
 public enum AppLink: Equatable, Sendable {
     case video(id: String)
     case short(id: String)
+    case live(id: String)
     case playlist(id: String)
     case post(id: String)
     case channel(handle: String)
@@ -45,6 +46,7 @@ public enum AppLink: Equatable, Sendable {
         switch head {
         case "video": return .video(id: id)
         case "shorts": return .short(id: id)
+        case "live": return .live(id: id)
         case "playlist": return .playlist(id: id)
         case "post": return .post(id: id)
         default: return nil
@@ -55,6 +57,14 @@ public enum AppLink: Equatable, Sendable {
     public var videoID: String? {
         switch self {
         case .video(let id), .short(let id): id
+        default: nil
+        }
+    }
+
+    /// The live watch page's stream ID for links that open a live stream or premiere.
+    public var liveStreamID: String? {
+        switch self {
+        case .live(let id): id
         default: nil
         }
     }

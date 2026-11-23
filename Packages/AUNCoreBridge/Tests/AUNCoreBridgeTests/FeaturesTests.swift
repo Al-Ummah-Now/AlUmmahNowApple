@@ -39,7 +39,8 @@ struct FeaturesTests {
     @Test func everyServerKeyIsKnown() {
         // The shared-types USER_FEATURE_KEYS list, version 1.
         let keys = [
-            "upload", "createChannel", "live", "captionsTranscribe", "captionsTranslate", "inlineTranslate",
+            "upload", "createChannel", "live", "liveChat", "livePremieres", "liveReminders", "liveEvents",
+            "captionsTranscribe", "captionsTranslate", "inlineTranslate",
             "viewerTranslatedTitles", "quranEditions", "quranText", "audioTracks", "siteDomains", "socialAutopost",
             "youtubeImport", "aiCategorySuggest", "bulkSchedule",
         ]

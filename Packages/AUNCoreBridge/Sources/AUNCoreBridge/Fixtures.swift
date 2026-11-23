@@ -71,5 +71,88 @@ public struct FixtureCatalogService: CatalogServicing {
         "WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nFixture cue\n"
     }
 
+    public static let liveStreamsList: [LiveStream] = [
+        LiveStream(
+            id: "fixture-live-1", title: "Friday Khutbah Live",
+            description: "Weekly live broadcast from the community masjid.",
+            status: .live, kind: .live, eventType: .jumuah,
+            channelID: "fixture-channel", channelName: "Al Ummah Now",
+            playbackURL: URL(string: "https://fixtures.invalid/live/1/playlist.m3u8"),
+            currentViewers: 42),
+        LiveStream(
+            id: "fixture-premiere-1", title: "Ramadan Tafsir Premiere",
+            description: "Special premiere with live moderated chat.",
+            status: .scheduled, kind: .premiere, premiereVideoID: "fixture-1", eventType: .halqa,
+            channelID: "fixture-channel", channelName: "Al Ummah Now",
+            scheduledStartTime: Date(timeIntervalSinceNow: 3600),
+            playbackURL: URL(string: "https://fixtures.invalid/1/playlist.m3u8")),
+    ]
+
+    public func liveStreams(
+        status: LiveStreamStatus? = .live, eventType: LiveEventType? = nil, limit: Int = 20
+    ) async throws -> [LiveStream] {
+        Self.liveStreamsList.filter { stream in
+            (status == nil || stream.status == status) && (eventType == nil || stream.eventType == eventType)
+        }.prefix(limit).map { stream in
+            guard playable, let clip = Self.playableClip else { return stream }
+            var copy = stream
+            copy.playbackURL = clip
+            return copy
+        }
+    }
+
+    public func liveStream(id: String) async throws -> LiveStream {
+        guard let stream = Self.liveStreamsList.first(where: { $0.id == id }) else { throw CoreError.notFound }
+        guard playable, let clip = Self.playableClip else { return stream }
+        var copy = stream
+        copy.playbackURL = clip
+        return copy
+    }
+
+    public func liveStreamState(id: String) async throws -> LiveStreamState {
+        let stream = try await liveStream(id: id)
+        return LiveStreamState(
+            streamID: stream.id, sessionID: "sess-\(stream.id)", status: stream.status,
+            sessionStatus: stream.status == .live ? "live" : "provisioned",
+            receiving: stream.status == .live, playbackURL: stream.playbackURL, vodURL: stream.vodURL,
+            viewers: stream.currentViewers, kind: stream.kind, premiereVideoID: stream.premiereVideoID,
+            eventType: stream.eventType, scheduledStartTime: stream.scheduledStartTime, dvrWindowSeconds: 7200,
+            chat: LiveChatSettings(enabled: true, replayEnabled: true, slowModeSeconds: 0, subscribersOnly: false),
+            reminders: LiveReminderStatus(enabled: true, count: 12, viewerSubscribed: false))
+    }
+
+    public func beatLiveViewer(streamID: String, viewerID: String, leaving: Bool = false) async throws -> Int? {
+        leaving ? 41 : 42
+    }
+
+    public func liveChatMessages(
+        streamID: String, afterID: String? = nil, afterOffsetMs: Int? = nil, toOffsetMs: Int? = nil, limit: Int = 50
+    ) async throws -> LiveChatPage {
+        let messages = [
+            LiveChatMessage(
+                id: "m1", streamID: streamID, userID: "u1", authorName: "Ahmad",
+                text: "Assalamu alaikum wa rahmatullah", offsetMs: 12_000),
+            LiveChatMessage(
+                id: "m2", streamID: streamID, userID: "u2", authorName: "Al Ummah Now",
+                authorRole: .owner, text: "Welcome to the live stream.", offsetMs: 25_000, isPinned: true),
+        ]
+        return LiveChatPage(
+            messages: messages, pinnedMessage: messages.last,
+            settings: LiveChatSettings(enabled: true, replayEnabled: true, pinnedMessage: messages.last),
+            canModerate: false)
+    }
+
+    public func postLiveChatMessage(streamID: String, text: String) async throws -> LiveChatMessage {
+        if let rejected = LiveChatFastFilter.check(text) {
+            throw CoreError.invalid(rejected.rawValue)
+        }
+        return LiveChatMessage(
+            id: "m-new", streamID: streamID, userID: "me", authorName: "Viewer", text: text, offsetMs: 30_000)
+    }
+
+    public func setLiveReminder(streamID: String, subscribed: Bool) async throws -> LiveReminderStatus {
+        LiveReminderStatus(enabled: true, count: subscribed ? 13 : 11, viewerSubscribed: subscribed)
+    }
+
     private static let subtitleURL = URL(string: "https://fixtures.invalid/subtitles.vtt")!
 }

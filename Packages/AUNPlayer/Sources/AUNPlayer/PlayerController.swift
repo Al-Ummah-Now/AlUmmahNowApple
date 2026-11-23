@@ -11,10 +11,12 @@ public struct PlaybackItem: Hashable, Sendable {
     public var resolutions: [String]
     public var subtitles: [SubtitleTrack]
     public var chapters: [Chapter]
+    public var isLiveStream: Bool
+    public var dvrWindowSeconds: Double
 
     public init(
         url: URL, title: String, subtitle: String? = nil, resolutions: [String] = [], subtitles: [SubtitleTrack] = [],
-        chapters: [Chapter] = []
+        chapters: [Chapter] = [], isLiveStream: Bool = false, dvrWindowSeconds: Double = 7200
     ) {
         self.url = url
         self.title = title
@@ -22,6 +24,8 @@ public struct PlaybackItem: Hashable, Sendable {
         self.resolutions = resolutions
         self.subtitles = subtitles
         self.chapters = chapters
+        self.isLiveStream = isLiveStream
+        self.dvrWindowSeconds = dvrWindowSeconds
     }
 }
 
@@ -63,6 +67,7 @@ public final class PlayerController {
     public private(set) var speed: Float = 1
     public private(set) var selectedSubtitleID: String?
     public private(set) var currentCue: SubtitleCue?
+    public private(set) var isAtLiveEdge = true
 
     public var qualityOptions: [PlayerQuality] { PlayerQuality.options(from: item?.resolutions ?? []) }
     public var currentChapter: Chapter? { item?.chapters.last { $0.startTime <= currentTime } }
@@ -104,6 +109,12 @@ public final class PlayerController {
 
         let playerItem = AVPlayerItem(url: newItem.url)
         playerItem.audioTimePitchAlgorithm = .timeDomain
+        if newItem.isLiveStream {
+            playerItem.automaticallyPreservesTimeOffsetFromLive = true
+            playerItem.configuredTimeOffsetFromLive = CMTime(seconds: 3, preferredTimescale: 600)
+            playerItem.preferredForwardBufferDuration = 4
+            isAtLiveEdge = true
+        }
         player.defaultRate = speed
         player.replaceCurrentItem(with: playerItem)
         observe(playerItem)
@@ -129,6 +140,18 @@ public final class PlayerController {
     }
 
     public func skip(by delta: Double) { seek(to: currentTime + delta) }
+
+    /// Seeks back to the live edge when playing a DVR live stream.
+    public func seekToLiveEdge() {
+        if let range = player.currentItem?.seekableTimeRanges.last?.timeRangeValue {
+            let end = CMTimeGetSeconds(CMTimeRangeGetEnd(range))
+            if end.isFinite && end > 0 {
+                player.seek(to: CMTime(seconds: max(0, end - 1), preferredTimescale: 600))
+                currentTime = max(0, end - 1)
+            }
+        }
+        isAtLiveEdge = true
+    }
 
     public func setQuality(_ newQuality: PlayerQuality) {
         quality = newQuality
@@ -222,6 +245,14 @@ public final class PlayerController {
     private func applyTime(_ time: Double) {
         guard time.isFinite else { return }
         currentTime = time
+        if item?.isLiveStream == true,
+            let range = player.currentItem?.seekableTimeRanges.last?.timeRangeValue
+        {
+            let liveEdge = CMTimeGetSeconds(CMTimeRangeGetEnd(range))
+            if liveEdge.isFinite {
+                isAtLiveEdge = (liveEdge - time) <= 15
+            }
+        }
         let cue = cueTimeline.cue(at: time)
         if cue != currentCue { currentCue = cue }
     }
