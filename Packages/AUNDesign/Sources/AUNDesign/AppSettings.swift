@@ -96,7 +96,8 @@ extension View {
             .environment(\.layoutDirection, settings.language.isRTL ? .rightToLeft : .leftToRight)
             .preferredColorScheme(settings.themeChosen ? settings.theme.colorScheme : nil)
             .modifier(UIKitDirection(language: settings.language))
-            .scrollIndicators(AutomationScrollIndicators.hidden ? .hidden : .automatic)
+            // `.never`, not `.hidden`: macOS keeps showing `.hidden` indicators when a mouse is connected.
+            .scrollIndicators(AutomationScrollIndicators.hidden ? .never : .automatic)
     }
 
     /// The window theme for previews and snapshots, without a store.
