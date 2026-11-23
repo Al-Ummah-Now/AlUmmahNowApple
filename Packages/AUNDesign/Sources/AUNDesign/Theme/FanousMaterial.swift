@@ -160,6 +160,9 @@ public struct FanousSurface: View {
     public var body: some View {
         let bleed = FanousPaint.bleed(shadows)
         let rtl = direction == .rightToLeft
+        // A sideways shadow is a logical edge (the rail's line on its trailing side, against the content). A Canvas
+        // draws in physical coordinates, so in RTL, where the rail sits on the right, the shadow moves to the left.
+        let shadows = rtl ? self.shadows.map(\.mirrored) : self.shadows
         ZStack {
             if blur != nil { shape.fill(.ultraThinMaterial) }
             Canvas { context, size in
@@ -182,6 +185,13 @@ public struct FanousSurface: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+extension FanousBoxShadow {
+    /// The same shadow cast to the other side.
+    var mirrored: FanousBoxShadow {
+        FanousBoxShadow(inset: inset, x: -x, y: y, blur: blur, spread: spread, color: color)
     }
 }
 

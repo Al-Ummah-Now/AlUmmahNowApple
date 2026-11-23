@@ -46,14 +46,16 @@ final class StoreScreenshots: XCTestCase {
 
     private var scroll: Scroll {
         UIDevice.current.userInterfaceIdiom == .pad
-            // iPad: the dashboard and analytics fit. The lower frame's cards start 4 points under the header, whole
-            // (further up they slid under it; further down the "All time" line straddled it), and its last row
-            // (Nov 20) ends its glyphs 9 points above the screen bottom, with Nov 21 just below it.
-            ? Scroll(dashboard: nil, analytics: nil, lower: "analytics-table+15")
+            // iPad: the dashboard and analytics fit. The lower frame moves 40 points down from where its card met the
+            // header's gold line: the "All time" line shows 7 points under the gold line with the card under it, and
+            // the last row (Nov 19) ends its glyphs 9 points above the screen bottom, Nov 20 just below it. Between
+            // the two, either the "All time" line straddled the header or Nov 20 straddled the screen bottom.
+            ? Scroll(dashboard: nil, analytics: nil, lower: "analytics-table+-25")
             // iPhone: at the top, a comment straddled the tab bar whatever the offset, so the dashboard starts at its
-            // sections and ends between the comments and the drafts. Analytics moves 14 points so the chart's dates
-            // clear the tab bar; the lower frame 12, so Nov 5 does.
-            : Scroll(dashboard: "dashboard-sections", analytics: "analytics-range+14", lower: "analytics-table+12")
+            // sections and ends between the comments and the drafts. Analytics starts under the range chips (56
+            // points down): with the chips whole, the chart's dates met the tab bar's hairline, and they now end 42
+            // points above it, with "Show as a table" just clear of the bar. The lower frame moves 12, so Nov 5 clears.
+            : Scroll(dashboard: "dashboard-sections", analytics: "analytics-range+56", lower: "analytics-table+12")
     }
 
     @MainActor

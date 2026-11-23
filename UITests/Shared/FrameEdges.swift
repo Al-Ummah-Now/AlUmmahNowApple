@@ -5,10 +5,19 @@ import XCTest
 /// bar, else the bottom of the screen or window). No text may cross either edge, and the last line above the bottom
 /// edge keeps a clear gap. A video card may run past the bottom of an iPhone or iPad screen or under the tab bar, as a
 /// scrolling page does, but never through the title on its art or the title and meta under it. On the Mac the window
-/// bottom is a crop, so a video card is in the frame whole or not at all.
+/// bottom is a crop, so a video card is in the frame whole or not at all, and a Studio content card whole with its
+/// border and shadow. The daily chart draws its axis labels inside one element, so the whole chart counts as text.
 enum FrameEdges {
     /// The clear gap above the bottom edge, in points.
     static let gap: CGFloat = 8
+
+    /// A Studio content card (`content-card-*`, its row and Edit button): the card is drawn 6 points beyond the
+    /// element at the top and bottom (the list row's inset less the card's own), and its shadow reaches 10 points below.
+    static let cardOutset: CGFloat = 6
+    static let cardShadow: CGFloat = 10
+
+    /// The daily chart's blank band above its top value label.
+    static let chartTopPadding: CGFloat = 12
 
     struct Reading {
         var cuts: [String] = []
@@ -54,32 +63,58 @@ enum FrameEdges {
 
     /// Which edges the element is cut by.
     private static func crossings(_ item: XCUIElementSnapshot, top: CGFloat, bottom: CGFloat, crop: Bool) -> [String] {
-        let frame = item.frame
-        var edges: [String] = []
-        if isVideoCard(item) {
-            // Text on a card: the title drawn on the art (measured on the fixture art: its glyphs, Arabic marks
-            // included, sit between 5% and 33% of the art's height), the duration badge at the art's bottom, and the
-            // title and meta under the art. Elsewhere the art is picture only, which may pass under a bar.
-            let art = min(frame.width * 9 / 16, frame.height)
-            let bands = [
-                (frame.minY + art * 0.05, frame.minY + art * 0.33), (frame.minY + art * 0.85, frame.maxY),
-            ]
-            if bands.contains(where: { $0.0 < top && $0.1 > top + 3 }) { edges.append("top") }
-            if crop {
-                if frame.minY < bottom, frame.maxY > bottom - gap { edges.append("bottom") }
-            } else if bands.contains(where: { $0.0 < bottom && $0.1 > bottom - gap }) {
-                edges.append("bottom")
-            }
-            return edges
+        if item.identifier.hasPrefix("content-card-") {
+            // Only the Mac crops a card; on iPhone and iPad it scrolls under the tab bar, and its lines are checked.
+            return crop ? contentCard(item.frame, top: top, bottom: bottom) : []
         }
+        if item.identifier == "analytics-chart" { return chart(item.frame, top: top, bottom: bottom) }
+        if isVideoCard(item) { return videoCard(item.frame, top: top, bottom: bottom, crop: crop) }
         // A tall button that is not a card is a picture (the player): only its own text would count, and it has none.
-        if item.elementType == .button, frame.height > 60 { return edges }
+        if item.elementType == .button, item.frame.height > 60 { return [] }
         // A row whose lines are their own elements is checked line by line, through them.
-        if item.children.contains(where: { isText($0.elementType) }) { return edges }
-        // A line box takes in its leading, about a fifth of one line's height (at most 6 points) at each end, and the
-        // leading shows no glyph: a line wholly under the tab bar but for its leading is hidden, not cut, and the gap
-        // above the bottom edge is measured from the last glyphs.
+        if item.children.contains(where: { isText($0.elementType) }) { return [] }
+        return line(item.frame, top: top, bottom: bottom)
+    }
+
+    /// A Studio content card on the Mac: whole with its border and shadow, or not at all.
+    private static func contentCard(_ frame: CGRect, top: CGFloat, bottom: CGFloat) -> [String] {
+        let card = (top: frame.minY - cardOutset, bottom: frame.maxY + cardOutset)
+        var edges: [String] = []
+        if card.top < top, card.bottom > top + 3 { edges.append("top") }
+        if card.top < bottom, card.bottom + cardShadow > bottom { edges.append("bottom") }
+        return edges
+    }
+
+    /// The daily chart, with axis labels at its top and bottom: on screen whole, with the gap, or not at all.
+    private static func chart(_ frame: CGRect, top: CGFloat, bottom: CGFloat) -> [String] {
+        var edges: [String] = []
+        if frame.minY + chartTopPadding < top, frame.maxY > top + 3 { edges.append("top") }
+        if frame.minY < bottom, frame.maxY > bottom - gap { edges.append("bottom") }
+        return edges
+    }
+
+    /// Text on a video card: the title drawn on the art (measured on the fixture art: its glyphs, Arabic marks
+    /// included, sit between 5% and 33% of the art's height), the duration badge at the art's bottom, and the title and
+    /// meta under the art. Elsewhere the art is picture only, which may pass under a bar.
+    private static func videoCard(_ frame: CGRect, top: CGFloat, bottom: CGFloat, crop: Bool) -> [String] {
+        let art = min(frame.width * 9 / 16, frame.height)
+        let bands = [(frame.minY + art * 0.05, frame.minY + art * 0.33), (frame.minY + art * 0.85, frame.maxY)]
+        var edges: [String] = []
+        if bands.contains(where: { $0.0 < top && $0.1 > top + 3 }) { edges.append("top") }
+        if crop {
+            if frame.minY < bottom, frame.maxY > bottom - gap { edges.append("bottom") }
+        } else if bands.contains(where: { $0.0 < bottom && $0.1 > bottom - gap }) {
+            edges.append("bottom")
+        }
+        return edges
+    }
+
+    /// One line of text. A line box takes in its leading, about a fifth of one line's height (at most 6 points) at
+    /// each end, and the leading shows no glyph: a line wholly under the tab bar but for its leading is hidden, not
+    /// cut, and the gap above the bottom edge is measured from the last glyphs.
+    private static func line(_ frame: CGRect, top: CGFloat, bottom: CGFloat) -> [String] {
         let leading = max(3, min(frame.height, 30) * 0.2)
+        var edges: [String] = []
         if frame.minY < top, frame.maxY > top + 3 { edges.append("top") }
         if frame.minY < bottom - leading, frame.maxY - leading > bottom - gap { edges.append("bottom") }
         return edges
@@ -107,7 +142,12 @@ enum FrameEdges {
                 items.append(node)
                 if isVideoCard(node) { return }
             default:
-                break
+                // A content card is checked whole, then line by line through its children; the chart has none.
+                if node.identifier.hasPrefix("content-card-") { items.append(node) }
+                if node.identifier == "analytics-chart" {
+                    items.append(node)
+                    return
+                }
             }
             for child in node.children { collect(child, into: &items, top: &top, bottom: &bottom, window: window) }
         }

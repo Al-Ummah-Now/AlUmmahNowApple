@@ -43,7 +43,7 @@ public enum FixtureLibrary {
     public static let items: [Item] = [
         item(
             1, ("Friday khutbah: patience", "خطبة الجمعة: الصبر"),
-            ("This week's Friday khutbah on patience.", "خطبة الجمعة لهذا الأسبوع عن الصبر."), "khutbah", 8_020, 1_934,
+            ("This week’s Friday khutbah on patience.", "خطبة الجمعة لهذا الأسبوع عن الصبر."), "khutbah", 8_020, 1_934,
             age: 33),
         item(
             2, ("Tafsir of Surah Al-Kahf, part 2", "تفسير سورة الكهف، الجزء الثاني"),
@@ -108,7 +108,7 @@ public enum FixtureLibrary {
                 (420, "Verses 9–31: the people of the cave", "الآيات ٩–٣١: أصحاب الكهف"),
             ]
         case "fixture-4":
-            marks = [(0, "Patience in the Quran", "الصبر في القرآن"), (370, "The Prophet's example", "هدي النبي ﷺ")]
+            marks = [(0, "Patience in the Quran", "الصبر في القرآن"), (370, "The Prophet’s example", "هدي النبي ﷺ")]
         case "fixture-5": marks = [(0, "Fasting", "الصيام"), (280, "The last ten nights", "العشر الأواخر")]
         case "fixture-6": marks = [(0, "Introduction", "المقدمة"), (30, "Sources", "المصادر")]
         case "fixture-7":

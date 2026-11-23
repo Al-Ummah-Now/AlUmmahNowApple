@@ -228,6 +228,11 @@
 "studio.tab.drafts" = "مسودات";
 "studio.tab.processing" = "قيد المعالجة";
 "studio.tab.failed" = "فشلت";
+"studio.status.published" = "منشورة";
+"studio.status.scheduled" = "مجدولة";
+"studio.status.drafts" = "مسودة";
+"studio.status.processing" = "قيد المعالجة";
+"studio.status.failed" = "فشلت";
 "studio.edit.title" = "العنوان";
 "studio.edit.heading" = "تعديل المرئي";
 "studio.edit.save" = "حفظ";

@@ -14,8 +14,9 @@ final class StoreScreenshots: XCTestCase {
     private let sections: [(name: String, height: CGFloat)] = [
         // Between Recent uploads (to 584) and Drafts and scheduled (from 600).
         ("home", 592),
-        // Between the sixth and seventh video (cards to 635 and from 644).
-        ("content", 640),
+        // All seven videos whole: the seventh card ends at 718 and its shadow by 728. The cards are 82 points apart
+        // with 8 between them, too little for a window edge with the shadow above it and a clear gap.
+        ("content", 740),
         ("upload", 680),
         // Between the daily chart (to 648) and Top videos (from 665).
         ("analytics", 656),

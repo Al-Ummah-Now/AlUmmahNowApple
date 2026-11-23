@@ -101,7 +101,7 @@ final class StudioAccountStateTests: XCTestCase {
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: analytics)
         waitForExpectations(timeout: 15)
         XCTAssertTrue(tab(app, "Dashboard").isSelected)
-        XCTAssertFalse(app.staticTexts["We couldn't load this right now."].exists)
+        XCTAssertFalse(app.staticTexts["We couldn’t load this right now."].exists)
         keep("analytics-off-en")
         assertDashboardSections(app)
     }

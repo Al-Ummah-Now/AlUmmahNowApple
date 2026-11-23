@@ -26,3 +26,9 @@ public enum AutomationWindow {
         return points > 0 ? CGFloat(points) : nil
     }
 }
+
+/// UI automation (`-AUNHideScrollIndicators YES`, set by every screenshot run): scroll views draw no indicators. A
+/// landing scroll (`-AUNScrollTo`) shows the overlay scroller, and a frame could catch it mid-fade.
+public enum AutomationScrollIndicators {
+    public static var hidden: Bool { UserDefaults.standard.bool(forKey: "AUNHideScrollIndicators") }
+}

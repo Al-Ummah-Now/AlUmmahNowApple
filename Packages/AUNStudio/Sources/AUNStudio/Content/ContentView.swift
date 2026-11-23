@@ -40,6 +40,9 @@ struct ContentView: View {
         .searchable(
             text: $model.searchText, placement: Self.searchPlacement, prompt: Text(l10n("studio.content.search"))
         )
+        #if os(iOS)
+            .fanousSearchField()
+        #endif
         .searchSuggestions {
             ForEach(model.suggestions) { suggestion in
                 suggestionRow(suggestion)
@@ -183,6 +186,10 @@ struct ContentView: View {
                                     .accessibilityIdentifier("edit-\(video.id)")
                             }
                         }
+                        // The card as one element around the row and its Edit button, for the review frames' edge
+                        // check (UITests/Shared/FrameEdges.swift): the card is 6 points beyond it at the top and bottom.
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("content-card-\(video.id)")
                         .contentShape(Rectangle())
                         .onTapGesture(count: 1, perform: { editing = video }, when: opensOnTap)
                         .swipeActions(edge: .trailing) {
@@ -330,10 +337,11 @@ struct VideoRow: View {
     }
 
     /// Status (on the Dashboard, which lists mixed statuses), visibility, the upload date, then views or the publish
-    /// date. Each part keeps its words together (no break inside «٨ آلاف مشاهدة»).
+    /// date. Each part keeps its words together (no break inside «٨ آلاف مشاهدة»). The status names this one video
+    /// ("Draft" / «مسودة»), not its list ("Drafts").
     private var parts: [String] {
         var parts = [l10n(video.isPublic ? "visibility.public" : "visibility.private")]
-        if showsStatus, let status = video.studioStatus { parts.insert(l10n("studio.tab.\(status.rawValue)"), at: 0) }
+        if showsStatus, let status = video.studioStatus { parts.insert(l10n("studio.status.\(status.rawValue)"), at: 0) }
         if let date = video.dateCreated { parts.append(DisplayFormat.shortDay(date, l10n.language)) }
         if let date = video.scheduledPublishDate, video.studioStatus == .scheduled {
             parts.append(l10n("studio.content.publishes", DisplayFormat.shortDay(date, l10n.language)))
