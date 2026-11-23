@@ -1,3 +1,4 @@
+import AUNCoreBridge
 import AVFoundation
 import Foundation
 import Observation
@@ -87,6 +88,11 @@ public final class ListenModeManager {
             isAudioOnly = false
             sleepTimer = SleepTimerState()
         }
+    }
+
+    /// Wires `listenMode` from `GET /api/me/features`.
+    public func applyFeatures(_ features: UserFeatures) {
+        setFeatureEnabled(features.isOn(.listenMode))
     }
 
     /// Switches between Video and Listen (audio-only) modes, preserving current position, speed, and playing state.

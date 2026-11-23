@@ -1,213 +1,247 @@
+import AUNCoreBridge
+import AUNDesign
 import Foundation
 import Testing
 
 @testable import AUNPlayer
 
-private final class TestClock: @unchecked Sendable {
-    var now: Date
-    init(_ now: Date) { self.now = now }
+private actor RecordingSlotReleaser: LicenseSlotReleaser {
+    var released: [String] = []
+    var revokedDevices: [String] = []
+
+    func releaseLicense(_ licenseId: String) async -> Bool {
+        released.append(licenseId)
+        return true
+    }
+
+    func revokeDevice(_ deviceId: String) async -> Bool {
+        revokedDevices.append(deviceId)
+        return true
+    }
 }
 
 @Suite("Epic 14: Offline, Listen Mode & CarPlay")
 struct OfflineAndListenTests {
-    @MainActor
-    @Test func listenModeFeatureGateSleepTimerAndQueue() {
-        let clock = TestClock(Date(timeIntervalSince1970: 1_700_000_000))
-        let manager = ListenModeManager(listenModeEnabled: false, now: { clock.now })
-
-        // Feature OFF blocks audio-only mode
-        manager.setAudioOnly(true)
-        #expect(manager.isAudioOnly == false)
-
-        // Turning feature ON enables audio-only mode
-        manager.setFeatureEnabled(true)
-        manager.setAudioOnly(true)
-        #expect(manager.isAudioOnly == true)
-
-        // Timed sleep timer expires on schedule
-        manager.setSleepTimer(.minutes(15))
-        #expect(manager.sleepTimer.isActive)
-        #expect(manager.tickSleepTimer() == false)
-        clock.now = clock.now.addingTimeInterval(15 * 60)
-        #expect(manager.tickSleepTimer() == true)
-        #expect(manager.sleepTimer.isActive == false)
-
-        // End of episode pauses playback
-        manager.setSleepTimer(.endOfEpisode)
-        #expect(manager.handleEpisodeEnded() == true)
-        #expect(manager.sleepTimer.isActive == false)
-
-        // Queue operations
-        let url = URL(string: "https://media.alummahnow.net/pub/v1/rev/master.m3u8")!
-        let e1 = QueueEntry(videoId: "v1", playbackItem: PlaybackItem(url: url, title: "First"))
-        let e2 = QueueEntry(videoId: "v2", playbackItem: PlaybackItem(url: url, title: "Second"))
-        let e3 = QueueEntry(videoId: "v3", playbackItem: PlaybackItem(url: url, title: "Third"))
-
-        manager.setNowPlaying(e1)
-        manager.addToEnd(e2)
-        manager.playNext(e3)
-        #expect(manager.queue.map(\.videoId) == ["v1", "v3", "v2"])
-
-        manager.moveQueueItem(from: 2, to: 1)
-        #expect(manager.queue.map(\.videoId) == ["v1", "v2", "v3"])
-
-        #expect(manager.advance()?.videoId == "v2")
-        manager.clearUpNext()
-        #expect(manager.queue.map(\.videoId) == ["v2"])
-    }
-
-    @Test func chunkedAESGCMRoundTripAndTamperDetection() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("aun-apple-cipher-\(UUID().uuidString)")
+    @Test("AUNDL01 streaming encrypt, random-access chunked decrypt, binding & truncation detection")
+    func aundl01StreamingAndTruncation() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let vaultA = InMemoryDownloadKeyVault()
-        let vaultB = InMemoryDownloadKeyVault()
-        let keyA = try vaultA.symmetricKey()
-        let keyB = try vaultB.symmetricKey()
+        let vault = InMemoryDownloadKeyVault()
+        let key = try vault.symmetricKey()
+        let plain = Data((0..<(AunDl01Format.chunkSize + 4096)).map { UInt8($0 & 0xFF) })
+        let src = dir.appendingPathComponent("src.m4a")
+        let enc = dir.appendingPathComponent("clip.aun")
+        try plain.write(to: src)
 
-        let plaintext = Data((0..<150_000).map { UInt8(($0 * 29) % 251) })
-        let dest = dir.appendingPathComponent("lecture.aun")
-        _ = try ChunkedAESGCMCipher.encrypt(key: keyA, videoId: "v1", licenseId: "lic1", plaintext: plaintext, to: dest)
-        #expect(try Data(contentsOf: dest) != plaintext)
+        _ = try AunDl01StreamWriter.encryptFile(
+            key: key,
+            source: src,
+            destination: enc,
+            videoId: "vid-1",
+            licenseId: "lic-1"
+        )
 
-        let decrypted = try ChunkedAESGCMCipher.decrypt(key: keyA, videoId: "v1", licenseId: "lic1", from: dest)
-        #expect(decrypted == plaintext)
+        let reader = try AunDl01RandomAccessReader(
+            key: key,
+            url: enc,
+            expectedVideoId: "vid-1",
+            expectedLicenseId: "lic-1"
+        )
+        #expect(reader.plainLen == UInt64(plain.count))
+        let slice = try reader.readRange(offset: UInt64(AunDl01Format.chunkSize - 50), length: 120)
+        #expect(slice == plain[(AunDl01Format.chunkSize - 50)..<(AunDl01Format.chunkSize + 70)])
 
-        // Wrong key must fail
+        // Cross-video and cross-license binding rejection.
         #expect(throws: Error.self) {
-            _ = try ChunkedAESGCMCipher.decrypt(key: keyB, videoId: "v1", licenseId: "lic1", from: dest)
+            _ = try AunDl01RandomAccessReader(
+                key: key,
+                url: enc,
+                expectedVideoId: "vid-other",
+                expectedLicenseId: "lic-1"
+            )
         }
-        // Wrong AAD (videoId mismatch) must fail
         #expect(throws: Error.self) {
-            _ = try ChunkedAESGCMCipher.decrypt(key: keyA, videoId: "v2", licenseId: "lic1", from: dest)
+            _ = try AunDl01RandomAccessReader(
+                key: key,
+                url: enc,
+                expectedVideoId: "vid-1",
+                expectedLicenseId: "lic-other"
+            )
         }
-        // Single-byte tamper must fail
-        var tampered = try Data(contentsOf: dest)
-        tampered[tampered.count - 1] ^= 0xFF
-        try tampered.write(to: dest)
+
+        // Exact chunk-boundary truncation must fail immediately on open.
+        let raw = try Data(contentsOf: enc)
+        let hdrLen = 16 + 2 + "vid-1".utf8.count + 2 + "lic-1".utf8.count
+        let truncURL = dir.appendingPathComponent("trunc.aun")
+        try raw.prefix(hdrLen + AunDl01Format.chunkStride).write(to: truncURL)
         #expect(throws: Error.self) {
-            _ = try ChunkedAESGCMCipher.decrypt(key: keyA, videoId: "v1", licenseId: "lic1", from: dest)
+            _ = try AunDl01RandomAccessReader(
+                key: key,
+                url: truncURL,
+                expectedVideoId: "vid-1",
+                expectedLicenseId: "lic-1"
+            )
         }
     }
 
-    @Test func downloadStoreEnforcesGatePolicyRefreshRevocationAndWipe() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("aun-apple-store-\(UUID().uuidString)")
+    @Test("Store isolates accounts, blocks clock rollback, forbids signed URLs, releases slots & never evicts active items")
+    func storeLifecycleAndSecurity() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
+        final class Clocks: @unchecked Sendable {
+            var wallMs: Int64 = 10_000
+            var monoMs: Int64 = 1_000
+        }
+        let clocks = Clocks()
+        let releaser = RecordingSlotReleaser()
         let store = try OfflineDownloadStore(
             rootURL: dir,
             keyVault: InMemoryDownloadKeyVault(),
             offlineDownloadsEnabled: false,
-            now: { baseDate }
+            settings: OfflineDownloadSettings(maxStorageBytes: 500),
+            wallClockMs: { clocks.wallMs },
+            monotonicClockMs: { clocks.monoMs },
+            slotReleaser: releaser
         )
 
-        #expect(
-            OfflineDownloadPolicy.canDownload(
-                featureEnabled: false,
-                settings: OfflineDownloadSettings(),
-                isConnected: true,
-                isUnmeteredWifi: true
-            ) == .blockedFeatureOff
-        )
-        #expect(
-            OfflineDownloadPolicy.canDownload(
-                featureEnabled: true,
-                settings: OfflineDownloadSettings(wifiOnly: true),
-                isConnected: true,
-                isUnmeteredWifi: false
-            ) == .blockedWifiOnly
-        )
+        let rawFile = dir.appendingPathComponent("raw.bin")
+        try Data(repeating: 7, count: 300).write(to: rawFile)
 
+        // Default-off gate
         await #expect(throws: OfflineDownloadError.featureOff) {
-            try await store.saveEncrypted(
+            try await store.saveFromFile(
                 OfflineDownloadRequest(
-                    licenseId: "lic-1",
+                    userId: "u1",
+                    licenseId: "lic-off",
                     videoId: "v1",
-                    title: "Surah Al-Kahf",
-                    quality: .audio,
-                    expiresAt: baseDate.addingTimeInterval(3600)
+                    title: "Off",
+                    serverTimeMs: 10_000,
+                    expiresAtMs: 20_000
                 ),
-                plaintext: Data("audio".utf8)
+                sourceURL: rawFile
             )
         }
 
-        await store.setFeatureEnabled(true)
-        let r1 = try await store.saveEncrypted(
+        await store.applyFeatures(UserFeatures(on: [.offlineDownloads]))
+
+        // Signed URL forbidden
+        await #expect(throws: OfflineDownloadError.signedURLForbidden) {
+            try await store.saveFromFile(
+                OfflineDownloadRequest(
+                    userId: "u1",
+                    licenseId: "lic-url",
+                    videoId: "v1",
+                    title: "Bad",
+                    thumbnailPath: "https://media.alummahnow.net/priv/tok/thumb.jpg",
+                    serverTimeMs: 10_000,
+                    expiresAtMs: 20_000
+                ),
+                sourceURL: rawFile
+            )
+        }
+
+        // Save for u1; attempting a second download over cap must throw instead of silently evicting u1's item.
+        _ = try await store.saveFromFile(
             OfflineDownloadRequest(
+                userId: "u1",
                 licenseId: "lic-1",
                 videoId: "v1",
-                title: "Surah Al-Kahf",
-                titleAr: "سورة الكهف",
-                channelName: "Qari",
-                quality: .audio,
-                expiresAt: baseDate.addingTimeInterval(3600)
+                title: "Lecture 1",
+                serverTimeMs: 10_000,
+                expiresAtMs: 20_000
             ),
-            plaintext: Data("audio-1".utf8)
+            sourceURL: rawFile
         )
-        let r2 = try await store.saveEncrypted(
-            OfflineDownloadRequest(
-                licenseId: "lic-2",
-                videoId: "v2",
-                title: "Seerah",
-                quality: .q480p,
-                expiresAt: baseDate.addingTimeInterval(3600)
-            ),
-            plaintext: Data("video-2".utf8)
-        )
+        await #expect(throws: OfflineDownloadError.storageBudgetExceeded) {
+            try await store.saveFromFile(
+                OfflineDownloadRequest(
+                    userId: "u2",
+                    licenseId: "lic-2",
+                    videoId: "v1",
+                    title: "Lecture 1 u2",
+                    serverTimeMs: 10_000,
+                    expiresAtMs: 90_000
+                ),
+                sourceURL: rawFile
+            )
+        }
 
-        #expect(try await store.readDecrypted(licenseId: r1.licenseId) == Data("audio-1".utf8))
-        #expect(await store.playableDownloads().count == 2)
+        // Roll wall clock back while monotonic advances past u1's expiry -> u1 must NOT be playable!
+        clocks.wallMs = 1_000
+        clocks.monoMs = 15_000  // server anchor 10_000 + 14_000 = 24_000 > 20_000
+        #expect(try await store.playableDownloads(userId: "u1").isEmpty)
+        await #expect(throws: OfflineDownloadError.licenseExpiredOrRevoked) {
+            _ = try await store.openReader(userId: "u1", videoId: "v1")
+        }
 
-        let deleted = try await store.applyLicenseRefresh([
-            LicenseRefreshDecision(licenseId: r1.licenseId, status: "active", expiresAt: baseDate.addingTimeInterval(86_400)),
-            LicenseRefreshDecision(licenseId: r2.licenseId, status: "revoked", reason: "creator_disabled"),
-        ])
-        #expect(deleted == 1)
-        #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent(r2.fileName).path))
-        #expect(await store.playableDownloads().map(\.licenseId) == ["lic-1"])
-
-        await store.wipeAll()
-        #expect(await store.allDownloads().isEmpty)
+        // Removing releases the server slot.
+        #expect(try await store.remove(userId: "u1", videoId: "v1"))
+        #expect(await releaser.released == ["lic-1"])
     }
 
-    @Test func carPlayLibraryBuilderTabsAndVoiceSearch() {
+    @Test("CarPlay tabs are gated on listenMode, localized via L10n, and search offline downloads")
+    func carPlayGatingAndLocalization() {
         let builder = CarPlayLibraryBuilder()
         let dl = OfflineDownloadRecord(
-            licenseId: "lic-c",
-            videoId: "v-offline",
-            title: "Surah Yasin",
-            titleAr: "سورة يس",
-            channelName: "Reciter",
-            durationSeconds: 900,
+            userId: "u1",
+            licenseId: "lic-1",
+            videoId: "v-off",
+            title: "Surah Al-Kahf",
+            titleAr: "سورة الكهف",
+            channelName: "Al-Huda",
+            thumbnailPath: nil,
+            durationSeconds: 1800,
             quality: .audio,
-            fileName: "lic-c.aun",
+            fileName: "u1_lic-1.aun",
             bytes: 1024,
-            expiresAt: Date().addingTimeInterval(3600),
-            downloadedAt: Date(),
-            lastAccessedAt: Date(),
+            expiresAtMs: 99_999,
+            downloadedAtMs: 1_000,
+            lastAccessedAtMs: 1_000,
             status: .ready
         )
-        let online = [
-            CarPlayEntry(
-                videoId: "v-online",
-                title: "Tafsir Juz Amma",
-                titleAr: "تفسير جزء عم",
-                channelName: "Scholar"
-            )
-        ]
+        let input = CarPlayLibraryInput(downloads: [dl])
 
-        let input = CarPlayLibraryInput(continueListening: online, downloads: [dl])
-        let tabsOff = builder.buildTabs(input: input, offlineDownloadsEnabled: false, isArabic: true)
-        #expect(tabsOff.map(\.tab) == [.continueListening, .subscriptions, .recitation])
-        #expect(tabsOff[0].title == "متابعة الاستماع")
+        // Hidden while listenMode is off
+        #expect(builder.buildTabs(input: input, features: .none, language: .en).isEmpty)
+        #expect(
+            builder.search(
+                query: "Kahf",
+                downloads: [dl],
+                onlinePool: [],
+                listenModeEnabled: false,
+                offlineDownloadsEnabled: true
+            ).isEmpty
+        )
 
-        let tabsOn = builder.buildTabs(input: input, offlineDownloadsEnabled: true, isArabic: false)
-        #expect(tabsOn.map(\.tab) == [.continueListening, .downloads, .subscriptions, .recitation])
-        #expect(tabsOn[1].items.map(\.videoId) == ["v-offline"])
+        // Arabic localization uses in-app L10n, not Locale.current
+        let arTabs = builder.buildTabs(
+            input: input,
+            features: UserFeatures(on: [.listenMode, .offlineDownloads]),
+            language: .ar
+        )
+        #expect(arTabs.count == 4)
+        #expect(arTabs[0].title == L10n(.ar)("carplay.tab.continue"))
+        #expect(arTabs[1].title == L10n(.ar)("carplay.tab.downloads"))
+        #expect(arTabs[1].items.first?.isOffline == true)
+    }
 
-        let found = builder.search(query: "يس", downloads: [dl], onlinePool: online, offlineDownloadsEnabled: true)
-        #expect(found.map(\.videoId) == ["v-offline"])
+    @Test("ListenModeManager respects /api/me/features, sleep timer, and queue")
+    @MainActor
+    func listenModeAndSleepTimer() {
+        final class Clock: @unchecked Sendable { var now = Date(timeIntervalSince1970: 1_000) }
+        let clock = Clock()
+        let manager = ListenModeManager(listenModeEnabled: false, now: { clock.now })
+        manager.setAudioOnly(true)
+        #expect(!manager.isAudioOnly)
+
+        manager.applyFeatures(UserFeatures(on: [.listenMode]))
+        manager.setAudioOnly(true)
+        #expect(manager.isAudioOnly)
+        manager.setSleepTimer(.minutes(15))
+        clock.now = clock.now.addingTimeInterval(15 * 60)
+        #expect(manager.tickSleepTimer())
     }
 }

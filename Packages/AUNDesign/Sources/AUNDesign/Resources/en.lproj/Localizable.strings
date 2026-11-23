@@ -399,3 +399,7 @@
 "admin.conflict.escalate" = "Already escalated by %@ %@";
 "admin.conflict.request_changes" = "%@ already asked for changes %@";
 "admin.conflict.generic" = "Someone else already decided this item.";
+"carplay.tab.continue" = "Continue listening";
+"carplay.tab.downloads" = "Downloads";
+"carplay.tab.subscriptions" = "Subscriptions";
+"carplay.tab.recitation" = "Recitation";

@@ -399,3 +399,7 @@
 "admin.conflict.escalate" = "صعّده %@ %@";
 "admin.conflict.request_changes" = "طلب %@ تعديلات %@";
 "admin.conflict.generic" = "سبقك مراجع آخر إلى هذا العنصر.";
+"carplay.tab.continue" = "متابعة الاستماع";
+"carplay.tab.downloads" = "التنزيلات";
+"carplay.tab.subscriptions" = "الاشتراكات";
+"carplay.tab.recitation" = "التلاوة";
