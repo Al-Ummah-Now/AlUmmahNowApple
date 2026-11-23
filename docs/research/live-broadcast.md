@@ -26,7 +26,7 @@ No Apple framework speaks RTMP or SRT, so a client library or a small custom mux
 
 Adopt HaishinKit behind `LiveBroadcasting` once D3 is settled, RTMP first and SRT next if the provider accepts it.
 Adaptive bitrate comes from reacting to send-buffer growth by lowering `AverageBitRate` on the compression session,
-surfaced through `health()`. Check the $500/month infrastructure cap when choosing the provider.
+surfaced through `health()`. Keep per-stream and per-viewer costs low when choosing the provider.
 
 ## Needed before building
 
