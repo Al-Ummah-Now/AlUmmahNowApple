@@ -237,6 +237,37 @@ public enum ChunkedAESGCMCipher {
     }
 }
 
+public struct OfflineDownloadRequest: Hashable, Sendable {
+    public var licenseId: String
+    public var videoId: String
+    public var title: String
+    public var titleAr: String?
+    public var channelName: String?
+    public var durationSeconds: Double?
+    public var quality: OfflineDownloadQuality
+    public var expiresAt: Date
+
+    public init(
+        licenseId: String,
+        videoId: String,
+        title: String,
+        titleAr: String? = nil,
+        channelName: String? = nil,
+        durationSeconds: Double? = nil,
+        quality: OfflineDownloadQuality = .audio,
+        expiresAt: Date
+    ) {
+        self.licenseId = licenseId
+        self.videoId = videoId
+        self.title = title
+        self.titleAr = titleAr
+        self.channelName = channelName
+        self.durationSeconds = durationSeconds
+        self.quality = quality
+        self.expiresAt = expiresAt
+    }
+}
+
 /// Encrypted local download vault excluded from iCloud backups (E14-S9).
 public actor OfflineDownloadStore {
     private let rootURL: URL
@@ -291,44 +322,37 @@ public actor OfflineDownloadStore {
 
     @discardableResult
     public func saveEncrypted(
-        licenseId: String,
-        videoId: String,
-        title: String,
-        titleAr: String? = nil,
-        channelName: String? = nil,
-        durationSeconds: Double? = nil,
-        quality: OfflineDownloadQuality,
-        expiresAt: Date,
+        _ request: OfflineDownloadRequest,
         plaintext: Data
     ) throws -> OfflineDownloadRecord {
         guard offlineDownloadsEnabled else { throw OfflineDownloadError.featureOff }
-        let safeName = licenseId.replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "_", options: .regularExpression) + ".aun"
+        let safeName = request.licenseId.replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "_", options: .regularExpression) + ".aun"
         let dest = rootURL.appendingPathComponent(safeName)
         let key = try keyVault.symmetricKey()
         let encryptedSize = try ChunkedAESGCMCipher.encrypt(
             key: key,
-            videoId: videoId,
-            licenseId: licenseId,
+            videoId: request.videoId,
+            licenseId: request.licenseId,
             plaintext: plaintext,
             to: dest
         )
         let ts = now()
         let record = OfflineDownloadRecord(
-            licenseId: licenseId,
-            videoId: videoId,
-            title: title,
-            titleAr: titleAr,
-            channelName: channelName,
-            durationSeconds: durationSeconds,
-            quality: quality,
+            licenseId: request.licenseId,
+            videoId: request.videoId,
+            title: request.title,
+            titleAr: request.titleAr,
+            channelName: request.channelName,
+            durationSeconds: request.durationSeconds,
+            quality: request.quality,
             fileName: safeName,
             bytes: encryptedSize,
-            expiresAt: expiresAt,
+            expiresAt: request.expiresAt,
             downloadedAt: ts,
             lastAccessedAt: ts,
             status: .ready
         )
-        records[licenseId] = record
+        records[request.licenseId] = record
         evictToCap()
         try persistManifest()
         return record

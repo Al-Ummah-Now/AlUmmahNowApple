@@ -114,32 +114,38 @@ struct OfflineAndListenTests {
 
         await #expect(throws: OfflineDownloadError.featureOff) {
             try await store.saveEncrypted(
-                licenseId: "lic-1",
-                videoId: "v1",
-                title: "Surah Al-Kahf",
-                quality: .audio,
-                expiresAt: baseDate.addingTimeInterval(3600),
+                OfflineDownloadRequest(
+                    licenseId: "lic-1",
+                    videoId: "v1",
+                    title: "Surah Al-Kahf",
+                    quality: .audio,
+                    expiresAt: baseDate.addingTimeInterval(3600)
+                ),
                 plaintext: Data("audio".utf8)
             )
         }
 
         await store.setFeatureEnabled(true)
         let r1 = try await store.saveEncrypted(
-            licenseId: "lic-1",
-            videoId: "v1",
-            title: "Surah Al-Kahf",
-            titleAr: "سورة الكهف",
-            channelName: "Qari",
-            quality: .audio,
-            expiresAt: baseDate.addingTimeInterval(3600),
+            OfflineDownloadRequest(
+                licenseId: "lic-1",
+                videoId: "v1",
+                title: "Surah Al-Kahf",
+                titleAr: "سورة الكهف",
+                channelName: "Qari",
+                quality: .audio,
+                expiresAt: baseDate.addingTimeInterval(3600)
+            ),
             plaintext: Data("audio-1".utf8)
         )
         let r2 = try await store.saveEncrypted(
-            licenseId: "lic-2",
-            videoId: "v2",
-            title: "Seerah",
-            quality: .q480p,
-            expiresAt: baseDate.addingTimeInterval(3600),
+            OfflineDownloadRequest(
+                licenseId: "lic-2",
+                videoId: "v2",
+                title: "Seerah",
+                quality: .q480p,
+                expiresAt: baseDate.addingTimeInterval(3600)
+            ),
             plaintext: Data("video-2".utf8)
         )
 
@@ -177,25 +183,12 @@ struct OfflineAndListenTests {
         )
         let online = [CarPlayEntry(videoId: "v-online", title: "Tafsir Juz Amma", titleAr: "تفسير جزء عم", channelName: "Scholar")]
 
-        let tabsOff = builder.buildTabs(
-            continueListening: online,
-            downloads: [dl],
-            subscriptions: [],
-            recitations: [],
-            offlineDownloadsEnabled: false,
-            isArabic: true
-        )
+        let input = CarPlayLibraryInput(continueListening: online, downloads: [dl])
+        let tabsOff = builder.buildTabs(input: input, offlineDownloadsEnabled: false, isArabic: true)
         #expect(tabsOff.map(\.tab) == [.continueListening, .subscriptions, .recitation])
         #expect(tabsOff[0].title == "متابعة الاستماع")
 
-        let tabsOn = builder.buildTabs(
-            continueListening: online,
-            downloads: [dl],
-            subscriptions: [],
-            recitations: [],
-            offlineDownloadsEnabled: true,
-            isArabic: false
-        )
+        let tabsOn = builder.buildTabs(input: input, offlineDownloadsEnabled: true, isArabic: false)
         #expect(tabsOn.map(\.tab) == [.continueListening, .downloads, .subscriptions, .recitation])
         #expect(tabsOn[1].items.map(\.videoId) == ["v-offline"])
 

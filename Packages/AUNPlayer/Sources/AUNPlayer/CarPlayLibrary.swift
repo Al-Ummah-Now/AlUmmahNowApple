@@ -64,23 +64,39 @@ public struct CarPlayTabModel: Hashable, Sendable {
     }
 }
 
+public struct CarPlayLibraryInput: Hashable, Sendable {
+    public var continueListening: [CarPlayEntry]
+    public var downloads: [OfflineDownloadRecord]
+    public var subscriptions: [CarPlayEntry]
+    public var recitations: [CarPlayEntry]
+
+    public init(
+        continueListening: [CarPlayEntry] = [],
+        downloads: [OfflineDownloadRecord] = [],
+        subscriptions: [CarPlayEntry] = [],
+        recitations: [CarPlayEntry] = []
+    ) {
+        self.continueListening = continueListening
+        self.downloads = downloads
+        self.subscriptions = subscriptions
+        self.recitations = recitations
+    }
+}
+
 /// Platform-neutral CarPlay library model & voice-search resolver (tested on macOS without CarPlay UI).
 public struct CarPlayLibraryBuilder: Sendable {
     public init() {}
 
     public func buildTabs(
-        continueListening: [CarPlayEntry],
-        downloads: [OfflineDownloadRecord],
-        subscriptions: [CarPlayEntry],
-        recitations: [CarPlayEntry],
+        input: CarPlayLibraryInput,
         offlineDownloadsEnabled: Bool,
         isArabic: Bool
     ) -> [CarPlayTabModel] {
         var tabs: [CarPlayTabModel] = [
-            CarPlayTabModel(tab: .continueListening, title: CarPlayTab.continueListening.title(isArabic: isArabic), items: continueListening),
+            CarPlayTabModel(tab: .continueListening, title: CarPlayTab.continueListening.title(isArabic: isArabic), items: input.continueListening),
         ]
         if offlineDownloadsEnabled {
-            let offlineEntries = downloads.map { rec in
+            let offlineEntries = input.downloads.map { rec in
                 CarPlayEntry(
                     videoId: rec.videoId,
                     title: rec.title,
@@ -92,8 +108,8 @@ public struct CarPlayLibraryBuilder: Sendable {
             }
             tabs.append(CarPlayTabModel(tab: .downloads, title: CarPlayTab.downloads.title(isArabic: isArabic), items: offlineEntries))
         }
-        tabs.append(CarPlayTabModel(tab: .subscriptions, title: CarPlayTab.subscriptions.title(isArabic: isArabic), items: subscriptions))
-        tabs.append(CarPlayTabModel(tab: .recitation, title: CarPlayTab.recitation.title(isArabic: isArabic), items: recitations))
+        tabs.append(CarPlayTabModel(tab: .subscriptions, title: CarPlayTab.subscriptions.title(isArabic: isArabic), items: input.subscriptions))
+        tabs.append(CarPlayTabModel(tab: .recitation, title: CarPlayTab.recitation.title(isArabic: isArabic), items: input.recitations))
         return tabs
     }
 
@@ -153,10 +169,7 @@ public struct CarPlayLibraryBuilder: Sendable {
             self.interfaceController = interfaceController
             let isArabic = Locale.current.language.languageCode?.identifier == "ar"
             let emptyTabs = CarPlayLibraryBuilder().buildTabs(
-                continueListening: [],
-                downloads: [],
-                subscriptions: [],
-                recitations: [],
+                input: CarPlayLibraryInput(),
                 offlineDownloadsEnabled: false,
                 isArabic: isArabic
             )
