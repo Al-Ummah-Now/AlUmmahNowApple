@@ -186,7 +186,7 @@ struct ReviewModelTests {
         let (model, toasts, _, box) = make("fx-risk", offline: true)
         await model.open()
         await model.decide(.approve)
-        #expect(model.message == "You're offline. Decisions need a connection.")
+        #expect(model.message == "You’re offline. Decisions need a connection.")
         #expect(box.changed.isEmpty)
         #expect(toasts.toast == nil)
         #expect(model.item?.isOpen == true)
