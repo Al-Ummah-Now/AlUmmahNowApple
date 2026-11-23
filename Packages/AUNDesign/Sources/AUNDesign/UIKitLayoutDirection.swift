@@ -34,7 +34,10 @@
         /// The system search field on the header (`.searchable`) with the web header's search colours: the
         /// placeholder in `navSearchPlaceholder` and typed text in `navSearchText`. The system placeholder read about
         /// 3.2:1 on the field; the token reads at least 4.5:1 in every theme. Put it on the view that is `.searchable`.
-        public func fanousSearchField() -> some View { background(FanousSearchFieldStyler()) }
+        public func fanousSearchField() -> some View {
+            // A zero-size view that takes no touches: a UIKit view behind SwiftUI controls still catches their taps.
+            background(FanousSearchFieldStyler().frame(width: 0, height: 0).allowsHitTesting(false))
+        }
     }
 
     /// UIKit draws the search field and has no placeholder colour to set ahead of time: setting `placeholder` (as
@@ -44,7 +47,11 @@
         @Environment(\.fanous) private var theme
         @Environment(\.l10n) private var l10n
 
-        func makeUIView(context: Context) -> StylerView { StylerView() }
+        func makeUIView(context: Context) -> StylerView {
+            let view = StylerView()
+            view.isUserInteractionEnabled = false
+            return view
+        }
 
         func updateUIView(_ view: StylerView, context: Context) {
             view.colors = (UIColor(Color(theme.parts.navSearchPlaceholder)), UIColor(Color(theme.parts.navSearchText)))
