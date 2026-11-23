@@ -32,6 +32,7 @@ public struct FixtureCatalogService: CatalogServicing {
             playURL: URL(string: "https://fixtures.invalid/\(index)/playlist.m3u8"),
             channelID: "fixture-channel",
             channelName: "Al Ummah Now",
+            channelNameLocalized: LocalizedText(en: "Al Ummah Now", ar: "الأمة الآن"),
             views: 1200 * index,
             durationSeconds: Double(75 * index),
             category: "quran_tafsir",

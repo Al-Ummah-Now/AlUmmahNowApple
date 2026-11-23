@@ -35,7 +35,7 @@ struct VideoCardContent: View {
 
     private var metadata: String {
         let views = DisplayFormat.views(video.views, l10n)
-        return DisplayFormat.meta([video.channelName, views], l10n.language)
+        return DisplayFormat.meta([video.displayChannelName(l10n.language), views], l10n.language)
     }
 }
 
