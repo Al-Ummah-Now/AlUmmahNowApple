@@ -2,7 +2,7 @@
 // with no HiDPI mode, so the Mac windows were captured at 1x. This keeps a 1440x1100 pt HiDPI (2x) virtual display alive
 // until it is killed, so the Mac review frames are the window at its native 2x. CoreGraphics' virtual display classes
 // are not in the public headers; their interfaces are declared here. Never part of an app target. 1100 pt tall, not
-// 900: the watch window's review frame is 958 pt, the height at which both its columns end on whole cards.
+// 900: the watch window's review frame is 986 pt, the height at which both its columns end on whole cards.
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
 

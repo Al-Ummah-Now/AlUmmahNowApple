@@ -33,7 +33,7 @@
                     // The web header's colours on the window toolbar, as on iPhone and iPad, so its icons show in light.
                     .fanousNavigationBar()
             }
-            // The content's minimum, under the 52-point toolbar: low enough for the review frames' 609-point window
+            // The content's minimum, under the 52-point toolbar: low enough for the review frames' 614-point window
             // (AutomationWindow), which a higher minimum would stretch.
             .frame(minWidth: 900, minHeight: 520)
             // A universal link reuses this window (instead of a new one) and opens the video in its own window.

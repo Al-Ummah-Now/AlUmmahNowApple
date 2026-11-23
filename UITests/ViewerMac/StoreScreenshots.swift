@@ -8,11 +8,11 @@ final class StoreScreenshots: XCTestCase {
     }
 
     /// Window heights (points) at which each frame ends below whole content, never through a card: the window bottom
-    /// is a crop (UITests/Shared/FrameEdges.swift). Home ends between the two Trending rows (cards to 598, from 614)
-    /// and Watch below the chapters (to 725) and between the third and fourth Up next card (to 947, from 963), each
-    /// with the 8-point gap.
-    private let homeHeight: CGFloat = 609
-    private let watchHeight: CGFloat = 958
+    /// is a crop (UITests/Shared/FrameEdges.swift). Home ends below the first Trending row (cards to 602) and Watch
+    /// below the chapters and between the third and fourth Up next card (to 976, from 992), each with the 8-point gap.
+    /// Measured with the scroll indicators off (screenshot runs), which gives the content the scroller's width back.
+    private let homeHeight: CGFloat = 614
+    private let watchHeight: CGFloat = 986
     private var size: [String] {
         ["-AUNWindowHeight", "\(Int(homeHeight))", "-AUNWatchWindowHeight", "\(Int(watchHeight))"]
     }
