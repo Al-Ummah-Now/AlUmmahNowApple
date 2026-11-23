@@ -17,11 +17,26 @@
             let center = MPRemoteCommandCenter.shared()
             center.skipForwardCommand.preferredIntervals = [NSNumber(value: PlayerController.skipInterval)]
             center.skipBackwardCommand.preferredIntervals = [NSNumber(value: PlayerController.skipInterval)]
+            center.changePlaybackRateCommand.supportedPlaybackRates = PlayerController.speeds.map { NSNumber(value: $0) }
             add(center.playCommand) { $0.play() }
             add(center.pauseCommand) { $0.pause() }
             add(center.togglePlayPauseCommand) { $0.togglePlayback() }
             add(center.skipForwardCommand) { $0.skip(by: PlayerController.skipInterval) }
             add(center.skipBackwardCommand) { $0.skip(by: -PlayerController.skipInterval) }
+            let scrubToken = center.changePlaybackPositionCommand.addTarget { [weak self] event in
+                guard let posEvent = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+                let target = posEvent.positionTime
+                Task { @MainActor in self?.controller?.seek(to: target) }
+                return .success
+            }
+            targets.append((center.changePlaybackPositionCommand, scrubToken))
+            let rateToken = center.changePlaybackRateCommand.addTarget { [weak self] event in
+                guard let rateEvent = event as? MPChangePlaybackRateCommandEvent else { return .commandFailed }
+                let rate = rateEvent.playbackRate
+                Task { @MainActor in self?.controller?.setSpeed(rate) }
+                return .success
+            }
+            targets.append((center.changePlaybackRateCommand, rateToken))
             update()
         }
 
