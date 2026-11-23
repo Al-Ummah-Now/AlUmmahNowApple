@@ -44,20 +44,17 @@ public struct OfflineDownloadSettings: Codable, Hashable, Sendable {
 
     public var wifiOnly: Bool
     public var maxStorageBytes: Int64
-    public var maxVideos: Int?
     public var defaultQuality: OfflineDownloadQuality
     public var autoDownloadEnabled: Bool
 
     public init(
         wifiOnly: Bool = true,
         maxStorageBytes: Int64 = defaultMaxStorageBytes,
-        maxVideos: Int? = nil,
-        defaultQuality: OfflineDownloadQuality = .audio,
+        defaultQuality: OfflineDownloadQuality = .q480p,
         autoDownloadEnabled: Bool = false
     ) {
         self.wifiOnly = wifiOnly
         self.maxStorageBytes = maxStorageBytes
-        self.maxVideos = maxVideos
         self.defaultQuality = defaultQuality
         self.autoDownloadEnabled = autoDownloadEnabled
     }
@@ -81,7 +78,6 @@ public enum OfflineDownloadError: Error, Equatable, Sendable {
     case signedURLForbidden
     case notFound
     case storageBudgetExceeded
-    case maxVideosExceeded
 }
 
 public enum DownloadTransferAllowance: Equatable, Sendable {
@@ -123,7 +119,7 @@ public struct OfflineDownloadRequest: Hashable, Sendable {
         channelName: String? = nil,
         thumbnailPath: String? = nil,
         durationSeconds: Double? = nil,
-        quality: OfflineDownloadQuality = .audio
+        quality: OfflineDownloadQuality = .q480p
     ) {
         self.userId = userId
         self.videoId = videoId
@@ -141,10 +137,10 @@ private struct ManifestEnvelope: Codable {
     var items: [OfflineDownloadRecord]
 }
 
-/// Plain-file local download store excluded from iCloud backups (E14-S9, E14-D1):
-/// - Stores plain progressive `audio.m4a` / `video.mp4` files played directly by `AVPlayer`.
+/// Plain-file local download store excluded from iCloud backups (E14-S9, E14-D1, E14-D5):
+/// - Stores plain progressive R2 `video.mp4` (or existing audio rendition) files played directly by `AVPlayer`.
 /// - Keys records by `(userId, videoId)` and forbids persisting signed URLs.
-/// - Enforces local storage budget and tier video count caps without silently evicting active downloads.
+/// - Enforces local storage budget without silently evicting active downloads.
 /// - Deletes local copies during availability sync when videos go private, are deleted, or are disabled.
 public actor OfflineDownloadStore {
     private let rootURL: URL
@@ -220,14 +216,6 @@ public actor OfflineDownloadStore {
         purgeInactive()
 
         let rKey = recordKey(userId: request.userId, videoId: request.videoId)
-        let isReplacing = records[rKey] != nil
-        if !isReplacing, let maxVideos = settings.maxVideos {
-            let activeForUser = records.values.filter { $0.userId == request.userId && $0.isPlayable }.count
-            if activeForUser >= maxVideos {
-                throw OfflineDownloadError.maxVideosExceeded
-            }
-        }
-
         let used = totalUsedBytes() - (records[rKey]?.bytes ?? 0)
         let incomingSize =
             ((try? FileManager.default.attributesOfItem(atPath: sourceURL.path)[.size]) as? NSNumber)?.int64Value ?? 0

@@ -21,7 +21,7 @@ final class OfflineAndListenTests: XCTestCase {
                 url: URL(string: "https://media.example/pub/v1/r1/master.m3u8")!,
                 title: "Surah Al-Kahf"
             ),
-            audioURL: URL(string: "https://media.example/pub/v1/r1/audio.m4a")!,
+            audioURL: URL(string: "https://media.example/pub/v1/r1/a/orig/index.m3u8")!,
             durationSeconds: 600
         )
         listen.setNowPlaying(entry1)
@@ -54,10 +54,10 @@ final class OfflineAndListenTests: XCTestCase {
         let store = try OfflineDownloadStore(
             rootURL: dir,
             offlineDownloadsEnabled: false,
-            settings: OfflineDownloadSettings(wifiOnly: true, maxStorageBytes: 5_000, maxVideos: 2)
+            settings: OfflineDownloadSettings(wifiOnly: true, maxStorageBytes: 5_000)
         )
 
-        let src = dir.appendingPathComponent("src.m4a")
+        let src = dir.appendingPathComponent("src.mp4")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let payload = Data(repeating: 0x42, count: 1_500)
         try payload.write(to: src)
@@ -68,7 +68,7 @@ final class OfflineAndListenTests: XCTestCase {
             title: "Tafsir Lesson",
             titleAr: "درس التفسير",
             thumbnailPath: "/local/thumbs/vid-1.jpg",
-            quality: .audio
+            quality: .q480p
         )
 
         // Blocked when offlineDownloads switch is OFF
@@ -93,7 +93,7 @@ final class OfflineAndListenTests: XCTestCase {
 
         // Plain file saved and directly playable via local file URL
         let saved = try await store.saveFromFile(req, sourceURL: src)
-        XCTAssertTrue(saved.fileName.hasSuffix(".m4a"))
+        XCTAssertTrue(saved.fileName.hasSuffix(".mp4"))
         let fileURL = try await store.localFileURL(userId: "user-a", videoId: "vid-1")
         XCTAssertEqual(try Data(contentsOf: fileURL), payload)
         let asset = try await store.makePlayableAsset(userId: "user-a", videoId: "vid-1")
@@ -146,7 +146,7 @@ final class OfflineAndListenTests: XCTestCase {
             thumbnailPath: "/local/thumbs/v-dl.jpg",
             durationSeconds: 300,
             quality: .audio,
-            fileName: "u1_v-dl.m4a",
+            fileName: "u1_v-dl.mp4",
             bytes: 1000,
             downloadedAtMs: 1000,
             lastAccessedAtMs: 1000,
