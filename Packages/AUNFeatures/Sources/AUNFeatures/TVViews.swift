@@ -58,7 +58,7 @@
                             RailHeader(kind: rail.kind)
                             ScrollView(.horizontal) {
                                 LazyHStack(alignment: .top, spacing: 40) {
-                                    ForEach(rail.videos) { video in
+                                    ForEach(rails.cards(of: rail)) { video in
                                         Button {
                                             open(video)
                                         } label: {

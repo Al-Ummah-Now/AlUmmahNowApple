@@ -28,9 +28,20 @@ final class TVFocusTests: XCTestCase {
         )
         .firstMatch
         XCTAssertTrue(focused.waitForExistence(timeout: 15))
-        let index = Int(focused.identifier.split(separator: "-").last ?? "") ?? 0
+        let start = focused.identifier
+        let startX = focused.frame.midX
         XCUIRemote.shared.press(next)
-        waitForFocus(app.buttons["video-card-trending-fixture-\(index + 1)"])
+        // Focus moves to another card of the rail, in the reading direction (right in English, left in Arabic).
+        let moved = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'video-card-trending-' AND hasFocus == true AND identifier != %@", start)
+        )
+        .firstMatch
+        XCTAssertTrue(moved.waitForExistence(timeout: 15))
+        if next == .right {
+            XCTAssertGreaterThan(moved.frame.midX, startX)
+        } else {
+            XCTAssertLessThan(moved.frame.midX, startX)
+        }
     }
 
     @MainActor

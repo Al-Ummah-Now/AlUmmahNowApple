@@ -26,6 +26,13 @@ struct ChartScaleTests {
     @Test func arabicNumbersUseArabicDigits() {
         #expect(ChartScale.compact(1234, .en) == "1.2K")
         #expect(ChartScale.compact(1234, .ar).contains("١"))
+        #expect(ChartScale.compact(2000, .ar) == "ألفان")
+        #expect(ChartScale.compact(1000, .ar) == "ألف")
+        #expect(ChartScale.compact(1500, .ar) == "١٫٥\u{00A0}ألف")
+        #expect(ChartScale.compact(5000, .ar) == "٥\u{00A0}آلاف")
+        #expect(ChartScale.compact(1_000_000, .ar) == "١\u{00A0}م")
+        #expect(ChartScale.compact(2_000_000, .ar) == "٢\u{00A0}م")
+        #expect(ChartScale.compact(2_500_000, .ar) == "٢٫٥\u{00A0}م")
         #expect(ChartScale.full(6075, .ar).contains("٦"))
     }
 
@@ -34,6 +41,10 @@ struct ChartScaleTests {
         #expect(ChartScale.watchUnit(largestSeconds: 7200) == .hour)
         #expect(ChartScale.watchTime(186, .en).contains("3.1"))
         #expect(ChartScale.watchTime(45_000, .en).contains("12.5"))
+        // From 100 up no decimal; Arabic is never grouped, so «٢٢٤٦», not «٢٬٢٤٥٫٩».
+        let large = ChartScale.watchTime(2_245.9 * 3600, .ar)
+        #expect(large.contains("٢٢٤٦") && !large.contains("٫") && !large.contains("٬"), "\(large)")
+        #expect(ChartScale.watchTime(2_245.9 * 3600, .en).contains("2,246"))
     }
 
     @Test func seriesRunsFromTheRightInArabic() throws {

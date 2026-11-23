@@ -31,6 +31,14 @@ public final class HomeViewModel {
 public struct WatchContent: Sendable {
     public var video: Video
     public var chapters: [Chapter]
+    /// Other videos to watch next, as the web and Android watch pages list them; empty when they can't load.
+    public var upNext: [Video] = []
+
+    /// At most `limit` distinct videos from `rails`, in rail order, without the one being watched.
+    static func upNext(from rails: [HomeRail], excluding id: String, limit: Int = 6) -> [Video] {
+        var seen: Set<String> = [id]
+        return Array(rails.flatMap(\.videos).filter { seen.insert($0.id).inserted }.prefix(limit))
+    }
 }
 
 @MainActor @Observable
@@ -54,8 +62,13 @@ public final class WatchViewModel {
             // Subtitles and chapters are optional extras: the video should still play if they fail.
             async let tracks = try? catalog.subtitles(videoID: videoID)
             async let chapters = try? catalog.chapters(videoID: videoID)
-            let (loadedTracks, loadedChapters) = await (tracks ?? [], chapters ?? [])
-            state = .loaded(WatchContent(video: video, chapters: loadedChapters))
+            // Up next comes from the home rails; the page is complete without it.
+            async let rails = try? catalog.homeRails(limit: 12)
+            let (loadedTracks, loadedChapters, loadedRails) = await (tracks ?? [], chapters ?? [], rails ?? [])
+            state = .loaded(
+                WatchContent(
+                    video: video, chapters: loadedChapters,
+                    upNext: WatchContent.upNext(from: loadedRails, excluding: videoID)))
             guard video.isPlayable, let url = video.playURL else { return }
             player.load(
                 PlaybackItem(

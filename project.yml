@@ -95,6 +95,9 @@ targets:
         AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
         AUNEnvironment: "$(AUN_ENVIRONMENT)"
         UILaunchScreen: {}
+        # The header is dark in every theme (FanousHeader), so the status bar always draws light content.
+        UIViewControllerBasedStatusBarAppearance: false
+        UIStatusBarStyle: UIStatusBarStyleLightContent
         ITSAppUsesNonExemptEncryption: false
         UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
@@ -185,6 +188,9 @@ targets:
     info:
       path: Apps/StudioIOS/Info.plist
       properties:
+        # The header is dark in every theme (FanousHeader), so the status bar always draws light content.
+        UIViewControllerBasedStatusBarAppearance: false
+        UIStatusBarStyle: UIStatusBarStyleLightContent
         ITSAppUsesNonExemptEncryption: false
     dependencies:
       - package: AUNStudio

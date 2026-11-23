@@ -38,6 +38,13 @@ struct SignInView: View {
         }
         .defaultScrollAnchor(.center)
         .fanousPage()
+        #if os(iOS)
+            // The status bar draws light content everywhere (the header is dark in every theme); with no header on
+            // this screen, the header colour still sits behind it.
+            .overlay(alignment: .top) {
+                FanousHeaderSurface().frame(height: 0).ignoresSafeArea(edges: .top).allowsHitTesting(false)
+            }
+        #endif
     }
 }
 
@@ -56,8 +63,10 @@ struct NoticeView: View {
             .fanousFont(.label)
             .foregroundStyle(Fanous.errorText)
             .padding(FanousScale.spacingMd)
-            .fanousMaterial(.card) { .rounded($0.md) }
+            // Combined inside the card: outside it, the element's frame took in the card's shadow and VoiceOver's
+            // outline (and the review edge check) ran far past the card.
             .accessibilityElement(children: .combine)
+            .fanousMaterial(.card) { .rounded($0.md) }
             .accessibilityIdentifier("notice")
         }
     }
@@ -390,23 +399,33 @@ struct DashboardContent: View {
         _model = State(initialValue: model)
     }
 
+    /// The sections' top edge (`-AUNScrollTo dashboard-sections`): the iPhone review frame starts there, so it ends
+    /// between two cards above the tab bar instead of through a comment.
+    private static let sections = "dashboard-sections"
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-                NoticeView(session: session)
-                if !model.counts.isEmpty { kpis }
-                // The full width (no reading cap): one column on iPhone, two on iPad, three on Mac.
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 320), spacing: FanousScale.spacingLg, alignment: .top)],
-                    alignment: .leading, spacing: FanousScale.spacingLg
-                ) {
-                    recentSection
-                    heldSection
-                    queueSection
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
+                    NoticeView(session: session)
+                    if !model.counts.isEmpty { kpis }
+                    // The full width (no reading cap): one column on iPhone, two on iPad and Mac.
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 360), spacing: FanousScale.spacingLg, alignment: .top)],
+                        alignment: .leading, spacing: FanousScale.spacingLg
+                    ) {
+                        recentSection
+                        heldSection
+                        queueSection
+                    }
+                    .scrollSection(Self.sections)
+                    ScrollTargetRoom(among: [Self.sections])
                 }
+                .padding(FanousScale.spacingLg)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(FanousScale.spacingLg)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollsToRequestedSection(
+                proxy, among: [Self.sections], ready: model.recentPhase != .idle && !model.recentPhase.isLoading)
         }
         .refreshable { await model.load() }
         .task { if model.recentPhase == .idle { await model.load() } }
@@ -442,16 +461,12 @@ struct DashboardContent: View {
         }
     }
 
-    /// The channel's videos by status, as tiles; Failed turns red when there are any.
+    /// The channel's videos by status, as tiles; Failed turns red when there are any. As many per row as fit (three
+    /// on a phone, all five on iPad and Mac), wrapping instead of running off the edge, in either language.
     private var kpis: some View {
-        let tiles = ForEach(StudioStatus.allCases, id: \.self) { status in
-            KPITile(label: l10n("studio.tab.\(status.rawValue)"), value: model.counts[status] ?? 0, alert: status == .failed)
-        }
-        return ViewThatFits(in: .horizontal) {
-            HStack(spacing: FanousScale.spacingMd) { tiles }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: FanousScale.spacingMd) { tiles.frame(width: 120) }
-                    .padding(.vertical, FanousScale.spacingSm)
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: FanousScale.spacingMd)], spacing: FanousScale.spacingMd) {
+            ForEach(StudioStatus.allCases, id: \.self) { status in
+                KPITile(label: l10n("studio.tab.\(status.rawValue)"), value: model.counts[status] ?? 0, alert: status == .failed)
             }
         }
         .accessibilityElement(children: .contain)
@@ -528,7 +543,7 @@ struct DashboardSection<Rows: View>: View {
     }
 }
 
-/// A count tile: the number large, the status under it, in the card material.
+/// A count tile: the number large (compact from 1,000, as every stat tile), the status under it, in the card material.
 struct KPITile: View {
     @Environment(\.l10n) private var l10n
     let label: String
@@ -537,15 +552,19 @@ struct KPITile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(DisplayFormat.number(value, l10n.language))
+            Text(DisplayFormat.count(value, l10n.language))
                 .font(.system(size: 26, weight: .bold)).monospacedDigit()
                 .foregroundStyle(alert && value > 0 ? Fanous.errorText : Fanous.textPrimary)
+            // No minimum scale: with the exact line height (iOS 26) a shrinkable one-line label was cut mid-word
+            // ("Processir") instead of shrinking; every status name fits the narrowest tile at the caption size.
             Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1)
         }
         .padding(FanousScale.spacingMd)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .fanousMaterial(.card) { .rounded($0.lg) }
+        // Combined inside the card: outside it, the element's frame took in the card's shadow and VoiceOver's
+        // outline (and the review edge check) ran far past the card.
         .accessibilityElement(children: .combine)
+        .fanousMaterial(.card) { .rounded($0.lg) }
     }
 }
 

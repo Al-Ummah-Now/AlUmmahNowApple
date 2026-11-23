@@ -15,6 +15,9 @@
             _path = State(initialValue: initialVideoID.map { [$0] } ?? [])
         }
 
+        /// Room for iPadOS's window resize corner under scrolled content.
+        private static var corner: CGFloat { UIDevice.current.userInterfaceIdiom == .pad ? 12 : 0 }
+
         public var body: some View {
             NavigationStack(path: $path) {
                 HomeView(catalog: core.catalog) { path.append($0.id) }
@@ -22,10 +25,12 @@
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .topBarTrailing) { SettingsMenu() } }
                     .fanousNavigationBar()
+                    .fanousBottomEdge(corner: Self.corner)
                     .navigationDestination(for: String.self) { id in
-                        WatchView(videoID: id, catalog: core.catalog)
+                        WatchView(videoID: id, catalog: core.catalog) { path.append($0) }
                             .navigationBarTitleDisplayMode(.inline)
                             .fanousNavigationBar()
+                            .fanousBottomEdge(corner: Self.corner)
                     }
             }
             .onOpenURL { url in

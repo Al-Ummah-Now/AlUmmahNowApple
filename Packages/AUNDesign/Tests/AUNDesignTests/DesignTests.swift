@@ -87,6 +87,22 @@ import Testing
         #expect(first >= 0 && first < style.size)
     }
 
+    @Test(arguments: FanousThemeID.allCases)
+    func lineBoxesFitBothScriptsOfTheTheme(_ id: FanousThemeID) {
+        let theme = FanousTheme(id, dark: false)
+        for role in FanousTextRole.allCases {
+            let box = theme.lineBox(role)
+            for arabic in [false, true] {
+                let style = role.style(arabic: arabic)
+                let family = FanousTypeface.family(arabic ? theme.tokens.font.arabic : theme.tokens.font.latin)
+                // Room for the scale's line and for the face's own, whichever is taller, in either language.
+                #expect(box >= style.size * style.lineHeight, "\(id) \(role) arabic: \(arabic)")
+                #expect(box >= FanousTypeface.drawnLine(family: family, style: style), "\(id) \(role) arabic: \(arabic)")
+            }
+            #expect(box == box.rounded(.up))
+        }
+    }
+
     @Test(arguments: ["Source Serif 4", "Amiri", "Noto Kufi Arabic", "Inter"])
     func lineSpacingUsesTheBundledFace(_ family: String) {
         FanousTypeface.register()
@@ -184,6 +200,9 @@ import Testing
         #expect(DisplayFormat.shortDay(date, .en, now: date, calendar: calendar) == "Nov 6")
         #expect(DisplayFormat.shortDay(date, .en, now: later, calendar: calendar) == "Nov 6, 2026")
         #expect(!DisplayFormat.shortDay(date, .ar, now: date, calendar: calendar).contains("6"))
+        // No comma before the year in Arabic: rows join values with «، », so it would read as two values.
+        let arabic = DisplayFormat.shortDay(date, .ar, now: later, calendar: calendar)
+        #expect(arabic.contains("٢٠٢٦") && arabic.contains("نوفمبر") && !arabic.contains("،"))
     }
 
     /// The light page is the web's cream, with no gold wash over it (the old iPad yellow).

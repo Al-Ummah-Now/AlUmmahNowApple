@@ -198,13 +198,18 @@ extension FixtureStudioService: CaptionsServicing, InstitutionServicing, Insight
     }
 
     public func analyticsSummary(channelID: String?) async throws -> AnalyticsSummary {
-        AnalyticsSummary(
-            totalViews: 6_379, totalLikes: 412, totalComments: 96, totalSubscribers: 120, totalVideos: 7,
-            averageViewsPerVideo: 911, engagementRate: 7.9)
+        let videos = FixtureLibrary.watchable
+        let views = videos.reduce(0) { $0 + $1.views }
+        let likes = videos.reduce(0) { $0 + $1.likes }
+        let comments = videos.reduce(0) { $0 + $1.comments }
+        return AnalyticsSummary(
+            totalViews: views, totalLikes: likes, totalComments: comments, totalSubscribers: FixtureLibrary.subscribers,
+            totalVideos: videos.count, averageViewsPerVideo: Double(views / max(1, videos.count)),
+            engagementRate: (Double(likes + comments) / Double(max(1, views)) * 1000).rounded() / 10)
     }
 
     public func dailyMetrics(channelID: String?, period: DateInterval) async throws -> [DailyMetric] {
-        Self.fixtureDays(period)
+        FixtureLibrary.daily(FixtureLibrary.watchable, period)
     }
 
     public func retention(videoID: String, period: DateInterval) async throws -> RetentionCurve {

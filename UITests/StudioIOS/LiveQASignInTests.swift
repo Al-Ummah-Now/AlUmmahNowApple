@@ -97,7 +97,7 @@ final class LiveQAUploadTests: LiveQATestCase {
             swipes += 1
         }
         XCTAssertTrue(playlist.waitForExistence(timeout: 20), "no playlist row")
-        let error = language == "ar" ? "تعذّر" : "We couldn't load"
+        let error = language == "ar" ? "تعذّر" : "We couldn’t load"
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", error)).count, 0)
         keep("upload-playlists-\(language)")
     }
@@ -149,7 +149,7 @@ final class LiveQAManageTests: LiveQATestCase {
     @MainActor
     private func noLoadError(_ app: XCUIApplication) {
         XCTAssertEqual(
-            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "We couldn't load")).count, 0,
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "We couldn’t load")).count, 0,
             "a load error is on screen")
     }
 

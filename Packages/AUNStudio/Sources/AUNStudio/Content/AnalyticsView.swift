@@ -17,49 +17,60 @@ struct AnalyticsView: View {
     @State private var opened: VideoStats?
     @State private var metric: ChartMetric = .views
 
+    /// Where `-AUNScrollTo` can land: the page's top (the range chips) and the daily chart.
+    private static let sections = ["analytics-range", "analytics-daily"]
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-                // The range as chips, the selected one gold (a system segmented control can't take the gradient).
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: FanousScale.spacingSm) {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
+                    // The range as chips, the selected one gold (a system segmented control can't take the gradient). They
+                    // wrap rather than scroll, so no chip is ever cut at the edge.
+                    FlowLayout {
                         ForEach(AnalyticsRange.allCases, id: \.self) { item in
-                            StatusChip(
-                                title: l10n("studio.analytics.days", DisplayFormat.number(item.rawValue, l10n.language)),
-                                selected: range == item
-                            ) { range = item }
-                            .accessibilityIdentifier("range-\(item.rawValue)")
+                            StatusChip(title: DisplayFormat.days(item.rawValue, l10n), selected: range == item) { range = item }
+                                .accessibilityIdentifier("range-\(item.rawValue)")
                         }
                     }
                     .padding(.vertical, 2)
-                }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(l10n("studio.analytics.range"))
-                .accessibilityIdentifier("analytics-range")
-                switch phase {
-                case .loading where current == nil:
-                    ThemeLoader().frame(maxWidth: .infinity, minHeight: 200)
-                case .failed:
-                    ErrorStateView { Task { await load() } }
-                default:
-                    if let current {
-                        tiles(current)
-                        // The chart beside the top videos when there is room (iPad, Mac), one under the other on iPhone.
-                        ViewThatFits(in: .horizontal) {
-                            HStack(alignment: .top, spacing: FanousScale.spacingLg) {
-                                chart(current).frame(minWidth: 460, maxWidth: .infinity)
-                                topVideos(current).frame(minWidth: 300, maxWidth: 420)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(l10n("studio.analytics.range"))
+                    .accessibilityIdentifier("analytics-range")
+                    // The page's top edge, for a review frame that starts a few points down it
+                    // (`-AUNScrollTo analytics-range+<points>`).
+                    .scrollSection("analytics-range")
+                    switch phase {
+                    case .loading where current == nil:
+                        ThemeLoader().frame(maxWidth: .infinity, minHeight: 200)
+                    case .failed:
+                        ErrorStateView { Task { await load() } }
+                    default:
+                        if let current {
+                            tiles(current)
+                            // The chart beside the top videos when there is room (iPad, Mac), one under the other on iPhone.
+                            // ViewThatFits picks by ideal width, so each side's ideal is the width it takes once laid
+                            // out: the side by side row is only chosen when both fit, never wider than the window.
+                            ViewThatFits(in: .horizontal) {
+                                HStack(alignment: .top, spacing: FanousScale.spacingLg) {
+                                    chart(current).frame(minWidth: 460, idealWidth: 460, maxWidth: .infinity)
+                                    topVideos(current).frame(minWidth: 420, idealWidth: 420, maxWidth: 420)
+                                }
+                                VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
+                                    chart(current)
+                                    topVideos(current)
+                                }
                             }
-                            VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-                                chart(current)
-                                topVideos(current)
-                            }
+                            // The chart's top edge in either layout.
+                            .scrollSection("analytics-daily")
                         }
                     }
+                    ScrollTargetRoom(among: Self.sections, aliases: ["analytics-table": "analytics-daily"])
                 }
+                .padding(FanousScale.spacingLg)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(FanousScale.spacingLg)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollsToRequestedSection(
+                proxy, among: Self.sections, aliases: ["analytics-table": "analytics-daily"], ready: current != nil)
         }
         .fanousPage()
         .navigationTitle(l10n("studio.analytics.title"))
@@ -109,26 +120,18 @@ struct AnalyticsView: View {
 
     /// Period numbers from the daily series, each against the period before it; lifetime totals underneath.
     private func tiles(_ stats: ChannelStats) -> some View {
-        func change(_ value: (ChannelStats) -> Double) -> Double? { previous.flatMap { periodChange(value(stats), value($0)) } }
-        return VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 150), spacing: FanousScale.spacingMd)], spacing: FanousScale.spacingMd
-            ) {
-                StatTile(
-                    title: l10n("studio.analytics.views"), value: DisplayFormat.count(stats.periodViews, l10n.language),
-                    change: change { Double($0.periodViews) })
-                StatTile(
-                    title: l10n("studio.analytics.watchTime"), value: ChartScale.watchTime(stats.watchTime, l10n.language),
-                    change: change(\.watchTime))
-                StatTile(
-                    title: l10n("studio.analytics.newSubscribers"),
-                    value: DisplayFormat.count(stats.periodSubscribers, l10n.language),
-                    change: change { Double($0.periodSubscribers) })
+        VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+            // One row of equal tiles where they fit (every language the same height), else one under the other, tighter, so
+            // the chart and its table control stay above the iPhone tab bar in Arabic's taller type too.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: FanousScale.spacingMd) { statTiles(stats, stacked: false) }
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: FanousScale.spacingSm) { statTiles(stats, stacked: true) }
             }
             Text(
                 l10n(
-                    "studio.analytics.lifetime", DisplayFormat.count(stats.totalViews, l10n.language),
-                    DisplayFormat.count(stats.totalSubscribers, l10n.language),
+                    "studio.analytics.lifetime", DisplayFormat.views(stats.totalViews, l10n),
+                    DisplayFormat.subscribers(stats.totalSubscribers, l10n),
                     DisplayFormat.percent(stats.engagementRate / 100, l10n.language, fraction: 0...1))
             )
             .fanousFont(.caption)
@@ -137,20 +140,35 @@ struct AnalyticsView: View {
         }
     }
 
+    @ViewBuilder
+    private func statTiles(_ stats: ChannelStats, stacked: Bool) -> some View {
+        let change = { (value: (ChannelStats) -> Double) -> Double? in
+            previous.flatMap { periodChange(value(stats), value($0)) }
+        }
+        StatTile(
+            title: l10n("studio.analytics.views"), value: DisplayFormat.count(stats.periodViews, l10n.language),
+            change: change { Double($0.periodViews) }, stacked: stacked)
+        StatTile(
+            title: l10n("studio.analytics.watchTime"), value: ChartScale.watchTime(stats.watchTime, l10n.language),
+            change: change(\.watchTime), stacked: stacked)
+        StatTile(
+            title: l10n("studio.analytics.newSubscribers"),
+            value: DisplayFormat.count(stats.periodSubscribers, l10n.language),
+            change: change { Double($0.periodSubscribers) }, stacked: stacked)
+    }
+
     private func chart(_ stats: ChannelStats) -> some View {
         let series = ChartSeries(metric: metric, daily: stats.daily)
         return VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
             Text(l10n("studio.analytics.daily")).fanousFont(.title).foregroundStyle(Fanous.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: FanousScale.spacingSm) {
-                    ForEach(ChartMetric.allCases) { item in
-                        StatusChip(title: l10n(item.titleKey), selected: metric == item) { metric = item }
-                            .accessibilityIdentifier("metric-\(item.id)")
-                    }
+            FlowLayout {
+                ForEach(ChartMetric.allCases) { item in
+                    StatusChip(title: l10n(item.titleKey), selected: metric == item) { metric = item }
+                        .accessibilityIdentifier("metric-\(item.id)")
                 }
-                .padding(.vertical, 2)
             }
+            .padding(.vertical, 2)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(l10n("studio.analytics.metric"))
             .accessibilityIdentifier("analytics-metric")
@@ -168,22 +186,25 @@ struct AnalyticsView: View {
             if stats.topVideos.isEmpty {
                 Text(l10n("studio.analytics.noVideos")).foregroundStyle(Fanous.textSecondary)
             }
-            ForEach(stats.topVideos) { video in
+            // The range's views, as the period above counts them; dividers only between rows.
+            ForEach(Array(stats.topVideos.enumerated()), id: \.element.id) { index, video in
+                if index > 0 { Divider() }
                 Button {
                     opened = video
                 } label: {
-                    HStack {
+                    HStack(alignment: .firstTextBaseline, spacing: FanousScale.spacingMd) {
                         Text(video.displayTitle(l10n.language)).foregroundStyle(Fanous.textPrimary).lineLimit(2)
-                        Spacer()
-                        Text(DisplayFormat.views(video.views, l10n))
+                        Spacer(minLength: 0)
+                        Text(DisplayFormat.views(video.periodViews, l10n))
                             .foregroundStyle(Fanous.textSecondary)
+                            .lineLimit(1)
+                            .fixedSize()
                     }
                     .fanousFont(.body)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("top-\(video.videoID)")
-                Divider()
             }
         }
         .padding(FanousScale.spacingLg)
@@ -198,11 +219,13 @@ struct StatTile: View {
     let title: String
     let value: String
     let change: Double?
+    /// One of a column of tiles (iPhone): less padding, so the column takes less of the screen.
+    var stacked = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
             Text(title).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
-            Text(value).fanousFont(.headline).foregroundStyle(Fanous.textPrimary)
+            Text(value).fanousFont(.headline).foregroundStyle(Fanous.textPrimary).lineLimit(1).fixedSize()
             if let change {
                 Text(
                     l10n(
@@ -213,10 +236,13 @@ struct StatTile: View {
                 .foregroundStyle(change >= 0 ? Fanous.successText : Fanous.errorText)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(FanousScale.spacingMd)
-        .fanousMaterial(.card) { .rounded($0.md) }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, FanousScale.spacingMd)
+        .padding(.vertical, stacked ? FanousScale.spacingSm : FanousScale.spacingMd)
+        // Combined inside the card: outside it, the element's frame took in the card's shadow and VoiceOver's
+        // outline (and the review edge check) ran far past the card.
         .accessibilityElement(children: .combine)
+        .fanousMaterial(.card) { .rounded($0.md) }
     }
 }
 

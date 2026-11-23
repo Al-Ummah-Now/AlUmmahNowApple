@@ -17,13 +17,22 @@ struct ContentModelTests {
         let model = ContentModel(channelID: "fixture-channel", services: .fixtures(signedIn: true))
         model.reload()
         try await settle(model)
-        #expect(model.items.count == 3)
-        #expect(model.counts[.published] == 3)
+        #expect(model.items.count == 7)
+        #expect(model.counts[.published] == 7)
         #expect(model.counts[.drafts] == 1)
         model.status = .drafts
         try await Task.sleep(for: .milliseconds(50))
         try await settle(model)
-        #expect(model.items.map(\.id) == ["fixture-content-5"])
+        #expect(model.items.map(\.id) == ["fixture-content-9"])
+    }
+
+    /// Every chip has a count once they load, an empty status too: "Failed 0", «فشلت ٠».
+    @Test func emptyStatusChipsShowZero() {
+        let counts: ContentCounts = [.published: 7, .drafts: 1]
+        #expect(ContentView.chipTitle("Failed", status: .failed, counts: counts, language: .en) == "Failed 0")
+        #expect(ContentView.chipTitle("فشلت", status: .failed, counts: counts, language: .ar) == "فشلت ٠")
+        #expect(ContentView.chipTitle("Published", status: .published, counts: counts, language: .en) == "Published 7")
+        #expect(ContentView.chipTitle("Failed", status: .failed, counts: [:], language: .en) == "Failed")
     }
 
     @Test func softDeleteThenRestoreFromRecentlyDeleted() async throws {
@@ -67,7 +76,7 @@ struct ContentModelTests {
         try await settle(model)
         model.searchText = "khut"
         await model.suggest("khut")
-        #expect(model.suggestions.first?.itemID == "fixture-content-3")
+        #expect(model.suggestions.first?.itemID == "fixture-content-1")
         await model.suggest("k")
         #expect(model.suggestions.isEmpty)
     }

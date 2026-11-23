@@ -86,16 +86,31 @@ public enum FanousTypeface {
     private static let leadings = OSAllocatedUnfairLock<[LeadingKey: CGFloat]>(initialState: [:])
 
     private static func measureLeading(family: String?, style: FanousTypeStyle) -> CGFloat {
+        max(0, style.size * style.lineHeight - naturalLine(family: family, size: style.size))
+    }
+
+    /// The face's own line height at `size`: ascent, descent and leading.
+    private static func naturalLine(family: String?, size: Double) -> CGFloat {
         register()
         let font: CTFont? =
             family.map {
                 let descriptor = CTFontDescriptorCreateWithAttributes([kCTFontFamilyNameAttribute: $0] as CFDictionary)
-                return CTFontCreateWithFontDescriptor(descriptor, style.size, nil)
-            } ?? CTFontCreateUIFontForLanguage(.system, style.size, nil)
-        guard let font else { return 0 }
-        let natural = CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)
-        return max(0, style.size * style.lineHeight - natural)
+                return CTFontCreateWithFontDescriptor(descriptor, size, nil)
+            } ?? CTFontCreateUIFontForLanguage(.system, size, nil)
+        guard let font else { return size }
+        return CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)
     }
+
+    /// How tall one line of `style` in `family` is drawn: the scale's line height, or the face's own when that is taller.
+    static func drawnLine(family: String?, style: FanousTypeStyle) -> CGFloat {
+        let key = LeadingKey(family: family, size: style.size, lineHeight: style.lineHeight)
+        if let known = lines.withLock({ $0[key] }) { return known }
+        let value = max(style.size * style.lineHeight, naturalLine(family: family, size: style.size))
+        lines.withLock { $0[key] = value }
+        return value
+    }
+
+    private static let lines = OSAllocatedUnfairLock<[LeadingKey: CGFloat]>(initialState: [:])
 
     static func weight(_ value: Int) -> Font.Weight {
         switch value {
@@ -125,20 +140,116 @@ extension FanousTheme {
 private struct FanousFontModifier: ViewModifier {
     @Environment(\.fanous) private var theme
     @Environment(\.locale) private var locale
+    /// Dynamic Type's factor for the role, as a percentage of the default size.
+    @ScaledMetric private var percent: CGFloat
     let role: FanousTextRole
+
+    init(role: FanousTextRole) {
+        _percent = ScaledMetric(wrappedValue: 100, relativeTo: role.textStyle)
+        self.role = role
+    }
 
     func body(content: Content) -> some View {
         let arabic = locale.language.languageCode == .arabic
         let style = role.style(arabic: arabic)
         let family = FanousTypeface.family(arabic ? theme.tokens.font.arabic : theme.tokens.font.latin)
-        content
-            .font(theme.font(role, arabic: arabic))
-            .tracking(style.letterSpacing)
-            .lineSpacing(FanousTypeface.extraLeading(family: family, style: style))
+        let styled = content.font(theme.font(role, arabic: arabic)).tracking(style.letterSpacing)
+        if #available(iOS 26.0, macOS 26.0, tvOS 26.0, *) {
+            // Every line, the first included, is the role's line box: the taller of the theme's Latin and Arabic
+            // lines. English and Arabic rows are then the same height everywhere, so a screen lines up in both.
+            styled.lineHeight(.exact(points: FanousTypeface.scaledLineBox(theme.lineBox(role), percent: percent)))
+        } else {
+            styled.lineSpacing(FanousTypeface.extraLeading(family: family, style: style))
+        }
     }
+}
+
+extension FanousTypeface {
+    /// A line box at the reader's Dynamic Type size, in whole points.
+    static func scaledLineBox(_ box: CGFloat, percent: CGFloat) -> CGFloat { (box * percent / 100).rounded(.up) }
 }
 
 extension View {
     /// Text in a token type role, in the site theme's typeface and the language's scale.
     public func fanousFont(_ role: FanousTextRole) -> some View { modifier(FanousFontModifier(role: role)) }
+}
+
+extension FanousTheme {
+    /// One line of `role` at the default text size: the taller of the theme's Latin and Arabic lines, so a box sized
+    /// from it is the same in both languages and fits either script.
+    public func lineBox(_ role: FanousTextRole) -> CGFloat {
+        let latin = FanousTypeface.drawnLine(family: FanousTypeface.family(tokens.font.latin), style: role.style(arabic: false))
+        let arabic = FanousTypeface.drawnLine(
+            family: FanousTypeface.family(tokens.font.arabic), style: role.style(arabic: true))
+        return max(latin, arabic).rounded(.up)
+    }
+}
+
+private struct FanousLineBoxModifier: ViewModifier {
+    @Environment(\.fanous) private var theme
+    @Environment(\.locale) private var locale
+    /// Dynamic Type's factor for the role, as a percentage of the default size.
+    @ScaledMetric private var percent: CGFloat
+    let role: FanousTextRole
+    let lines: Int
+    let alignment: Alignment
+
+    init(role: FanousTextRole, lines: Int, alignment: Alignment) {
+        _percent = ScaledMetric(wrappedValue: 100, relativeTo: role.textStyle)
+        self.role = role
+        self.lines = lines
+        self.alignment = alignment
+    }
+
+    func body(content: Content) -> some View {
+        let arabic = locale.language.languageCode == .arabic
+        let family = FanousTypeface.family(arabic ? theme.tokens.font.arabic : theme.tokens.font.latin)
+        let box = FanousTypeface.scaledLineBox(theme.lineBox(role), percent: percent)
+        LineBoxLayout(box: box, drawn: drawnLine(family: family, arabic: arabic, box: box)) {
+            content.lineLimit(lines).frame(maxWidth: .infinity, alignment: alignment)
+        }
+    }
+}
+
+extension FanousLineBoxModifier {
+    /// How tall one line of the text is drawn: the box itself where `fanousFont` sets an exact line height.
+    fileprivate func drawnLine(family: String?, arabic: Bool, box: CGFloat) -> CGFloat {
+        if #available(iOS 26.0, macOS 26.0, tvOS 26.0, *) { return box }
+        return FanousTypeface.drawnLine(family: family, style: role.style(arabic: arabic)) * percent / 100
+    }
+}
+
+/// Lays text out at its width and gives it `box` points for each line it draws, whatever the script's own line.
+private struct LineBoxLayout: Layout {
+    let box: CGFloat
+    let drawn: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let text = subviews.first else { return .zero }
+        let natural = text.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: proposal.width ?? natural.width, height: height(natural.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let text = subviews.first else { return }
+        let natural = text.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+        // The text's lines centred in their boxes, so a taller script overflows its box evenly, never into the next row.
+        let top = bounds.minY + (bounds.height - natural.height) / 2
+        text.place(at: CGPoint(x: bounds.minX, y: top), proposal: ProposedViewSize(width: bounds.width, height: nil))
+    }
+
+    /// Whole lines drawn: n lines are n script lines less the spacing after the last one, so rounding finds n.
+    private func height(_ natural: CGFloat) -> CGFloat {
+        let lines = max(1, (natural / max(drawn, 1)).rounded())
+        return (lines * box).rounded(.up)
+    }
+}
+
+extension View {
+    /// Text in boxes of a fixed line height, the same in English and Arabic: each line the text draws (at most `lines`)
+    /// takes `role`'s line box, the taller of the theme's Latin and Arabic lines. The taller Arabic line can then never
+    /// push what follows further down the page. The boxes follow the theme's faces and Dynamic Type.
+    public func fanousLineBox(_ role: FanousTextRole, lines: Int = 1, alignment: Alignment = .leading) -> some View {
+        modifier(FanousLineBoxModifier(role: role, lines: lines, alignment: alignment))
+    }
 }

@@ -41,30 +41,27 @@
             }
         }
 
-        private var rails: [HomeRail] {
-            [
-                HomeRail(kind: .trending, videos: Array(FixtureCatalogService.videos.prefix(3))),
-                HomeRail(kind: .recent, videos: Array(FixtureCatalogService.videos.suffix(3))),
+        /// Title cards in the snapshot's language, as the app shows them.
+        private func rails(_ language: AppLanguage) -> [HomeRail] {
+            let videos = FixtureCatalogService.videos(arabic: language == .ar)
+            return [
+                HomeRail(kind: .trending, videos: Array(videos.prefix(3))),
+                HomeRail(kind: .recent, videos: Array(videos.suffix(3))),
             ]
         }
 
-        private var content: WatchContent {
-            WatchContent(
-                video: FixtureCatalogService.videos[0],
-                chapters: [
-                    Chapter(
-                        id: "1", startTime: 0, title: "Introduction",
-                        titleLocalized: LocalizedText(en: "Introduction", ar: "المقدمة")),
-                    Chapter(
-                        id: "2", startTime: 90, title: "Sources", titleLocalized: LocalizedText(en: "Sources", ar: "المصادر")),
-                ])
+        /// The first video with its own chapters, as the watch page loads them.
+        private func content(_ language: AppLanguage) -> WatchContent {
+            let video = FixtureCatalogService.videos(arabic: language == .ar)[0]
+            return WatchContent(video: video, chapters: FixtureLibrary.chapters(viewerID: video.id))
         }
 
         @Test(arguments: themes, languages)
         func home(theme: FanousThemeID, language: AppLanguage) {
             for style in Self.styles {
                 assertView(
-                    HomeRailsContent(rails: rails, open: { _ in }), name: "home", theme: theme, language: language, style: style)
+                    HomeRailsContent(rails: rails(language), open: { _ in }), name: "home", theme: theme, language: language,
+                    style: style)
             }
         }
 
@@ -85,8 +82,10 @@
         func watchDetails(theme: FanousThemeID, language: AppLanguage) {
             for style in Self.styles {
                 assertView(
-                    WatchDetails(content: content, seek: { _ in }).padding().frame(maxHeight: .infinity, alignment: .top)
-                        .fanousMaterial(.page),
+                    WatchDetails(content: content(language), seek: { _ in }).padding().frame(
+                        maxHeight: .infinity, alignment: .top
+                    )
+                    .fanousMaterial(.page),
                     name: "watch", theme: theme, language: language, style: style)
             }
         }

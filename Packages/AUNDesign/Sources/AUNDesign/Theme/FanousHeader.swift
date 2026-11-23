@@ -150,12 +150,52 @@ private struct FanousHeaderBar: ViewModifier {
                 .toolbarBackground(FanousHeader.style(theme), for: .windowToolbar)
                 .toolbarBackground(.visible, for: .windowToolbar)
                 .toolbarColorScheme(.dark, for: .windowToolbar)
+                .background(DarkTitlebar().frame(width: 0, height: 0))
                 .safeAreaInset(edge: .top, spacing: 0) { FanousHeaderEdge() }
         #else
             content.safeAreaInset(edge: .top, spacing: 0) { FanousHeaderEdge() }
         #endif
     }
 }
+
+#if os(macOS)
+    /// The header is dark in every mode, so the title bar takes the dark appearance: `toolbarColorScheme` only reaches the
+    /// toolbar's text, and in light mode the glass behind the title, the sidebar button and menus stayed white.
+    private struct DarkTitlebar: NSViewRepresentable {
+        func makeNSView(context: Context) -> NSView { Probe() }
+        func updateNSView(_ nsView: NSView, context: Context) {}
+
+        final class Probe: NSView {
+            private var observer: NSObjectProtocol?
+
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                // Leaving the window (also on the way out) stops the observation.
+                if let observer { NotificationCenter.default.removeObserver(observer) }
+                observer = nil
+                guard let window else { return }
+                Self.apply(to: window)
+                // The title bar is rebuilt when the toolbar changes (Studio's split view mounts after sign-in) and the
+                // chosen colour scheme resets appearances, so keep asserting it; it only writes when it differs.
+                observer = NotificationCenter.default.addObserver(
+                    forName: NSWindow.didUpdateNotification, object: window, queue: .main
+                ) { [weak window] _ in
+                    MainActor.assumeIsolated {
+                        if let window { Probe.apply(to: window) }
+                    }
+                }
+            }
+
+            // The close button sits in the title bar view; its container also holds the split view's sidebar items
+            // (where right-to-left windows put the sidebar button).
+            @MainActor static func apply(to window: NSWindow) {
+                guard let titlebar = window.standardWindowButton(.closeButton)?.superview else { return }
+                let bar = titlebar.superview ?? titlebar
+                if bar.appearance?.name != .darkAqua { bar.appearance = NSAppearance(named: .darkAqua) }
+            }
+        }
+    }
+#endif
 
 extension View {
     /// Puts the web header on this screen's bar: the header gradient behind the bar and the status bar, light bar

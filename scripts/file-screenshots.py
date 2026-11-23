@@ -5,8 +5,10 @@
 
 Attachments named store_<en|ar>_<theme>_<NN>_<screen> become <out>/<en-US|ar-SA>/<device>-<NN>-<screen>-<theme>.png.
 Each image must have an App Store size for its device; Mac windows are scaled and centred on a 2880×1800 canvas.
+Text the UI test found cut by the frame's top or bottom edge fails the run, after every frame is filed.
 """
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -22,6 +24,8 @@ SIZES = {
 }
 MAC = (2880, 1800)
 NAME = re.compile(r"store_(en|ar)_(dark|light)_(\d\d)_([a-z-]+)")
+# Text the UI test found cut by a frame edge (UITests/Shared/FrameEdges.swift), one report per frame.
+FOLD = re.compile(r"(fold|layout)_(en|ar)_(dark|light)_(\d\d)_([a-z-]+)")
 
 
 def size(path: pathlib.Path) -> tuple[int, int]:
@@ -60,6 +64,17 @@ def main() -> int:
     filed = 0
     errors = []
     for exported, human in attachments(manifest):
+        fold = FOLD.search(human) or FOLD.search(exported)
+        if fold:
+            _, language, theme, index, screen = fold.groups()
+            # Review runs keep each frame's element layout beside the frames, for the audit's measurements.
+            report = out / "edges" / f"{device}-{index}-{screen}-{language}-{theme}.txt"
+            report.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / exported, report)
+            for line in (source / exported).read_text().splitlines():
+                if line.startswith("CUT "):
+                    errors.append(f"{device}-{index}-{screen}-{language}-{theme}: {line[4:]}")
+            continue
         match = NAME.search(human) or NAME.search(exported)
         if not match:
             continue
@@ -67,10 +82,13 @@ def main() -> int:
         target = out / LOCALES[language] / f"{device}-{index}-{screen}-{theme}.png"
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / exported, target)
-        if device == "mac":
+        # Review frames (AUN_REVIEW_SHOTS=1) keep the Mac window as captured, cropped to the window at the display's
+        # backing scale, with no scaling or letterbox. Store frames go on the 2880×1800 canvas.
+        review_mac = device == "mac" and os.environ.get("AUN_REVIEW_SHOTS") == "1"
+        if device == "mac" and not review_mac:
             fit_mac(target, theme)
         got = size(target)
-        if got not in SIZES[device]:
+        if not review_mac and got not in SIZES[device]:
             errors.append(f"{target}: {got[0]}×{got[1]} is not an App Store size for {device}")
         filed += 1
     for error in errors:

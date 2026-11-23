@@ -52,16 +52,26 @@ struct StudioToolbar: ToolbarContent {
                 identity
             }
         #else
-            ToolbarItem(placement: .navigation) { FanousHeaderTitle(title) }
+            // The title is text on the header, not a control: no glass capsule behind it on macOS 26.
+            if #available(macOS 26, *) {
+                macTitle.sharedBackgroundVisibility(.hidden)
+            } else {
+                macTitle
+            }
         #endif
     }
+
+    #if os(macOS)
+        private var macTitle: some ToolbarContent { ToolbarItem(placement: .navigation) { FanousHeaderTitle(title) } }
+    #endif
 }
 
 extension View {
-    /// The web header on the bar (opaque), so content never shows through the bar's controls as it scrolls.
-    func studioNavigationBar() -> some View {
+    /// The web header on the bar (opaque), so content never shows through the bar's controls as it scrolls. `large`
+    /// is the large leading title; iPad's tab roots turn it off, their tabs taking the middle of the bar instead.
+    func studioNavigationBar(large: Bool = true) -> some View {
         #if os(iOS)
-            modifier(SolidNavigationBar())
+            modifier(SolidNavigationBar(large: large))
         #else
             self
         #endif
@@ -70,10 +80,12 @@ extension View {
 
 #if os(iOS)
     private struct SolidNavigationBar: ViewModifier {
+        let large: Bool
+
         func body(content: Content) -> some View {
             // Every Studio screen, pushed ones included, uses the same large leading title (a pushed screen left on the
-            // automatic mode drew no visible title on the iOS 26 header).
-            let solid = content.toolbarTitleDisplayMode(.inlineLarge).fanousHeaderBar()
+            // automatic mode drew no visible title on the iOS 26 header). A large title leaves no room for a middle item.
+            let solid = content.toolbarTitleDisplayMode(large ? .inlineLarge : .inline).fanousHeaderBar()
             if #available(iOS 26, *) {
                 // Hard edges: scrolled text never shows through the header or the glass tab bar.
                 solid.scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
@@ -142,6 +154,12 @@ struct ChannelGate<Content: View>: View {
         @State private var showingAccounts = false
         @State private var tab: Tab = .home
 
+        /// iPad shows the tabs on the header as `HeaderTabs`, in the header's own colours. The system's floating bar
+        /// there took a light or a dark glass screen by screen (only the screen with a search field came out dark), with
+        /// the selected label at 2.5–3:1 on the light themes, and no public setting reached it. iPhone keeps the
+        /// system tab bar, which sits on the page.
+        private var pad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
         var body: some View {
             tabs
                 .safeAreaInset(edge: .top, spacing: 0) { AccountStateBanner(session: session) }
@@ -185,9 +203,19 @@ struct ChannelGate<Content: View>: View {
             NavigationStack {
                 content()
                     .navigationTitle(title)
-                    .toolbarTitleDisplayMode(.inlineLarge)
+                    .toolbarTitleDisplayMode(pad ? .inline : .inlineLarge)
                     .toolbar { StudioToolbar(title: title, session: session, showingAccounts: $showingAccounts) }
-                    .studioNavigationBar()
+                    .studioNavigationBar(large: !pad)
+                    .fanousBottomEdge(corner: pad ? 12 : 0)
+                    .toolbar(pad ? .hidden : .automatic, for: .tabBar)
+                    .toolbar {
+                        if pad {
+                            HeaderTabsItem(
+                                tabs: HeaderTabs(
+                                    tabs: ordered.map { HeaderTabs.Item(id: $0, title: self.title($0)) },
+                                    selection: $tab, badged: .upload, badge: activeUploads))
+                        }
+                    }
             }
         }
 
@@ -234,25 +262,19 @@ struct ChannelGate<Content: View>: View {
             }
         }
 
-        /// iOS 18+: the adaptable tab view, so iPad gets the sidebar and iPhone the (Liquid Glass) tab bar, which
-        /// shrinks while scrolling down on iOS 26. iOS 17 keeps the classic tab bar.
+        /// iOS 18+: iPhone gets the (Liquid Glass) tab bar, always at full size so every tab stays labelled in both
+        /// languages; iPad only switches pages, its tabs being `HeaderTabs` on the header. iOS 17 keeps the classic tab
+        /// view, its bar hidden on iPad the same way.
         @ViewBuilder private var tabs: some View {
             if #available(iOS 18, *) {
-                let adaptable = TabView(selection: $tab) {
+                let view = TabView(selection: $tab) {
                     ForEach(ordered, id: \.self) { item in
                         SwiftUI.Tab(title(item), systemImage: icon(item), value: item) { page(item) }
                             .badge(item == .upload ? activeUploads : 0)
                             .accessibilityIdentifier("tab-\(item)")
                     }
                 }
-                .tabViewStyle(.sidebarAdaptable)
-                // iPad opens on the sidebar (the approved layout); iPhone keeps the tab bar.
-                .defaultAdaptableTabBarPlacement(.sidebar)
-                if #available(iOS 26, *) {
-                    adaptable.tabBarMinimizeBehavior(.onScrollDown)
-                } else {
-                    adaptable
-                }
+                if pad { view.tabViewStyle(.tabBarOnly) } else { view.tabViewStyle(.sidebarAdaptable) }
             } else {
                 TabView(selection: $tab) {
                     ForEach(ordered, id: \.self) { item in
@@ -276,45 +298,26 @@ struct ChannelGate<Content: View>: View {
 
         var body: some View {
             NavigationSplitView {
-                List(sections) { item in
-                    // The active section in the theme's gold "active" material, not the system accent: a gold accent
-                    // would put white text on gold (below 4.5:1), and blue is not the brand.
-                    let selected = item == (section ?? .home)
-                    Button {
-                        section = item
-                    } label: {
-                        Label {
-                            Text(l10n(item.titleKey))
-                                .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerText))
-                                .fontWeight(selected ? .semibold : .regular)
-                        } icon: {
-                            // One icon column: every glyph centred in the same width, so labels line up.
-                            Image(systemName: item.icon)
-                                .foregroundStyle(selected ? Fanous.part(\.drawerActiveText) : Fanous.part(\.drawerIcon))
-                                .frame(width: 20, alignment: .center)
-                        }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background {
-                            if selected { FanousSurfaceKind(kind: .active, shape: .rounded(8)) }
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .listRowSeparator(.hidden)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                    .accessibilityIdentifier("section-\(item.rawValue)")
-                }
-                // A list that fits never scrolls, so no section slides under the title bar.
-                .scrollBounceBehavior(.basedOnSize)
-                // Identity at the head of the sidebar: the only identity control on the Mac.
-                .safeAreaInset(edge: .top, spacing: 0) {
+                // Identity at the head of the sidebar, the only identity control on the Mac, then the sections. A plain
+                // stack, not a list inset: the inset drew a scroll-edge divider under the card in one language only, and
+                // put the card against the title bar. Here it has the same gap above as at its sides, in every language.
+                VStack(spacing: 0) {
                     IdentityMenu(session: session, showingAccounts: $showingAccounts, style: .sidebar)
-                        .padding(.horizontal, FanousScale.spacingSm)
+                        .padding([.horizontal, .top], FanousScale.spacingSm)
                         .padding(.bottom, FanousScale.spacingSm)
+                    List(sections) { item in
+                        FanousSidebarRow(l10n(item.titleKey), icon: item.icon, selected: item == (section ?? .home)) {
+                            section = item
+                        }
+                        .accessibilityIdentifier("section-\(item.rawValue)")
+                    }
+                    // A list that fits never scrolls, so no section slides under the card.
+                    .scrollBounceBehavior(.basedOnSize)
+                    .scrollEdgeEffectHiddenIfAvailable()
                 }
-                .navigationSplitViewColumnWidth(min: 190, ideal: 220)
+                .toolbar(removing: .sidebarToggle)
+                // Wide enough for the longest section and the channel name, so none is cut short.
+                .navigationSplitViewColumnWidth(min: 240, ideal: 240)
             } detail: {
                 NavigationStack {
                     Group {
@@ -332,6 +335,7 @@ struct ChannelGate<Content: View>: View {
                         }
                     }
                     .toolbar {
+                        FanousSidebarToggle()
                         StudioToolbar(
                             title: l10n((section ?? .home).titleKey), session: session, showingAccounts: $showingAccounts)
                     }
@@ -342,7 +346,9 @@ struct ChannelGate<Content: View>: View {
                     .fanousHeaderBar()
                 }
             }
-            .frame(minWidth: 960, minHeight: 600)
+            // The content's minimum, under the 52-point toolbar: low enough for the review frames' 592-point window
+            // (AutomationWindow), which a higher minimum would stretch.
+            .frame(minWidth: 960, minHeight: 520)
             .sheet(isPresented: $showingAccounts) { AccountsView(session: session) }
             .task(id: session.linkSerial) {
                 guard let linked = session.linkedSection else { return }
@@ -395,6 +401,20 @@ struct ChannelGate<Content: View>: View {
                 content.toolbar(removing: .title)
             } else {
                 content
+            }
+        }
+    }
+#endif
+
+#if os(macOS)
+    extension View {
+        /// No scroll-edge line at the top of the sidebar list (macOS 26 draws one under whatever sits above a list).
+        @ViewBuilder
+        fileprivate func scrollEdgeEffectHiddenIfAvailable() -> some View {
+            if #available(macOS 26, *) {
+                scrollEdgeEffectHidden(true, for: .top)
+            } else {
+                self
             }
         }
     }

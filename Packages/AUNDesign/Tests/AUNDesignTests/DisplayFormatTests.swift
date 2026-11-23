@@ -28,7 +28,7 @@ import Testing
             DisplayFormat.duration(3661, language),
             DisplayFormat.timecode(milliseconds: 15_000, language),
             DisplayFormat.timecode(milliseconds: 3_725_400, language),
-            L10n(language)("studio.analytics.days", DisplayFormat.number(28, language)),
+            DisplayFormat.days(28, L10n(language)),
             L10n(language)("player.skipForward", DisplayFormat.number(10, language)),
         ]
     }
@@ -56,9 +56,18 @@ import Testing
     }
 
     @Test func arabicExamples() {
-        #expect(DisplayFormat.number(6075, .ar) == "٦٬٠٧٥")
+        #expect(DisplayFormat.number(6075, .ar) == "٦٠٧٥")
         #expect(DisplayFormat.duration(75, .ar) == "١:١٥")
         #expect(DisplayFormat.timecode(milliseconds: 15_000, .ar) == "٠:١٥٫٠")
+    }
+
+    /// SF Arabic draws «٬» and «٫» alike, so the decimal mark must be the only one in Arabic text.
+    @Test func arabicNumbersNeverCarryTheThousandsMark() {
+        for text in Self.samples(.ar) { #expect(!text.contains("\u{066C}"), "\(text)") }
+        #expect(DisplayFormat.number(20_325, .ar) == "٢٠٣٢٥")
+        #expect(DisplayFormat.number(1_234.5, .ar, fraction: 1...1) == "١٢٣٤٫٥")
+        #expect(DisplayFormat.count(128_800, .ar).contains("١٢٨٫٨"))
+        #expect(DisplayFormat.number(20_325, .en) == "20,325")
     }
 
     @Test func pinnedLocaleIgnoresTheDeviceNumberingSystem() {
@@ -89,14 +98,171 @@ import Testing
         #expect(views(1200, L10n(.en)) == "1.2K views")
     }
 
+    /// Owner rule 2026-11-20 (same on Android, Apple, Desktop, web): under 1,000 the noun agrees with the full count;
+    /// from 1K the noun is the singular «مشاهدة» and the scale word agrees with the number shown (one decimal,
+    /// truncated). Exactly 1 and 2 drop the digit; 2 before a noun is the construct «ألفا», never a digit + dual.
+    static let viewCases: [(count: Int, ar: String, en: String)] = [
+        (1, "مشاهدة واحدة", "1 view"),
+        (2, "مشاهدتان", "2 views"),
+        (3, "٣ مشاهدات", "3 views"),
+        (8, "٨ مشاهدات", "8 views"),
+        (10, "١٠ مشاهدات", "10 views"),
+        (11, "١١ مشاهدة", "11 views"),
+        (100, "١٠٠ مشاهدة", "100 views"),
+        (1_000, "ألف مشاهدة", "1K views"),
+        (1_300, "١٫٣ ألف مشاهدة", "1.3K views"),
+        (1_310, "١٫٣ ألف مشاهدة", "1.3K views"),
+        (2_000, "ألفا مشاهدة", "2K views"),
+        (2_500, "٢٫٥ ألف مشاهدة", "2.5K views"),
+        (3_000, "٣ آلاف مشاهدة", "3K views"),
+        (8_000, "٨ آلاف مشاهدة", "8K views"),
+        (8_020, "٨ آلاف مشاهدة", "8K views"),
+        (11_000, "١١ ألف مشاهدة", "11K views"),
+        (12_000, "١٢ ألف مشاهدة", "12K views"),
+        (11_500, "١١٫٥ ألف مشاهدة", "11.5K views"),
+        (100_000, "١٠٠ ألف مشاهدة", "100K views"),
+        (120_000, "١٢٠ ألف مشاهدة", "120K views"),
+        (1_000_000, "١ م مشاهدة", "1M views"),
+        (1_200_000, "١٫٢ م مشاهدة", "1.2M views"),
+        (2_000_000, "٢ م مشاهدة", "2M views"),
+        (3_000_000, "٣ م مشاهدة", "3M views"),
+        (15_000_000, "١٥ م مشاهدة", "15M views"),
+        (2_000_000_000, "مليارا مشاهدة", "2B views"),
+        (3_000_000_000, "٣ مليارات مشاهدة", "3B views"),
+        (12_000_000_000, "١٢ مليار مشاهدة", "12B views"),
+    ]
+
+    static func visible(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{2068}", with: "").replacingOccurrences(of: "\u{2069}", with: "")
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+    }
+
+    @Test(arguments: viewCases.indices)
+    func viewCountsAgreeInBothLanguages(_ index: Int) {
+        let item = Self.viewCases[index]
+        #expect(Self.visible(DisplayFormat.views(item.count, L10n(.ar))) == item.ar)
+        #expect(Self.visible(DisplayFormat.views(item.count, L10n(.en))) == item.en)
+    }
+
+    /// Compact numbers without a noun (tiles, chart ticks): the dual stands alone, and a whole number ending in 11–99
+    /// takes the accusative («١٢ ألفًا»); 100 and decimals stay singular (owner rule 2026-11-21).
+    static let tickCases: [(value: Double, ar: String, en: String)] = [
+        (500, "٥٠٠", "500"),
+        (1_000, "ألف", "1K"),
+        (1_500, "١٫٥ ألف", "1.5K"),
+        (2_000, "ألفان", "2K"),
+        (3_000, "٣ آلاف", "3K"),
+        (4_887, "٤٫٨ ألف", "4.8K"),
+        (11_500, "١١٫٥ ألف", "11.5K"),
+        (12_000, "١٢ ألفًا", "12K"),
+        (100_000, "١٠٠ ألف", "100K"),
+        (111_000, "١١١ ألفًا", "111K"),
+        (120_000, "١٢٠ ألفًا", "120K"),
+        (1_000_000, "١ م", "1M"),
+        (1_200_000, "١٫٢ م", "1.2M"),
+        (2_000_000, "٢ م", "2M"),
+        (3_000_000, "٣ م", "3M"),
+        (15_000_000, "١٥ م", "15M"),
+        (12_000_000_000, "١٢ مليارًا", "12B"),
+    ]
+
+    @Test(arguments: tickCases.indices)
+    func compactLabelsWithoutANoun(_ index: Int) {
+        let item = Self.tickCases[index]
+        #expect(Self.visible(DisplayFormat.compact(item.value, .ar)) == item.ar)
+        #expect(Self.visible(DisplayFormat.compact(item.value, .en)) == item.en)
+        #expect(Self.visible(DisplayFormat.count(Int(item.value), .ar)) == item.ar)
+        #expect(Self.visible(DisplayFormat.count(Int(item.value), .en)) == item.en)
+    }
+
+    /// English and Arabic show the same number: truncated to one decimal, ".0" dropped (as on Android).
+    static let truncationCases: [(value: Int, en: String, ar: String)] = [
+        (1_299, "1.2K", "١٫٢ ألف"),
+        (1_300, "1.3K", "١٫٣ ألف"),
+        (33_600, "33.6K", "٣٣٫٦ ألف"),
+        (20_600, "20.6K", "٢٠٫٦ ألف"),
+        (999_999, "999.9K", "٩٩٩٫٩ ألف"),
+        (1_250_000, "1.2M", "١٫٢ م"),
+        (1_299_999, "1.2M", "١٫٢ م"),
+        (15_000_000, "15M", "١٥ م"),
+        (12_000, "12K", "١٢ ألفًا"),
+        (999, "999", "٩٩٩"),
+    ]
+
+    @Test(arguments: truncationCases.indices)
+    func compactCountsTruncateTheSameInBothLanguages(_ index: Int) {
+        let item = Self.truncationCases[index]
+        #expect(Self.visible(DisplayFormat.count(item.value, .en)) == item.en)
+        #expect(Self.visible(DisplayFormat.count(item.value, .ar)) == item.ar)
+        #expect(Self.visible(DisplayFormat.compact(Double(item.value), .en)) == item.en)
+        #expect(Self.visible(DisplayFormat.views(item.value, L10n(.en))) == "\(item.en) views")
+    }
+
+    @Test func subscribersAgreeLikeViews() {
+        let ar = L10n(.ar)
+        #expect(Self.visible(DisplayFormat.subscribers(1, ar)) == "مشترك واحد")
+        #expect(Self.visible(DisplayFormat.subscribers(5, ar)) == "٥ مشتركين")
+        #expect(Self.visible(DisplayFormat.subscribers(2_000, ar)) == "ألفا مشترك")
+        #expect(Self.visible(DisplayFormat.subscribers(2_000, L10n(.en))) == "2K subscribers")
+        #expect(
+            Self.visible(ar("studio.analytics.lifetime", DisplayFormat.views(2_000, ar), DisplayFormat.subscribers(3, ar), "٥٪"))
+                == "منذ البداية: ألفا مشاهدة، ٣ مشتركين، تفاعل ٥٪")
+    }
+
+    @Test func arabicScaleWordAgreesWithTheShownNumber() {
+        let ar: (Int) -> String = { Self.visible(DisplayFormat.count($0, .ar)) }
+        #expect(ar(1_050) == "ألف")  // truncated to 1.0
+        #expect(ar(1_990) == "١٫٩ ألف")  // truncated, not rounded to «ألفان»
+        #expect(ar(2_050) == "ألفان")
+        #expect(ar(10_050) == "١٠ آلاف")
+        #expect(ar(10_999) == "١٠٫٩ ألف")
+        #expect(ar(11_000) == "١١ ألفًا")
+        #expect(ar(999_999) == "٩٩٩٫٩ ألف")
+        #expect(ar(1_000_000) == "١ م")
+        #expect(ar(1_990_000) == "١٫٩ م")  // truncated, never «٢ م»
+        #expect(ar(2_500_000_000) == "٢٫٥ مليار")
+        #expect(ar(2_000_000_000) == "ملياران")
+        #expect(ar(7_000_000_000) == "٧ مليارات")
+        #expect(ar(999) == "٩٩٩")
+        #expect(DisplayFormat.count(8_020, .en) == "8K")
+    }
+
     @Test func arabicSeparatorIsNotMistakenForZero() {
         let line = DisplayFormat.meta(["عام", "١٫٥ ألف مشاهدة", nil, ""], .ar)
         #expect(!line.contains("·"))
-        #expect(line.contains(" • "))
+        #expect(!line.contains("•"))
+        #expect(Self.visible(line) == "\u{200F}عام، ١٫٥ ألف مشاهدة")
         #expect(line.hasPrefix("\u{200F}"))
         #expect(
             DisplayFormat.meta(["Al Ummah Now", "1.2K views"], .en) == "\u{2068}Al Ummah Now\u{2069} · \u{2068}1.2K views\u{2069}"
         )
-        #expect(!L10n(.ar)("studio.analytics.lifetime", "١", "٢", "٣").contains("·"))
+        let lifetime = L10n(.ar)("studio.analytics.lifetime", "١", "٢", "٣")
+        #expect(!lifetime.contains("·") && !lifetime.contains("•"))
+    }
+
+    /// Analytics ranges: 3–10 take the plural («٧ أيام»), 11–99 the accusative singular («٢٨ يومًا»), as with views.
+    @Test func dayRangesTakeTheCountNounRules() {
+        let ar = L10n(.ar)
+        #expect(Self.visible(DisplayFormat.days(7, ar)) == "٧ أيام")
+        #expect(Self.visible(DisplayFormat.days(3, ar)) == "٣ أيام")
+        #expect(Self.visible(DisplayFormat.days(10, ar)) == "١٠ أيام")
+        #expect(Self.visible(DisplayFormat.days(28, ar)) == "٢٨ يومًا")
+        #expect(Self.visible(DisplayFormat.days(90, ar)) == "٩٠ يومًا")
+        #expect(Self.visible(DisplayFormat.days(365, ar)) == "٣٦٥ يومًا")
+        #expect(Self.visible(DisplayFormat.days(1, ar)) == "يوم واحد")
+        #expect(Self.visible(DisplayFormat.days(2, ar)) == "يومان")
+        #expect(Self.visible(DisplayFormat.days(7, L10n(.en))) == "7 days")
+        #expect(Self.visible(DisplayFormat.days(1, L10n(.en))) == "1 day")
+    }
+
+    /// Arabic dates are Gregorian whatever the device's calendar, like English («١٢ نوفمبر», never «جمادى»).
+    @Test func arabicDatesAreGregorian() throws {
+        let date = try Date("2026-11-12T09:00:00Z", strategy: .iso8601)
+        var islamic = Date.FormatStyle.dateTime.day().month().year()
+        islamic.calendar = Calendar(identifier: .islamicUmmAlQura)
+        islamic.timeZone = .gmt
+        let text = Self.visible(DisplayFormat.date(date, islamic, .ar))
+        #expect(text.contains("نوفمبر") && text.contains("٢٠٢٦"), "\(text)")
+        #expect(DisplayFormat.shortDay(date, .ar, now: date).contains("نوفمبر"))
     }
 }

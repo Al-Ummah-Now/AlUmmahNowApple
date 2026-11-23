@@ -40,6 +40,9 @@ struct ContentView: View {
         .searchable(
             text: $model.searchText, placement: Self.searchPlacement, prompt: Text(l10n("studio.content.search"))
         )
+        #if os(iOS)
+            .fanousSearchField()
+        #endif
         .searchSuggestions {
             ForEach(model.suggestions) { suggestion in
                 suggestionRow(suggestion)
@@ -98,26 +101,17 @@ struct ContentView: View {
     private var statusPicker: some View {
         VStack(spacing: FanousScale.spacingXs) {
             // Status chips: the selected one in the gold primary material, the rest outlined (a system segmented
-            // control can't take the gradient).
-            // A row wider than the screen fades at both edges (so a cut chip reads as "more"), and the chosen chip
-            // scrolls fully into view.
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: FanousScale.spacingSm) {
-                        ForEach(StudioStatus.allCases, id: \.self) { status in
-                            StatusChip(title: label(for: status), selected: model.status == status) { model.status = status }
-                                .id(status)
-                                .accessibilityIdentifier("status-\(status.rawValue)")
-                        }
-                    }
-                    .padding(.horizontal, FanousScale.spacingLg)
-                    .padding(.vertical, 2)
-                }
-                .mask(EdgeFade(width: FanousScale.spacingLg))
-                .onChange(of: model.status) { _, status in
-                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(status, anchor: .center) }
+            // control can't take the gradient). They wrap onto a second line rather than run off the edge, spread evenly
+            // so English and Arabic break at the same chip.
+            FlowLayout(balanced: true) {
+                ForEach(StudioStatus.allCases, id: \.self) { status in
+                    StatusChip(title: label(for: status), selected: model.status == status) { model.status = status }
+                        .accessibilityIdentifier("status-\(status.rawValue)")
                 }
             }
+            .padding(.horizontal, FanousScale.spacingLg)
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(l10n("studio.content.status"))
             .accessibilityIdentifier("content-status")
@@ -159,9 +153,14 @@ struct ContentView: View {
     }
 
     private func label(for status: StudioStatus) -> String {
-        let name = l10n("studio.tab.\(status.rawValue)")
-        guard let count = model.counts[status] else { return name }
-        return "\(name) \(DisplayFormat.number(count, l10n.language))"
+        Self.chipTitle(l10n("studio.tab.\(status.rawValue)"), status: status, counts: model.counts, language: l10n.language)
+    }
+
+    /// A status chip's title with its count. The counts leave out empty statuses, so once they have loaded a missing
+    /// one is 0, shown like the others ("Failed 0", «فشلت ٠»); before they load the chip shows its name alone.
+    static func chipTitle(_ name: String, status: StudioStatus, counts: ContentCounts, language: AppLanguage) -> String {
+        guard !counts.isEmpty else { return name }
+        return "\(name) \(DisplayFormat.number(counts[status] ?? 0, language))"
     }
 
     @ViewBuilder private var list: some View {
@@ -187,6 +186,10 @@ struct ContentView: View {
                                     .accessibilityIdentifier("edit-\(video.id)")
                             }
                         }
+                        // The card as one element around the row and its Edit button, for the review frames' edge
+                        // check (UITests/Shared/FrameEdges.swift): the card is 6 points beyond it at the top and bottom.
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("content-card-\(video.id)")
                         .contentShape(Rectangle())
                         .onTapGesture(count: 1, perform: { editing = video }, when: opensOnTap)
                         .swipeActions(edge: .trailing) {
@@ -215,6 +218,9 @@ struct ContentView: View {
                 }
                 .scrollContentBackground(.hidden)
                 #if os(iOS)
+                    // The grouped list's own top margin left a band of empty page above the first card; the first card
+                    // sits a small gap under the sort row instead.
+                    .contentMargins(.top, FanousScale.spacingXs, for: .scrollContent)
                     .environment(\.editMode, $editMode)
                 #else
                     .contextMenu(forSelectionType: String.self) { ids in
@@ -259,6 +265,8 @@ struct ContentView: View {
         return ViewThatFits {
             HStack(spacing: FanousScale.spacingMd) { bulkButtons(count) }
             ScrollView(.horizontal) { HStack(spacing: FanousScale.spacingMd) { bulkButtons(count) } }
+                // Not the page's bottom margin for the iPad resize corner: this bar is one row high.
+                .contentMargins(.bottom, 0, for: .scrollContent)
         }
         .padding(FanousScale.spacingMd)
         .frame(maxWidth: .infinity)
@@ -294,42 +302,53 @@ struct VideoRow: View {
     var showsStatus = false
 
     var body: some View {
-        HStack(spacing: FanousScale.spacingMd) {
+        HStack(alignment: .top, spacing: FanousScale.spacingMd) {
             ThumbnailImage(url: video.thumbnailURL)
                 .frame(width: 96)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
-                // Three lines before truncating: long Arabic titles otherwise lose the part that tells them apart ("…الجزء").
-                Text(video.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(3)
-                // Up to two lines: narrow cards (the Mac Dashboard's half-width column) wrap rather than cut the
-                // status and views. The date has its own column, so it never wraps ("Nov / 6, 2026").
-                Text(details).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(2)
+                // Two lines, then truncated; the date moved into the details so the title has the full width.
+                Text(video.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(2)
+                // The details on one line when they fit; otherwise status and visibility on one line and the count
+                // (or the publish date) on the next, so no line ends on a separator and a number never leaves its noun.
+                ViewThatFits(in: .horizontal) {
+                    detailLine(parts)
+                    VStack(alignment: .leading, spacing: 2) {
+                        detailLine(Array(parts.dropLast()))
+                        detailLine(Array(parts.suffix(1)))
+                    }
+                    VStack(alignment: .leading, spacing: 2) { ForEach(parts, id: \.self) { detailLine([$0]) } }
+                }
             }
-            // Its own height, not the thumbnail's: the title and details wrap instead of truncating to one line.
+            // Its own height, not the thumbnail's: the title wraps instead of truncating to one line.
             .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: FanousScale.spacingSm)
-            if let date = video.dateCreated {
-                Text(DisplayFormat.shortDay(date, l10n.language))
-                    .fanousFont(.caption).foregroundStyle(Fanous.textMuted)
-                    .lineLimit(1).fixedSize()
-                    .frame(maxHeight: .infinity, alignment: .top)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, FanousScale.spacingXs)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("video-\(video.id)")
     }
 
-    private var details: String {
+    private func detailLine(_ parts: [String]) -> some View {
+        Text(DisplayFormat.meta(parts, l10n.language))
+            .fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+            .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// Status (on the Dashboard, which lists mixed statuses), visibility, the upload date, then views or the publish
+    /// date. Each part keeps its words together (no break inside «٨ آلاف مشاهدة»). The status names this one video
+    /// ("Draft" / «مسودة»), not its list ("Drafts").
+    private var parts: [String] {
         var parts = [l10n(video.isPublic ? "visibility.public" : "visibility.private")]
-        if showsStatus, let status = video.studioStatus { parts.insert(l10n("studio.tab.\(status.rawValue)"), at: 0) }
+        if showsStatus, let status = video.studioStatus { parts.insert(l10n("studio.status.\(status.rawValue)"), at: 0) }
+        if let date = video.dateCreated { parts.append(DisplayFormat.shortDay(date, l10n.language)) }
         if let date = video.scheduledPublishDate, video.studioStatus == .scheduled {
             parts.append(l10n("studio.content.publishes", DisplayFormat.shortDay(date, l10n.language)))
         } else {
             parts.append(DisplayFormat.views(video.views, l10n))
         }
-        return DisplayFormat.meta(parts, l10n.language)
+        return parts.map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }
     }
 }
 
@@ -412,18 +431,5 @@ struct StatusChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
-/// A horizontal mask that fades both edges of a scrolling row over `width` points.
-private struct EdgeFade: View {
-    let width: CGFloat
-
-    var body: some View {
-        HStack(spacing: 0) {
-            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: width)
-            Rectangle().fill(.black)
-            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: width)
-        }
     }
 }
