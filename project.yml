@@ -33,6 +33,7 @@ packages:
   AUNStudio: {path: Packages/AUNStudio}
   AUNCoreKit: {path: Packages/AUNCoreKit}
   AUNAdmin: {path: Packages/AUNAdmin}
+  AUNViewerClip: {path: Packages/AUNViewerClip}
 
 targetTemplates:
   App:
@@ -106,6 +107,40 @@ targets:
         - package: AUNPlayer/AUNPlayerTests
         - package: AUNFeatures/AUNFeaturesTests
         - package: AUNStudio/AUNStudioTests
+        - package: AUNViewerClip/AUNViewerClipTests
+
+  ViewerClip:
+    templates: [App]
+    type: application.on-demand-install-capable
+    platform: iOS
+    supportedDestinations: [iOS]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.viewer.clip$(AUN_BUNDLE_SUFFIX)
+        AUN_APP_NAME: Ummah Now
+        AUN_APP_NAME_AR: الأمة الآن
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: Apps/ViewerClip/ViewerClip.entitlements
+      configs:
+        Debug: {CODE_SIGN_ENTITLEMENTS: ""}
+    info:
+      path: Apps/ViewerClip/Info.plist
+      properties:
+        CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
+        CFBundleLocalizations: [en, ar]
+        AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
+        AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
+        AUNEnvironment: "$(AUN_ENVIRONMENT)"
+        UILaunchScreen: {}
+        ITSAppUsesNonExemptEncryption: false
+        NSAppClip:
+          NSAppClipRequestEphemeralUserNotification: false
+          NSAppClipRequestLocationConfirmation: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+    dependencies:
+      - package: AUNViewerClip
+      - package: AUNDesign
+      - package: AUNCoreBridge
 
   ViewerTV:
     templates: [App]

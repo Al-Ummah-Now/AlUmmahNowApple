@@ -151,6 +151,25 @@ public enum DisplayFormat {
         return l10n("video.views.\(category)", self.count(count, l10n.language))
     }
 
+    /// Header bell badge label (`nil` for 0, `"9+"` / `"٩+"` above 9, Eastern Arabic numerals in `ar`).
+    public static func badgeCap9(_ count: Int, _ language: AppLanguage) -> String? {
+        guard count > 0 else { return nil }
+        if count > 9 { return "\(number(9, language, grouping: false))+" }
+        return number(count, language, grouping: false)
+    }
+
+    /// Formats a minute-of-day (`0..1439`) in the app language (`10:00 PM`, `١٠:٠٠ م`).
+    public static func minuteOfDay(_ minute: Int, _ language: AppLanguage) -> String {
+        let clamped = max(0, min(1439, minute))
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let date =
+            utc.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: clamped / 60, minute: clamped % 60)) ?? .distantPast
+        var style = Date.FormatStyle.dateTime.hour().minute()
+        style.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        return self.date(date, style, language)
+    }
+
     /// Text the user typed, with Eastern Arabic (Hindi) ٠–٩ and Persian ۰–۹ digits turned into 0–9, for
     /// numeric fields, codes and anything parsed as a number.
     public static func normalizeDigits(_ input: String) -> String {

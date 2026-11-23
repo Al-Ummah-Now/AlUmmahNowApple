@@ -121,16 +121,25 @@ public struct CoreBridge: Sendable {
     public var auth: any AuthSessionProviding
     public var uploads: any UploadEngine
     public var siteTheme: any SiteThemeServicing
+    public var notifications: any NotificationsServicing
+    public var events: any EventsServicing
+    public var appPush: any AppPushRegistering
 
     public init(
         environment: AppEnvironment, catalog: any CatalogServicing, auth: any AuthSessionProviding, uploads: any UploadEngine,
-        siteTheme: any SiteThemeServicing
+        siteTheme: any SiteThemeServicing,
+        notifications: any NotificationsServicing = FixtureNotificationsService(unseenCount: 0),
+        events: any EventsServicing = FixtureEventsService(eventCalendarEnabled: false),
+        appPush: any AppPushRegistering = NoopAppPushService()
     ) {
         self.environment = environment
         self.catalog = catalog
         self.auth = auth
         self.uploads = uploads
         self.siteTheme = siteTheme
+        self.notifications = notifications
+        self.events = events
+        self.appPush = appPush
     }
 
     /// Interim implementation in Swift. The Rust XCFramework replaces this one factory.
@@ -141,15 +150,23 @@ public struct CoreBridge: Sendable {
             catalog: NativeCatalogService(baseURL: environment.apiBaseURL, session: session),
             auth: auth,
             uploads: NativeTUSUploadEngine(session: session),
-            siteTheme: NativeSiteThemeService(adminAPIBaseURL: environment.adminAPIBaseURL, session: session)
+            siteTheme: NativeSiteThemeService(adminAPIBaseURL: environment.adminAPIBaseURL, session: session),
+            notifications: NativeNotificationsService(baseURL: environment.apiBaseURL, auth: auth, session: session),
+            events: NativeEventsService(baseURL: environment.apiBaseURL, auth: auth, session: session),
+            appPush: NativeAppPushService(baseURL: environment.apiBaseURL, auth: auth, session: session)
         )
     }
 
     /// Hermetic bridge for UI tests, snapshots and previews. The site theme is the one given, Fawanees by default;
     /// `playable` streams a bundled clip (store screenshots).
-    public static func fixtures(siteTheme: String = "fawanees", playable: Bool = false) -> CoreBridge {
+    public static func fixtures(
+        siteTheme: String = "fawanees", playable: Bool = false, eventCalendarEnabled: Bool = false
+    ) -> CoreBridge {
         CoreBridge(
             environment: .qa, catalog: FixtureCatalogService(playable: playable), auth: GuestAuthSession(),
-            uploads: NativeTUSUploadEngine(session: .shared), siteTheme: FixedSiteThemeService(siteTheme))
+            uploads: NativeTUSUploadEngine(session: .shared), siteTheme: FixedSiteThemeService(siteTheme),
+            notifications: FixtureNotificationsService(unseenCount: 0),
+            events: FixtureEventsService(eventCalendarEnabled: eventCalendarEnabled),
+            appPush: NoopAppPushService())
     }
 }
