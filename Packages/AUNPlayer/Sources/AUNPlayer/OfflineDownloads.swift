@@ -300,7 +300,8 @@ public actor OfflineDownloadStore {
         try? mutableRoot.setResourceValues(resourceValues)
 
         if let data = try? Data(contentsOf: manifestURL),
-           let decoded = try? JSONDecoder().decode([OfflineDownloadRecord].self, from: data) {
+            let decoded = try? JSONDecoder().decode([OfflineDownloadRecord].self, from: data)
+        {
             for rec in decoded {
                 let fileURL = rootURL.appendingPathComponent(rec.fileName)
                 if FileManager.default.fileExists(atPath: fileURL.path) {
@@ -326,7 +327,12 @@ public actor OfflineDownloadStore {
         plaintext: Data
     ) throws -> OfflineDownloadRecord {
         guard offlineDownloadsEnabled else { throw OfflineDownloadError.featureOff }
-        let safeName = request.licenseId.replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "_", options: .regularExpression) + ".aun"
+        let sanitized = request.licenseId.replacingOccurrences(
+            of: "[^A-Za-z0-9_-]",
+            with: "_",
+            options: .regularExpression
+        )
+        let safeName = "\(sanitized).aun"
         let dest = rootURL.appendingPathComponent(safeName)
         let key = try keyVault.symmetricKey()
         let encryptedSize = try ChunkedAESGCMCipher.encrypt(

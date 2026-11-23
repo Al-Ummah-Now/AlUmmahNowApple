@@ -93,7 +93,11 @@ public struct CarPlayLibraryBuilder: Sendable {
         isArabic: Bool
     ) -> [CarPlayTabModel] {
         var tabs: [CarPlayTabModel] = [
-            CarPlayTabModel(tab: .continueListening, title: CarPlayTab.continueListening.title(isArabic: isArabic), items: input.continueListening),
+            CarPlayTabModel(
+                tab: .continueListening,
+                title: CarPlayTab.continueListening.title(isArabic: isArabic),
+                items: input.continueListening
+            )
         ]
         if offlineDownloadsEnabled {
             let offlineEntries = input.downloads.map { rec in
@@ -106,10 +110,28 @@ public struct CarPlayLibraryBuilder: Sendable {
                     isOffline: true
                 )
             }
-            tabs.append(CarPlayTabModel(tab: .downloads, title: CarPlayTab.downloads.title(isArabic: isArabic), items: offlineEntries))
+            tabs.append(
+                CarPlayTabModel(
+                    tab: .downloads,
+                    title: CarPlayTab.downloads.title(isArabic: isArabic),
+                    items: offlineEntries
+                )
+            )
         }
-        tabs.append(CarPlayTabModel(tab: .subscriptions, title: CarPlayTab.subscriptions.title(isArabic: isArabic), items: input.subscriptions))
-        tabs.append(CarPlayTabModel(tab: .recitation, title: CarPlayTab.recitation.title(isArabic: isArabic), items: input.recitations))
+        tabs.append(
+            CarPlayTabModel(
+                tab: .subscriptions,
+                title: CarPlayTab.subscriptions.title(isArabic: isArabic),
+                items: input.subscriptions
+            )
+        )
+        tabs.append(
+            CarPlayTabModel(
+                tab: .recitation,
+                title: CarPlayTab.recitation.title(isArabic: isArabic),
+                items: input.recitations
+            )
+        )
         return tabs
     }
 

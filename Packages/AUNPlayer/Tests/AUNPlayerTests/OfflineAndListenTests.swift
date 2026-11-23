@@ -104,12 +104,20 @@ struct OfflineAndListenTests {
         )
 
         #expect(
-            OfflineDownloadPolicy.canDownload(featureEnabled: false, settings: OfflineDownloadSettings(), isConnected: true, isUnmeteredWifi: true)
-                == .blockedFeatureOff
+            OfflineDownloadPolicy.canDownload(
+                featureEnabled: false,
+                settings: OfflineDownloadSettings(),
+                isConnected: true,
+                isUnmeteredWifi: true
+            ) == .blockedFeatureOff
         )
         #expect(
-            OfflineDownloadPolicy.canDownload(featureEnabled: true, settings: OfflineDownloadSettings(wifiOnly: true), isConnected: true, isUnmeteredWifi: false)
-                == .blockedWifiOnly
+            OfflineDownloadPolicy.canDownload(
+                featureEnabled: true,
+                settings: OfflineDownloadSettings(wifiOnly: true),
+                isConnected: true,
+                isUnmeteredWifi: false
+            ) == .blockedWifiOnly
         )
 
         await #expect(throws: OfflineDownloadError.featureOff) {
@@ -181,7 +189,14 @@ struct OfflineAndListenTests {
             lastAccessedAt: Date(),
             status: .ready
         )
-        let online = [CarPlayEntry(videoId: "v-online", title: "Tafsir Juz Amma", titleAr: "تفسير جزء عم", channelName: "Scholar")]
+        let online = [
+            CarPlayEntry(
+                videoId: "v-online",
+                title: "Tafsir Juz Amma",
+                titleAr: "تفسير جزء عم",
+                channelName: "Scholar"
+            )
+        ]
 
         let input = CarPlayLibraryInput(continueListening: online, downloads: [dl])
         let tabsOff = builder.buildTabs(input: input, offlineDownloadsEnabled: false, isArabic: true)
