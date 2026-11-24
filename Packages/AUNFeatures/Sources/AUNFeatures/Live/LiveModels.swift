@@ -116,6 +116,7 @@ public final class LiveWatchModel {
     /// The server's own wait for the state, over this app's.
     private var stateWait: TimeInterval?
     private var beatDue = Date.distantPast
+    private var lastBeat: Task<Int?, any Error>?
     private var replay: [Int: [LiveChatMessage]] = [:]
     private var isReadingReplay = false
 
@@ -175,11 +176,22 @@ public final class LiveWatchModel {
         }
         clock.cancel()
         guard content?.mode == .live else { return }
-        // This task is cancelled, and a request in it would be too: counted out in one of its own
         beatDue = .distantPast
-        Task.detached { [live, streamID, viewerID] in
-            _ = try? await live.beat(id: streamID, viewerID: viewerID, leaving: true)
+        sendBeat(leaving: true)
+    }
+
+    /// One at a time, in the order they were asked for: a beat on its way when the app goes to the background must not count
+    /// the viewer in after the leave, nor a leave count out a viewer who came back. So each is a task of its own, which the
+    /// screen's being cancelled does not end (the server may have it already).
+    @discardableResult
+    private func sendBeat(leaving: Bool) -> Task<Int?, any Error> {
+        let previous = lastBeat
+        let beat = Task { [live, streamID, viewerID] in
+            _ = await previous?.result
+            return try await live.beat(id: streamID, viewerID: viewerID, leaving: leaving)
         }
+        lastBeat = beat
+        return beat
     }
 
     /// When the server wants to be asked again, so it can slow installed apps down. Between 5 seconds and 10 minutes whatever
@@ -226,7 +238,7 @@ public final class LiveWatchModel {
         guard let content = self.content else { return }
         try await refreshChat(content)
         if content.mode == .live, now() >= beatDue {
-            let (count, wait) = try await asked { try await live.beat(id: streamID, viewerID: viewerID, leaving: false) }
+            let (count, wait) = try await asked { try await sendBeat(leaving: false).value }
             beatDue = now().addingTimeInterval(wait ?? 20)
             viewers = (count ?? nil) ?? viewers
         }
