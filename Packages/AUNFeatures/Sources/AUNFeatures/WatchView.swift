@@ -88,8 +88,12 @@
             @Environment(\.horizontalSizeClass) private var sizeClass
         #endif
         @State private var model: WatchViewModel
+        private let videoID: String
+        private let environment: AppEnvironment
 
-        public init(videoID: String, catalog: any CatalogServicing) {
+        public init(videoID: String, catalog: any CatalogServicing, environment: AppEnvironment) {
+            self.videoID = videoID
+            self.environment = environment
             _model = State(initialValue: WatchViewModel(videoID: videoID, catalog: catalog))
         }
 
@@ -113,6 +117,11 @@
                 }
             }
             .fanousPage()
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    WatchShareButton(environment: environment, videoID: videoID)
+                }
+            }
             .task { await model.load(language: l10n.language) }
             .onDisappear { model.player.stop() }
             #if os(macOS)

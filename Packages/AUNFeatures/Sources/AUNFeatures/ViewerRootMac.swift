@@ -51,7 +51,7 @@
         }
 
         public var body: some View {
-            WatchView(videoID: videoID, catalog: core.catalog).frame(minWidth: 860, minHeight: 480)
+            WatchView(videoID: videoID, catalog: core.catalog, environment: core.environment).frame(minWidth: 860, minHeight: 480)
         }
     }
 

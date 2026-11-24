@@ -6,5 +6,6 @@
    <FileRef location = "group:Packages/AUNPlayer"></FileRef>
    <FileRef location = "group:Packages/AUNFeatures"></FileRef>
    <FileRef location = "group:Packages/AUNStudio"></FileRef>
+   <FileRef location = "group:Packages/AUNViewerClip"></FileRef>
    <FileRef location = "group:docs"></FileRef>
 </Workspace>

@@ -5,11 +5,20 @@ import SwiftUI
 /// Studio's window content on iPhone, iPad and Mac: sign-in until an account is active, then the Studio shell.
 public struct StudioRootView: View {
     @State private var session: StudioSession
+    private let onSignedIn: (() async -> Void)?
 
     /// `preferences` holds per-device choices such as the last channel per account.
-    public init(services: StudioServices, authenticator: any WebAuthenticating, preferences: UserDefaults = .standard) {
-        _session = State(
-            initialValue: StudioSession(services: services, authenticator: authenticator, defaults: preferences))
+    public init(
+        services: StudioServices,
+        authenticator: any WebAuthenticating,
+        preferences: UserDefaults = .standard,
+        onSignedIn: (() async -> Void)? = nil,
+        onSignedOutAll: (() async -> Void)? = nil
+    ) {
+        let created = StudioSession(services: services, authenticator: authenticator, defaults: preferences)
+        created.onSignedOutAll = onSignedOutAll
+        _session = State(initialValue: created)
+        self.onSignedIn = onSignedIn
     }
 
     public var body: some View {
@@ -21,6 +30,11 @@ public struct StudioRootView: View {
             }
         }
         .task { await session.start() }
+        .task(id: session.phase == .signedIn) {
+            if session.phase == .signedIn {
+                await onSignedIn?()
+            }
+        }
         // Universal links on the videos host (`/studio/…`, `/app/studio/…`); the viewer's links are not Studio's.
         .onOpenURL { url in
             guard case .studio(let link) = AppLink.parse(url) else { return }

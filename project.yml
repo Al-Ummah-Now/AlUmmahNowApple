@@ -33,6 +33,7 @@ packages:
   AUNStudio: {path: Packages/AUNStudio}
   AUNCoreKit: {path: Packages/AUNCoreKit}
   AUNAdmin: {path: Packages/AUNAdmin}
+  AUNViewerClip: {path: Packages/AUNViewerClip}
 
 targetTemplates:
   App:
@@ -59,12 +60,27 @@ targetTemplates:
       # InfoPlist.strings can't expand build settings, so the Arabic name with the QA suffix is written at build time.
       - name: Arabic display name
         basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/Packages/AUNDesign/Sources/AUNDesign/Resources/en.lproj/Localizable.strings
+          - $(SRCROOT)/Packages/AUNDesign/Sources/AUNDesign/Resources/ar.lproj/Localizable.strings
         outputFiles:
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ar.lproj/InfoPlist.strings
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/en.lproj/Localizable.strings
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ar.lproj/Localizable.strings
         script: |
           dir="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ar.lproj"
           mkdir -p "$dir"
           printf '"CFBundleDisplayName" = "%s%s";\n' "$AUN_APP_NAME_AR" "$AUN_DISPLAY_SUFFIX" > "$dir/InfoPlist.strings"
+          case "$TARGET_NAME" in
+            ViewerClip|ViewerTV) ;;
+            *)
+              for lang in en ar; do
+                ldir="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/${lang}.lproj"
+                mkdir -p "$ldir"
+                cp "$SRCROOT/Packages/AUNDesign/Sources/AUNDesign/Resources/${lang}.lproj/Localizable.strings" "$ldir/Localizable.strings"
+              done
+              ;;
+          esac
 
 targets:
   ViewerIOS:
@@ -106,6 +122,32 @@ targets:
         - package: AUNPlayer/AUNPlayerTests
         - package: AUNFeatures/AUNFeaturesTests
         - package: AUNStudio/AUNStudioTests
+        - package: AUNViewerClip/AUNViewerClipTests
+
+  ViewerClip:
+    templates: [App]
+    type: application.on-demand-install-capable
+    platform: iOS
+    supportedDestinations: [iOS]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.alummahnow.viewer.clip$(AUN_BUNDLE_SUFFIX)
+        AUN_APP_NAME: Ummah Now
+        AUN_APP_NAME_AR: الأمة الآن
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: Apps/ViewerClip/ViewerClip.entitlements
+      configs:
+        Debug: {CODE_SIGN_ENTITLEMENTS: ""}
+    info:
+      path: Apps/ViewerClip/Info.plist
+      properties:
+        ITSAppUsesNonExemptEncryption: false
+        NSAppClip:
+          NSAppClipRequestEphemeralUserNotification: false
+          NSAppClipRequestLocationConfirmation: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+    dependencies:
+      - package: AUNViewerClip
 
   ViewerTV:
     templates: [App]

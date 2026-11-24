@@ -85,6 +85,37 @@ struct AppLinkTests {
     @Test func hostMatchingIgnoresCase() {
         #expect(link("https://Videos.AlUmmahNow.net/en/video/v1") == .video(id: "v1"))
     }
+
+    @Test func shortLinkHostsParseAndPreserveQueryOptions() {
+        let parsed = AppLink.parseInvocation(
+            URL(string: "https://qa.alummahnow.link/v/vid_42?list=pl_9&index=3&t=125&lang=ar")!)
+        #expect(parsed?.link == .video(id: "vid_42"))
+        #expect(parsed?.startSeconds == 125)
+        #expect(parsed?.playlistID == "pl_9")
+        #expect(parsed?.playlistIndex == 3)
+        #expect(parsed?.language == "ar")
+
+        #expect(link("https://alummahnow.link/s/sh_1") == .short(id: "sh_1"))
+        #expect(link("https://alummahnow.link/e/str_halqa_1") == .live(id: "str_halqa_1"))
+        #expect(link("https://stage.alummahnow.link/@almanar") == .channel(handle: "almanar"))
+        #expect(link("https://alummahnow.link/c/ch_123") == .channelID(id: "ch_123"))
+        #expect(link("https://alummahnow.link/p/post_7") == .post(id: "post_7"))
+        #expect(link("https://alummahnow.link/l/pl_8") == .playlist(id: "pl_8"))
+    }
+
+    @Test func shortLinkBuilderMatchesPlatformRules() {
+        let prod = AppEnvironment(name: "prod", apiBaseURL: URL(string: "https://videos.alummahnow.net")!)
+        #expect(
+            ShortLinks.shareURL(
+                environment: .qa, target: .video("v_123"), fallbackPath: "/video/v_123",
+                options: .init(startSeconds: 60, playlistID: "pl_1", playlistIndex: 0, languageCode: "ar")
+            ).absoluteString == "https://qa.alummahnow.link/v/v_123?list=pl_1&index=0&t=60&lang=ar")
+        #expect(
+            ShortLinks.shareURL(
+                environment: prod, target: .live("str_9"), fallbackPath: "/live/str_9",
+                options: .init(languageCode: "en")
+            ).absoluteString == "https://alummahnow.link/e/str_9")
+    }
 }
 
 struct FixtureClipTests {
