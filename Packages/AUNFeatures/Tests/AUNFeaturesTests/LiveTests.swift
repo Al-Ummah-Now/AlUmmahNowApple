@@ -23,6 +23,11 @@ private actor StubLive: LiveServicing {
     private(set) var leaves = 0
     var chatFails = false
     var chatPollAfter: TimeInterval?
+    var pinned: LiveChatMessage?
+    /// One event's list takes its time.
+    var slowEvent: LiveEventType?
+    func set(pinned: LiveChatMessage?) { self.pinned = pinned }
+    func set(slowEvent: LiveEventType?) { self.slowEvent = slowEvent }
     /// Every read is refused with this `Retry-After`.
     var retryAfter: TimeInterval?
     /// The state does not answer.
@@ -54,6 +59,7 @@ private actor StubLive: LiveServicing {
     func features() async -> UserFeatures { UserFeatures(on: on) }
     func streams(_ status: LiveStatus, event: LiveEventType?) async throws -> [LiveStream] {
         askedEvent = event
+        if let slowEvent, event == slowEvent { try await Task.sleep(for: .milliseconds(200)) }
         return lists[status] ?? []
     }
     func stream(id: String) async throws -> LiveStream { LiveStream(id: id, title: "T", status: current.status) }
@@ -71,7 +77,8 @@ private actor StubLive: LiveServicing {
         try refuse()
         if chatFails { throw CoreError.http(status: 503) }
         return LiveChatPage(
-            messages: [LiveChatMessage(id: "m", authorName: "A", text: "x", offsetMs: 0)], pollAfter: chatPollAfter)
+            messages: [LiveChatMessage(id: "m", authorName: "A", text: "x", offsetMs: 0)], pinned: pinned,
+            pollAfter: chatPollAfter)
     }
     func chatReplay(id: String, fromMs: Int, toMs: Int) async throws -> LiveChatPage {
         windows[fromMs] ?? LiveChatPage(messages: [])
@@ -466,6 +473,47 @@ extension LiveWatchModel {
         let model = model(live)
         await model.load(language: .en)
         await model.tick()
+        #expect(model.messages.map(\.id) == ["a"])
+        model.player.stop()
+    }
+
+    @Test func anEarlierChoiceThatAnswersLateIsNotShown() async throws {
+        let live = StubLive()
+        await live.set(slowEvent: .jumuah)
+        await live.set(.live, [LiveStream(id: "on", title: "", status: .live)])
+        let clock = clock
+        let model = LiveListModel(live: live, now: { clock.now })
+        let late = Task { await model.choose(.jumuah) }
+        for _ in 0..<100 {
+            if await live.askedEvent == .jumuah { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        await model.choose(.halqa)
+        await live.set(.live, [LiveStream(id: "late", title: "", status: .live)])
+        await late.value
+        #expect(model.event == .halqa)
+        #expect(model.onAir.map(\.id) == ["on"])
+    }
+
+    @Test func theReplayBeginsWithoutWhatWasLiveAndAtItsOwnTime() async throws {
+        let live = StubLive(
+            LiveState(status: .live, playbackURL: URL(string: "https://x.test/p.m3u8"), chat: .init(enabled: true)))
+        await live.set(pinned: LiveChatMessage(id: "p", authorName: "A", text: "x", offsetMs: 0))
+        let model = model(live)
+        await model.load(language: .en)
+        await model.tick()
+        #expect(model.pinned?.id == "p")
+        clock.advance(59)
+        // A live chat that could not be read waits a minute; the replay does not
+        await live.set(chatFails: true)
+        await model.tick()
+        clock.advance(1)
+        await live.set(LiveState(status: .ended, vodURL: URL(string: "https://x.test/v.m3u8"), chat: .init(replay: true)))
+        await live.set(
+            window: 0, LiveChatPage(messages: [LiveChatMessage(id: "a", authorName: "A", text: "x", offsetMs: 0)]))
+        await model.tick()
+        #expect(try content(model).mode == .recording)
+        #expect(model.pinned == nil)
         #expect(model.messages.map(\.id) == ["a"])
         model.player.stop()
     }
