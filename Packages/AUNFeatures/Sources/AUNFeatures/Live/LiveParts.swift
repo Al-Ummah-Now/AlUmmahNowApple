@@ -120,9 +120,24 @@ struct LiveRail: View {
 /// The messages beside a stream, or as they were beside its recording. Reading only.
 struct LiveChatView: View {
     @Environment(\.l10n) private var l10n
+    @State private var blockingAuthor: String?
+    let streamID: String
     let messages: [LiveChatMessage]
     let pinned: LiveChatMessage?
     let isReplay: Bool
+
+    init(streamID: String = "", messages: [LiveChatMessage], pinned: LiveChatMessage?, isReplay: Bool) {
+        self.streamID = streamID
+        self.messages = messages
+        self.pinned = pinned
+        self.isReplay = isReplay
+    }
+
+    private var blockStore: ViewerBlockStore { .shared }
+    private var visibleMessages: [LiveChatMessage] { blockStore.filterMessages(messages) }
+    private var visiblePinned: LiveChatMessage? {
+        pinned.flatMap { blockStore.isChatUserBlocked(name: $0.authorName) ? nil : $0 }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -131,10 +146,10 @@ struct LiveChatView: View {
                 .padding(FanousScale.spacingMd)
                 .accessibilityAddTraits(.isHeader)
             Rectangle().fill(Fanous.divider).frame(height: 1)
-            if let pinned {
+            if let visiblePinned {
                 HStack(alignment: .top, spacing: FanousScale.spacingSm) {
                     Image(systemName: "pin").foregroundStyle(Fanous.textSecondary).accessibilityLabel(l10n("live.chat.pinned"))
-                    line(pinned)
+                    line(visiblePinned)
                 }
                 .padding(FanousScale.spacingMd)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -142,7 +157,7 @@ struct LiveChatView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("live-chat-pinned")
             }
-            if messages.isEmpty {
+            if visibleMessages.isEmpty {
                 Text(l10n(isReplay ? "live.chat.replayEmpty" : "live.chat.empty")).fanousFont(.body)
                     .foregroundStyle(Fanous.textSecondary)
                     .multilineTextAlignment(.center)
@@ -153,12 +168,12 @@ struct LiveChatView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: FanousScale.spacingMd) {
-                            ForEach(messages) { line($0).id($0.id) }
+                            ForEach(visibleMessages) { line($0).id($0.id) }
                         }
                         .padding(FanousScale.spacingMd)
                     }
                     .defaultScrollAnchor(isReplay ? .top : .bottom)
-                    .onChange(of: messages.last?.id) { _, last in
+                    .onChange(of: visibleMessages.last?.id) { _, last in
                         if let last { proxy.scrollTo(last, anchor: .bottom) }
                     }
                 }
@@ -170,23 +185,69 @@ struct LiveChatView: View {
         .fanousMaterial(.card) { .rounded($0.lg) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live-chat")
+        #if os(iOS) || os(macOS)
+            .sheet(
+                isPresented: Binding(
+                    get: { blockingAuthor != nil },
+                    set: { if !$0 { blockingAuthor = nil } }
+                )
+            ) {
+                if let author = blockingAuthor {
+                    ViewerBlockConfirmSheet(
+                        title: l10n("safety.block.userTitle", author),
+                        message: l10n("safety.block.userMessage")
+                    ) {
+                        blockStore.blockChatUser(name: author)
+                    }
+                }
+            }
+        #endif
     }
 
     private func line(_ message: LiveChatMessage) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                if isReplay {
-                    Text(DisplayFormat.duration(Double(message.offsetMs) / 1000, l10n.language)).monospacedDigit()
-                        .foregroundStyle(Fanous.textSecondary)
+        HStack(alignment: .top, spacing: FanousScale.spacingXs) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    if isReplay {
+                        Text(DisplayFormat.duration(Double(message.offsetMs) / 1000, l10n.language)).monospacedDigit()
+                            .foregroundStyle(Fanous.textSecondary)
+                    }
+                    Text(message.authorName).fontWeight(.semibold).foregroundStyle(Fanous.textSecondary)
+                    if let role = message.authorRole { LiveTag(text: l10n("live.chat.role.\(role.rawValue)")) }
                 }
-                Text(message.authorName).fontWeight(.semibold).foregroundStyle(Fanous.textSecondary)
-                if let role = message.authorRole { LiveTag(text: l10n("live.chat.role.\(role.rawValue)")) }
+                .fanousFont(.caption)
+                Text(message.text).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .fanousFont(.caption)
-            Text(message.text).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            #if os(iOS) || os(macOS)
+                Menu {
+                    Link(
+                        destination: ViewerReportURL.liveChat(
+                            streamID: streamID, messageID: message.id, language: l10n.language.rawValue)
+                    ) {
+                        Label(l10n("safety.report.message"), systemImage: "flag")
+                    }
+                    .accessibilityIdentifier("report-chat-\(message.id)")
+                    Button(role: .destructive) {
+                        blockingAuthor = message.authorName
+                    } label: {
+                        Label(l10n("safety.block.user"), systemImage: "hand.raised.slash")
+                    }
+                    .accessibilityIdentifier("block-chat-user-\(message.id)")
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.caption)
+                        .foregroundStyle(Fanous.textSecondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                        .accessibilityLabel(l10n("safety.moreActions"))
+                }
+                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("chat-actions-\(message.id)")
+            #endif
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live-chat-message-\(message.id)")
     }
 }
@@ -256,8 +317,12 @@ struct LiveNotice: View {
 /// Title, tags, and how many are watching.
 struct LiveDetails: View {
     @Environment(\.l10n) private var l10n
+    @State private var confirmBlockChannel = false
     let content: LiveContent
     let viewers: Int?
+
+    private var blockStore: ViewerBlockStore { .shared }
+    private var channelName: String? { content.stream.channelName }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -265,15 +330,65 @@ struct LiveDetails: View {
                 LiveTags(
                     kind: content.timed.state.kind, event: content.timed.state.eventType, isLive: content.mode == .live)
             }
-            Text(content.stream.title).fanousFont(.title).fontWeight(.bold).foregroundStyle(Fanous.textPrimary)
-                .accessibilityIdentifier("live-title")
-            let meta = DisplayFormat.meta([content.stream.channelName, watching], l10n.language)
-            if !meta.isEmpty { Text(meta).fanousFont(.caption).foregroundStyle(Fanous.textSecondary) }
+            HStack(alignment: .top, spacing: FanousScale.spacingSm) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(content.stream.title).fanousFont(.title).fontWeight(.bold).foregroundStyle(Fanous.textPrimary)
+                        .accessibilityIdentifier("live-title")
+                    let meta = DisplayFormat.meta([content.stream.channelName, watching], l10n.language)
+                    if !meta.isEmpty { Text(meta).fanousFont(.caption).foregroundStyle(Fanous.textSecondary) }
+                }
+                Spacer(minLength: 0)
+                #if os(iOS) || os(macOS)
+                    Menu {
+                        Link(destination: ViewerReportURL.liveStream(id: content.stream.id, language: l10n.language.rawValue)) {
+                            Label(l10n("safety.report.stream"), systemImage: "flag")
+                        }
+                        .accessibilityIdentifier("report-live-stream")
+                        if let channelName {
+                            Link(
+                                destination: ViewerReportURL.channel(
+                                    id: nil, name: channelName, language: l10n.language.rawValue)
+                            ) {
+                                Label(l10n("safety.report.channel"), systemImage: "flag")
+                            }
+                            .accessibilityIdentifier("report-live-channel")
+                            Button(role: .destructive) {
+                                confirmBlockChannel = true
+                            } label: {
+                                Label(l10n("safety.block.channel"), systemImage: "hand.raised.slash")
+                            }
+                            .accessibilityIdentifier("block-live-channel")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3)
+                            .foregroundStyle(Fanous.textSecondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                            .accessibilityLabel(l10n("safety.moreActions"))
+                    }
+                    .menuIndicator(.hidden)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("live-actions-menu")
+                #endif
+            }
             if let description = content.stream.description, !description.isEmpty {
                 Text(description).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        #if os(iOS) || os(macOS)
+            .sheet(isPresented: $confirmBlockChannel) {
+                if let channelName {
+                    ViewerBlockConfirmSheet(
+                        title: l10n("safety.block.channelTitle", channelName),
+                        message: l10n("safety.block.channelMessage")
+                    ) {
+                        blockStore.blockChannel(id: nil, name: channelName)
+                    }
+                }
+            }
+        #endif
     }
 
     private var watching: String? {

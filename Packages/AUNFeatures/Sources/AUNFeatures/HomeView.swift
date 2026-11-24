@@ -152,8 +152,11 @@
                 case .loaded(let rails) where rails.isEmpty:
                     EmptyStateView(title: l10n("home.empty"))
                 case .loaded(let rails):
+                    let blockStore = ViewerBlockStore.shared
                     HomeRailsContent(
-                        rails: rails, live: live.onAir + live.coming, openLive: { open(.live($0.id)) },
+                        rails: blockStore.filterRails(rails),
+                        live: blockStore.filterLiveStreams(live.onAir + live.coming),
+                        openLive: { open(.live($0.id)) },
                         seeAllLive: { open(.liveList) }, open: { open(.video($0.id)) }
                     )
                     .refreshable {
