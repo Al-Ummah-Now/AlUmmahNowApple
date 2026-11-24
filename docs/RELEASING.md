@@ -68,6 +68,7 @@ store/apple/<app>/metadata/{en-US,ar-SA}/
   description.txt       ≤ 4000      release_notes.txt     ≤ 4000 ("What's New"; edit before each release)
   privacy_url.txt  support_url.txt  marketing_url.txt     https, in the listing's language
 store/apple/app-privacy.{md,json}              App Privacy answers drawn from the code, with sources
+store/apple/age-rating.{md,json}               Age rating answers per record, with sources
 ```
 
 `<app>` is `viewer-ios`, `viewer-tv`, `viewer-mac`, `studio-ios`, `studio-mac`. Privacy URL: there is no privacy
@@ -177,7 +178,9 @@ Per production record, once (CI does not set these):
 - **TestFlight**: an internal group with the testers. External testers need Beta App Review of the first build.
 - **App Privacy**: enter the answers from [`store/apple/app-privacy.md`](../store/apple/app-privacy.md)
   (viewer: Data Not Collected; Studio: the five linked types, plus Device ID on iOS).
-- **App Information**: category (Photo & Video), content rights, age rating questionnaire.
+- **App Information**: categories (Photo & Video; secondary Entertainment, Studio none), content rights, and the age
+  rating questionnaire from [`store/apple/age-rating.md`](../store/apple/age-rating.md). Re-check the answers at every
+  release; a new answer goes in that file first.
 - **App Review Information** (only when submitting, by hand): Studio needs sign-in, so give Apple a dedicated
   reviewer account with creator access, never the owner's.
 - **Privacy Policy URL** is uploaded from `privacy_url.txt`; when a privacy policy page is published, put its address
