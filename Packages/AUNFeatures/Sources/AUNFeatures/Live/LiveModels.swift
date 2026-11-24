@@ -180,11 +180,13 @@ public final class LiveWatchModel {
         seconds.map { min(max($0, 5), 600) }
     }
 
-    /// The read, or nil and when the server said to ask again, if it did.
-    private func asked<T>(_ read: () async throws -> T) async -> (T?, TimeInterval?) {
+    /// The read, or nil and when the server said to ask again, if it did. Throws only when the screen's task was cancelled:
+    /// nothing was refused then, and nothing of what is due changes.
+    private func asked<T>(_ read: () async throws -> T) async throws(CancellationError) -> (T?, TimeInterval?) {
         do {
             return (try await read(), nil)
         } catch {
+            if Task.isCancelled || error is CancellationError { throw CancellationError() }
             return (nil, Self.pollAfter((error as? LiveRefused)?.retryAfter))
         }
     }
@@ -204,17 +206,20 @@ public final class LiveWatchModel {
         follow(content)
     }
 
-    /// Whatever is due.
+    /// Whatever is due. Every wait begins when the answer is there, however long that took.
     func poll() async {
+        // Cancelled on the way: asked for again when the screen is back
+        try? await readWhatIsDue()
+    }
+
+    private func readWhatIsDue() async throws(CancellationError) {
         guard let content else { return }
-        let moment = now()
-        if moment.timeIntervalSince(stateAt) >= stateInterval(content) { await refreshState(content.stream) }
+        if now().timeIntervalSince(stateAt) >= stateInterval(content) { try await refreshState(content.stream) }
         guard let content = self.content else { return }
-        await refreshChat(content, at: moment)
-        if content.mode == .live, moment >= beatDue {
-            beatDue = moment.addingTimeInterval(20)
-            let (count, wait) = await asked { try await live.beat(id: streamID, viewerID: viewerID, leaving: false) }
-            if let wait { beatDue = now().addingTimeInterval(wait) }
+        try await refreshChat(content)
+        if content.mode == .live, now() >= beatDue {
+            let (count, wait) = try await asked { try await live.beat(id: streamID, viewerID: viewerID, leaving: false) }
+            beatDue = now().addingTimeInterval(wait ?? 20)
             viewers = (count ?? nil) ?? viewers
         }
     }
@@ -232,13 +237,15 @@ public final class LiveWatchModel {
         // A premiere's time has come: it starts within the minute
         case .soon: (untilStart ?? 1) <= 0 ? 5 : 15
         case .ended: premiereIsGone ? .infinity : 15
-        case .recording, .cancelled: .infinity
+        // A premiere's video that could not be read
+        case .recording: content.timed.state.kind == .premiere && loadedURL == nil ? 15 : .infinity
+        case .cancelled: .infinity
         }
     }
 
-    private func refreshState(_ stream: LiveStream) async {
+    private func refreshState(_ stream: LiveStream) async throws(CancellationError) {
+        let (timed, wait) = try await asked { try await live.state(id: streamID) }
         stateAt = now()
-        let (timed, wait) = await asked { try await live.state(id: streamID) }
         stateWait = timed.map { Self.pollAfter($0.state.pollAfter) } ?? wait
         if let timed { await show(stream, timed) }
     }
@@ -291,7 +298,16 @@ public final class LiveWatchModel {
 
     /// The video is released a moment after the premiere starts: asked for again with the state until it is there.
     private func loadPremiere(_ id: String, _ content: LiveContent) async {
-        if let video = try? await catalog.video(id: id), video.isPlayable, let url = video.playURL {
+        let video: Video?
+        do {
+            video = try await catalog.video(id: id)
+        } catch CoreError.notFound {
+            video = nil
+        } catch {
+            // Not an answer: asked for again
+            return
+        }
+        if let video, video.isPlayable, let url = video.playURL {
             start(url, content, startAt: premiere?.position(at: now()))
         } else if content.mode == .recording {
             premiereIsGone = true
@@ -320,37 +336,37 @@ public final class LiveWatchModel {
         isBehind = follower.isBehind
     }
 
-    private func refreshChat(_ content: LiveContent, at moment: Date) async {
+    private func refreshChat(_ content: LiveContent) async throws(CancellationError) {
         let chat = content.timed.state.chat
         switch content.mode {
         case .live where chat.enabled, .soon where chat.enabled:
-            guard moment >= chatDue else { return }
-            let (read, wait) = await asked { try await live.chat(id: streamID) }
+            guard now() >= chatDue else { return }
+            let (read, wait) = try await asked { try await live.chat(id: streamID) }
             guard let page = read else {
-                chatDue = moment.addingTimeInterval(wait ?? Self.chatBackoff)
+                chatDue = now().addingTimeInterval(wait ?? Self.chatBackoff)
                 return
             }
-            chatDue = moment.addingTimeInterval(Self.pollAfter(page.pollAfter) ?? (content.mode == .live ? 10 : 30))
+            chatDue = now().addingTimeInterval(Self.pollAfter(page.pollAfter) ?? (content.mode == .live ? 10 : 30))
             (messages, pinned) = (page.messages, page.pinned)
         case .recording where chat.replay:
-            await refreshReplay()
+            try await refreshReplay()
         default: break
         }
     }
 
     /// What had been written by the moment being watched, read in windows as playback reaches them.
-    private func refreshReplay() async {
+    private func refreshReplay() async throws(CancellationError) {
         let time = Int(player.currentTime * 1000)
         let window = time / Self.replayWindowMs
         if !isReadingReplay {
             isReadingReplay = true
+            defer { isReadingReplay = false }
             // The one before, so a seek does not open an empty chat, and the next, so it is there in time
             for n in [window, window + 1, window - 1] where n >= 0 && replay[n] == nil && now() >= chatDue {
-                let (list, wait) = await readWindow(n)
+                let (list, wait) = try await readWindow(n)
                 replay[n] = list
                 if list == nil { chatDue = now().addingTimeInterval(wait ?? Self.chatBackoff) }
             }
-            isReadingReplay = false
         }
         var shown: [LiveChatMessage] = []
         var n = window
@@ -362,12 +378,12 @@ public final class LiveWatchModel {
     }
 
     /// nil when it could not be read, and when the server said to ask again, if it did.
-    private func readWindow(_ n: Int) async -> ([LiveChatMessage]?, TimeInterval?) {
+    private func readWindow(_ n: Int) async throws(CancellationError) -> ([LiveChatMessage]?, TimeInterval?) {
         var from = n * Self.replayWindowMs
         let to = from + Self.replayWindowMs
         var all: [String: LiveChatMessage] = [:]
         for _ in 0..<Self.replayPages {
-            let (read, wait) = await asked { try await live.chatReplay(id: streamID, fromMs: from, toMs: to) }
+            let (read, wait) = try await asked { try await live.chatReplay(id: streamID, fromMs: from, toMs: to) }
             guard let page = read else { return (nil, wait) }
             for message in page.messages where message.offsetMs < to { all[message.id] = message }
             guard page.truncated == true, let last = page.messages.last, last.offsetMs > from else { break }

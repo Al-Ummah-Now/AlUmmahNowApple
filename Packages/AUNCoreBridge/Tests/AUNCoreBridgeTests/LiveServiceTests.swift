@@ -90,7 +90,11 @@ private let base = URL(string: "https://api.test")!
         }
         await #expect(throws: LiveRefused(retryAfter: 30)) { _ = try await refused.chat(id: "s") }
         await #expect(throws: LiveRefused(retryAfter: 30)) { _ = try await refused.beat(id: "s", viewerID: "v", leaving: false) }
-        for (status, headers) in [(503, [:]), (429, ["Retry-After": "soon"]), (500, ["Retry-After": "30"])]
+        let padded = service { _ in (429, ["Retry-After": " 30\t"], Data()) }
+        await #expect(throws: LiveRefused(retryAfter: 30)) { _ = try await padded.chat(id: "s") }
+        for (status, headers) in [
+            (503, [:]), (429, ["Retry-After": "soon"]), (429, ["Retry-After": "-1"]), (500, ["Retry-After": "30"]),
+        ]
             as [(Int, [String: String])]
         {
             let live = service { _ in (status, headers, Data()) }
