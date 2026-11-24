@@ -101,7 +101,8 @@ class PrivacyManifests(unittest.TestCase):
         self.assertEqual(len(errors), 2, errors)
         self.assertIn("lacks the NSPrivacyAccessedAPICategory prefix", errors[0])
         self.assertIn("no CA92.1 reason", errors[1])
-        self.only(lambda m: m["StudioMac"]["NSPrivacyCollectedDataTypes"][0].update(NSPrivacyCollectedDataType="EmailAddress"),
+        # On Admin (no App Store record) only the prefix error shows; on Studio the type also goes missing from the answers.
+        self.only(lambda m: m["AdminIOS"]["NSPrivacyCollectedDataTypes"][0].update(NSPrivacyCollectedDataType="EmailAddress"),
                   "lacks the NSPrivacyCollectedDataType prefix")
         self.only(lambda m: m["ViewerTV"]["NSPrivacyAccessedAPITypes"].append(dict(m["ViewerTV"]["NSPrivacyAccessedAPITypes"][0])),
                   "NSPrivacyAccessedAPICategoryUserDefaults is listed twice")
