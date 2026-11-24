@@ -111,6 +111,25 @@ public final class ViewerBlockStore {
         save()
     }
 
+    /// Removes any blocked channel entry matching `id` or fallback `name` (handles entries saved before a channel ID was present).
+    public func unblockChannel(id: String?, name: String?) {
+        let cleanID = id?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let byID = (cleanID?.isEmpty == false) ? Self.channelKey(id: cleanID, name: name ?? "") : nil
+        let cleanName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let byName = (cleanName?.isEmpty == false) ? Self.channelKey(id: nil, name: cleanName!) : nil
+        entries.removeAll { entry in
+            guard entry.kind == .channel else { return false }
+            if let byID, entry.id == byID { return true }
+            if byID != nil && entry.id.hasPrefix("channel:id:") { return false }
+            if let byName, entry.id == byName { return true }
+            if let cleanName, !cleanName.isEmpty, entry.name.caseInsensitiveCompare(cleanName) == .orderedSame {
+                return true
+            }
+            return false
+        }
+        save()
+    }
+
     public func isChannelBlocked(id: String?, name: String?) -> Bool {
         let cleanID = id?.trimmingCharacters(in: .whitespacesAndNewlines)
         let byID = (cleanID?.isEmpty == false) ? Self.channelKey(id: cleanID, name: name ?? "") : nil
