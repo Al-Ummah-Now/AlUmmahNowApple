@@ -98,9 +98,11 @@ public struct LiveState: Hashable, Sendable, Decodable {
     /// The server's clock when the state was read, in milliseconds.
     public var serverNow: Double?
     public var chat: Chat
+    /// Seconds until the server wants this read again; nil when it does not say.
+    public var pollAfter: TimeInterval?
 
     enum CodingKeys: String, CodingKey {
-        case status, sessionStatus, kind, startedAt, durationSeconds, eventType, viewers, serverNow, chat
+        case status, sessionStatus, kind, startedAt, durationSeconds, eventType, viewers, serverNow, chat, pollAfterMs
         case playbackURL = "playbackUrl"
         case vodURL = "vodUrl"
         case scheduledStart = "scheduledStartTime"
@@ -110,7 +112,8 @@ public struct LiveState: Hashable, Sendable, Decodable {
     public init(
         status: LiveStatus, sessionStatus: String? = nil, kind: LiveKind = .live, playbackURL: URL? = nil, vodURL: URL? = nil,
         startedAt: Date? = nil, scheduledStart: Date? = nil, premiereVideoID: String? = nil, durationSeconds: Double? = nil,
-        eventType: LiveEventType? = nil, viewers: Int? = nil, serverNow: Double? = nil, chat: Chat = Chat()
+        eventType: LiveEventType? = nil, viewers: Int? = nil, serverNow: Double? = nil, chat: Chat = Chat(),
+        pollAfter: TimeInterval? = nil
     ) {
         self.status = status
         self.sessionStatus = sessionStatus
@@ -125,6 +128,7 @@ public struct LiveState: Hashable, Sendable, Decodable {
         self.viewers = viewers
         self.serverNow = serverNow
         self.chat = chat
+        self.pollAfter = pollAfter
     }
 
     public init(from decoder: any Decoder) throws {
@@ -142,6 +146,7 @@ public struct LiveState: Hashable, Sendable, Decodable {
         viewers = try? c.decodeIfPresent(Int.self, forKey: .viewers)
         serverNow = try? c.decodeIfPresent(Double.self, forKey: .serverNow)
         chat = (try? c.decodeIfPresent(Chat.self, forKey: .chat)) ?? Chat()
+        pollAfter = c.pollAfter(forKey: .pollAfterMs)
     }
 }
 
@@ -197,11 +202,48 @@ public struct LiveChatPage: Hashable, Sendable, Decodable {
     public var pinned: LiveChatMessage?
     /// A replay window holds more than one answer.
     public var truncated: Bool?
+    /// Seconds until the server wants the chat read again; nil when it does not say.
+    public var pollAfter: TimeInterval?
 
-    public init(messages: [LiveChatMessage], pinned: LiveChatMessage? = nil, truncated: Bool? = nil) {
+    enum CodingKeys: String, CodingKey { case messages, pinned, truncated, pollAfterMs }
+
+    public init(
+        messages: [LiveChatMessage], pinned: LiveChatMessage? = nil, truncated: Bool? = nil, pollAfter: TimeInterval? = nil
+    ) {
         self.messages = messages
         self.pinned = pinned
         self.truncated = truncated
+        self.pollAfter = pollAfter
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        messages = try c.decode([LiveChatMessage].self, forKey: .messages)
+        pinned = try c.decodeIfPresent(LiveChatMessage.self, forKey: .pinned)
+        truncated = try c.decodeIfPresent(Bool.self, forKey: .truncated)
+        pollAfter = c.pollAfter(forKey: .pollAfterMs)
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// A whole answer is never lost to a bad value here: what is not a number is as if it were absent.
+    fileprivate func pollAfter(forKey key: Key) -> TimeInterval? {
+        guard let ms = try? decodeIfPresent(Double.self, forKey: key), ms > 0, ms.isFinite else { return nil }
+        return ms / 1000
+    }
+}
+
+/// The server cannot answer now, and says when to ask again (`Retry-After` on a 429 or 503), in seconds.
+public struct LiveRefused: Error, Equatable {
+    public var retryAfter: TimeInterval
+
+    public init(retryAfter: TimeInterval) { self.retryAfter = retryAfter }
+
+    init?(_ response: URLResponse) {
+        guard let response = response as? HTTPURLResponse, response.statusCode == 429 || response.statusCode == 503,
+            let text = response.value(forHTTPHeaderField: "Retry-After"), let seconds = Int(text), seconds >= 0
+        else { return nil }
+        self.init(retryAfter: TimeInterval(seconds))
     }
 }
 
@@ -216,7 +258,7 @@ public protocol LiveServicing: Sendable {
     /// The messages of a recording between two moments, at most 60 seconds apart.
     func chatReplay(id: String, fromMs: Int, toMs: Int) async throws -> LiveChatPage
     /// Counts this screen among those watching, and answers how many there are.
-    func beat(id: String, viewerID: String, leaving: Bool) async -> Int?
+    func beat(id: String, viewerID: String, leaving: Bool) async throws -> Int?
 }
 
 public struct NativeLiveService: LiveServicing {
@@ -262,6 +304,7 @@ public struct NativeLiveService: LiveServicing {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             AUNLog.network.error("GET \(url.path, privacy: .public) failed: \(status)")
+            if let refused = LiveRefused(response) { throw refused }
             throw status == 404 ? CoreError.notFound : CoreError.http(status: status)
         }
         do {
@@ -305,13 +348,14 @@ public struct NativeLiveService: LiveServicing {
         ).result
     }
 
-    public func beat(id: String, viewerID: String, leaving: Bool) async -> Int? {
+    public func beat(id: String, viewerID: String, leaving: Bool) async throws -> Int? {
         var request = URLRequest(url: baseURL.appending(path: path(id, "/viewers")))
         request.httpMethod = "POST"
         request.setAUNClient()
         request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["viewerId": viewerID, "leaving": leaving])
-        guard let (data, _) = try? await session.data(for: request) else { return nil }
+        let (data, response) = try await session.data(for: request)
+        if let refused = LiveRefused(response) { throw refused }
         return (try? decoder.decode(Envelope<Viewers>.self, from: data))?.result.viewers
     }
 }
