@@ -147,4 +147,34 @@ private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         }
         #expect(store.position(of: "v1") == nil)
     }
+
+    /// Playing starts at once; the first ticks (at 0, before the seek lands) must not replace the kept position.
+    @Test func autoplayResumesWithoutLosingTheKeptPosition() async throws {
+        let (url, store) = (try await makeVideo(seconds: 40), positions())
+        store.save(20, duration: 40, of: "v1")
+        let sut = PlayerController(subtitleLoader: { _ in "" }, positions: store)
+        sut.load(resumable(url), autoplay: true)
+        for _ in 0..<100 where sut.player.currentTime().seconds < 20.3 {
+            #expect((store.position(of: "v1") ?? 0) >= 20)
+            #expect(sut.currentTime >= 20)
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(sut.currentTime >= 20)
+        sut.stop()
+        #expect((store.position(of: "v1") ?? 0) >= 20)
+    }
+
+    @Test func pausingWhilePlayingSavesAtOnce() async throws {
+        let (url, store) = (try await makeVideo(seconds: 40), positions())
+        let sut = PlayerController(subtitleLoader: { _ in "" }, positions: store)
+        sut.load(resumable(url), autoplay: false)
+        try await waitUntil { sut.phase == .ready && sut.duration > 30 }
+        sut.seek(to: 12)
+        sut.play()
+        try await waitUntil { sut.isPlaying && sut.currentTime > 12.3 }
+        #expect(store.position(of: "v1") == 12)
+        sut.pause()
+        try await waitUntil { !sut.isPlaying && (store.position(of: "v1") ?? 0) > 12.3 }
+        sut.stop()
+    }
 }

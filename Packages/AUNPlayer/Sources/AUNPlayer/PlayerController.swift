@@ -123,7 +123,10 @@ public final class PlayerController {
         player.defaultRate = speed
         isResuming = currentTime > 0
         if isResuming {
-            playerItem.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600)) { [weak self, weak playerItem] _ in
+            // Exact, so a stream with few keyframes doesn't come back to the one before (which may be the start)
+            let target = CMTime(seconds: currentTime, preferredTimescale: 600)
+            playerItem.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) {
+                [weak self, weak playerItem] _ in
                 Task { @MainActor in
                     guard let self, let playerItem, self.player.currentItem === playerItem else { return }
                     self.isResuming = false
