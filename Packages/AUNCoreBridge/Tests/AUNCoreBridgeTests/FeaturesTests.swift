@@ -41,7 +41,7 @@ struct FeaturesTests {
         let keys = [
             "upload", "createChannel", "live", "captionsTranscribe", "captionsTranslate", "inlineTranslate",
             "viewerTranslatedTitles", "quranEditions", "quranText", "audioTracks", "siteDomains", "socialAutopost",
-            "youtubeImport", "aiCategorySuggest", "bulkSchedule",
+            "youtubeImport", "aiCategorySuggest", "bulkSchedule", "liveChat", "livePremieres", "liveReminders", "liveEvents",
         ]
         #expect(Set(keys.compactMap(UserFeature.init(rawValue:))) == Set(UserFeature.allCases))
         #expect(UserFeatures.all.on.count == keys.count)

@@ -19,6 +19,8 @@ struct AppLinkTests {
     @Test func shortsPlaylistsAndPosts() {
         #expect(link("https://videos.alummahnow.net/ar/shorts/s9") == .short(id: "s9"))
         #expect(link("https://videos.alummahnow.net/shorts/s9")?.videoID == "s9")
+        #expect(link("https://videos.alummahnow.net/ar/live/l9") == .live(id: "l9"))
+        #expect(link("https://videos.alummahnow.net/live/l9")?.videoID == nil)
         #expect(link("https://videos.alummahnow.net/en/playlist/p1") == .playlist(id: "p1"))
         #expect(link("https://videos.alummahnow.net/ar/post/x7") == .post(id: "x7"))
         #expect(link("https://videos.alummahnow.net/en/playlist/p1")?.videoID == nil)

@@ -90,5 +90,48 @@
                     name: "watch", theme: theme, language: language, style: style)
             }
         }
+
+        /// Times are left out: they read in the machine's time zone.
+        private func liveContent(_ language: AppLanguage, _ state: LiveState, _ mode: LiveMode) -> LiveContent {
+            var stream = FixtureLiveService(language: language).all[0]
+            stream.scheduledStart = nil
+            return LiveContent(stream: stream, timed: TimedLiveState(state: state), mode: mode)
+        }
+
+        @Test(arguments: themes, languages)
+        func live(theme: FanousThemeID, language: AppLanguage) {
+            let fixture = FixtureLiveService(language: language)
+            let onAir = liveContent(language, LiveState(status: .live, eventType: .halqa, chat: .init(enabled: true)), .live)
+            for style in Self.styles {
+                assertView(
+                    VStack(spacing: FanousScale.spacingLg) {
+                        LiveDetails(content: onAir, viewers: 128)
+                        LiveChatView(
+                            messages: Array(fixture.messages.prefix(4)),
+                            pinned: fixture.pinned,
+                            isReplay: false
+                        )
+                        .frame(height: 400)
+                    }
+                    .padding().frame(maxHeight: .infinity, alignment: .top).fanousMaterial(.page),
+                    name: "live", theme: theme, language: language, style: style)
+            }
+        }
+
+        @Test(arguments: themes, languages)
+        func livePremiere(theme: FanousThemeID, language: AppLanguage) {
+            let coming = liveContent(language, LiveState(status: .scheduled, kind: .premiere), .soon)
+            var card = FixtureLiveService(language: language).all[0]
+            card.kind = .premiere
+            for style in Self.styles {
+                assertView(
+                    VStack(spacing: FanousScale.spacingLg) {
+                        LiveNotice(content: coming, untilStart: 7954)
+                        LiveRail(streams: [card], open: { _ in }, seeAll: {})
+                    }
+                    .padding(.vertical).frame(maxHeight: .infinity, alignment: .top).fanousMaterial(.page),
+                    name: "premiere", theme: theme, language: language, style: style)
+            }
+        }
     }
 #endif

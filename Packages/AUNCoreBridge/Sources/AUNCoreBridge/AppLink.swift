@@ -3,11 +3,12 @@ import Foundation
 /// A universal link on the videos host, as the apps claim them (videos admin → Mobile apps serves
 /// `/.well-known/apple-app-site-association` with this path table; AlUmmahNow shared-types `MOBILE_APP_LINK_PATHS`):
 ///
-/// - viewer: `/app/auth/callback`, `/{en,ar}/{video,shorts,playlist,post}/…`, `/{en,ar}/@handle…`, also without the locale
+/// - viewer: `/app/auth/callback`, `/{en,ar}/{video,shorts,live,playlist,post}/…`, `/{en,ar}/@handle…`, also without the locale
 /// - studio: `/app/studio/…`, `/{en,ar}/studio/…`, also without the locale
 public enum AppLink: Equatable, Sendable {
     case video(id: String)
     case short(id: String)
+    case live(id: String)
     case playlist(id: String)
     case post(id: String)
     case channel(handle: String)
@@ -45,6 +46,7 @@ public enum AppLink: Equatable, Sendable {
         switch head {
         case "video": return .video(id: id)
         case "shorts": return .short(id: id)
+        case "live": return .live(id: id)
         case "playlist": return .playlist(id: id)
         case "post": return .post(id: id)
         default: return nil

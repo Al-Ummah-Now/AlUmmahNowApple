@@ -118,16 +118,18 @@ public struct GuestAuthSession: AuthSessionProviding {
 public struct CoreBridge: Sendable {
     public var environment: AppEnvironment
     public var catalog: any CatalogServicing
+    public var live: any LiveServicing
     public var auth: any AuthSessionProviding
     public var uploads: any UploadEngine
     public var siteTheme: any SiteThemeServicing
 
     public init(
-        environment: AppEnvironment, catalog: any CatalogServicing, auth: any AuthSessionProviding, uploads: any UploadEngine,
-        siteTheme: any SiteThemeServicing
+        environment: AppEnvironment, catalog: any CatalogServicing, live: any LiveServicing, auth: any AuthSessionProviding,
+        uploads: any UploadEngine, siteTheme: any SiteThemeServicing
     ) {
         self.environment = environment
         self.catalog = catalog
+        self.live = live
         self.auth = auth
         self.uploads = uploads
         self.siteTheme = siteTheme
@@ -139,6 +141,7 @@ public struct CoreBridge: Sendable {
         return CoreBridge(
             environment: environment,
             catalog: NativeCatalogService(baseURL: environment.apiBaseURL, session: session),
+            live: NativeLiveService(baseURL: environment.apiBaseURL, session: session),
             auth: auth,
             uploads: NativeTUSUploadEngine(session: session),
             siteTheme: NativeSiteThemeService(adminAPIBaseURL: environment.adminAPIBaseURL, session: session)
@@ -146,10 +149,13 @@ public struct CoreBridge: Sendable {
     }
 
     /// Hermetic bridge for UI tests, snapshots and previews. The site theme is the one given, Fawanees by default;
-    /// `playable` streams a bundled clip (store screenshots).
-    public static func fixtures(siteTheme: String = "fawanees", playable: Bool = false) -> CoreBridge {
+    /// `playable` streams a bundled clip (store screenshots); without `live` nothing is on air and its switches are off.
+    public static func fixtures(
+        siteTheme: String = "fawanees", playable: Bool = false, live: Bool = false, language: AppLanguage = .en
+    ) -> CoreBridge {
         CoreBridge(
-            environment: .qa, catalog: FixtureCatalogService(playable: playable), auth: GuestAuthSession(),
+            environment: .qa, catalog: FixtureCatalogService(playable: playable),
+            live: FixtureLiveService(isOff: !live, playable: playable, language: language), auth: GuestAuthSession(),
             uploads: NativeTUSUploadEngine(session: .shared), siteTheme: FixedSiteThemeService(siteTheme))
     }
 }

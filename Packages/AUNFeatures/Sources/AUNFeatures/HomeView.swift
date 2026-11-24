@@ -62,7 +62,10 @@
     /// Pure rail list; separate from loading so it can be snapshot-tested.
     struct HomeRailsContent: View {
         let rails: [HomeRail]
+        var live: [LiveStream] = []
         var cardWidth: CGFloat = 260
+        var openLive: (LiveStream) -> Void = { _ in }
+        var seeAllLive: (() -> Void)?
         let open: (Video) -> Void
 
         var body: some View {
@@ -70,6 +73,9 @@
                 LazyVStack(alignment: .leading, spacing: FanousScale.spacingXl) {
                     if let featured = rails.first?.videos.first {
                         HomeHero(video: featured) { open(featured) }.padding(.horizontal)
+                    }
+                    if !live.isEmpty {
+                        LiveRail(streams: live, cardWidth: cardWidth, open: openLive, seeAll: seeAllLive)
                     }
                     ForEach(rails) { rail in
                         VStack(alignment: .leading, spacing: FanousScale.spacingMd) {
@@ -125,10 +131,14 @@
     public struct HomeView: View {
         @Environment(\.l10n) private var l10n
         @State private var model: HomeViewModel
-        private let open: (Video) -> Void
+        @State private var live: LiveListModel
+        @Binding private var hasLive: Bool
+        private let open: (ViewerDestination) -> Void
 
-        public init(catalog: any CatalogServicing, open: @escaping (Video) -> Void) {
-            _model = State(initialValue: HomeViewModel(catalog: catalog))
+        public init(core: CoreBridge, hasLive: Binding<Bool> = .constant(false), open: @escaping (ViewerDestination) -> Void) {
+            _model = State(initialValue: HomeViewModel(catalog: core.catalog))
+            _live = State(initialValue: LiveListModel(live: core.live))
+            _hasLive = hasLive
             self.open = open
         }
 
@@ -142,12 +152,23 @@
                 case .loaded(let rails) where rails.isEmpty:
                     EmptyStateView(title: l10n("home.empty"))
                 case .loaded(let rails):
-                    HomeRailsContent(rails: rails, open: open).refreshable { await model.load() }
+                    HomeRailsContent(
+                        rails: rails, live: live.onAir + live.coming, openLive: { open(.live($0.id)) },
+                        seeAllLive: { open(.liveList) }, open: { open(.video($0.id)) }
+                    )
+                    .refreshable {
+                        await model.load()
+                        await live.load()
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .fanousPage()
             .task { await model.load() }
+            .task {
+                await live.load()
+                hasLive = !live.isEmpty
+            }
         }
     }
 #endif

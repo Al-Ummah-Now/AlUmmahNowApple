@@ -4,6 +4,7 @@ import Foundation
 /// `USER_FEATURE_KEYS`). Off means invisible: no tab, button or text about it.
 public enum UserFeature: String, CaseIterable, Sendable {
     case upload, createChannel, live, captionsTranscribe, captionsTranslate, inlineTranslate, viewerTranslatedTitles
+    case liveChat, livePremieres, liveReminders, liveEvents
     case quranEditions, quranText, audioTracks, siteDomains, socialAutopost, youtubeImport, aiCategorySuggest, bulkSchedule
 }
 
