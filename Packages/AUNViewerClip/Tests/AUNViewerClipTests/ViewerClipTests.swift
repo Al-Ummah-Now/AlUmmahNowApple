@@ -19,12 +19,11 @@ struct ViewerClipTests {
         #expect(ClipInvocation.resolve(URL(string: "https://videos.alummahnow.net/en/studio")!) == nil)
     }
 
-    @Test func enforcesFifteenMegabytePayloadCapKidsIsolationAndBilingualCopy() {
+    @Test func enforcesFifteenMegabytePayloadCapAndBilingualCopy() {
         #expect(ClipInvocation.maxPayloadBytes == 15 * 1024 * 1024)
-        let kidsVideo = ClipVideo(id: "v1", title: "Kids Story", category: "islamic_kids")
-        let generalVideo = ClipVideo(id: "v2", title: "Tafsir", category: "quran_tafsir")
-        #expect(ClipInvocation.isKidsSafeOnly(kidsVideo))
-        #expect(!ClipInvocation.isKidsSafeOnly(generalVideo))
+        let video = ClipVideo(id: "v1", title: "Tafsir", titleAr: "تفسير", category: "quran_tafsir")
+        #expect(video.displayTitle(isArabic: true) == "تفسير")
+        #expect(video.displayTitle(isArabic: false) == "Tafsir")
 
         let arCopy = ClipCopy.resolve(isArabic: true)
         let enCopy = ClipCopy.resolve(isArabic: false)

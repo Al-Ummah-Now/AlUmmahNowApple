@@ -102,7 +102,7 @@ public struct ClipVideoLoader: Sendable {
 }
 
 /// Resolved invocation target for the iOS App Clip (`E22-D8`: unauthenticated HLS video/Short playback
-/// with optional `?t=` timestamp, zero tracking, Kids-safe guard, and `SKOverlay` full-app install prompt).
+/// with optional `?t=` timestamp, zero tracking, and `SKOverlay` full-app install prompt).
 public struct ClipInvocation: Equatable, Sendable {
     /// Maximum thinned App Clip payload budget enforced in CI (15 MB per Apple App Clip physical/QR limit).
     public static let maxPayloadBytes = 15 * 1024 * 1024
@@ -153,11 +153,6 @@ public struct ClipInvocation: Equatable, Sendable {
         return raw.unicodeScalars.allSatisfy { scalar in
             CharacterSet.alphanumerics.contains(scalar) || scalar == "-" || scalar == "_"
         }
-    }
-
-    /// Kids-category videos play without external links or full-app prompts (`Epic 20` / `E22 §9.3`).
-    public static func isKidsSafeOnly(_ video: ClipVideo) -> Bool {
-        video.category == "islamic_kids"
     }
 }
 
@@ -229,20 +224,18 @@ public struct ViewerClipRootView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
 
-                if !ClipInvocation.isKidsSafeOnly(video) {
-                    Button {
-                        showAppOverlay = true
-                    } label: {
-                        Text(copy.getFullApp)
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Self.accentEmerald))
-                    }
-                    .padding(.horizontal)
-                    .accessibilityIdentifier("clip-get-full-app")
+                Button {
+                    showAppOverlay = true
+                } label: {
+                    Text(copy.getFullApp)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Self.accentEmerald))
                 }
+                .padding(.horizontal)
+                .accessibilityIdentifier("clip-get-full-app")
                 Spacer(minLength: 0)
             } else if failed {
                 Text(copy.loadError)
