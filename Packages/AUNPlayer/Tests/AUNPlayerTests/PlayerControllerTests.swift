@@ -98,4 +98,53 @@ private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         #expect(sut.currentChapter?.id == "b")
         sut.stop()
     }
+
+    private func positions() -> PlaybackPositionStore {
+        PlaybackPositionStore(defaults: UserDefaults(suiteName: "positions-\(UUID().uuidString)")!)
+    }
+
+    private func resumable(_ url: URL) -> PlaybackItem { PlaybackItem(url: url, title: "T", resumeID: "v1") }
+
+    /// E20-A5: Screen Time can end the app with no warning; a new process comes back to where the video was.
+    @Test func thePositionSurvivesTheAppBeingEndedWhilePlaying() async throws {
+        let (url, store) = (try await makeVideo(seconds: 40), positions())
+        let ended = PlayerController(subtitleLoader: { _ in "" }, positions: store)
+        ended.load(resumable(url), autoplay: false)
+        try await waitUntil { ended.phase == .ready && ended.duration > 30 }
+        ended.seek(to: 20)
+        #expect(store.position(of: "v1") == 20)
+
+        // No pause and no stop: the first controller is simply gone.
+        let next = PlayerController(subtitleLoader: { _ in "" }, positions: store)
+        next.load(resumable(url), autoplay: false)
+        #expect(next.currentTime == 20)
+        try await waitUntil { next.phase == .ready && abs(next.player.currentTime().seconds - 20) < 0.5 }
+        next.stop()
+        ended.stop()
+    }
+
+    @Test func pausingKeepsTheExactPosition() async throws {
+        let (url, store) = (try await makeVideo(seconds: 40), positions())
+        let sut = PlayerController(subtitleLoader: { _ in "" }, positions: store)
+        sut.load(resumable(url), autoplay: false)
+        try await waitUntil { sut.phase == .ready && sut.duration > 30 }
+        sut.seek(to: 12)
+        sut.seek(to: 14)
+        sut.stop()
+        #expect(store.position(of: "v1") == 14)
+    }
+
+    @Test func anItemWithoutAResumeIDAndPrivateMediaKeepNothing() async throws {
+        let (url, store) = (try await makeVideo(seconds: 40), positions())
+        let live = PlayerController(subtitleLoader: { _ in "" }, positions: store)
+        live.load(PlaybackItem(url: url, title: "T"), autoplay: false)
+        let review = PlayerController(subtitleLoader: { _ in "" }, privateMedia: true, positions: store)
+        review.load(resumable(url), autoplay: false)
+        for sut in [live, review] {
+            try await waitUntil { sut.phase == .ready && sut.duration > 30 }
+            sut.seek(to: 20)
+            sut.stop()
+        }
+        #expect(store.position(of: "v1") == nil)
+    }
 }

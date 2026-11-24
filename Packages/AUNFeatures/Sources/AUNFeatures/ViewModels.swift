@@ -40,10 +40,13 @@ public final class WatchViewModel {
     private let catalog: any CatalogServicing
     private let videoID: String
 
-    public init(videoID: String, catalog: any CatalogServicing) {
+    public init(
+        videoID: String, catalog: any CatalogServicing, positions: PlaybackPositionStore = PlaybackPositionStore()
+    ) {
         self.videoID = videoID
         self.catalog = catalog
-        player = PlayerController { url in try await catalog.subtitleText(url: url) }
+        player = PlayerController(
+            subtitleLoader: { url in try await catalog.subtitleText(url: url) }, positions: positions)
     }
 
     /// Loads the page and starts this video. The next video never starts by itself (spec 21.6).
@@ -60,7 +63,8 @@ public final class WatchViewModel {
             player.load(
                 PlaybackItem(
                     url: url, title: video.displayTitle(language), subtitle: video.channelName,
-                    resolutions: video.availableResolutions, subtitles: loadedTracks, chapters: loadedChapters),
+                    resolutions: video.availableResolutions, subtitles: loadedTracks, chapters: loadedChapters,
+                    resumeID: video.isLive ? nil : video.id),
                 autoplay: autoplay)
         } catch is CancellationError {
             return
