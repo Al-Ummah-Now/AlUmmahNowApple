@@ -76,7 +76,8 @@
         public var body: some View {
             Group {
                 switch destination {
-                case .video(let id): WatchView(videoID: id, catalog: core.catalog)
+                case .video(let id):
+                    WatchView(videoID: id, catalog: core.catalog, webBaseURL: core.environment.webBaseURL)
                 case .live(let id): LiveWatchView(streamID: id, core: core)
                 case .liveList: EmptyView()
                 }
