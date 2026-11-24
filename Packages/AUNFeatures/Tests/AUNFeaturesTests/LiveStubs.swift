@@ -140,6 +140,26 @@ actor StubLive: LiveServicing {
     }
 }
 
+/// A catalog whose video is answered when it is released, whether or not its task is cancelled.
+actor HeldCatalog: CatalogServicing {
+    private var held: CheckedContinuation<Void, Never>?
+    private var isReleased = false
+    var isHeld: Bool { held != nil }
+    func release() {
+        isReleased = true
+        held?.resume()
+        held = nil
+    }
+    func homeRails(limit: Int) async throws -> [HomeRail] { [] }
+    func video(id: String) async throws -> Video {
+        if !isReleased { await withCheckedContinuation { held = $0 } }
+        return Video(id: id, title: "T", playURL: URL(string: "https://media.test/v.m3u8"), uploadStatus: "ready")
+    }
+    func subtitles(videoID: String) async throws -> [SubtitleTrack] { [] }
+    func chapters(videoID: String) async throws -> [Chapter] { [] }
+    func subtitleText(url: URL) async throws -> String { "" }
+}
+
 /// A catalog that answers with an error.
 struct BrokenCatalog: CatalogServicing {
     let error: CoreError
