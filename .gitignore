@@ -17,3 +17,4 @@ AlUmmahNow.xcodeproj/
 *.provisionprofile
 fastlane/report.xml
 fastlane/README.md
+__pycache__/

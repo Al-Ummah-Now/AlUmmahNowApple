@@ -1,0 +1,51 @@
+{
+  "about": "App Store Connect → App Information → Age Rating, per App Store record (wiki E20 §3.1, owner decisions E20-D1 and E20-D7). Entered by hand. scripts/check-store-metadata.py checks every question is answered and every cited file exists. Review at each release and when a feature adds user content, social features, chat, location, ads or web browsing. Human-readable: store/apple/age-rating.md.",
+  "questions": {
+    "controls": ["parentalControls", "ageAssurance"],
+    "capabilities": ["unrestrictedWebAccess", "userGeneratedContent", "socialMedia", "socialMediaDisabledUnder13", "messagingAndChat", "sharedLocation", "advertising", "datingAndRelationships", "contests", "gambling", "simulatedGambling", "lootBoxes"],
+    "content": ["profanityOrCrudeHumor", "horrorOrFearThemes", "alcoholTobaccoDrugs", "medicalOrTreatment", "healthOrWellness", "matureOrSuggestive", "sexualContentOrNudity", "graphicSexualContent", "cartoonViolence", "realisticViolence", "graphicViolence", "gunsOrWeapons"]
+  },
+  "apps": {
+    "viewer-ios": {
+      "rating": "13+",
+      "overrideTo": null,
+      "primaryCategory": "PHOTO_AND_VIDEO",
+      "secondaryCategory": "ENTERTAINMENT",
+      "controls": { "parentalControls": false, "ageAssurance": false },
+      "capabilities": { "unrestrictedWebAccess": false, "userGeneratedContent": true, "socialMedia": true, "socialMediaDisabledUnder13": false, "messagingAndChat": false, "sharedLocation": false, "advertising": false, "datingAndRelationships": false, "contests": false, "gambling": false, "simulatedGambling": false, "lootBoxes": false },
+      "content": { "profanityOrCrudeHumor": "none", "horrorOrFearThemes": "none", "alcoholTobaccoDrugs": "infrequent", "medicalOrTreatment": "infrequent", "healthOrWellness": "infrequent", "matureOrSuggestive": "infrequent", "sexualContentOrNudity": "none", "graphicSexualContent": "none", "cartoonViolence": "none", "realisticViolence": "infrequent", "graphicViolence": "none", "gunsOrWeapons": "infrequent" },
+      "sources": ["Apps/ViewerIOS/Info.plist", "Packages/AUNFeatures/Sources/AUNFeatures/ViewerRootIOS.swift", "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Services.swift"]
+    },
+    "viewer-mac": {
+      "rating": "13+",
+      "overrideTo": null,
+      "primaryCategory": "PHOTO_AND_VIDEO",
+      "secondaryCategory": "ENTERTAINMENT",
+      "controls": { "parentalControls": false, "ageAssurance": false },
+      "capabilities": { "unrestrictedWebAccess": false, "userGeneratedContent": true, "socialMedia": true, "socialMediaDisabledUnder13": false, "messagingAndChat": false, "sharedLocation": false, "advertising": false, "datingAndRelationships": false, "contests": false, "gambling": false, "simulatedGambling": false, "lootBoxes": false },
+      "content": { "profanityOrCrudeHumor": "none", "horrorOrFearThemes": "none", "alcoholTobaccoDrugs": "infrequent", "medicalOrTreatment": "infrequent", "healthOrWellness": "infrequent", "matureOrSuggestive": "infrequent", "sexualContentOrNudity": "none", "graphicSexualContent": "none", "cartoonViolence": "none", "realisticViolence": "infrequent", "graphicViolence": "none", "gunsOrWeapons": "infrequent" },
+      "sources": ["Apps/ViewerMac/Info.plist", "Packages/AUNFeatures/Sources/AUNFeatures/ViewerRootMac.swift", "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Services.swift"]
+    },
+    "viewer-tv": {
+      "rating": "13+",
+      "overrideTo": null,
+      "primaryCategory": "PHOTO_AND_VIDEO",
+      "secondaryCategory": "ENTERTAINMENT",
+      "controls": { "parentalControls": false, "ageAssurance": false },
+      "capabilities": { "unrestrictedWebAccess": false, "userGeneratedContent": true, "socialMedia": false, "socialMediaDisabledUnder13": false, "messagingAndChat": false, "sharedLocation": false, "advertising": false, "datingAndRelationships": false, "contests": false, "gambling": false, "simulatedGambling": false, "lootBoxes": false },
+      "content": { "profanityOrCrudeHumor": "none", "horrorOrFearThemes": "none", "alcoholTobaccoDrugs": "infrequent", "medicalOrTreatment": "infrequent", "healthOrWellness": "infrequent", "matureOrSuggestive": "infrequent", "sexualContentOrNudity": "none", "graphicSexualContent": "none", "cartoonViolence": "none", "realisticViolence": "infrequent", "graphicViolence": "none", "gunsOrWeapons": "infrequent" },
+      "sources": ["Apps/ViewerTV/Info.plist", "Packages/AUNFeatures/Sources/AUNFeatures/TVViews.swift"]
+    },
+    "studio-ios": {
+      "rating": "13+",
+      "overrideTo": "13+",
+      "primaryCategory": "PHOTO_AND_VIDEO",
+      "secondaryCategory": null,
+      "controls": { "parentalControls": false, "ageAssurance": false },
+      "capabilities": { "unrestrictedWebAccess": false, "userGeneratedContent": true, "socialMedia": false, "socialMediaDisabledUnder13": false, "messagingAndChat": false, "sharedLocation": false, "advertising": false, "datingAndRelationships": false, "contests": false, "gambling": false, "simulatedGambling": false, "lootBoxes": false },
+      "content": { "profanityOrCrudeHumor": "none", "horrorOrFearThemes": "none", "alcoholTobaccoDrugs": "none", "medicalOrTreatment": "none", "healthOrWellness": "none", "matureOrSuggestive": "none", "sexualContentOrNudity": "none", "graphicSexualContent": "none", "cartoonViolence": "none", "realisticViolence": "none", "graphicViolence": "none", "gunsOrWeapons": "none" },
+      "sources": ["Apps/StudioIOS/Info.plist", "Packages/AUNStudio/Sources/AUNStudio/Session/WebAuthenticator.swift", "Packages/AUNStudio/Sources/AUNStudio/Upload/UploadView.swift"]
+    }
+  },
+  "notInStore": { "studio-mac": "Developer ID download, no App Store record: no rating. If a record is added, use studio-ios." }
+}

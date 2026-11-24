@@ -42,8 +42,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
-      - name: App Store limits, en/ar parity, copy tone and App Privacy sources
+      - name: App Store limits, en/ar parity, copy tone, App Privacy and age rating answers
         run: python3 scripts/check-store-metadata.py
+      - name: The store check refuses bad answers
+        run: python3 scripts/test-store-metadata.py
       - name: Version and build number from release tags
         run: scripts/test-release-version.sh
       - name: Release scripts parse
