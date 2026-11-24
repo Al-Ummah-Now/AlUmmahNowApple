@@ -22,6 +22,12 @@ private actor StubLive: LiveServicing {
     private(set) var askedEvent: LiveEventType?
     private(set) var leaves = 0
     var chatFails = false
+    var chatPollAfter: TimeInterval?
+    /// Every read is refused with this `Retry-After`.
+    var retryAfter: TimeInterval?
+    /// The state does not answer.
+    var isSlow = false
+    private(set) var beats = 0
     let offset: TimeInterval
 
     init(_ state: LiveState = LiveState(status: .scheduled), offset: TimeInterval = 0) {
@@ -32,6 +38,12 @@ private actor StubLive: LiveServicing {
     func set(_ state: LiveState) { current = state }
     func set(on: Set<UserFeature>) { self.on = on }
     func set(chatFails: Bool) { self.chatFails = chatFails }
+    func set(chatPollAfter: TimeInterval?) { self.chatPollAfter = chatPollAfter }
+    func set(retryAfter: TimeInterval?) { self.retryAfter = retryAfter }
+    func set(isSlow: Bool) { self.isSlow = isSlow }
+    private func refuse() throws {
+        if let retryAfter { throw LiveRefused(retryAfter: retryAfter) }
+    }
     func set(_ status: LiveStatus, _ streams: [LiveStream]) { lists[status] = streams }
     func set(window from: Int, _ page: LiveChatPage) { windows[from] = page }
 
@@ -43,20 +55,34 @@ private actor StubLive: LiveServicing {
     func stream(id: String) async throws -> LiveStream { LiveStream(id: id, title: "T", status: current.status) }
     func state(id: String) async throws -> TimedLiveState {
         stateReads += 1
+        if isSlow { try await Task.sleep(for: .seconds(60)) }
+        try refuse()
         return TimedLiveState(state: current, clockOffset: offset)
     }
     func chat(id: String) async throws -> LiveChatPage {
         chatReads += 1
+        try refuse()
         if chatFails { throw CoreError.http(status: 503) }
-        return LiveChatPage(messages: [LiveChatMessage(id: "m", authorName: "A", text: "x", offsetMs: 0)])
+        return LiveChatPage(
+            messages: [LiveChatMessage(id: "m", authorName: "A", text: "x", offsetMs: 0)], pollAfter: chatPollAfter)
     }
     func chatReplay(id: String, fromMs: Int, toMs: Int) async throws -> LiveChatPage {
         windows[fromMs] ?? LiveChatPage(messages: [])
     }
-    func beat(id: String, viewerID: String, leaving: Bool) async -> Int? {
+    func beat(id: String, viewerID: String, leaving: Bool) async throws -> Int? {
         // As URLSession: nothing is sent in a cancelled task
         if leaving, !Task.isCancelled { leaves += 1 }
+        if !leaving { beats += 1 }
+        try refuse()
         return 5
+    }
+}
+
+extension LiveWatchModel {
+    /// One second.
+    fileprivate func tick() async {
+        step()
+        await poll()
     }
 }
 
@@ -255,6 +281,79 @@ private actor StubLive: LiveServicing {
         await model.tick()
         #expect(await live.chatReads == 2)
         model.player.stop()
+    }
+
+    @Test func theServerSaysWhenToAskAgain() async throws {
+        let url = URL(string: "https://x.test/p.m3u8")
+        let live = StubLive(LiveState(status: .live, playbackURL: url, chat: .init(enabled: true), pollAfter: 120))
+        await live.set(chatPollAfter: 30)
+        let model = model(live)
+        await model.load(language: .en)
+        await model.tick()
+        clock.advance(29)
+        await model.tick()
+        #expect(await live.chatReads == 1)
+        clock.advance(1)
+        await model.tick()
+        #expect(await live.chatReads == 2)
+        clock.advance(89)
+        await model.tick()
+        #expect(await live.stateReads == 1)
+        clock.advance(1)
+        await live.set(LiveState(status: .live, playbackURL: url, chat: .init(enabled: true)))
+        await model.tick()
+        #expect(await live.stateReads == 2)
+        // It says nothing any more: this app's interval again
+        clock.advance(60)
+        await model.tick()
+        #expect(await live.stateReads == 3)
+        model.player.stop()
+    }
+
+    @Test func aRefusalSaysWhenToAskAgain() async throws {
+        let live = StubLive(
+            LiveState(status: .live, playbackURL: URL(string: "https://x.test/p.m3u8"), chat: .init(enabled: true)))
+        let model = model(live)
+        await model.load(language: .en)
+        await live.set(retryAfter: 200)
+        await model.tick()
+        clock.advance(60)
+        await model.tick()
+        let asked = [await live.stateReads, await live.chatReads, await live.beats]
+        clock.advance(139)
+        await model.tick()
+        #expect([await live.stateReads, await live.chatReads, await live.beats] == asked)
+        clock.advance(61)
+        await model.tick()
+        #expect([await live.stateReads, await live.chatReads, await live.beats] == asked.map { $0 + 1 })
+        model.player.stop()
+    }
+
+    @Test func whatTheServerSaysIsKeptBetween5SecondsAnd10Minutes() {
+        #expect(LiveWatchModel.pollAfter(nil) == nil)
+        #expect([-1, 0, 7, .greatestFiniteMagnitude].map { LiveWatchModel.pollAfter($0) } == [5, 5, 7, 600])
+    }
+
+    @Test func theClockDoesNotWaitForTheNetwork() async throws {
+        let start = clock.now.addingTimeInterval(100)
+        let live = StubLive(LiveState(status: .scheduled, kind: .premiere, scheduledStart: start))
+        let model = model(live)
+        await model.load(language: .en)
+        await live.set(isSlow: true)
+        clock.advance(20)
+        let run = Task { await model.run() }
+        for _ in 0..<100 {
+            if await live.stateReads == 2 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        clock.advance(30)
+        for _ in 0..<300 {
+            if model.untilStart == 50 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(model.untilStart == 50)
+        run.cancel()
+        await run.value
     }
 
     @Test func theReplayIsWhatHadBeenWrittenByThen() async throws {

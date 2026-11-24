@@ -69,12 +69,41 @@ private let base = URL(string: "https://api.test")!
         #expect(window.truncated == true)
     }
 
-    @Test func countsTheViewer() async {
+    @Test func readsWhenToAskAgainAndABadValueIsAsIfAbsent() async throws {
+        for (value, seconds) in [
+            ("30000", 30), ("12000.5", 12.0005), ("\"30000\"", nil), ("null", nil), ("{}", nil), ("0", nil), ("-5", nil),
+            ("1e999", nil),
+        ] as [(String, TimeInterval?)] {
+            let live = service { request in
+                let isState = request.url?.path.hasSuffix("/state") == true
+                let body = isState ? #""status":"live""# : #""messages":[]"#
+                return (200, [:], Data("{\"result\":{\(body),\"pollAfterMs\":\(value)}}".utf8))
+            }
+            #expect(try await live.state(id: "s").state.pollAfter == seconds, "\(value)")
+            #expect(try await live.chat(id: "s").pollAfter == seconds, "\(value)")
+        }
+    }
+
+    @Test func aRefusalSaysWhenToAskAgain() async {
+        let refused = service { request in
+            (request.httpMethod == "POST" ? 503 : 429, ["Retry-After": "30"], Data())
+        }
+        await #expect(throws: LiveRefused(retryAfter: 30)) { _ = try await refused.chat(id: "s") }
+        await #expect(throws: LiveRefused(retryAfter: 30)) { _ = try await refused.beat(id: "s", viewerID: "v", leaving: false) }
+        for (status, headers) in [(503, [:]), (429, ["Retry-After": "soon"]), (500, ["Retry-After": "30"])]
+            as [(Int, [String: String])]
+        {
+            let live = service { _ in (status, headers, Data()) }
+            await #expect(throws: CoreError.http(status: status)) { _ = try await live.chat(id: "s") }
+        }
+    }
+
+    @Test func countsTheViewer() async throws {
         let live = service { request in
             let isBeat = request.httpMethod == "POST" && request.url?.path == "/api/live-streams/s/viewers"
             guard isBeat else { return (404, [:], Data()) }
             return (200, [:], Data(#"{"success":true,"result":{"viewers":7}}"#.utf8))
         }
-        #expect(await live.beat(id: "s", viewerID: "v", leaving: false) == 7)
+        #expect(try await live.beat(id: "s", viewerID: "v", leaving: false) == 7)
     }
 }
