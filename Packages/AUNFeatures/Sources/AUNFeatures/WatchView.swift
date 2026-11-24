@@ -10,11 +10,15 @@
         @Environment(\.fanous) private var theme
         @State private var confirmBlockChannel = false
         let content: WatchContent
-        var webBaseURL: URL = ViewerReportURL.defaultWebBaseURL
+        let webBaseURL: URL
         let seek: (Chapter) -> Void
 
         private var blockStore: ViewerBlockStore { .shared }
         private var channelName: String? { content.video.channelName }
+        private var channelID: String? {
+            let trimmed = content.video.channelID?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed?.isEmpty == false ? trimmed : nil
+        }
         private var isBlocked: Bool { blockStore.isChannelBlocked(id: content.video.channelID, name: channelName) }
 
         var body: some View {
@@ -37,23 +41,22 @@
                             Label(l10n("safety.report.video"), systemImage: "flag")
                         }
                         .accessibilityIdentifier("report-video")
-                        if let channelName {
+                        if let channelID {
                             Link(
                                 destination: ViewerReportURL.channel(
-                                    id: content.video.channelID, name: channelName, language: l10n.language.rawValue,
-                                    webBaseURL: webBaseURL)
+                                    id: channelID, language: l10n.language.rawValue, webBaseURL: webBaseURL)
                             ) {
                                 Label(l10n("safety.report.channel"), systemImage: "flag")
                             }
                             .accessibilityIdentifier("report-channel")
-                            if !isBlocked {
-                                Button(role: .destructive) {
-                                    confirmBlockChannel = true
-                                } label: {
-                                    Label(l10n("safety.block.channel"), systemImage: "hand.raised.slash")
-                                }
-                                .accessibilityIdentifier("block-channel")
+                        }
+                        if channelName != nil, !isBlocked {
+                            Button(role: .destructive) {
+                                confirmBlockChannel = true
+                            } label: {
+                                Label(l10n("safety.block.channel"), systemImage: "hand.raised.slash")
                             }
+                            .accessibilityIdentifier("block-channel")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -162,9 +165,7 @@
         @State private var model: WatchViewModel
         private let webBaseURL: URL
 
-        public init(
-            videoID: String, catalog: any CatalogServicing, webBaseURL: URL = ViewerReportURL.defaultWebBaseURL
-        ) {
+        public init(videoID: String, catalog: any CatalogServicing, webBaseURL: URL) {
             _model = State(initialValue: WatchViewModel(videoID: videoID, catalog: catalog))
             self.webBaseURL = webBaseURL
         }
@@ -200,8 +201,12 @@
             }
             .fanousPage()
             .task { await model.load(language: l10n.language) }
-            .onChange(of: blocked, initial: true) { _, nowBlocked in
-                if nowBlocked { model.player.stop() }
+            .onChange(of: blocked, initial: true) { wasBlocked, nowBlocked in
+                if nowBlocked {
+                    model.player.stop()
+                } else if wasBlocked {
+                    Task { await model.load(language: l10n.language) }
+                }
             }
             .onDisappear { model.player.stop() }
             #if os(macOS)

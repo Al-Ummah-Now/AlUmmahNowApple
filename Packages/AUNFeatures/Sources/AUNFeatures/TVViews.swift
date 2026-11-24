@@ -162,7 +162,7 @@
         @State private var showingReport = false
         private let webBaseURL: URL
 
-        init(videoID: String, catalog: any CatalogServicing, webBaseURL: URL = ViewerReportURL.defaultWebBaseURL) {
+        init(videoID: String, catalog: any CatalogServicing, webBaseURL: URL) {
             _model = State(initialValue: WatchViewModel(videoID: videoID, catalog: catalog))
             self.webBaseURL = webBaseURL
         }
