@@ -29,6 +29,17 @@ final class LiveScreens: XCTestCase {
                             StoreScreenshot.capture(app, self, .init(language: language, theme: theme, index: 6, name: "list"))
                         }
                     #endif
+                    #if os(iOS)
+                        // The chat beside the player, where the screen is wide enough for it
+                        if UIDevice.current.userInterfaceIdiom == .pad, page.0 == "live" || page.0 == "recording" {
+                            XCUIDevice.shared.orientation = .landscapeLeft
+                            let name = page.0 + "-landscape"
+                            let shot = StoreScreenshot.Shot(
+                                language: language, theme: theme, index: 10 + index, name: name)
+                            StoreScreenshot.capture(app, self, shot)
+                            XCUIDevice.shared.orientation = .portrait
+                        }
+                    #endif
                     app.terminate()
                 }
             }

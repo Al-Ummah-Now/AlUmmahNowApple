@@ -103,7 +103,9 @@ import SwiftUI
 
     public struct LiveWatchView: View {
         @Environment(\.l10n) private var l10n
-        /// Wide enough for the chat beside the player: landscape iPad and Mac windows.
+        @Environment(\.scenePhase) private var scenePhase
+        /// Wide enough for the chat beside the player: landscape iPad and Mac windows. A portrait iPad of any size has it
+        /// under the player.
         private static let twoPaneWidth: CGFloat = 960
         @State private var model: LiveWatchModel
 
@@ -117,19 +119,20 @@ import SwiftUI
                 case .loading: ThemeLoader()
                 case .failed: ErrorStateView { Task { await model.load(language: l10n.language) } }
                 case .loaded(let content):
-                    GeometryReader { geometry in page(content, width: geometry.size.width) }
+                    GeometryReader { geometry in page(content, size: geometry.size) }
                 }
             }
             .fanousPage()
-            .task {
-                await model.load(language: l10n.language)
-                await model.run()
+            .task { await model.load(language: l10n.language) }
+            // Nothing is asked for in the background, also while the sound plays on there
+            .task(id: scenePhase == .background) {
+                if scenePhase != .background { await model.run() }
             }
             .onDisappear { model.player.stop() }
         }
 
-        @ViewBuilder private func page(_ content: LiveContent, width: CGFloat) -> some View {
-            if width >= Self.twoPaneWidth, content.hasChat {
+        @ViewBuilder private func page(_ content: LiveContent, size: CGSize) -> some View {
+            if size.width >= Self.twoPaneWidth, size.width > size.height, content.hasChat {
                 HStack(alignment: .top, spacing: FanousScale.spacingLg) {
                     ScrollView { main(content) }
                     chat(content).frame(width: 340).frame(maxHeight: .infinity)
@@ -179,6 +182,7 @@ import SwiftUI
     /// Full screen; the chat is beside it, for reading.
     struct TVLiveWatchView: View {
         @Environment(\.l10n) private var l10n
+        @Environment(\.scenePhase) private var scenePhase
         @State private var model: LiveWatchModel
 
         init(streamID: String, core: CoreBridge) {
@@ -214,9 +218,10 @@ import SwiftUI
                     .padding(60)
                 }
             }
-            .task {
-                await model.load(language: l10n.language)
-                await model.run()
+            .task { await model.load(language: l10n.language) }
+            // Nothing is asked for in the background, also while the sound plays on there
+            .task(id: scenePhase == .background) {
+                if scenePhase != .background { await model.run() }
             }
             .onDisappear { model.player.stop() }
         }

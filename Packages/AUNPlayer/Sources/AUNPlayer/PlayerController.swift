@@ -67,6 +67,9 @@ public final class PlayerController {
     public private(set) var duration: Double = 0
     public private(set) var quality: PlayerQuality = .auto
     public private(set) var speed: Float = 1
+    /// A seek is on its way: the player still reports where it was.
+    public private(set) var isSeeking = false
+    @ObservationIgnored private(set) var seekCount = 0
     public private(set) var selectedSubtitleID: String?
     public private(set) var currentCue: SubtitleCue?
 
@@ -111,6 +114,7 @@ public final class PlayerController {
     public func load(_ newItem: PlaybackItem, autoplay: Bool = true) {
         savePosition()
         teardownObservers()
+        isSeeking = false
         item = newItem
         phase = .loading
         quality = .auto
@@ -156,8 +160,20 @@ public final class PlayerController {
         let upper = duration > 0 ? duration : seconds
         let target = min(max(0, seconds), upper)
         isResuming = false
-        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        isSeeking = false
         applyTime(target)
+        seekCount += 1
+        let seek = seekCount
+        isSeeking = true
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) {
+            [weak self] _ in
+            Task { @MainActor in self?.finishSeek(seek) }
+        }
+    }
+
+    /// A seek landed, or was given up for a newer one (whose own end counts).
+    func finishSeek(_ seek: Int) {
+        if seek == seekCount { isSeeking = false }
     }
 
     /// Nothing is missing to go on playing; false while it loads.
@@ -270,7 +286,7 @@ public final class PlayerController {
     }
 
     func applyTime(_ time: Double) {
-        guard time.isFinite, !isResuming else { return }
+        guard time.isFinite, !isResuming, !isSeeking else { return }
         currentTime = time
         let cue = cueTimeline.cue(at: time)
         if cue != currentCue { currentCue = cue }
