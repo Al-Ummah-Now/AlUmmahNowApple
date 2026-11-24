@@ -66,6 +66,7 @@ struct RailHeader: View {
 struct SettingsMenu: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.l10n) private var l10n
+    @State private var showingBlocked = false
 
     var body: some View {
         Menu {
@@ -79,6 +80,15 @@ struct SettingsMenu: View {
                     Text(l10n("theme.\(theme.rawValue)")).tag(theme)
                 }
             }
+            #if os(iOS) || os(macOS)
+                Divider()
+                Button {
+                    showingBlocked = true
+                } label: {
+                    Label(l10n("safety.blockedList.title"), systemImage: "hand.raised.slash")
+                }
+                .accessibilityIdentifier("settings-blocked-list")
+            #endif
         } label: {
             Image(systemName: "gearshape")
                 .font(.system(size: 17, weight: .medium))
@@ -86,6 +96,11 @@ struct SettingsMenu: View {
                 .accessibilityLabel(l10n("common.settings"))
         }
         .accessibilityIdentifier("settings-menu")
+        #if os(iOS) || os(macOS)
+            .sheet(isPresented: $showingBlocked) {
+                BlockedListSheet(store: .shared)
+            }
+        #endif
     }
 }
 

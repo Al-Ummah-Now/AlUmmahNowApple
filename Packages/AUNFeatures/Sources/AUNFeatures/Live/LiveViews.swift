@@ -149,7 +149,9 @@ import SwiftUI
         }
 
         private func chat(_ content: LiveContent) -> some View {
-            LiveChatView(messages: model.messages, pinned: model.pinned, isReplay: content.mode == .recording)
+            LiveChatView(
+                streamID: content.stream.id, messages: model.messages, pinned: model.pinned,
+                isReplay: content.mode == .recording)
         }
 
         private func main(_ content: LiveContent) -> some View {

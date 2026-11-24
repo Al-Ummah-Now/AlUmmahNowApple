@@ -8,18 +8,75 @@
     struct WatchDetails: View {
         @Environment(\.l10n) private var l10n
         @Environment(\.fanous) private var theme
+        @State private var confirmBlockChannel = false
         let content: WatchContent
         let seek: (Chapter) -> Void
 
+        private var blockStore: ViewerBlockStore { .shared }
+        private var channelName: String? { content.video.channelName }
+        private var isBlocked: Bool { blockStore.isChannelBlocked(id: content.video.channelID, name: channelName) }
+
         var body: some View {
             VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(content.video.displayTitle(l10n.language))
-                        .fanousFont(.title)
-                        .fontWeight(.bold)
-                        .foregroundStyle(Fanous.textPrimary)
-                        .accessibilityIdentifier("watch-title")
-                    Text(metadata).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+                HStack(alignment: .top, spacing: FanousScale.spacingSm) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(content.video.displayTitle(l10n.language))
+                            .fanousFont(.title)
+                            .fontWeight(.bold)
+                            .foregroundStyle(Fanous.textPrimary)
+                            .accessibilityIdentifier("watch-title")
+                        Text(metadata).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                    Menu {
+                        Link(destination: ViewerReportURL.video(id: content.video.id, language: l10n.language.rawValue)) {
+                            Label(l10n("safety.report.video"), systemImage: "flag")
+                        }
+                        .accessibilityIdentifier("report-video")
+                        if let channelName {
+                            Link(
+                                destination: ViewerReportURL.channel(
+                                    id: content.video.channelID, name: channelName, language: l10n.language.rawValue)
+                            ) {
+                                Label(l10n("safety.report.channel"), systemImage: "flag")
+                            }
+                            .accessibilityIdentifier("report-channel")
+                            if !isBlocked {
+                                Button(role: .destructive) {
+                                    confirmBlockChannel = true
+                                } label: {
+                                    Label(l10n("safety.block.channel"), systemImage: "hand.raised.slash")
+                                }
+                                .accessibilityIdentifier("block-channel")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3)
+                            .foregroundStyle(Fanous.textSecondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                            .accessibilityLabel(l10n("safety.moreActions"))
+                    }
+                    .menuIndicator(.hidden)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("watch-actions-menu")
+                }
+                if isBlocked, let channelName {
+                    HStack(spacing: FanousScale.spacingSm) {
+                        Text(l10n("safety.blocked.channelBanner", channelName))
+                            .fanousFont(.caption)
+                            .foregroundStyle(Fanous.textSecondary)
+                        Spacer(minLength: 0)
+                        Button(l10n("safety.unblock")) {
+                            blockStore.unblock(id: ViewerBlockStore.channelKey(id: content.video.channelID, name: channelName))
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Fanous.accent)
+                    }
+                    .padding(FanousScale.spacingMd)
+                    .fanousMaterial(.card) { .rounded($0.md) }
+                    .accessibilityIdentifier("channel-blocked-banner")
                 }
                 let description = content.video.displayDescription(l10n.language)
                 if !description.isEmpty {
@@ -32,6 +89,16 @@
                 if !content.chapters.isEmpty { chapters }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .sheet(isPresented: $confirmBlockChannel) {
+                if let channelName {
+                    ViewerBlockConfirmSheet(
+                        title: l10n("safety.block.channelTitle", channelName),
+                        message: l10n("safety.block.channelMessage")
+                    ) {
+                        blockStore.blockChannel(id: content.video.channelID, name: channelName)
+                    }
+                }
+            }
         }
 
         private var chapters: some View {

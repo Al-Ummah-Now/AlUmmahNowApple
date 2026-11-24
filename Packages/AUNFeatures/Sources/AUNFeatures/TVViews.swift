@@ -158,13 +158,14 @@
     struct TVWatchView: View {
         @Environment(\.l10n) private var l10n
         @State private var model: WatchViewModel
+        @State private var showingReport = false
 
         init(videoID: String, catalog: any CatalogServicing) {
             _model = State(initialValue: WatchViewModel(videoID: videoID, catalog: catalog))
         }
 
         var body: some View {
-            ZStack {
+            ZStack(alignment: .topTrailing) {
                 Color.black.ignoresSafeArea()
                 switch model.state {
                 case .loading:
@@ -177,6 +178,27 @@
                     } else {
                         Text(l10n("watch.notReady")).foregroundStyle(Fanous.textPrimary).accessibilityIdentifier(
                             "watch-not-ready")
+                    }
+                    Button {
+                        showingReport = true
+                    } label: {
+                        Label(l10n("safety.report.video"), systemImage: "flag")
+                    }
+                    .padding(40)
+                    .accessibilityIdentifier("tv-report-video")
+                    .sheet(isPresented: $showingReport) {
+                        VStack(spacing: 24) {
+                            Text(l10n("safety.report.video")).font(.title2.weight(.bold))
+                            Text(
+                                l10n(
+                                    "safety.report.tvBody",
+                                    ViewerReportURL.video(id: content.video.id, language: l10n.language.rawValue)
+                                        .absoluteString)
+                            )
+                            .multilineTextAlignment(.center)
+                            Button(l10n("common.dismiss")) { showingReport = false }
+                        }
+                        .padding(60)
                     }
                 }
             }
