@@ -5,6 +5,8 @@ import CoreMedia
 import Observation
 
 public struct PlaybackItem: Hashable, Sendable {
+    /// Set when the video's position is kept for coming back to it; never for live.
+    public var resumeID: String?
     public var url: URL
     public var title: String
     public var subtitle: String?
@@ -14,8 +16,9 @@ public struct PlaybackItem: Hashable, Sendable {
 
     public init(
         url: URL, title: String, subtitle: String? = nil, resolutions: [String] = [], subtitles: [SubtitleTrack] = [],
-        chapters: [Chapter] = []
+        chapters: [Chapter] = [], resumeID: String? = nil
     ) {
+        self.resumeID = resumeID
         self.url = url
         self.title = title
         self.subtitle = subtitle
@@ -80,8 +83,19 @@ public final class PlayerController {
     /// picture in picture, so nothing about the item leaves this window.
     public let isPrivateMedia: Bool
 
-    public init(subtitleLoader: @escaping @Sendable (URL) async throws -> String, privateMedia: Bool = false) {
+    /// Seconds between two saves of the position while playing.
+    nonisolated static let saveInterval: Double = 5
+    private let positions: PlaybackPositionStore?
+    @ObservationIgnored private var savedTime: Double = 0
+    /// True until the seek to the kept position lands, so an early tick at 0 never replaces it.
+    @ObservationIgnored private var isResuming = false
+
+    public init(
+        subtitleLoader: @escaping @Sendable (URL) async throws -> String, privateMedia: Bool = false,
+        positions: PlaybackPositionStore? = nil
+    ) {
         self.subtitleLoader = subtitleLoader
+        self.positions = privateMedia ? nil : positions
         isPrivateMedia = privateMedia
         if privateMedia {
             player.allowsExternalPlayback = false
@@ -92,6 +106,7 @@ public final class PlayerController {
     }
 
     public func load(_ newItem: PlaybackItem, autoplay: Bool = true) {
+        savePosition()
         teardownObservers()
         item = newItem
         phase = .loading
@@ -99,12 +114,22 @@ public final class PlayerController {
         selectedSubtitleID = nil
         currentCue = nil
         cueTimeline = CueTimeline([])
-        currentTime = 0
+        currentTime = newItem.resumeID.flatMap { positions?.position(of: $0) } ?? 0
+        savedTime = currentTime
         duration = 0
 
         let playerItem = AVPlayerItem(url: newItem.url)
         playerItem.audioTimePitchAlgorithm = .timeDomain
         player.defaultRate = speed
+        isResuming = currentTime > 0
+        if isResuming {
+            playerItem.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600)) { [weak self, weak playerItem] _ in
+                Task { @MainActor in
+                    guard let self, let playerItem, self.player.currentItem === playerItem else { return }
+                    self.isResuming = false
+                }
+            }
+        }
         player.replaceCurrentItem(with: playerItem)
         observe(playerItem)
         configureAudioSession()
@@ -124,6 +149,7 @@ public final class PlayerController {
     public func seek(to seconds: Double) {
         let upper = duration > 0 ? duration : seconds
         let target = min(max(0, seconds), upper)
+        isResuming = false
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         applyTime(target)
     }
@@ -162,6 +188,7 @@ public final class PlayerController {
 
     /// Stops playback and releases observers. Call when the watch screen goes away.
     public func stop() {
+        savePosition()
         player.pause()
         player.replaceCurrentItem(with: nil)
         teardownObservers()
@@ -214,16 +241,25 @@ public final class PlayerController {
 
     private func handle(timeControl status: AVPlayer.TimeControlStatus) {
         isPlaying = status != .paused
+        if !isPlaying { savePosition() }
         #if os(iOS) || os(macOS)
             if !isPrivateMedia { nowPlaying.update() }
         #endif
     }
 
     private func applyTime(_ time: Double) {
-        guard time.isFinite else { return }
+        guard time.isFinite, !isResuming else { return }
         currentTime = time
         let cue = cueTimeline.cue(at: time)
         if cue != currentCue { currentCue = cue }
+        if abs(time - savedTime) >= Self.saveInterval { savePosition() }
+    }
+
+    /// The system can end the app with no warning, so this runs while playing, not only on the way out.
+    private func savePosition() {
+        guard phase == .ready, let id = item?.resumeID else { return }
+        savedTime = currentTime
+        positions?.save(currentTime, duration: duration, of: id)
     }
 
     private func teardownObservers() {

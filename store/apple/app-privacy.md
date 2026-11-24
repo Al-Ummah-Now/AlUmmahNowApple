@@ -21,6 +21,7 @@ for advertising.
 | Device identifiers | None (no App Attest: the viewer makes no writes) | `Packages/AUNFeatures/Sources/AUNFeatures/ViewerBootstrap.swift` |
 | Crash and diagnostic data | Not sent: `AUNLog` writes to the device's own log only | `AppEnvironment.swift` |
 | Settings (language, theme) | Kept on the device | `Packages/AUNDesign/Sources/AUNDesign/AppSettings.swift` |
+| Where the last video stopped | Kept on the device, one entry, for coming back to it | `Packages/AUNPlayer/Sources/AUNPlayer/PlaybackPositionStore.swift` |
 
 ## Al Ummah Now Studio (iPhone and iPad, Mac)
 

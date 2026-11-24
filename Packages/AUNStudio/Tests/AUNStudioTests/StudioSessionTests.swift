@@ -10,6 +10,13 @@ struct StudioSessionTests {
         func authenticate(_ request: SignInRequest) async throws -> URL { throw CoreError.cancelled }
     }
 
+    /// What the system sheet reports when it cannot show the sign-in page, such as a blocked domain.
+    private struct BlockedAuthenticator: WebAuthenticating {
+        func authenticate(_ request: SignInRequest) async throws -> URL {
+            throw URLError(.cannotLoadFromNetwork)
+        }
+    }
+
     private func defaults() -> UserDefaults {
         let name = "studio-session-\(UUID().uuidString)"
         return UserDefaults(suiteName: name)!
@@ -37,6 +44,15 @@ struct StudioSessionTests {
         #expect(session.allChannels.count == 3)
         #expect(session.channels.map(\.id) == ["fixture-channel", "fixture-channel-2"])
         #expect(session.channel?.id == "fixture-channel")
+    }
+
+    @Test func aBlockedSignInPageIsAPlainMessageAndNothingElseChanges() async {
+        let session = session(authenticator: BlockedAuthenticator())
+        await session.start()
+        await session.signIn()
+        #expect(session.phase == .signedOut)
+        #expect(!session.isSigningIn)
+        #expect(session.notice != nil)
     }
 
     @Test func thePickedChannelIsRememberedPerAccount() async {
