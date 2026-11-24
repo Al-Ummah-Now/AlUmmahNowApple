@@ -4,133 +4,6 @@ import Testing
 
 @testable import AUNFeatures
 
-/// A clock the test moves.
-private final class TestClock: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value = Date(timeIntervalSince1970: 1_800_000_000)
-    var now: Date { lock.withLock { value } }
-    func advance(_ seconds: TimeInterval) { lock.withLock { value += seconds } }
-}
-
-private actor StubLive: LiveServicing {
-    var current: LiveState
-    var on: Set<UserFeature> = [.livePremieres, .liveEvents]
-    var lists: [LiveStatus: [LiveStream]] = [:]
-    var windows: [Int: LiveChatPage] = [:]
-    private(set) var stateReads = 0
-    private(set) var chatReads = 0
-    private(set) var askedEvent: LiveEventType?
-    private(set) var leaves = 0
-    var chatFails = false
-    var chatPollAfter: TimeInterval?
-    var pinned: LiveChatMessage?
-    /// One event's list is held back until `release`.
-    var heldEvent: LiveEventType?
-    private var held: CheckedContinuation<Void, Never>?
-    var isHeld: Bool { held != nil }
-    /// The beats in the order they were sent, and whether each is held back until `releaseBeat`.
-    private(set) var sent: [Bool] = []
-    private var holdsBeats = false
-    private var heldBeat: CheckedContinuation<Void, Never>?
-    var isBeatHeld: Bool { heldBeat != nil }
-    func set(holdsBeats: Bool) { self.holdsBeats = holdsBeats }
-    func releaseBeat() {
-        heldBeat?.resume()
-        heldBeat = nil
-    }
-    private(set) var windowReads: [Int] = []
-    func release() {
-        held?.resume()
-        held = nil
-    }
-    func set(pinned: LiveChatMessage?) { self.pinned = pinned }
-    func set(heldEvent: LiveEventType?) { self.heldEvent = heldEvent }
-    /// Every read is refused with this `Retry-After`.
-    var retryAfter: TimeInterval?
-    /// The state does not answer.
-    var isSlow = false
-    private(set) var beats = 0
-    let offset: TimeInterval
-
-    init(_ state: LiveState = LiveState(status: .scheduled), offset: TimeInterval = 0) {
-        current = state
-        self.offset = offset
-    }
-
-    func set(_ state: LiveState) { current = state }
-    func set(on: Set<UserFeature>) { self.on = on }
-    func set(chatFails: Bool) { self.chatFails = chatFails }
-    func set(chatPollAfter: TimeInterval?) { self.chatPollAfter = chatPollAfter }
-    func set(retryAfter: TimeInterval?) { self.retryAfter = retryAfter }
-    func set(isSlow: Bool) { self.isSlow = isSlow }
-    /// Each answer takes this long on the test's clock.
-    var takes: (@Sendable () -> Void)?
-    func set(takes: (@Sendable () -> Void)?) { self.takes = takes }
-    private func answerTakes() { takes?() }
-    private func refuse() throws {
-        if let retryAfter { throw LiveRefused(retryAfter: retryAfter) }
-    }
-    func set(_ status: LiveStatus, _ streams: [LiveStream]) { lists[status] = streams }
-    func set(window from: Int, _ page: LiveChatPage) { windows[from] = page }
-
-    func features() async -> UserFeatures { UserFeatures(on: on) }
-    func streams(_ status: LiveStatus, event: LiveEventType?) async throws -> [LiveStream] {
-        askedEvent = event
-        if status == .live, let heldEvent, event == heldEvent { await withCheckedContinuation { held = $0 } }
-        return lists[status] ?? []
-    }
-    func stream(id: String) async throws -> LiveStream { LiveStream(id: id, title: "T", status: current.status) }
-    func state(id: String) async throws -> TimedLiveState {
-        stateReads += 1
-        answerTakes()
-        if isSlow { try await Task.sleep(for: .seconds(60)) }
-        try refuse()
-        return TimedLiveState(state: current, clockOffset: offset)
-    }
-    func chat(id: String) async throws -> LiveChatPage {
-        chatReads += 1
-        answerTakes()
-        if isSlow { try await Task.sleep(for: .seconds(60)) }
-        try refuse()
-        if chatFails { throw CoreError.http(status: 503) }
-        return LiveChatPage(
-            messages: [LiveChatMessage(id: "m", authorName: "A", text: "x", offsetMs: 0)], pinned: pinned,
-            pollAfter: chatPollAfter)
-    }
-    func chatReplay(id: String, fromMs: Int, toMs: Int) async throws -> LiveChatPage {
-        windowReads.append(fromMs)
-        return windows[fromMs] ?? LiveChatPage(messages: [])
-    }
-    func beat(id: String, viewerID: String, leaving: Bool) async throws -> Int? {
-        // As URLSession: nothing is sent in a cancelled task
-        sent.append(leaving)
-        if holdsBeats { await withCheckedContinuation { heldBeat = $0 } }
-        if leaving, !Task.isCancelled { leaves += 1 }
-        if !leaving { beats += 1 }
-        if !leaving { answerTakes() }
-        try refuse()
-        return 5
-    }
-}
-
-/// A catalog that answers with an error.
-private struct BrokenCatalog: CatalogServicing {
-    let error: CoreError
-    func homeRails(limit: Int) async throws -> [HomeRail] { throw error }
-    func video(id: String) async throws -> Video { throw error }
-    func subtitles(videoID: String) async throws -> [SubtitleTrack] { throw error }
-    func chapters(videoID: String) async throws -> [Chapter] { throw error }
-    func subtitleText(url: URL) async throws -> String { throw error }
-}
-
-extension LiveWatchModel {
-    /// One second.
-    fileprivate func tick() async {
-        step()
-        await poll()
-    }
-}
-
 @MainActor @Suite struct LiveModelTests {
     private let clock = TestClock()
 
@@ -234,69 +107,6 @@ extension LiveWatchModel {
         clock.advance(60)
         await model.tick()
         #expect(model.messages.isEmpty)
-        model.player.stop()
-    }
-
-    @Test func leavingIsCountedThoughTheScreensTaskIsCancelled() async throws {
-        let live = StubLive(LiveState(status: .live, playbackURL: URL(string: "https://x.test/p.m3u8")))
-        let model = model(live)
-        await model.load(language: .en)
-        let run = Task { await model.run() }
-        try await Task.sleep(for: .milliseconds(50))
-        run.cancel()
-        await run.value
-        for _ in 0..<100 {
-            if await live.leaves > 0 { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(await live.leaves == 1)
-        model.player.stop()
-    }
-
-    private func until(_ done: () async -> Bool) async throws {
-        for _ in 0..<500 {
-            if await done() { return }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(await done())
-    }
-
-    @Test func aBeatOnItsWayWhenTheAppGoesToTheBackgroundCannotComeAfterTheLeave() async throws {
-        let live = StubLive(LiveState(status: .live, playbackURL: URL(string: "https://x.test/p.m3u8")))
-        let model = model(live)
-        await model.load(language: .en)
-        await live.set(holdsBeats: true)
-        let run = Task { await model.run() }
-        try await until { await live.isBeatHeld }
-        run.cancel()
-        try await Task.sleep(for: .milliseconds(50))
-        // The leave is not sent before the beat is answered
-        #expect(await live.sent == [false])
-        await live.set(holdsBeats: false)
-        await live.releaseBeat()
-        try await until { await live.sent == [false, true] }
-        await run.value
-        #expect(await live.sent == [false, true])
-        model.player.stop()
-    }
-
-    @Test func aLeaveOnItsWayWhenTheViewerComesBackCannotComeAfterTheBeat() async throws {
-        let live = StubLive(LiveState(status: .live, playbackURL: URL(string: "https://x.test/p.m3u8")))
-        let model = model(live)
-        await model.load(language: .en)
-        let first = Task { await model.run() }
-        try await until { await live.beats == 1 }
-        await live.set(holdsBeats: true)
-        first.cancel()
-        try await until { await live.isBeatHeld }
-        let second = Task { await model.run() }
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(await live.sent == [false, true])
-        await live.set(holdsBeats: false)
-        await live.releaseBeat()
-        try await until { await live.sent == [false, true, false] }
-        second.cancel()
-        await second.value
         model.player.stop()
     }
 
@@ -406,13 +216,10 @@ extension LiveWatchModel {
         // The chat's answer is on its way
         await live.set(isSlow: true)
         func cancelled(_ isOnItsWay: @escaping () async -> Bool) async throws {
-            let run = Task { await model.run() }
-            for _ in 0..<200 {
-                if await isOnItsWay() { break }
-                try await Task.sleep(for: .milliseconds(10))
-            }
-            run.cancel()
-            await run.value
+            model.setActive(true)
+            try await until(isOnItsWay)
+            model.setActive(false)
+            await model.settled()
         }
         try await cancelled { await live.chatReads == 1 }
         await live.set(isSlow: false)
@@ -455,19 +262,16 @@ extension LiveWatchModel {
         await model.load(language: .en)
         await live.set(isSlow: true)
         clock.advance(20)
-        let run = Task { await model.run() }
-        for _ in 0..<100 {
-            if await live.stateReads == 2 { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        model.setActive(true)
+        try await until { await live.stateReads == 2 }
         clock.advance(30)
         for _ in 0..<300 {
             if model.untilStart == 50 { break }
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(model.untilStart == 50)
-        run.cancel()
-        await run.value
+        model.setActive(false)
+        await model.settled()
     }
 
     @Test func theReplayIsWhatHadBeenWrittenByThen() async throws {

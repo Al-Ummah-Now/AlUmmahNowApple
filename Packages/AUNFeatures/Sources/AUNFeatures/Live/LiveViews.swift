@@ -125,10 +125,12 @@ import SwiftUI
             .fanousPage()
             .task { await model.load(language: l10n.language) }
             // Nothing is asked for in the background, also while the sound plays on there
-            .task(id: scenePhase == .background) {
-                if scenePhase != .background { await model.run() }
+            .onAppear { model.setActive(scenePhase != .background) }
+            .onChange(of: scenePhase) { model.setActive(scenePhase != .background) }
+            .onDisappear {
+                model.setActive(false)
+                model.player.stop()
             }
-            .onDisappear { model.player.stop() }
         }
 
         @ViewBuilder private func page(_ content: LiveContent, size: CGSize) -> some View {
@@ -220,10 +222,12 @@ import SwiftUI
             }
             .task { await model.load(language: l10n.language) }
             // Nothing is asked for in the background, also while the sound plays on there
-            .task(id: scenePhase == .background) {
-                if scenePhase != .background { await model.run() }
+            .onAppear { model.setActive(scenePhase != .background) }
+            .onChange(of: scenePhase) { model.setActive(scenePhase != .background) }
+            .onDisappear {
+                model.setActive(false)
+                model.player.stop()
             }
-            .onDisappear { model.player.stop() }
         }
     }
 #endif
