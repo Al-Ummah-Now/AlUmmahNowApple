@@ -375,7 +375,7 @@ public final class LiveWatchModel {
             for n in [window, window + 1, window - 1] where n >= 0 && replay[n] == nil && now() >= replayDue {
                 let (list, wait) = try await readWindow(n)
                 replay[n] = list
-                if list == nil { replayDue = now().addingTimeInterval(wait ?? Self.chatBackoff) }
+                if let due = wait ?? (list == nil ? Self.chatBackoff : nil) { replayDue = now().addingTimeInterval(due) }
             }
         }
         var shown: [LiveChatMessage] = []
@@ -387,18 +387,21 @@ public final class LiveWatchModel {
         messages = Array(shown.suffix(Self.shownMessages))
     }
 
-    /// nil when it could not be read, and when the server said to ask again, if it did.
+    /// nil when it could not be read, and when the server said to ask again, if it did: after an answer too. The rest of a
+    /// window is one read in parts.
     private func readWindow(_ n: Int) async throws(CancellationError) -> ([LiveChatMessage]?, TimeInterval?) {
         var from = n * Self.replayWindowMs
         let to = from + Self.replayWindowMs
         var all: [String: LiveChatMessage] = [:]
+        var said: TimeInterval?
         for _ in 0..<Self.replayPages {
             let (read, wait) = try await asked { try await live.chatReplay(id: streamID, fromMs: from, toMs: to) }
             guard let page = read else { return (nil, wait) }
+            said = Self.pollAfter(page.pollAfter) ?? said
             for message in page.messages where message.offsetMs < to { all[message.id] = message }
             guard page.truncated == true, let last = page.messages.last, last.offsetMs > from else { break }
             from = last.offsetMs
         }
-        return (all.values.sorted { ($0.offsetMs, $0.id) < ($1.offsetMs, $1.id) }, nil)
+        return (all.values.sorted { ($0.offsetMs, $0.id) < ($1.offsetMs, $1.id) }, said)
     }
 }

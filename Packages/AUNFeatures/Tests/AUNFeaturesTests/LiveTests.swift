@@ -24,10 +24,17 @@ private actor StubLive: LiveServicing {
     var chatFails = false
     var chatPollAfter: TimeInterval?
     var pinned: LiveChatMessage?
-    /// One event's list takes its time.
-    var slowEvent: LiveEventType?
+    /// One event's list is held back until `release`.
+    var heldEvent: LiveEventType?
+    private var held: CheckedContinuation<Void, Never>?
+    var isHeld: Bool { held != nil }
+    private(set) var windowReads: [Int] = []
+    func release() {
+        held?.resume()
+        held = nil
+    }
     func set(pinned: LiveChatMessage?) { self.pinned = pinned }
-    func set(slowEvent: LiveEventType?) { self.slowEvent = slowEvent }
+    func set(heldEvent: LiveEventType?) { self.heldEvent = heldEvent }
     /// Every read is refused with this `Retry-After`.
     var retryAfter: TimeInterval?
     /// The state does not answer.
@@ -59,7 +66,7 @@ private actor StubLive: LiveServicing {
     func features() async -> UserFeatures { UserFeatures(on: on) }
     func streams(_ status: LiveStatus, event: LiveEventType?) async throws -> [LiveStream] {
         askedEvent = event
-        if let slowEvent, event == slowEvent { try await Task.sleep(for: .milliseconds(200)) }
+        if status == .live, let heldEvent, event == heldEvent { await withCheckedContinuation { held = $0 } }
         return lists[status] ?? []
     }
     func stream(id: String) async throws -> LiveStream { LiveStream(id: id, title: "T", status: current.status) }
@@ -81,7 +88,8 @@ private actor StubLive: LiveServicing {
             pollAfter: chatPollAfter)
     }
     func chatReplay(id: String, fromMs: Int, toMs: Int) async throws -> LiveChatPage {
-        windows[fromMs] ?? LiveChatPage(messages: [])
+        windowReads.append(fromMs)
+        return windows[fromMs] ?? LiveChatPage(messages: [])
     }
     func beat(id: String, viewerID: String, leaving: Bool) async throws -> Int? {
         // As URLSession: nothing is sent in a cancelled task
@@ -479,17 +487,18 @@ extension LiveWatchModel {
 
     @Test func anEarlierChoiceThatAnswersLateIsNotShown() async throws {
         let live = StubLive()
-        await live.set(slowEvent: .jumuah)
+        await live.set(heldEvent: .jumuah)
         await live.set(.live, [LiveStream(id: "on", title: "", status: .live)])
         let clock = clock
         let model = LiveListModel(live: live, now: { clock.now })
         let late = Task { await model.choose(.jumuah) }
         for _ in 0..<100 {
-            if await live.askedEvent == .jumuah { break }
+            if await live.isHeld { break }
             try await Task.sleep(for: .milliseconds(5))
         }
         await model.choose(.halqa)
         await live.set(.live, [LiveStream(id: "late", title: "", status: .live)])
+        await live.release()
         await late.value
         #expect(model.event == .halqa)
         #expect(model.onAir.map(\.id) == ["on"])
@@ -515,6 +524,21 @@ extension LiveWatchModel {
         #expect(try content(model).mode == .recording)
         #expect(model.pinned == nil)
         #expect(model.messages.map(\.id) == ["a"])
+        model.player.stop()
+    }
+
+    @Test func theReplayFollowsTheServersPace() async throws {
+        let live = StubLive(LiveState(status: .ended, vodURL: URL(string: "https://x.test/v.m3u8"), chat: .init(replay: true)))
+        await live.set(window: 0, LiveChatPage(messages: [], pollAfter: 30))
+        let model = model(live)
+        await model.load(language: .en)
+        await model.tick()
+        clock.advance(29)
+        await model.tick()
+        #expect(await live.windowReads == [0])
+        clock.advance(1)
+        await model.tick()
+        #expect(await live.windowReads == [0, 60_000])
         model.player.stop()
     }
 
