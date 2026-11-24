@@ -73,8 +73,6 @@ class PrivacyManifests(unittest.TestCase):
 
     def test_tracking(self):
         self.only(lambda m: m["ViewerIOS"].update(NSPrivacyTracking=True), "tracking must be false")
-        self.only(lambda m: m["StudioIOS"]["NSPrivacyCollectedDataTypes"][0].update(NSPrivacyCollectedDataTypeTracking=True),
-                  "must not be used for tracking")
 
     def test_required_reasons(self):
         self.only(lambda m: m["ViewerMac"].update(NSPrivacyAccessedAPITypes=[]), "no CA92.1 reason")
@@ -86,6 +84,29 @@ class PrivacyManifests(unittest.TestCase):
         extra = {"NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeSearchHistory", "NSPrivacyCollectedDataTypeTracking": False,
                  "NSPrivacyCollectedDataTypePurposes": ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]}
         self.only(lambda m: m["ViewerIOS"]["NSPrivacyCollectedDataTypes"].append(extra), "differ from app-privacy.json/viewer-ios")
+
+    def test_linked_tracking_and_purposes_match_app_privacy(self):
+        first = lambda m: m["StudioIOS"]["NSPrivacyCollectedDataTypes"][0]
+        self.only(lambda m: first(m).update(NSPrivacyCollectedDataTypeLinked=False), "linked is False, app-privacy.json/studio-ios says True")
+        self.only(lambda m: first(m).update(NSPrivacyCollectedDataTypePurposes=["NSPrivacyCollectedDataTypePurposeAnalytics"]),
+                  "purposes")
+        self.only(lambda m: first(m)["NSPrivacyCollectedDataTypePurposes"].append("NSPrivacyCollectedDataTypePurposeAnalytics"),
+                  "purposes")
+        errors = self.problems(lambda m: first(m).update(NSPrivacyCollectedDataTypeTracking=True))
+        self.assertTrue(any("must not be used for tracking" in e for e in errors), errors)
+        self.assertTrue(any("tracking is True, app-privacy.json/studio-ios says False" in e for e in errors), errors)
+
+    def test_unprefixed_keys_and_duplicates_are_refused(self):
+        errors = self.problems(lambda m: m["ViewerIOS"]["NSPrivacyAccessedAPITypes"][0].update(NSPrivacyAccessedAPIType="UserDefaults"))
+        self.assertEqual(len(errors), 2, errors)
+        self.assertIn("lacks the NSPrivacyAccessedAPICategory prefix", errors[0])
+        self.assertIn("no CA92.1 reason", errors[1])
+        self.only(lambda m: m["StudioMac"]["NSPrivacyCollectedDataTypes"][0].update(NSPrivacyCollectedDataType="EmailAddress"),
+                  "lacks the NSPrivacyCollectedDataType prefix")
+        self.only(lambda m: m["ViewerTV"]["NSPrivacyAccessedAPITypes"].append(dict(m["ViewerTV"]["NSPrivacyAccessedAPITypes"][0])),
+                  "NSPrivacyAccessedAPICategoryUserDefaults is listed twice")
+        self.only(lambda m: m["AdminMac"]["NSPrivacyCollectedDataTypes"].append(dict(m["AdminMac"]["NSPrivacyCollectedDataTypes"][0])),
+                  "is listed twice")
 
 
 class ReservedWords(unittest.TestCase):

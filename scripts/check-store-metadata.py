@@ -49,6 +49,15 @@ DATA_TYPES = {
     "Email Address": "EmailAddress", "Name": "Name", "User ID": "UserID", "Device ID": "DeviceID",
     "Photos or Videos": "PhotosorVideos", "Other User Content": "OtherUserContent", "Other Usage Data": "OtherUsageData",
 }
+# App Store Connect purpose (app-privacy.json) → manifest purpose key, after PURPOSE_PREFIX
+PURPOSES = {
+    "App Functionality": "AppFunctionality", "Analytics": "Analytics", "Product Personalization": "ProductPersonalization",
+    "Developer's Advertising or Marketing": "DevelopersAdvertising", "Third-Party Advertising": "ThirdPartyAdvertising",
+    "Other Purposes": "Other",
+}
+API_PREFIX = "NSPrivacyAccessedAPICategory"
+TYPE_PREFIX = "NSPrivacyCollectedDataType"
+PURPOSE_PREFIX = "NSPrivacyCollectedDataTypePurpose"
 
 
 def check_listing(app: str, errors: list[str]) -> None:
@@ -174,25 +183,56 @@ def check_privacy_manifests(errors: list[str], manifests: dict | None = None) ->
             continue
         if manifest.get("NSPrivacyTracking") is not False or manifest.get("NSPrivacyTrackingDomains"):
             errors.append(f"{where}: tracking must be false with no tracking domains unless the code tracks")
-        reasons = {a.get("NSPrivacyAccessedAPIType", "").removeprefix("NSPrivacyAccessedAPICategory"):
-                   a.get("NSPrivacyAccessedAPITypeReasons", []) for a in manifest.get("NSPrivacyAccessedAPITypes", [])}
+        reasons: dict[str, list[str]] = {}
+        for entry in manifest.get("NSPrivacyAccessedAPITypes", []):
+            key = entry.get("NSPrivacyAccessedAPIType", "")
+            if not key.startswith(API_PREFIX):
+                errors.append(f"{where}: API type {key!r} lacks the {API_PREFIX} prefix")
+                continue
+            api = key.removeprefix(API_PREFIX)
+            if api in reasons:
+                errors.append(f"{where}: {key} is listed twice (put all its reasons in one entry)")
+                continue
+            reasons[api] = entry.get("NSPrivacyAccessedAPITypeReasons", [])
         needed = ["UserDefaults"] + (["FileTimestamp", "SystemBootTime"] if links_core else [])
         for api in needed:
             if API_REASONS[api] not in reasons.get(api, []):
                 errors.append(f"{where}: no {API_REASONS[api]} reason for the {api} API")
-        declared = []
+        declared: dict[str, tuple] = {}
         for entry in manifest.get("NSPrivacyCollectedDataTypes", []):
-            declared.append(entry.get("NSPrivacyCollectedDataType", "").removeprefix("NSPrivacyCollectedDataType"))
+            key = entry.get("NSPrivacyCollectedDataType", "")
+            if not key.startswith(TYPE_PREFIX):
+                errors.append(f"{where}: data type {key!r} lacks the {TYPE_PREFIX} prefix")
+                continue
+            name = key.removeprefix(TYPE_PREFIX)
+            if name in declared:
+                errors.append(f"{where}: {key} is listed twice")
+                continue
+            purposes = entry.get("NSPrivacyCollectedDataTypePurposes", [])
+            if not purposes:
+                errors.append(f"{where}: {name} has no purpose")
             if entry.get("NSPrivacyCollectedDataTypeTracking") is not False:
-                errors.append(f"{where}: {declared[-1]} must not be used for tracking")
-            if not entry.get("NSPrivacyCollectedDataTypePurposes"):
-                errors.append(f"{where}: {declared[-1]} has no purpose")
+                errors.append(f"{where}: {name} must not be used for tracking")
+            declared[name] = (entry.get("NSPrivacyCollectedDataTypeLinked"), entry.get("NSPrivacyCollectedDataTypeTracking"),
+                              sorted(purposes))
         if store_dir is None:
             continue
-        answers = privacy.get(store_dir, {}).get("collected", [])
-        expected = sorted(DATA_TYPES.get(a["dataType"], a["dataType"]) for a in answers)
-        if sorted(declared) != expected:
-            errors.append(f"{where}: collected data types {sorted(declared)} differ from app-privacy.json/{store_dir} {expected}")
+        expected: dict[str, tuple] = {}
+        for answer in privacy.get(store_dir, {}).get("collected", []):
+            purposes = sorted(PURPOSE_PREFIX + PURPOSES.get(x, x) for x in answer.get("purposes", []))
+            expected[DATA_TYPES.get(answer["dataType"], answer["dataType"])] = (
+                answer.get("linkedToUser"), answer.get("usedForTracking"), purposes)
+        if sorted(declared) != sorted(expected):
+            errors.append(f"{where}: collected data types {sorted(declared)} differ from app-privacy.json/{store_dir} {sorted(expected)}")
+            continue
+        for name, (linked, tracking, purposes) in declared.items():
+            want_linked, want_tracking, want_purposes = expected[name]
+            if linked is not want_linked:
+                errors.append(f"{where}: {name} linked is {linked!r}, app-privacy.json/{store_dir} says {want_linked!r}")
+            if tracking is not want_tracking:
+                errors.append(f"{where}: {name} tracking is {tracking!r}, app-privacy.json/{store_dir} says {want_tracking!r}")
+            if purposes != want_purposes:
+                errors.append(f"{where}: {name} purposes {purposes} differ from app-privacy.json/{store_dir} {want_purposes}")
 
 
 def main() -> int:
