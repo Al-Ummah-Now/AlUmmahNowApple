@@ -6,13 +6,8 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.iOS(.v17), .macOS(.v14)],
     products: [.library(name: "AUNViewerClip", targets: ["AUNViewerClip"])],
-    dependencies: [
-        .package(path: "../AUNCoreBridge"),
-        .package(path: "../AUNDesign"),
-        .package(path: "../AUNPlayer"),
-    ],
     targets: [
-        .target(name: "AUNViewerClip", dependencies: ["AUNCoreBridge", "AUNDesign", "AUNPlayer"]),
+        .target(name: "AUNViewerClip"),
         .testTarget(name: "AUNViewerClipTests", dependencies: ["AUNViewerClip"]),
     ]
 )

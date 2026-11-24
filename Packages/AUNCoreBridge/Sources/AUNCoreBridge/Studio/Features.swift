@@ -5,7 +5,7 @@ import Foundation
 public enum UserFeature: String, CaseIterable, Sendable {
     case upload, createChannel, live, captionsTranscribe, captionsTranslate, inlineTranslate, viewerTranslatedTitles
     case quranEditions, quranText, audioTracks, siteDomains, socialAutopost, youtubeImport, aiCategorySuggest, bulkSchedule
-    case eventCalendar
+    case eventCalendar, quietHours
 }
 
 /// Which features this person sees, from `GET /api/me/features[?channelId=]`. Fails closed: a key that is missing,

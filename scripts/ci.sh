@@ -60,6 +60,18 @@ case "${1:-}" in
   ios)
     UDID=$(settled "$IPHONE")
     xcodebuild test "${COMMON[@]}" -scheme ViewerIOS -destination "platform=iOS Simulator,id=$UDID" "${UNSIGNED[@]}"
+    # Build the release App Clip for device arm64 and enforce the <= 15 MB payload limit (E22-D8).
+    xcodebuild build -workspace AlUmmahNow.xcworkspace -derivedDataPath "$DERIVED" -configuration Release \
+      -scheme ViewerClip -destination "generic/platform=iOS" \
+      -skipPackagePluginValidation -skipMacroValidation "${UNSIGNED[@]}"
+    CLIP_APP="$DERIVED/Build/Products/Release-iphoneos/ViewerClip.app"
+    CLIP_BYTES=$(python3 -c 'import os,sys; p=sys.argv[1]; print(sum(os.path.getsize(os.path.join(r,f)) for r,_,fs in os.walk(p) for f in fs if not os.path.islink(os.path.join(r,f))))' "$CLIP_APP")
+    MAX_CLIP_BYTES=$((15 * 1024 * 1024))
+    echo "ViewerClip.app Release-iphoneos payload: ${CLIP_BYTES} bytes (cap: ${MAX_CLIP_BYTES} bytes)"
+    if (( CLIP_BYTES > MAX_CLIP_BYTES )); then
+      echo "error: ViewerClip.app (${CLIP_BYTES} bytes) exceeds 15 MB App Clip cap (${MAX_CLIP_BYTES} bytes)" >&2
+      exit 1
+    fi
     ;;
   ipad)
     UDID=$(settled "$IPAD")

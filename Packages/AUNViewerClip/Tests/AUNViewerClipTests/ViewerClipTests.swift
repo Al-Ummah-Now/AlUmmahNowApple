@@ -1,4 +1,3 @@
-import AUNCoreBridge
 import Foundation
 import Testing
 
@@ -20,11 +19,18 @@ struct ViewerClipTests {
         #expect(ClipInvocation.resolve(URL(string: "https://videos.alummahnow.net/en/studio")!) == nil)
     }
 
-    @Test func enforcesFifteenMegabytePayloadCapAndKidsIsolation() {
+    @Test func enforcesFifteenMegabytePayloadCapKidsIsolationAndBilingualCopy() {
         #expect(ClipInvocation.maxPayloadBytes == 15 * 1024 * 1024)
-        var kidsVideo = FixtureCatalogService.videos[0]
-        kidsVideo.category = "islamic_kids"
+        let kidsVideo = ClipVideo(id: "v1", title: "Kids Story", category: "islamic_kids")
+        let generalVideo = ClipVideo(id: "v2", title: "Tafsir", category: "quran_tafsir")
         #expect(ClipInvocation.isKidsSafeOnly(kidsVideo))
-        #expect(!ClipInvocation.isKidsSafeOnly(FixtureCatalogService.videos[0]))
+        #expect(!ClipInvocation.isKidsSafeOnly(generalVideo))
+
+        let arCopy = ClipCopy.resolve(isArabic: true)
+        let enCopy = ClipCopy.resolve(isArabic: false)
+        #expect(arCopy.openPrompt.contains("مرئي"))
+        #expect(!arCopy.openPrompt.contains("فيديو"))
+        #expect(!arCopy.loadError.contains("فيديو"))
+        #expect(!enCopy.getFullApp.isEmpty)
     }
 }

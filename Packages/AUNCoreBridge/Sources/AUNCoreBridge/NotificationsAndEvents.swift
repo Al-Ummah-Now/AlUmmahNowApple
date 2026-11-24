@@ -26,18 +26,20 @@ public struct NotificationEntry: Identifiable, Equatable, Sendable {
     public var notificationType: String
     public var notificationKey: String
     public var title: String
+    public var params: [String: String]
     public var readAt: Date?
     public var createdAt: Date
 
     public init(
         id: String, category: String, notificationType: String, notificationKey: String, title: String,
-        readAt: Date? = nil, createdAt: Date
+        params: [String: String] = [:], readAt: Date? = nil, createdAt: Date
     ) {
         self.id = id
         self.category = category
         self.notificationType = notificationType
         self.notificationKey = notificationKey
         self.title = title
+        self.params = params
         self.readAt = readAt
         self.createdAt = createdAt
     }
@@ -255,12 +257,30 @@ public struct NativeNotificationsService: NotificationsServicing {
 
     private struct ResultEnvelope<T: Decodable>: Decodable { var result: T }
 
+    private struct ParamValue: Decodable {
+        var stringValue: String
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            if let s = try? c.decode(String.self) {
+                stringValue = s
+            } else if let n = try? c.decode(Int.self) {
+                stringValue = String(n)
+            } else if let d = try? c.decode(Double.self) {
+                stringValue = String(d)
+            } else if let b = try? c.decode(Bool.self) {
+                stringValue = b ? "true" : "false"
+            } else {
+                stringValue = ""
+            }
+        }
+    }
+
     private struct RawItem: Decodable {
         var id: String
         var category: String
         var notificationType: String
         var notificationKey: String
-        var params: [String: String]?
+        var params: [String: ParamValue]?
         var readAt: Double?
         var createdAt: Double
     }
@@ -291,10 +311,11 @@ public struct NativeNotificationsService: NotificationsServicing {
         let badge = NotificationBadge(
             unreadCount: unread, unseenCount: env.result.unseenCount ?? unread, menuOpen: env.result.menuOpen ?? .seen)
         let entries = env.result.items.map { item in
-            let title = item.params?["videoTitle"] ?? item.params?["channelName"] ?? item.notificationKey
+            let stringParams = (item.params ?? [:]).mapValues(\.stringValue)
+            let title = stringParams["videoTitle"] ?? stringParams["streamTitle"] ?? stringParams["channelName"] ?? ""
             return NotificationEntry(
                 id: item.id, category: item.category, notificationType: item.notificationType,
-                notificationKey: item.notificationKey, title: title,
+                notificationKey: item.notificationKey, title: title, params: stringParams,
                 readAt: item.readAt.map { Date(timeIntervalSince1970: $0 / 1000) },
                 createdAt: Date(timeIntervalSince1970: item.createdAt / 1000))
         }
@@ -361,6 +382,11 @@ public struct NativeEventsService: EventsServicing {
     }
 }
 
+private struct AccountSessionAdapter: AuthSessionProviding {
+    let accounts: any AccountServicing
+    func accessToken() async throws -> String? { try await accounts.accessToken() }
+}
+
 public struct NativeAppPushService: AppPushRegistering {
     private let client: APITransport
     private let auth: any AuthSessionProviding
@@ -368,6 +394,11 @@ public struct NativeAppPushService: AppPushRegistering {
     public init(baseURL: URL, auth: any AuthSessionProviding, session: URLSession = .shared) {
         self.client = APITransport(baseURL: baseURL, session: session)
         self.auth = auth
+    }
+
+    public init(baseURL: URL, accounts: any AccountServicing, session: URLSession = .shared) {
+        self.client = APITransport(baseURL: baseURL, session: session)
+        self.auth = AccountSessionAdapter(accounts: accounts)
     }
 
     public func register(_ reg: AppPushRegistration) async throws {
@@ -457,3 +488,90 @@ public struct NoopAppPushService: AppPushRegistering {
     public func register(_ registration: AppPushRegistration) async throws {}
     public func unregister(installID: String) async throws {}
 }
+
+#if os(iOS) || os(macOS)
+    import Observation
+    @preconcurrency import UserNotifications
+    #if os(iOS)
+        import UIKit
+    #endif
+
+    /// APNs registration for Viewer and Studio (`app: "viewer" | "studio"`), reusing the `AdminPush` pattern.
+    @MainActor @Observable
+    public final class AppPushController {
+        public let appRole: String
+        public let installID: String
+        private let service: any AppPushRegistering
+        private let center: UNUserNotificationCenter?
+        private var hexToken: String?
+
+        public init(
+            appRole: String = "viewer",
+            installID: String? = nil,
+            service: any AppPushRegistering,
+            center: UNUserNotificationCenter? = nil
+        ) {
+            self.appRole = appRole
+            let key = "AUNPushInstallID.\(appRole)"
+            if let installID {
+                self.installID = installID
+            } else if let saved = UserDefaults.standard.string(forKey: key) {
+                self.installID = saved
+            } else {
+                let generated = "inst_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+                UserDefaults.standard.set(generated, forKey: key)
+                self.installID = generated
+            }
+            self.service = service
+            self.center = center
+        }
+
+        // swiftlint:disable display_format
+        public static func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
+        // swiftlint:enable display_format
+
+        public func requestAuthorization() async -> Bool {
+            guard let center else { return false }
+            do {
+                return try await center.requestAuthorization(options: [.alert, .sound, .badge])
+            } catch {
+                AUNLog.network.error("Notification authorization failed: \(error)")
+                return false
+            }
+        }
+
+        public func didRegister(deviceToken: Data, language: AppLanguage) {
+            hexToken = Self.hex(deviceToken)
+            Task { await syncRegistration(language: language) }
+        }
+
+        public func syncRegistration(language: AppLanguage) async {
+            guard let hexToken else { return }
+            #if os(macOS)
+                let platform = "macos"
+            #else
+                let platform =
+                    ProcessInfo.processInfo.isiOSAppOnMac
+                    ? "macos" : (UIDevice.current.userInterfaceIdiom == .pad ? "ipados" : "ios")
+            #endif
+            let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+            do {
+                try await service.register(
+                    AppPushRegistration(
+                        app: appRole, installID: installID, token: hexToken, platform: platform,
+                        locale: language.rawValue, appVersion: version))
+            } catch {
+                AUNLog.network.error("Device push registration failed: \(error)")
+            }
+        }
+
+        public func unregisterOnSignOut() async {
+            do {
+                try await service.unregister(installID: installID)
+            } catch {
+                AUNLog.network.error("Device push unregister failed: \(error)")
+            }
+            center?.removeAllDeliveredNotifications()
+        }
+    }
+#endif

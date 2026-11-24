@@ -1,88 +1,7 @@
 #if os(iOS) || os(macOS)
     import AUNCoreBridge
     import AUNDesign
-    import Observation
     import SwiftUI
-    @preconcurrency import UserNotifications
-
-    #if os(iOS)
-        import UIKit
-    #endif
-
-    /// APNs registration for the Viewer and Studio apps (`app: "viewer" | "studio"`), reusing the `AdminPush` pattern.
-    @MainActor @Observable
-    public final class AppPushController {
-        public let appRole: String
-        public let installID: String
-        private let service: any AppPushRegistering
-        private let center: UNUserNotificationCenter?
-        private var hexToken: String?
-
-        public init(
-            appRole: String = "viewer",
-            installID: String = UserDefaults.standard.string(forKey: "AUNPushInstallID")
-                ?? {
-                    let generated = "inst_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
-                    UserDefaults.standard.set(generated, forKey: "AUNPushInstallID")
-                    return generated
-                }(),
-            service: any AppPushRegistering,
-            center: UNUserNotificationCenter? = nil
-        ) {
-            self.appRole = appRole
-            self.installID = installID
-            self.service = service
-            self.center = center
-        }
-
-        // swiftlint:disable display_format
-        public static func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
-        // swiftlint:enable display_format
-
-        public func requestAuthorization() async -> Bool {
-            guard let center else { return false }
-            do {
-                return try await center.requestAuthorization(options: [.alert, .sound, .badge])
-            } catch {
-                AUNLog.network.error("Notification authorization failed: \(error)")
-                return false
-            }
-        }
-
-        public func didRegister(deviceToken: Data, language: AppLanguage) {
-            hexToken = Self.hex(deviceToken)
-            Task { await syncRegistration(language: language) }
-        }
-
-        public func syncRegistration(language: AppLanguage) async {
-            guard let hexToken else { return }
-            #if os(macOS)
-                let platform = "macos"
-            #else
-                let platform =
-                    ProcessInfo.processInfo.isiOSAppOnMac
-                    ? "macos" : (UIDevice.current.userInterfaceIdiom == .pad ? "ipados" : "ios")
-            #endif
-            let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
-            do {
-                try await service.register(
-                    AppPushRegistration(
-                        app: appRole, installID: installID, token: hexToken, platform: platform,
-                        locale: language.rawValue, appVersion: version))
-            } catch {
-                AUNLog.network.error("Device push registration failed: \(error)")
-            }
-        }
-
-        public func unregisterOnSignOut() async {
-            do {
-                try await service.unregister(installID: installID)
-            } catch {
-                AUNLog.network.error("Device push unregister failed: \(error)")
-            }
-            center?.removeAllDeliveredNotifications()
-        }
-    }
 
     /// Toolbar ShareLink button sharing `alummahnow.link/v/<id>` (`AlUmmahNowApple#31`).
     public struct WatchShareButton: View {
@@ -153,6 +72,7 @@
         @Environment(\.l10n) private var l10n
         @Environment(\.dismiss) private var dismiss
         let service: any NotificationsServicing
+        let quietHoursEnabled: Bool
         let onBadgeUpdate: (NotificationBadge) -> Void
 
         @State private var items: [NotificationEntry] = []
@@ -161,9 +81,73 @@
 
         private static let halfHours = stride(from: 0, to: 1440, by: 30).map { $0 }
 
-        public init(service: any NotificationsServicing, onBadgeUpdate: @escaping (NotificationBadge) -> Void) {
+        public init(
+            service: any NotificationsServicing,
+            quietHoursEnabled: Bool = false,
+            onBadgeUpdate: @escaping (NotificationBadge) -> Void
+        ) {
             self.service = service
+            self.quietHoursEnabled = quietHoursEnabled
             self.onBadgeUpdate = onBadgeUpdate
+        }
+
+        public static func localizedTitle(for item: NotificationEntry, l10n: L10n) -> String {
+            if let formatted = formattedMessage(for: item, l10n: l10n) {
+                return formatted
+            }
+            let titleKey = "notifications.item.\(item.notificationKey)"
+            let resolved = l10n(titleKey)
+            if resolved != titleKey { return resolved }
+            return item.title.isEmpty ? l10n("notifications.item.default") : item.title
+        }
+
+        private static func formattedMessage(for item: NotificationEntry, l10n: L10n) -> String? {
+            func param(_ key: String) -> String {
+                (item.params[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            let video = param("videoTitle")
+            let stream = param("streamTitle").isEmpty ? video : param("streamTitle")
+            let channel = param("channelName").isEmpty ? param("channel") : param("channelName")
+            let tierRaw = l10n.language == .ar ? param("tier_ar") : param("tier_en")
+            let tier = tierRaw.isEmpty ? param("tier") : tierRaw
+            let inviter = param("inviter")
+            let member = param("member")
+            let actor = param("actorName")
+
+            switch item.notificationKey {
+            case "newVideo" where !channel.isEmpty && !video.isEmpty:
+                return l10n("notifications.item.newVideo.msg", channel, video)
+            case "liveStarted" where !channel.isEmpty && !stream.isEmpty:
+                return l10n("notifications.item.liveStarted.msg", channel, stream)
+            case "commentReply" where !actor.isEmpty:
+                return l10n("notifications.item.commentReply.msg", actor)
+            case "newComment" where !video.isEmpty:
+                return l10n("notifications.item.newComment.msg", video)
+            case "newSubscriber" where !channel.isEmpty:
+                return l10n("notifications.item.newSubscriber.msg", channel)
+            case "uploadReady" where !video.isEmpty:
+                return l10n("notifications.item.uploadReady.msg", video)
+            case "uploadFailed" where !video.isEmpty:
+                return l10n("notifications.item.uploadFailed.msg", video)
+            case "reviewApproved" where !video.isEmpty:
+                return l10n("notifications.item.reviewApproved.msg", video)
+            case "reviewRejected" where !video.isEmpty:
+                return l10n("notifications.item.reviewRejected.msg", video)
+            case "reviewNeeded" where !video.isEmpty:
+                return l10n("notifications.item.reviewNeeded.msg", video)
+            case "channelInviteReceived" where !inviter.isEmpty && !channel.isEmpty:
+                return l10n("notifications.item.channelInviteReceived.msg", inviter, channel)
+            case "channelInviteAccepted" where !member.isEmpty && !channel.isEmpty:
+                return l10n("notifications.item.channelInviteAccepted.msg", member, channel)
+            case "tierRequestApproved" where !tier.isEmpty:
+                return l10n("notifications.item.tierRequestApproved.msg", tier)
+            case "tierRequestDeclined" where !tier.isEmpty:
+                return l10n("notifications.item.tierRequestDeclined.msg", tier)
+            case "tierRequestReceived" where !tier.isEmpty:
+                return l10n("notifications.item.tierRequestReceived.msg", tier)
+            default:
+                return nil
+            }
         }
 
         public var body: some View {
@@ -171,7 +155,9 @@
                 ScrollView {
                     VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
                         inboxSection
-                        quietHoursSection
+                        if quietHoursEnabled {
+                            quietHoursSection
+                        }
                     }
                     .padding(FanousScale.spacingLg)
                 }
@@ -226,7 +212,7 @@
                                 .frame(width: 8, height: 8)
                                 .padding(.top, 6)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(item.title)
+                                Text(Self.localizedTitle(for: item, l10n: l10n))
                                     .fanousFont(.body)
                                     .fontWeight(item.isRead ? .regular : .semibold)
                                     .foregroundStyle(Fanous.textPrimary)
@@ -291,17 +277,20 @@
                     }
                 }
 
-                Toggle(
-                    l10n("notifications.quiet.prayer"),
-                    isOn: Binding(
-                        get: { quietHours.prayerQuietEnabled },
-                        set: { value in
-                            quietHours.prayerQuietEnabled = value
-                            saveQuietHours()
-                        })
-                )
-                .foregroundStyle(Fanous.textPrimary)
-                .accessibilityIdentifier("quiet-prayer-toggle")
+                // Hidden until Epic 21.1 supplies non-empty locally computed prayer windows on this device.
+                if !quietHours.prayerWindows.isEmpty {
+                    Toggle(
+                        l10n("notifications.quiet.prayer"),
+                        isOn: Binding(
+                            get: { quietHours.prayerQuietEnabled },
+                            set: { value in
+                                quietHours.prayerQuietEnabled = value
+                                saveQuietHours()
+                            })
+                    )
+                    .foregroundStyle(Fanous.textPrimary)
+                    .accessibilityIdentifier("quiet-prayer-toggle")
+                }
 
                 Text(l10n("notifications.quiet.note"))
                     .fanousFont(.caption)
@@ -329,7 +318,7 @@
                     }
                 }
             }
-            if let fetchedQuiet = try? await service.quietHours() {
+            if quietHoursEnabled, let fetchedQuiet = try? await service.quietHours() {
                 quietHours = fetchedQuiet
             }
             loaded = true

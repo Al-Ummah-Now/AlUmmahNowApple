@@ -9,6 +9,7 @@
         @State private var path: [String] = []
         @State private var badge = NotificationBadge()
         @State private var features = UserFeatures.none
+        @State private var isSignedIn = false
         @State private var showNotifications = false
         @State private var showEvents = false
         private let core: CoreBridge
@@ -37,8 +38,10 @@
                                 }
                                 .accessibilityIdentifier("events-button")
                             }
-                            NotificationBellButton(unseenCount: badge.unseenCount) {
-                                showNotifications = true
+                            if isSignedIn {
+                                NotificationBellButton(unseenCount: badge.unseenCount) {
+                                    showNotifications = true
+                                }
                             }
                             SettingsMenu()
                         }
@@ -51,7 +54,10 @@
                     }
             }
             .sheet(isPresented: $showNotifications) {
-                NotificationsSheetView(service: core.notifications) { badge = $0 }
+                NotificationsSheetView(
+                    service: core.notifications,
+                    quietHoursEnabled: features.isOn(.quietHours)
+                ) { badge = $0 }
             }
             .sheet(isPresented: $showEvents) {
                 EventsCalendarSheetView(environment: core.environment, service: core.events)
@@ -60,7 +66,9 @@
                 if let loadedFeatures = try? await core.events.viewerFeatures() {
                     features = loadedFeatures
                 }
-                if let loadedBadge = try? await core.notifications.badge() {
+                let token = try? await core.auth.accessToken()
+                isSignedIn = token != nil
+                if isSignedIn, let loadedBadge = try? await core.notifications.badge() {
                     badge = loadedBadge
                 }
             }

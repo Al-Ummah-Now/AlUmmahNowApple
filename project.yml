@@ -126,12 +126,6 @@ targets:
     info:
       path: Apps/ViewerClip/Info.plist
       properties:
-        CFBundleDisplayName: "$(AUN_APP_NAME)$(AUN_DISPLAY_SUFFIX)"
-        CFBundleLocalizations: [en, ar]
-        AUNAPIBaseURL: "$(AUN_API_BASE_URL)"
-        AUNAdminAPIBaseURL: "$(AUN_ADMIN_API_BASE_URL)"
-        AUNEnvironment: "$(AUN_ENVIRONMENT)"
-        UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
         NSAppClip:
           NSAppClipRequestEphemeralUserNotification: false
@@ -139,8 +133,6 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
     dependencies:
       - package: AUNViewerClip
-      - package: AUNDesign
-      - package: AUNCoreBridge
 
   ViewerTV:
     templates: [App]

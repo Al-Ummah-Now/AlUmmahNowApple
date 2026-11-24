@@ -50,6 +50,8 @@ public final class StudioSession {
     public let services: StudioServices
     /// Uploads of every account on this device; only the active account's run.
     public let uploads: UploadQueue
+    /// Invoked right before the last signed-in account signs out so APNs device registration can be removed.
+    public var onSignedOutAll: (() async -> Void)?
     private let authenticator: any WebAuthenticating
     private let defaults: UserDefaults
 
@@ -104,6 +106,9 @@ public final class StudioSession {
     /// Signs one account out of this device and revokes its refresh token. Other accounts stay signed in.
     public func signOut(_ id: String) async {
         uploads.discardJobs(of: id)
+        if accounts.count <= 1 {
+            await onSignedOutAll?()
+        }
         do {
             try await services.accounts.signOut(id)
         } catch {

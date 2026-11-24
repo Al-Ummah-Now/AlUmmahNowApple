@@ -26,8 +26,6 @@
 	<array>
 		<string>en</string>
 		<string>ar</string>
-		<string>en</string>
-		<string>ar</string>
 	</array>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>

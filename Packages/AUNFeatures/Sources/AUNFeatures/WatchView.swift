@@ -91,7 +91,7 @@
         private let videoID: String
         private let environment: AppEnvironment
 
-        public init(videoID: String, catalog: any CatalogServicing, environment: AppEnvironment = .qa) {
+        public init(videoID: String, catalog: any CatalogServicing, environment: AppEnvironment) {
             self.videoID = videoID
             self.environment = environment
             _model = State(initialValue: WatchViewModel(videoID: videoID, catalog: catalog))
