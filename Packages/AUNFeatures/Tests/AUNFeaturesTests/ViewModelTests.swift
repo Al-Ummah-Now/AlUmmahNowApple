@@ -20,6 +20,16 @@ private struct ProcessingCatalog: CatalogServicing {
     func subtitleText(url: URL) async throws -> String { "" }
 }
 
+private struct LiveCatalog: CatalogServicing {
+    func homeRails(limit: Int) async throws -> [HomeRail] { [] }
+    func video(id: String) async throws -> Video {
+        Video(id: id, title: "T", playURL: URL(string: "https://media.test/live.m3u8"), isLive: true)
+    }
+    func subtitles(videoID: String) async throws -> [SubtitleTrack] { [] }
+    func chapters(videoID: String) async throws -> [Chapter] { [] }
+    func subtitleText(url: URL) async throws -> String { "" }
+}
+
 @MainActor @Suite struct ViewModelTests {
     @Test func homeLoadsRails() async {
         let model = HomeViewModel(catalog: FixtureCatalogService())
@@ -48,6 +58,19 @@ private struct ProcessingCatalog: CatalogServicing {
         #expect(model.player.item?.chapters.count == 2)
         #expect(model.player.isPlaying == false)
         model.player.stop()
+    }
+
+    @Test func onlyAVideoThatIsNotLiveKeepsItsPosition() async {
+        let video = WatchViewModel(videoID: "fixture-1", catalog: FixtureCatalogService())
+        await video.load(language: .en, autoplay: false)
+        #expect(video.player.item?.resumeID == "fixture-1")
+        video.player.stop()
+
+        let live = WatchViewModel(videoID: "live-1", catalog: LiveCatalog())
+        await live.load(language: .en, autoplay: false)
+        #expect(live.player.item != nil)
+        #expect(live.player.item?.resumeID == nil)
+        live.player.stop()
     }
 
     @Test func unfinishedVideoDoesNotStartPlayer() async {
