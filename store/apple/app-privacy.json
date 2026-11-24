@@ -59,6 +59,13 @@
           ]
         },
         {
+          "what": "Where the last video stopped",
+          "answer": "kept on the device, one entry (UserDefaults)",
+          "sources": [
+            "Packages/AUNPlayer/Sources/AUNPlayer/PlaybackPositionStore.swift"
+          ]
+        },
+        {
           "what": "Location, contacts, health, financial info, browsing history, purchases",
           "answer": "the apps never read them",
           "sources": [
@@ -125,6 +132,13 @@
           ]
         },
         {
+          "what": "Where the last video stopped",
+          "answer": "kept on the device, one entry (UserDefaults)",
+          "sources": [
+            "Packages/AUNPlayer/Sources/AUNPlayer/PlaybackPositionStore.swift"
+          ]
+        },
+        {
           "what": "Location, contacts, health, financial info, browsing history, purchases",
           "answer": "the apps never read them",
           "sources": [
@@ -188,6 +202,13 @@
           "answer": "kept on the device (UserDefaults)",
           "sources": [
             "Packages/AUNDesign/Sources/AUNDesign/AppSettings.swift"
+          ]
+        },
+        {
+          "what": "Where the last video stopped",
+          "answer": "kept on the device, one entry (UserDefaults)",
+          "sources": [
+            "Packages/AUNPlayer/Sources/AUNPlayer/PlaybackPositionStore.swift"
           ]
         },
         {
