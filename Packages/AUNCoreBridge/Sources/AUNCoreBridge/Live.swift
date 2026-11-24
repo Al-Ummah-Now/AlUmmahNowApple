@@ -239,11 +239,29 @@ public struct LiveRefused: Error, Equatable {
 
     public init(retryAfter: TimeInterval) { self.retryAfter = retryAfter }
 
-    init?(_ response: URLResponse) {
+    /// Seconds, or a date: from the answer's own `Date`, so a device's clock that is wrong does not matter.
+    init?(_ response: URLResponse, now: Date) {
         guard let response = response as? HTTPURLResponse, response.statusCode == 429 || response.statusCode == 503,
-            let text = response.value(forHTTPHeaderField: "Retry-After"), let seconds = Int(text), seconds >= 0
+            let text = response.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespaces)
         else { return nil }
-        self.init(retryAfter: TimeInterval(seconds))
+        if let seconds = Int(text) {
+            guard seconds >= 0 else { return nil }
+            self.init(retryAfter: TimeInterval(seconds))
+        } else if let at = Self.date(text) {
+            let sent = response.value(forHTTPHeaderField: "Date").flatMap(Self.date) ?? now
+            self.init(retryAfter: max(0, at.timeIntervalSince(sent)))
+        } else {
+            return nil
+        }
+    }
+
+    /// The date form of HTTP headers (RFC 9110).
+    private static func date(_ text: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        return formatter.date(from: text)
     }
 }
 
@@ -304,7 +322,7 @@ public struct NativeLiveService: LiveServicing {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             AUNLog.network.error("GET \(url.path, privacy: .public) failed: \(status)")
-            if let refused = LiveRefused(response) { throw refused }
+            if let refused = LiveRefused(response, now: now()) { throw refused }
             throw status == 404 ? CoreError.notFound : CoreError.http(status: status)
         }
         do {
@@ -355,7 +373,7 @@ public struct NativeLiveService: LiveServicing {
         request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["viewerId": viewerID, "leaving": leaving])
         let (data, response) = try await session.data(for: request)
-        if let refused = LiveRefused(response) { throw refused }
+        if let refused = LiveRefused(response, now: now()) { throw refused }
         return (try? decoder.decode(Envelope<Viewers>.self, from: data))?.result.viewers
     }
 }
