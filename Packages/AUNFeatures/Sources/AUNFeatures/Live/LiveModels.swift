@@ -118,6 +118,7 @@ public final class LiveWatchModel {
     private var beatDue = Date.distantPast
     private var lastBeat: Task<Int?, any Error>?
     private var hasBeaten = false
+    private var isClosed = false
     /// How often the viewer has left: an answer from before is of another visit.
     private var visit = 0
     private var run: Task<Void, Never>?
@@ -152,16 +153,17 @@ public final class LiveWatchModel {
 
     public func load(language: AppLanguage) async {
         self.language = language
+        isClosed = false
         state = .loading
         do {
             async let stream = live.stream(id: streamID)
             async let timed = live.state(id: streamID)
             let read = try await timed
             stateWait = Self.pollAfter(read.state.pollAfter)
-            await show(try await stream, read)
-        } catch is CancellationError {
-            return
+            try await show(try await stream, read)
         } catch {
+            // The page is gone: nothing failed
+            if Task.isCancelled || error is CancellationError { return }
             AUNLog.network.error("Live watch failed: \(error)")
             state = .failed
         }
@@ -190,6 +192,14 @@ public final class LiveWatchModel {
             async let reads: Void = Self.everySecond { await self?.poll() }
             _ = await (clock, reads)
         }
+    }
+
+    /// The page is gone. Whatever is still on its way, also a retry no task of the page's ends, plays nothing.
+    public func close() {
+        setActive(false)
+        isClosed = true
+        loadedURL = nil
+        player.stop()
     }
 
     private static func everySecond(_ work: @MainActor () async -> Void) async {
@@ -310,10 +320,10 @@ public final class LiveWatchModel {
         let (timed, wait) = try await asked { try await live.state(id: streamID) }
         stateAt = now()
         stateWait = timed.map { Self.pollAfter($0.state.pollAfter) } ?? wait
-        if let timed { await show(stream, timed) }
+        if let timed { try await show(stream, timed) }
     }
 
-    private func show(_ stream: LiveStream, _ timed: TimedLiveState) async {
+    private func show(_ stream: LiveStream, _ timed: TimedLiveState) async throws(CancellationError) {
         stateAt = now()
         var mode = LiveMode(timed.state)
         if premiereIsGone, mode == .recording { mode = .ended }
@@ -325,7 +335,7 @@ public final class LiveWatchModel {
         let content = LiveContent(stream: stream, timed: timed, mode: mode)
         state = .loaded(content)
         updateCountdown(content)
-        await play(content)
+        try await play(content)
     }
 
     private func updateCountdown(_ content: LiveContent) {
@@ -335,7 +345,7 @@ public final class LiveWatchModel {
         untilStart = start.timeIntervalSince(now()) - content.timed.clockOffset
     }
 
-    private func play(_ content: LiveContent) async {
+    private func play(_ content: LiveContent) async throws(CancellationError) {
         let state = content.timed.state
         if state.kind == .premiere {
             let startedAt = content.mode == .live ? state.startedAt : nil
@@ -344,7 +354,7 @@ public final class LiveWatchModel {
             }
             if premiere == nil { isBehind = false }
             if content.mode == .live || content.mode == .recording, let id = state.premiereVideoID, loadedURL == nil {
-                await loadPremiere(id, content)
+                try await loadPremiere(id, content)
             }
             return
         }
@@ -356,22 +366,25 @@ public final class LiveWatchModel {
     }
 
     private func start(_ url: URL?, _ content: LiveContent, startAt: Double? = nil) {
-        guard let url, url != loadedURL else { return }
+        guard !isClosed, let url, url != loadedURL else { return }
         loadedURL = url
         player.load(PlaybackItem(url: url, title: content.stream.title, subtitle: content.stream.channelName, startAt: startAt))
     }
 
     /// The video is released a moment after the premiere starts: asked for again with the state until it is there.
-    private func loadPremiere(_ id: String, _ content: LiveContent) async {
+    private func loadPremiere(_ id: String, _ content: LiveContent) async throws(CancellationError) {
         let video: Video?
         do {
             video = try await catalog.video(id: id)
         } catch CoreError.notFound {
             video = nil
         } catch {
+            if Task.isCancelled { throw CancellationError() }
             // Not an answer: asked for again
             return
         }
+        // Answered or not: the screen is gone, and what would follow with it
+        if Task.isCancelled { throw CancellationError() }
         if let video, video.isPlayable, let url = video.playURL {
             start(url, content, startAt: premiere?.position(at: now()))
         } else if content.mode == .recording {

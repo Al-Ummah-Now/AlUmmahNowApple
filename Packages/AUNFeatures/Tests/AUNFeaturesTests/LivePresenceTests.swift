@@ -157,6 +157,96 @@ import Testing
         model.player.stop()
     }
 
+    @Test func aBeatThatIsNotAnsweredHoldsNothingUp() async throws {
+        let (live, model) = await onAir()
+        await live.set(holdsBeats: true)
+        model.setActive(true)
+        try await until { await live.isBeatHeld }
+        clock.advance(60)
+        // The state is read though the beat is not answered, and no second beat is sent beside it
+        try await until { await live.stateReads == 2 }
+        #expect(await live.sent == [false])
+        model.setActive(false)
+        await live.set(holdsBeats: false)
+        await live.releaseBeat()
+        try await until { await live.sent == [false, true] }
+        model.player.stop()
+    }
+
+    @Test func turningItOnTwiceIsOneRunThatEnds() async throws {
+        let (live, model) = await onAir()
+        model.setActive(true)
+        model.setActive(true)
+        try await until { await live.sent == [false] }
+        model.setActive(false)
+        await model.settled()
+        let reads = await live.stateReads
+        clock.advance(60)
+        // Longer than a second: a run that was left over would read now
+        try await Task.sleep(for: .milliseconds(1_300))
+        #expect(await live.stateReads == reads)
+        #expect(await live.sent == [false, true])
+        model.player.stop()
+    }
+
+    private func premiere(_ catalog: HeldCatalog) async -> (StubLive, LiveWatchModel) {
+        let live = StubLive(
+            LiveState(status: .scheduled, kind: .premiere, scheduledStart: clock.now.addingTimeInterval(-1)))
+        let clock = clock
+        let model = LiveWatchModel(streamID: "s", live: live, catalog: catalog, now: { clock.now })
+        await model.load(language: .en)
+        await live.set(
+            LiveState(status: .live, kind: .premiere, startedAt: clock.now, premiereVideoID: "v", durationSeconds: 600))
+        return (live, model)
+    }
+
+    @Test func aVideoThatComesAfterTheScreenIsGoneSendsNoBeatAndPlaysNothing() async throws {
+        let catalog = HeldCatalog()
+        let (live, model) = await premiere(catalog)
+        clock.advance(5)
+        model.setActive(true)
+        try await until { await catalog.isHeld }
+        model.close()
+        await catalog.release()
+        await model.settled()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(await live.sent.isEmpty)
+        #expect(model.player.item == nil)
+    }
+
+    @Test func aVideoThatComesInTheBackgroundSendsNoBeat() async throws {
+        let catalog = HeldCatalog()
+        let (live, model) = await premiere(catalog)
+        clock.advance(5)
+        model.setActive(true)
+        try await until { await catalog.isHeld }
+        model.setActive(false)
+        await catalog.release()
+        await model.settled()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(await live.sent.isEmpty)
+        // Back: it is asked for again, and plays
+        model.setActive(true)
+        try await until { await live.sent == [false] }
+        clock.advance(5)
+        try await until { model.player.item != nil }
+        model.close()
+    }
+
+    @Test func aRetryThatIsAnsweredAfterThePageIsGonePlaysNothing() async throws {
+        let live = StubLive(LiveState(status: .live, playbackURL: URL(string: "https://x.test/p.m3u8")))
+        await live.set(holdsState: true)
+        let model = model(live)
+        // As the retry button: a task that is not the page's
+        let retry = Task { await model.load(language: .en) }
+        try await until { await live.isStateHeld }
+        model.close()
+        await live.set(holdsState: false)
+        await live.releaseState()
+        await retry.value
+        #expect(model.player.item == nil)
+    }
+
     @Test func anAnswerThatComesAfterTheScreenIsGoneSendsNoBeat() async throws {
         let (live, model) = await onAir()
         await live.set(holdsState: true)

@@ -127,10 +127,7 @@ import SwiftUI
             // Nothing is asked for in the background, also while the sound plays on there
             .onAppear { model.setActive(scenePhase != .background) }
             .onChange(of: scenePhase) { model.setActive(scenePhase != .background) }
-            .onDisappear {
-                model.setActive(false)
-                model.player.stop()
-            }
+            .onDisappear { model.close() }
         }
 
         @ViewBuilder private func page(_ content: LiveContent, size: CGSize) -> some View {
@@ -224,10 +221,7 @@ import SwiftUI
             // Nothing is asked for in the background, also while the sound plays on there
             .onAppear { model.setActive(scenePhase != .background) }
             .onChange(of: scenePhase) { model.setActive(scenePhase != .background) }
-            .onDisappear {
-                model.setActive(false)
-                model.player.stop()
-            }
+            .onDisappear { model.close() }
         }
     }
 #endif
