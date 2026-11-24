@@ -245,6 +245,7 @@ struct ViewerBlockConfirmSheet: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .fanousPage()
+        .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
         #if os(iOS)
             .presentationDetents([.medium, .large])
             .presentationBackground { FanousSurfaceKind(kind: .page, shape: .rect) }
@@ -323,13 +324,22 @@ struct ViewerBlockConfirmSheet: View {
                 }
                 .fanousPage()
                 .navigationTitle(l10n("safety.blockedList.title"))
+                #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                #endif
                 .toolbar {
+                    #if os(iOS)
+                        ToolbarItem(placement: .principal) {
+                            Text(l10n("safety.blockedList.title")).fanousFont(.headline).foregroundStyle(Fanous.textPrimary)
+                        }
+                    #endif
                     ToolbarItem(placement: .cancellationAction) {
                         Button(l10n("common.dismiss")) { dismiss() }
                             .accessibilityIdentifier("blocked-list-done")
                     }
                 }
             }
+            .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
             #if os(macOS)
                 .frame(minWidth: 420, minHeight: 360)
             #endif
