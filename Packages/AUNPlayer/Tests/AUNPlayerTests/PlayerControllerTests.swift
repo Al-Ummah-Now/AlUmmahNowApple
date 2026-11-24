@@ -148,6 +148,20 @@ private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         #expect(store.position(of: "v1") == nil)
     }
 
+    /// The seek to the kept position is still on its way, so a tick at 0 is not where the person is.
+    @Test func aTickBeforeTheResumeLandsIsIgnored() async throws {
+        let (url, store) = (try await makeVideo(seconds: 40), positions())
+        store.save(20, duration: 40, of: "v1")
+        let sut = PlayerController(subtitleLoader: { _ in "" }, positions: store)
+        sut.load(resumable(url), autoplay: true)
+        // Nothing has been awaited since load, so the seek cannot have reported back yet.
+        sut.applyTime(0)
+        #expect(sut.currentTime == 20)
+        try await waitUntil { sut.phase == .ready && sut.currentTime > 20 }
+        sut.stop()
+        #expect((store.position(of: "v1") ?? 0) >= 20)
+    }
+
     /// Playing starts at once; the first ticks (at 0, before the seek lands) must not replace the kept position.
     @Test func autoplayResumesWithoutLosingTheKeptPosition() async throws {
         let (url, store) = (try await makeVideo(seconds: 40), positions())

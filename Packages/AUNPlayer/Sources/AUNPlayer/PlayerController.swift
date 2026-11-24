@@ -250,7 +250,7 @@ public final class PlayerController {
         #endif
     }
 
-    private func applyTime(_ time: Double) {
+    func applyTime(_ time: Double) {
         guard time.isFinite, !isResuming else { return }
         currentTime = time
         let cue = cueTimeline.cue(at: time)
