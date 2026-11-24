@@ -7,10 +7,14 @@
 - the copy tone (wiki guides/copy-tone.md): no lessons/lectures/courses/library or hype words, in either language;
 - no "for kids" / "for children" in either language: Apple reserves them for the Kids category (guideline 2.3.8);
 - store/apple/app-privacy.json: every answer cites source files that exist in the repo;
-- store/apple/age-rating.json: every question answered for every App Store record, cited files exist (wiki E20 §3.1).
+- store/apple/age-rating.json: every question answered for every App Store record, cited files exist (wiki E20 §3.1);
+- Apps/<target>/PrivacyInfo.xcprivacy: every app has a privacy manifest, no tracking, a reason for UserDefaults (and for
+  the file timestamp and boot time APIs in the apps that link aun-core), and the collected data types match
+  app-privacy.json.
 """
 import json
 import pathlib
+import plistlib
 import re
 import sys
 
@@ -31,6 +35,20 @@ RESERVED_AR = re.compile(r"(?<![\u0621-\u064A])[وف]?لل?(أطفال|اطفا�
 FREQUENCIES = {"none", "infrequent", "frequent"}
 RATINGS = {"4+", "9+", "13+", "16+", "18+"}
 LANGUAGE_PATH = {"en-US": "/en", "ar-SA": "/ar"}
+# Every app target, its App Store record in apps.json (None: TestFlight internal only), and whether it links aun-core
+# (AUNCoreKit), whose Rust code reads file metadata (stat) and a monotonic clock.
+APP_TARGETS = {
+    "ViewerIOS": ("viewer-ios", False), "ViewerTV": ("viewer-tv", False), "ViewerMac": ("viewer-mac", False),
+    "StudioIOS": ("studio-ios", True), "StudioMac": ("studio-mac", True),
+    "AdminIOS": (None, True), "AdminMac": (None, True),
+}
+# Required-reason API categories (developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
+API_REASONS = {"UserDefaults": "CA92.1", "FileTimestamp": "C617.1", "SystemBootTime": "35F9.1"}
+# App Store Connect data type (app-privacy.json) → privacy manifest key
+DATA_TYPES = {
+    "Email Address": "EmailAddress", "Name": "Name", "User ID": "UserID", "Device ID": "DeviceID",
+    "Photos or Videos": "PhotosorVideos", "Other User Content": "OtherUserContent", "Other Usage Data": "OtherUsageData",
+}
 
 
 def check_listing(app: str, errors: list[str]) -> None:
@@ -142,6 +160,41 @@ def check_age_rating(errors: list[str], ratings: dict | None = None) -> None:
                 errors.append(f"{where}: source {source} does not exist")
 
 
+def check_privacy_manifests(errors: list[str], manifests: dict | None = None) -> None:
+    privacy = json.loads((STORE / "app-privacy.json").read_text(encoding="utf-8")).get("apps", {})
+    for target, (store_dir, links_core) in APP_TARGETS.items():
+        where = f"Apps/{target}/PrivacyInfo.xcprivacy"
+        if manifests is not None:
+            manifest = manifests.get(target)
+        else:
+            path = ROOT / where
+            manifest = plistlib.loads(path.read_bytes()) if path.is_file() else None
+        if manifest is None:
+            errors.append(f"{where} is missing (App Store uploads need a privacy manifest)")
+            continue
+        if manifest.get("NSPrivacyTracking") is not False or manifest.get("NSPrivacyTrackingDomains"):
+            errors.append(f"{where}: tracking must be false with no tracking domains unless the code tracks")
+        reasons = {a.get("NSPrivacyAccessedAPIType", "").removeprefix("NSPrivacyAccessedAPICategory"):
+                   a.get("NSPrivacyAccessedAPITypeReasons", []) for a in manifest.get("NSPrivacyAccessedAPITypes", [])}
+        needed = ["UserDefaults"] + (["FileTimestamp", "SystemBootTime"] if links_core else [])
+        for api in needed:
+            if API_REASONS[api] not in reasons.get(api, []):
+                errors.append(f"{where}: no {API_REASONS[api]} reason for the {api} API")
+        declared = []
+        for entry in manifest.get("NSPrivacyCollectedDataTypes", []):
+            declared.append(entry.get("NSPrivacyCollectedDataType", "").removeprefix("NSPrivacyCollectedDataType"))
+            if entry.get("NSPrivacyCollectedDataTypeTracking") is not False:
+                errors.append(f"{where}: {declared[-1]} must not be used for tracking")
+            if not entry.get("NSPrivacyCollectedDataTypePurposes"):
+                errors.append(f"{where}: {declared[-1]} has no purpose")
+        if store_dir is None:
+            continue
+        answers = privacy.get(store_dir, {}).get("collected", [])
+        expected = sorted(DATA_TYPES.get(a["dataType"], a["dataType"]) for a in answers)
+        if sorted(declared) != expected:
+            errors.append(f"{where}: collected data types {sorted(declared)} differ from app-privacy.json/{store_dir} {expected}")
+
+
 def main() -> int:
     errors: list[str] = []
     apps = json.loads((STORE / "apps.json").read_text())["apps"]
@@ -149,10 +202,11 @@ def main() -> int:
         check_listing(app["dir"], errors)
     check_privacy(errors)
     check_age_rating(errors)
+    check_privacy_manifests(errors)
     for error in errors:
         print(f"::error::{error}")
     if not errors:
-        print(f"store listings OK: {len(apps)} apps × {len(LOCALES)} languages, App Privacy and age rating answers cite existing files")
+        print(f"store listings OK: {len(apps)} apps × {len(LOCALES)} languages, App Privacy and age rating answers cite existing files, privacy manifests match")
     return 1 if errors else 0
 
 
