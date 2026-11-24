@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Negative cases for scripts/check-store-metadata.py (CI job "store"): the age rating answers and reserved words."""
+"""Negative cases for scripts/check-store-metadata.py (CI job "store"): age rating answers, privacy manifests, reserved words."""
 import copy
 import importlib.util
 import json
 import pathlib
+import plistlib
 import unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -46,6 +47,45 @@ class AgeRating(unittest.TestCase):
         self.only(lambda r: r["apps"].pop("viewer-mac"), "no answers for viewer-mac")
         self.only(lambda r: r["apps"]["viewer-mac"].update(sources=["Apps/Gone.swift"]), "Apps/Gone.swift does not exist")
         self.only(lambda r: r["notInStore"].update(watch="no"), "watch is not in apps.json")
+
+
+class PrivacyManifests(unittest.TestCase):
+    def manifests(self):
+        return {t: plistlib.loads((check.ROOT / "Apps" / t / "PrivacyInfo.xcprivacy").read_bytes()) for t in check.APP_TARGETS}
+
+    def problems(self, change):
+        manifests = self.manifests()
+        change(manifests)
+        errors: list[str] = []
+        check.check_privacy_manifests(errors, manifests)
+        return errors
+
+    def only(self, change, text):
+        errors = self.problems(change)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn(text, errors[0])
+
+    def test_the_committed_manifests_pass(self):
+        self.assertEqual(self.problems(lambda m: None), [])
+
+    def test_a_missing_manifest(self):
+        self.only(lambda m: m.pop("ViewerTV"), "ViewerTV/PrivacyInfo.xcprivacy is missing")
+
+    def test_tracking(self):
+        self.only(lambda m: m["ViewerIOS"].update(NSPrivacyTracking=True), "tracking must be false")
+        self.only(lambda m: m["StudioIOS"]["NSPrivacyCollectedDataTypes"][0].update(NSPrivacyCollectedDataTypeTracking=True),
+                  "must not be used for tracking")
+
+    def test_required_reasons(self):
+        self.only(lambda m: m["ViewerMac"].update(NSPrivacyAccessedAPITypes=[]), "no CA92.1 reason")
+        self.only(lambda m: m["StudioMac"]["NSPrivacyAccessedAPITypes"].pop(), "no 35F9.1 reason")
+        self.only(lambda m: m["AdminIOS"]["NSPrivacyAccessedAPITypes"].pop(1), "no C617.1 reason")
+
+    def test_collected_types_match_app_privacy(self):
+        self.only(lambda m: m["StudioIOS"]["NSPrivacyCollectedDataTypes"].pop(), "differ from app-privacy.json/studio-ios")
+        extra = {"NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeSearchHistory", "NSPrivacyCollectedDataTypeTracking": False,
+                 "NSPrivacyCollectedDataTypePurposes": ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]}
+        self.only(lambda m: m["ViewerIOS"]["NSPrivacyCollectedDataTypes"].append(extra), "differ from app-privacy.json/viewer-ios")
 
 
 class ReservedWords(unittest.TestCase):

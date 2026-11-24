@@ -9,6 +9,13 @@ by hand once per app record.
 `Packages/AUNCoreKit/Package.swift`: Apple frameworks and aun-core only), and nothing is shared with data brokers or
 for advertising.
 
+**Privacy manifests.** Each app target carries `Apps/<target>/PrivacyInfo.xcprivacy` with the same collected data types
+as below and its required-reason APIs: UserDefaults (`CA92.1`) in every app, and in Studio and Admin, which link
+aun-core (Rust: file metadata through `stat`, a monotonic clock for timeouts), file timestamps (`C617.1`) and system boot
+time (`35F9.1`). CI (`scripts/check-store-metadata.py`) fails if a manifest is missing, tracks, lacks those reasons, or
+lists other data types than `app-privacy.json`. A feature that checks free disk space (offline downloads) adds the disk
+space category (`E174.1`) in the same PR.
+
 ## Al Ummah Now (iPhone and iPad, Apple TV, Mac)
 
 **Data Not Collected.**
