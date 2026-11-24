@@ -43,7 +43,7 @@ public struct AppEnvironment: Hashable, Sendable {
         components?.path = ""
         components?.query = nil
         components?.fragment = nil
-        return components?.url ?? URL(string: "https://videos.alummahnow.net")!
+        return components?.url ?? URL(string: "https://videos.qa.alummahnow.net")!
     }
 
     /// Reads the values the build configuration wrote to Info.plist. Falls back to QA, never to production.

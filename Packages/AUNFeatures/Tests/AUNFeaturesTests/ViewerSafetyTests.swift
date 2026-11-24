@@ -7,7 +7,7 @@ import Testing
 @Suite("ViewerSafetyTests")
 struct ViewerSafetyTests {
     @Test func reportURLsUsePublicReportRouteLocaleHostAndEncoding() {
-        let prodWeb = AppEnvironment.prod.webBaseURL
+        let prodWeb = AppEnvironment(name: "prod", apiBaseURL: URL(string: "https://videos.api.alummahnow.net")!).webBaseURL
         let qaWeb = AppEnvironment.qa.webBaseURL
         #expect(prodWeb.absoluteString == "https://videos.alummahnow.net")
         #expect(qaWeb.absoluteString == "https://videos.qa.alummahnow.net")
