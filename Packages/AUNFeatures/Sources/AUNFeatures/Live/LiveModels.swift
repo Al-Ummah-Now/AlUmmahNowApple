@@ -117,6 +117,12 @@ public final class LiveWatchModel {
     private var stateWait: TimeInterval?
     private var beatDue = Date.distantPast
     private var lastBeat: Task<Int?, any Error>?
+    private var hasBeaten = false
+    /// How often the viewer has left: an answer from before is of another visit.
+    private var visit = 0
+    private var run: Task<Void, Never>?
+    private var ending: Task<Void, Never>?
+    private var settling: Task<Void, Never>?
     private var replay: [Int: [LiveChatMessage]] = [:]
     private var isReadingReplay = false
 
@@ -161,28 +167,41 @@ public final class LiveWatchModel {
         }
     }
 
-    /// Runs while the screen is there and the app is not in the background.
-    public func run() async {
-        // The clock and the player do not wait for the network
-        let clock = Task {
-            while !Task.isCancelled {
-                step()
-                try? await Task.sleep(for: .seconds(1))
-            }
+    /// On while the screen is there and the app is not in the background. Leaving is counted at the moment of it, before
+    /// anything else can be, and there is one run at a time however often it is turned on and off.
+    public func setActive(_ active: Bool) {
+        guard active != (run != nil) else { return }
+        guard active else {
+            run?.cancel()
+            (ending, run) = (run, nil)
+            visit += 1
+            // Counted in again at once on coming back
+            beatDue = .distantPast
+            if hasBeaten, content?.mode == .live { sendBeat(leaving: true) }
+            hasBeaten = false
+            return
         }
+        let previous = ending
+        run = Task { [weak self] in
+            // What it was reading ends with it: reads are cancelled, and beats are not waited for
+            await previous?.value
+            // The clock and the player do not wait for the network
+            async let clock: Void = Self.everySecond { self?.step() }
+            async let reads: Void = Self.everySecond { await self?.poll() }
+            _ = await (clock, reads)
+        }
+    }
+
+    private static func everySecond(_ work: @MainActor () async -> Void) async {
         while !Task.isCancelled {
-            await poll()
+            await work()
             try? await Task.sleep(for: .seconds(1))
         }
-        clock.cancel()
-        guard content?.mode == .live else { return }
-        beatDue = .distantPast
-        sendBeat(leaving: true)
     }
 
     /// One at a time, in the order they were asked for: a beat on its way when the app goes to the background must not count
-    /// the viewer in after the leave, nor a leave count out a viewer who came back. So each is a task of its own, which the
-    /// screen's being cancelled does not end (the server may have it already).
+    /// the viewer in after the leave, nor a leave count out a viewer who came back. So each is a task of its own, which
+    /// nothing cancels (the server may have it already), and one that fails does not stop the next.
     @discardableResult
     private func sendBeat(leaving: Bool) -> Task<Int?, any Error> {
         let previous = lastBeat
@@ -194,6 +213,30 @@ public final class LiveWatchModel {
         return beat
     }
 
+    /// Counted in. Not waited for: what is due next is set when the answer is there, if the viewer has not left meanwhile.
+    private func beat() {
+        (hasBeaten, beatDue) = (true, .distantFuture)
+        let visit = visit
+        let sent = sendBeat(leaving: false)
+        settling = Task { [weak self] in
+            let answer = await sent.result
+            guard let self, self.visit == visit else { return }
+            switch answer {
+            case .success(let count):
+                viewers = count ?? viewers
+                beatDue = now().addingTimeInterval(20)
+            case .failure(let error):
+                beatDue = now().addingTimeInterval(Self.pollAfter((error as? LiveRefused)?.retryAfter) ?? 20)
+            }
+        }
+    }
+
+    /// What was sent is answered, and a run that was ended has ended (for tests).
+    func settled() async {
+        await ending?.value
+        await settling?.value
+    }
+
     /// When the server wants to be asked again, so it can slow installed apps down. Between 5 seconds and 10 minutes whatever
     /// it says: a bad value neither stops the app nor makes it hammer.
     nonisolated static func pollAfter(_ seconds: TimeInterval?) -> TimeInterval? {
@@ -203,12 +246,16 @@ public final class LiveWatchModel {
     /// The read, or nil and when the server said to ask again, if it did. Throws only when the screen's task was cancelled:
     /// nothing was refused then, and nothing of what is due changes.
     private func asked<T>(_ read: () async throws -> T) async throws(CancellationError) -> (T?, TimeInterval?) {
+        let answer: (T?, TimeInterval?)
         do {
-            return (try await read(), nil)
+            answer = (try await read(), nil)
         } catch {
-            if Task.isCancelled || error is CancellationError { throw CancellationError() }
-            return (nil, Self.pollAfter((error as? LiveRefused)?.retryAfter))
+            if error is CancellationError { throw CancellationError() }
+            answer = (nil, Self.pollAfter((error as? LiveRefused)?.retryAfter))
         }
+        // Answered or not: the screen is gone, and what would follow with it
+        if Task.isCancelled { throw CancellationError() }
+        return answer
     }
 
     public func returnToLive() {
@@ -237,11 +284,7 @@ public final class LiveWatchModel {
         if now().timeIntervalSince(stateAt) >= stateInterval(content) { try await refreshState(content.stream) }
         guard let content = self.content else { return }
         try await refreshChat(content)
-        if content.mode == .live, now() >= beatDue {
-            let (count, wait) = try await asked { try await sendBeat(leaving: false).value }
-            beatDue = now().addingTimeInterval(wait ?? 20)
-            viewers = (count ?? nil) ?? viewers
-        }
+        if content.mode == .live, now() >= beatDue { beat() }
     }
 
     /// The server's wait when it gave one, else this app's; nothing is asked of what will not change.
