@@ -73,21 +73,26 @@
         @Environment(\.dismiss) private var dismiss
         let service: any NotificationsServicing
         let quietHoursEnabled: Bool
+        let localPrayerWindows: [PrayerQuietWindow]
         let onBadgeUpdate: (NotificationBadge) -> Void
 
         @State private var items: [NotificationEntry] = []
         @State private var quietHours = NotificationQuietHours()
         @State private var loaded = false
+        @State private var loadFailed = false
+        @State private var quietHoursLoaded = false
 
         private static let halfHours = stride(from: 0, to: 1440, by: 30).map { $0 }
 
         public init(
             service: any NotificationsServicing,
             quietHoursEnabled: Bool = false,
+            localPrayerWindows: [PrayerQuietWindow] = [],
             onBadgeUpdate: @escaping (NotificationBadge) -> Void
         ) {
             self.service = service
             self.quietHoursEnabled = quietHoursEnabled
+            self.localPrayerWindows = localPrayerWindows
             self.onBadgeUpdate = onBadgeUpdate
         }
 
@@ -105,14 +110,27 @@
             func param(_ key: String) -> String {
                 (item.params[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             }
-            let video = param("videoTitle")
-            let stream = param("streamTitle").isEmpty ? video : param("streamTitle")
-            let channel = param("channelName").isEmpty ? param("channel") : param("channelName")
-            let tierRaw = l10n.language == .ar ? param("tier_ar") : param("tier_en")
-            let tier = tierRaw.isEmpty ? param("tier") : tierRaw
-            let inviter = param("inviter")
-            let member = param("member")
-            let actor = param("actorName")
+            let isAr = l10n.language == .ar
+            func localizedParam(_ base: String) -> String {
+                if isAr {
+                    let arVal = param("\(base)_ar")
+                    if !arVal.isEmpty { return arVal }
+                }
+                return param(base)
+            }
+            func iso(_ text: String) -> String {
+                text.isEmpty ? "" : DisplayFormat.isolate(text)
+            }
+            let video = iso(param("videoTitle"))
+            let rawStream = param("streamTitle")
+            let stream = rawStream.isEmpty ? video : iso(rawStream)
+            let rawChannel = localizedParam("channelName")
+            let channel = iso(rawChannel.isEmpty ? localizedParam("channel") : rawChannel)
+            let tierRaw = isAr ? param("tier_ar") : param("tier_en")
+            let tier = iso(tierRaw.isEmpty ? param("tier") : tierRaw)
+            let inviter = iso(localizedParam("inviter"))
+            let member = iso(localizedParam("member"))
+            let actor = iso(localizedParam("actorName"))
 
             switch item.notificationKey {
             case "newVideo" where !channel.isEmpty && !video.isEmpty:
@@ -155,7 +173,7 @@
                 ScrollView {
                     VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
                         inboxSection
-                        if quietHoursEnabled {
+                        if quietHoursEnabled && quietHoursLoaded {
                             quietHoursSection
                         }
                     }
@@ -196,7 +214,25 @@
                     }
                 }
 
-                if items.isEmpty && loaded {
+                if !loaded {
+                    ThemeLoader()
+                        .frame(maxWidth: .infinity)
+                        .padding(FanousScale.spacingLg)
+                } else if loadFailed {
+                    VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                        Text(l10n("common.error.load"))
+                            .fanousFont(.body)
+                            .foregroundStyle(Fanous.errorText)
+                        Button(l10n("common.retry")) {
+                            Task { await load() }
+                        }
+                        .fanousFont(.label)
+                        .foregroundStyle(Fanous.link)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(FanousScale.spacingLg)
+                    .fanousMaterial(.card) { .rounded($0.lg) }
+                } else if items.isEmpty {
                     Text(l10n("notifications.empty"))
                         .fanousFont(.body)
                         .foregroundStyle(Fanous.textSecondary)
@@ -241,8 +277,12 @@
                     isOn: Binding(
                         get: { quietHours.enabled },
                         set: { value in
-                            quietHours.enabled = value
-                            saveQuietHours()
+                            var next = quietHours
+                            next.enabled = value
+                            if next.timezone.isEmpty || next.timezone == "UTC" {
+                                next.timezone = TimeZone.current.identifier
+                            }
+                            saveQuietHours(next)
                         })
                 )
                 .foregroundStyle(Fanous.textPrimary)
@@ -254,8 +294,9 @@
                         selection: Binding(
                             get: { quietHours.startMinute },
                             set: { value in
-                                quietHours.startMinute = value
-                                saveQuietHours()
+                                var next = quietHours
+                                next.startMinute = value
+                                saveQuietHours(next)
                             })
                     ) {
                         ForEach(Self.halfHours, id: \.self) { minute in
@@ -267,8 +308,9 @@
                         selection: Binding(
                             get: { quietHours.endMinute },
                             set: { value in
-                                quietHours.endMinute = value
-                                saveQuietHours()
+                                var next = quietHours
+                                next.endMinute = value
+                                saveQuietHours(next)
                             })
                     ) {
                         ForEach(Self.halfHours, id: \.self) { minute in
@@ -278,14 +320,16 @@
                 }
 
                 // Hidden until Epic 21.1 supplies non-empty locally computed prayer windows on this device.
-                if !quietHours.prayerWindows.isEmpty {
+                if !localPrayerWindows.isEmpty {
                     Toggle(
                         l10n("notifications.quiet.prayer"),
                         isOn: Binding(
                             get: { quietHours.prayerQuietEnabled },
                             set: { value in
-                                quietHours.prayerQuietEnabled = value
-                                saveQuietHours()
+                                var next = quietHours
+                                next.prayerQuietEnabled = value
+                                next.prayerWindows = Array(localPrayerWindows.prefix(5))
+                                saveQuietHours(next)
                             })
                     )
                     .foregroundStyle(Fanous.textPrimary)
@@ -302,9 +346,12 @@
         }
 
         private func load() async {
-            if let (list, _) = try? await service.list(limit: 20) {
+            loaded = false
+            loadFailed = false
+            do {
+                let (list, _) = try await service.list(limit: 20)
                 items = list
-                if let (cleared, readIDs) = try? await service.markSeen(ids: list.map(\.id)) {
+                if !list.isEmpty, let (cleared, readIDs) = try? await service.markSeen(ids: list.map(\.id)) {
                     onBadgeUpdate(cleared)
                     if !readIDs.isEmpty {
                         let readSet = Set(readIDs)
@@ -317,18 +364,28 @@
                         }
                     }
                 }
+            } catch {
+                loadFailed = true
             }
             if quietHoursEnabled, let fetchedQuiet = try? await service.quietHours() {
-                quietHours = fetchedQuiet
+                var resolved = fetchedQuiet
+                if resolved.timezone.isEmpty || resolved.timezone == "UTC" {
+                    resolved.timezone = TimeZone.current.identifier
+                }
+                quietHours = resolved
+                quietHoursLoaded = true
             }
             loaded = true
         }
 
-        private func saveQuietHours() {
-            let snapshot = quietHours
+        private func saveQuietHours(_ next: NotificationQuietHours) {
+            let previous = quietHours
+            quietHours = next
             Task {
-                if let saved = try? await service.updateQuietHours(snapshot) {
-                    quietHours = saved
+                do {
+                    quietHours = try await service.updateQuietHours(next)
+                } catch {
+                    quietHours = previous
                 }
             }
         }
@@ -336,16 +393,31 @@
 
     /// Feature-gated online Event Calendar sheet (`E22-D7`: online events only, hidden when `eventCalendar` is off).
     public struct EventsCalendarSheetView: View {
+        private struct FilterOption: Equatable {
+            var id: String
+            var kind: String?
+            var eventType: String?
+        }
+
         @Environment(\.l10n) private var l10n
         @Environment(\.dismiss) private var dismiss
         let environment: AppEnvironment
         let service: any EventsServicing
 
         @State private var events: [CalendarEvent] = []
-        @State private var selectedType: String = "all"
+        @State private var selectedFilterID: String = "all"
         @State private var loaded = false
+        @State private var loadFailed = false
 
-        private static let types = ["all", "jumuah", "taraweeh", "conference", "halqa"]
+        private static let filters: [FilterOption] = [
+            FilterOption(id: "all", kind: nil, eventType: nil),
+            FilterOption(id: "live", kind: "live", eventType: nil),
+            FilterOption(id: "premiere", kind: "premiere", eventType: nil),
+            FilterOption(id: "jumuah", kind: nil, eventType: "jumuah"),
+            FilterOption(id: "taraweeh", kind: nil, eventType: "taraweeh"),
+            FilterOption(id: "conference", kind: nil, eventType: "conference"),
+            FilterOption(id: "halqa", kind: nil, eventType: "halqa"),
+        ]
 
         public init(environment: AppEnvironment, service: any EventsServicing) {
             self.environment = environment
@@ -356,17 +428,52 @@
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-                        Picker(l10n("events.title"), selection: $selectedType) {
-                            ForEach(Self.types, id: \.self) { type in
-                                Text(l10n("events.filter.\(type)")).tag(type)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: FanousScale.spacingSm) {
+                                ForEach(Self.filters, id: \.id) { option in
+                                    let isSelected = selectedFilterID == option.id
+                                    Button {
+                                        selectedFilterID = option.id
+                                        Task { await load(option: option) }
+                                    } label: {
+                                        Text(l10n("events.filter.\(option.id)"))
+                                            .fanousFont(.caption)
+                                            .fontWeight(isSelected ? .semibold : .regular)
+                                            .foregroundStyle(isSelected ? Fanous.onPrimary : Fanous.textPrimary)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                Capsule().fill(
+                                                    isSelected
+                                                        ? AnyShapeStyle(Fanous.primary)
+                                                        : AnyShapeStyle(Color.secondary.opacity(0.15)))
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                         }
-                        .pickerStyle(.segmented)
-                        .onChange(of: selectedType) { _, next in
-                            Task { await load(type: next) }
-                        }
 
-                        if events.isEmpty && loaded {
+                        if !loaded {
+                            ThemeLoader()
+                                .frame(maxWidth: .infinity)
+                                .padding(FanousScale.spacingLg)
+                        } else if loadFailed {
+                            VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                                Text(l10n("common.error.load"))
+                                    .fanousFont(.body)
+                                    .foregroundStyle(Fanous.errorText)
+                                Button(l10n("common.retry")) {
+                                    let current = Self.filters.first { $0.id == selectedFilterID } ?? Self.filters[0]
+                                    Task { await load(option: current) }
+                                }
+                                .fanousFont(.label)
+                                .foregroundStyle(Fanous.link)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(FanousScale.spacingLg)
+                            .fanousMaterial(.card) { .rounded($0.lg) }
+                        } else if events.isEmpty {
                             Text(l10n("events.empty"))
                                 .fanousFont(.body)
                                 .foregroundStyle(Fanous.textSecondary)
@@ -389,7 +496,7 @@
                     }
                 }
             }
-            .task { await load(type: selectedType) }
+            .task { await load(option: Self.filters[0]) }
         }
 
         private func eventCard(_ event: CalendarEvent) -> some View {
@@ -435,9 +542,14 @@
             return DisplayFormat.meta([event.displayChannelName(l10n.language), dateText], l10n.language)
         }
 
-        private func load(type: String) async {
-            let filter = type == "all" ? nil : type
-            events = (try? await service.upcomingEvents(eventType: filter)) ?? []
+        private func load(option: FilterOption) async {
+            loaded = false
+            loadFailed = false
+            do {
+                events = try await service.upcomingEvents(kind: option.kind, eventType: option.eventType)
+            } catch {
+                loadFailed = true
+            }
             loaded = true
         }
     }

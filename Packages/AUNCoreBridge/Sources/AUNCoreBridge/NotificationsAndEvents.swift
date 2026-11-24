@@ -27,12 +27,13 @@ public struct NotificationEntry: Identifiable, Equatable, Sendable {
     public var notificationKey: String
     public var title: String
     public var params: [String: String]
+    public var actionUrl: String?
     public var readAt: Date?
     public var createdAt: Date
 
     public init(
         id: String, category: String, notificationType: String, notificationKey: String, title: String,
-        params: [String: String] = [:], readAt: Date? = nil, createdAt: Date
+        params: [String: String] = [:], actionUrl: String? = nil, readAt: Date? = nil, createdAt: Date
     ) {
         self.id = id
         self.category = category
@@ -40,6 +41,7 @@ public struct NotificationEntry: Identifiable, Equatable, Sendable {
         self.notificationKey = notificationKey
         self.title = title
         self.params = params
+        self.actionUrl = actionUrl
         self.readAt = readAt
         self.createdAt = createdAt
     }
@@ -146,7 +148,13 @@ public protocol NotificationsServicing: Sendable {
 /// Online Event Calendar & feature-flag protocol (`CoreBridge`).
 public protocol EventsServicing: Sendable {
     func viewerFeatures() async throws -> UserFeatures
-    func upcomingEvents(eventType: String?) async throws -> [CalendarEvent]
+    func upcomingEvents(kind: String?, eventType: String?) async throws -> [CalendarEvent]
+}
+
+extension EventsServicing {
+    public func upcomingEvents(eventType: String? = nil) async throws -> [CalendarEvent] {
+        try await upcomingEvents(kind: nil, eventType: eventType)
+    }
 }
 
 /// Device push registration payload (`PUT /api/devices/:installId`).
@@ -281,6 +289,7 @@ public struct NativeNotificationsService: NotificationsServicing {
         var notificationType: String
         var notificationKey: String
         var params: [String: ParamValue]?
+        var actionUrl: String?
         var readAt: Double?
         var createdAt: Double
     }
@@ -316,6 +325,7 @@ public struct NativeNotificationsService: NotificationsServicing {
             return NotificationEntry(
                 id: item.id, category: item.category, notificationType: item.notificationType,
                 notificationKey: item.notificationKey, title: title, params: stringParams,
+                actionUrl: item.actionUrl,
                 readAt: item.readAt.map { Date(timeIntervalSince1970: $0 / 1000) },
                 createdAt: Date(timeIntervalSince1970: item.createdAt / 1000))
         }
@@ -371,9 +381,12 @@ public struct NativeEventsService: EventsServicing {
         return try await client.get("/api/me/features", bearerToken: token)
     }
 
-    public func upcomingEvents(eventType: String? = nil) async throws -> [CalendarEvent] {
+    public func upcomingEvents(kind: String? = nil, eventType: String? = nil) async throws -> [CalendarEvent] {
         let token = try? await auth.accessToken()
         var query = [URLQueryItem(name: "limit", value: "24")]
+        if let kind, !kind.isEmpty {
+            query.append(URLQueryItem(name: "kind", value: kind))
+        }
         if let eventType, !eventType.isEmpty {
             query.append(URLQueryItem(name: "eventType", value: eventType))
         }
@@ -467,7 +480,7 @@ public struct FixtureEventsService: EventsServicing {
         eventCalendarEnabled ? UserFeatures(on: [.eventCalendar, .live]) : .none
     }
 
-    public func upcomingEvents(eventType: String?) async throws -> [CalendarEvent] {
+    public func upcomingEvents(kind: String? = nil, eventType: String? = nil) async throws -> [CalendarEvent] {
         guard eventCalendarEnabled else { throw CoreError.featureOff }
         let items = [
             CalendarEvent(
@@ -476,10 +489,11 @@ public struct FixtureEventsService: EventsServicing {
                 title: "Weekly Tafsir Halqa", kind: "live", eventType: "halqa",
                 status: "scheduled", scheduledStartAt: "2026-11-28T19:00:00Z", watchPath: "/live/str_halqa_1")
         ]
-        if let eventType, !eventType.isEmpty {
-            return items.filter { $0.eventType == eventType }
+        return items.filter { item in
+            let matchesKind = kind == nil || kind?.isEmpty == true || item.kind == kind
+            let matchesType = eventType == nil || eventType?.isEmpty == true || item.eventType == eventType
+            return matchesKind && matchesType
         }
-        return items
     }
 }
 
@@ -500,7 +514,7 @@ public struct NoopAppPushService: AppPushRegistering {
     @MainActor @Observable
     public final class AppPushController {
         public let appRole: String
-        public let installID: String
+        public private(set) var installID: String
         private let service: any AppPushRegistering
         private let center: UNUserNotificationCenter?
         private var hexToken: String?
@@ -570,6 +584,10 @@ public struct NoopAppPushService: AppPushRegistering {
                 try await service.unregister(installID: installID)
             } catch {
                 AUNLog.network.error("Device push unregister failed: \(error)")
+                // Rotate installID if server DELETE failed offline so a subsequent account never hits 409.
+                let rotated = "inst_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+                UserDefaults.standard.set(rotated, forKey: "AUNPushInstallID.\(appRole)")
+                installID = rotated
             }
             center?.removeAllDeliveredNotifications()
         }

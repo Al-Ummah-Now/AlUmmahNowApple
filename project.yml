@@ -60,12 +60,27 @@ targetTemplates:
       # InfoPlist.strings can't expand build settings, so the Arabic name with the QA suffix is written at build time.
       - name: Arabic display name
         basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/Packages/AUNDesign/Sources/AUNDesign/Resources/en.lproj/Localizable.strings
+          - $(SRCROOT)/Packages/AUNDesign/Sources/AUNDesign/Resources/ar.lproj/Localizable.strings
         outputFiles:
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ar.lproj/InfoPlist.strings
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/en.lproj/Localizable.strings
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ar.lproj/Localizable.strings
         script: |
           dir="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ar.lproj"
           mkdir -p "$dir"
           printf '"CFBundleDisplayName" = "%s%s";\n' "$AUN_APP_NAME_AR" "$AUN_DISPLAY_SUFFIX" > "$dir/InfoPlist.strings"
+          case "$TARGET_NAME" in
+            ViewerClip|ViewerTV) ;;
+            *)
+              for lang in en ar; do
+                ldir="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/${lang}.lproj"
+                mkdir -p "$ldir"
+                cp "$SRCROOT/Packages/AUNDesign/Sources/AUNDesign/Resources/${lang}.lproj/Localizable.strings" "$ldir/Localizable.strings"
+              done
+              ;;
+          esac
 
 targets:
   ViewerIOS:
