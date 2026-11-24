@@ -6,18 +6,24 @@
 
     /// Apple TV shell: focus-driven, no touch affordances.
     public struct ViewerRootView: View {
-        @State private var path: [String] = []
+        @State private var path: [ViewerDestination] = []
         private let core: CoreBridge
 
-        public init(core: CoreBridge, initialVideoID: String? = UserDefaults.standard.string(forKey: "AUNOpenVideo")) {
+        public init(core: CoreBridge, initial: ViewerDestination? = .launch()) {
             self.core = core
-            _path = State(initialValue: initialVideoID.map { [$0] } ?? [])
+            _path = State(initialValue: initial.map { [$0] } ?? [])
         }
 
         public var body: some View {
             NavigationStack(path: $path) {
-                TVHomeView(catalog: core.catalog) { path.append($0.id) }
-                    .navigationDestination(for: String.self) { TVWatchView(videoID: $0, catalog: core.catalog) }
+                TVHomeView(core: core) { path.append($0) }
+                    .navigationDestination(for: ViewerDestination.self) { destination in
+                        switch destination {
+                        case .video(let id): TVWatchView(videoID: id, catalog: core.catalog)
+                        case .live(let id): TVLiveWatchView(streamID: id, core: core)
+                        case .liveList: EmptyView()
+                        }
+                    }
             }
         }
     }
@@ -25,10 +31,12 @@
     struct TVHomeView: View {
         @Environment(\.l10n) private var l10n
         @State private var model: HomeViewModel
-        let open: (Video) -> Void
+        @State private var live: LiveListModel
+        let open: (ViewerDestination) -> Void
 
-        init(catalog: any CatalogServicing, open: @escaping (Video) -> Void) {
-            _model = State(initialValue: HomeViewModel(catalog: catalog))
+        init(core: CoreBridge, open: @escaping (ViewerDestination) -> Void) {
+            _model = State(initialValue: HomeViewModel(catalog: core.catalog))
+            _live = State(initialValue: LiveListModel(live: core.live))
             self.open = open
         }
 
@@ -47,12 +55,14 @@
                 }
             }
             .task { await model.load() }
+            .task { await live.load() }
         }
 
         private func content(_ rails: [HomeRail]) -> some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 48) {
-                    if let hero = rails.first?.videos.first { TVHero(video: hero) { open(hero) } }
+                    if let hero = rails.first?.videos.first { TVHero(video: hero) { open(.video(hero.id)) } }
+                    if !live.isEmpty { liveRail }
                     ForEach(rails) { rail in
                         VStack(alignment: .leading, spacing: 20) {
                             RailHeader(kind: rail.kind)
@@ -60,7 +70,7 @@
                                 LazyHStack(alignment: .top, spacing: 40) {
                                     ForEach(rail.videos) { video in
                                         Button {
-                                            open(video)
+                                            open(.video(video.id))
                                         } label: {
                                             VideoCardContent(video: video).frame(width: 420).padding(12)
                                         }
@@ -76,6 +86,28 @@
                     TVSettingsRow()
                 }
                 .padding(.horizontal, 60)
+            }
+        }
+
+        private var liveRail: some View {
+            VStack(alignment: .leading, spacing: 20) {
+                Text(l10n("live.title")).fanousFont(.title).fontWeight(.bold).foregroundStyle(Fanous.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 40) {
+                        ForEach(live.onAir + live.coming) { stream in
+                            Button {
+                                open(.live(stream.id))
+                            } label: {
+                                LiveCardContent(stream: stream).frame(width: 420).padding(12)
+                            }
+                            .buttonStyle(.card)
+                            .accessibilityIdentifier("live-card-\(stream.id)")
+                        }
+                    }
+                    .padding(.vertical, 24)
+                }
+                .scrollClipDisabled()
             }
         }
     }

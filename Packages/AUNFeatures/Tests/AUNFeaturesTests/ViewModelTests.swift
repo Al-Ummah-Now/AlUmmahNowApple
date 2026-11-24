@@ -104,10 +104,11 @@ private struct LiveCatalog: CatalogServicing {
 
 struct ViewerLinksTests {
     @Test func videosAndShortsOpenTheWatchPageOtherLinksOpenHome() {
-        #expect(ViewerLinks.videoID(for: URL(string: "https://videos.alummahnow.net/ar/video/v1")!) == "v1")
-        #expect(ViewerLinks.videoID(for: URL(string: "https://videos.qa.alummahnow.net/shorts/s1")!) == "s1")
-        #expect(ViewerLinks.videoID(for: URL(string: "https://videos.alummahnow.net/en/@main")!) == nil)
-        #expect(ViewerLinks.videoID(for: URL(string: "https://videos.alummahnow.net/en/studio/c1")!) == nil)
-        #expect(ViewerLinks.videoID(for: URL(string: "https://example.com/en/video/v1")!) == nil)
+        #expect(ViewerLinks.destination(for: URL(string: "https://videos.alummahnow.net/ar/video/v1")!) == .video("v1"))
+        #expect(ViewerLinks.destination(for: URL(string: "https://videos.qa.alummahnow.net/shorts/s1")!) == .video("s1"))
+        #expect(ViewerLinks.destination(for: URL(string: "https://videos.alummahnow.net/en/live/l1")!) == .live("l1"))
+        #expect(ViewerLinks.destination(for: URL(string: "https://videos.alummahnow.net/en/@main")!) == nil)
+        #expect(ViewerLinks.destination(for: URL(string: "https://videos.alummahnow.net/en/studio/c1")!) == nil)
+        #expect(ViewerLinks.destination(for: URL(string: "https://example.com/en/video/v1")!) == nil)
     }
 }

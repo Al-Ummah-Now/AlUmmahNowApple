@@ -9,6 +9,8 @@
         @Environment(\.l10n) private var l10n
         @Environment(\.openWindow) private var openWindow
         @State private var selection: String? = "home"
+        /// Something is on air or coming: the Live section is there.
+        @State private var hasLive = false
         private let core: CoreBridge
 
         public init(core: CoreBridge) { self.core = core }
@@ -20,12 +22,18 @@
                         .listRowBackground(
                             selection == "home"
                                 ? FanousSurfaceKind(kind: .active, shape: .rounded(8)).padding(.horizontal, 6) : nil)
+                    if hasLive || selection == "live" {
+                        Label(l10n("live.title"), systemImage: "dot.radiowaves.left.and.right").tag("live")
+                            .listRowBackground(
+                                selection == "live"
+                                    ? FanousSurfaceKind(kind: .active, shape: .rounded(8)).padding(.horizontal, 6) : nil)
+                    }
                 }
                 .scrollContentBackground(.hidden)
                 .fanousMaterial(.rail)
                 .navigationSplitViewColumnWidth(min: 160, ideal: 200)
             } detail: {
-                HomeView(catalog: core.catalog) { openWindow(id: Self.watchWindowID, value: $0.id) }
+                detail
                     .toolbar { ToolbarItem { SettingsMenu() } }
                     .navigationTitle(l10n("app.name"))
             }
@@ -33,7 +41,22 @@
             // A universal link reuses this window (instead of a new one) and opens the video in its own window.
             .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
             .onOpenURL { url in
-                if let id = ViewerLinks.videoID(for: url) { openWindow(id: Self.watchWindowID, value: id) }
+                if let destination = ViewerLinks.destination(for: url) { open(destination) }
+            }
+        }
+
+        @ViewBuilder private var detail: some View {
+            if selection == "live" {
+                LiveListView(live: core.live) { open(.live($0.id)) }
+            } else {
+                HomeView(core: core, hasLive: $hasLive, open: open)
+            }
+        }
+
+        private func open(_ destination: ViewerDestination) {
+            switch destination {
+            case .liveList: selection = "live"
+            case .video, .live: openWindow(id: Self.watchWindowID, value: destination)
             }
         }
 
@@ -42,16 +65,23 @@
 
     /// One video window. Space plays or pauses, and arrow keys skip in the reading direction.
     public struct WatchWindow: View {
-        private let videoID: String
+        private let destination: ViewerDestination
         private let core: CoreBridge
 
-        public init(videoID: String, core: CoreBridge) {
-            self.videoID = videoID
+        public init(destination: ViewerDestination, core: CoreBridge) {
+            self.destination = destination
             self.core = core
         }
 
         public var body: some View {
-            WatchView(videoID: videoID, catalog: core.catalog).frame(minWidth: 860, minHeight: 480)
+            Group {
+                switch destination {
+                case .video(let id): WatchView(videoID: id, catalog: core.catalog)
+                case .live(let id): LiveWatchView(streamID: id, core: core)
+                case .liveList: EmptyView()
+                }
+            }
+            .frame(minWidth: 860, minHeight: 480)
         }
     }
 

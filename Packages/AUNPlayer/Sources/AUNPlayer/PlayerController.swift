@@ -13,11 +13,14 @@ public struct PlaybackItem: Hashable, Sendable {
     public var resolutions: [String]
     public var subtitles: [SubtitleTrack]
     public var chapters: [Chapter]
+    /// Where it starts, when that is neither the beginning nor the kept position (a premiere's moment).
+    public var startAt: Double?
 
     public init(
         url: URL, title: String, subtitle: String? = nil, resolutions: [String] = [], subtitles: [SubtitleTrack] = [],
-        chapters: [Chapter] = [], resumeID: String? = nil
+        chapters: [Chapter] = [], resumeID: String? = nil, startAt: Double? = nil
     ) {
+        self.startAt = startAt
         self.resumeID = resumeID
         self.url = url
         self.title = title
@@ -114,7 +117,7 @@ public final class PlayerController {
         selectedSubtitleID = nil
         currentCue = nil
         cueTimeline = CueTimeline([])
-        currentTime = newItem.resumeID.flatMap { positions?.position(of: $0) } ?? 0
+        currentTime = newItem.startAt ?? newItem.resumeID.flatMap { positions?.position(of: $0) } ?? 0
         savedTime = currentTime
         duration = 0
 
@@ -155,6 +158,22 @@ public final class PlayerController {
         isResuming = false
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         applyTime(target)
+    }
+
+    /// Nothing is missing to go on playing; false while it loads.
+    public var canKeepUp: Bool { player.currentItem?.isPlaybackLikelyToKeepUp ?? false }
+
+    /// How far the newest moment of a live stream is ahead, nil for a video.
+    public var secondsBehindLive: Double? {
+        guard let item = player.currentItem, item.duration.isIndefinite, let range = item.seekableTimeRanges.last?.timeRangeValue
+        else { return nil }
+        return max(0, (range.start + range.duration).seconds - item.currentTime().seconds)
+    }
+
+    public func returnToLive() {
+        guard let range = player.currentItem?.seekableTimeRanges.last?.timeRangeValue else { return }
+        player.seek(to: range.start + range.duration)
+        play()
     }
 
     public func skip(by delta: Double) { seek(to: currentTime + delta) }
