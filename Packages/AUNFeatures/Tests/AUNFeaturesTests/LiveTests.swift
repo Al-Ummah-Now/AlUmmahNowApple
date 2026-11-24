@@ -20,6 +20,8 @@ private actor StubLive: LiveServicing {
     private(set) var stateReads = 0
     private(set) var chatReads = 0
     private(set) var askedEvent: LiveEventType?
+    private(set) var leaves = 0
+    var chatFails = false
     let offset: TimeInterval
 
     init(_ state: LiveState = LiveState(status: .scheduled), offset: TimeInterval = 0) {
@@ -29,6 +31,7 @@ private actor StubLive: LiveServicing {
 
     func set(_ state: LiveState) { current = state }
     func set(on: Set<UserFeature>) { self.on = on }
+    func set(chatFails: Bool) { self.chatFails = chatFails }
     func set(_ status: LiveStatus, _ streams: [LiveStream]) { lists[status] = streams }
     func set(window from: Int, _ page: LiveChatPage) { windows[from] = page }
 
@@ -44,12 +47,17 @@ private actor StubLive: LiveServicing {
     }
     func chat(id: String) async throws -> LiveChatPage {
         chatReads += 1
+        if chatFails { throw CoreError.http(status: 503) }
         return LiveChatPage(messages: [LiveChatMessage(id: "m", authorName: "A", text: "x", offsetMs: 0)])
     }
     func chatReplay(id: String, fromMs: Int, toMs: Int) async throws -> LiveChatPage {
         windows[fromMs] ?? LiveChatPage(messages: [])
     }
-    func beat(id: String, viewerID: String, leaving: Bool) async -> Int? { 5 }
+    func beat(id: String, viewerID: String, leaving: Bool) async -> Int? {
+        // As URLSession: nothing is sent in a cancelled task
+        if leaving, !Task.isCancelled { leaves += 1 }
+        return 5
+    }
 }
 
 @Suite struct PremiereClockTests {
@@ -214,6 +222,38 @@ private actor StubLive: LiveServicing {
         clock.advance(60)
         await model.tick()
         #expect(model.messages.isEmpty)
+        model.player.stop()
+    }
+
+    @Test func leavingIsCountedThoughTheScreensTaskIsCancelled() async throws {
+        let live = StubLive(LiveState(status: .live, playbackURL: URL(string: "https://x.test/p.m3u8")))
+        let model = model(live)
+        await model.load(language: .en)
+        let run = Task { await model.run() }
+        try await Task.sleep(for: .milliseconds(50))
+        run.cancel()
+        await run.value
+        for _ in 0..<100 {
+            if await live.leaves > 0 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(await live.leaves == 1)
+        model.player.stop()
+    }
+
+    @Test func aChatThatCannotBeReadIsAskedForOnceAMinute() async throws {
+        let live = StubLive(
+            LiveState(status: .live, playbackURL: URL(string: "https://x.test/p.m3u8"), chat: .init(enabled: true)))
+        await live.set(chatFails: true)
+        let model = model(live)
+        await model.load(language: .en)
+        await model.tick()
+        clock.advance(59)
+        await model.tick()
+        #expect(await live.chatReads == 1)
+        clock.advance(1)
+        await model.tick()
+        #expect(await live.chatReads == 2)
         model.player.stop()
     }
 

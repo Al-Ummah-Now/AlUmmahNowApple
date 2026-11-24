@@ -191,4 +191,20 @@ private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         try await waitUntil { !sut.isPlaying && (store.position(of: "v1") ?? 0) > 12.3 }
         sut.stop()
     }
+
+    @Test func whereThePlayerWasIsNotReportedWhileASeekIsOnItsWay() {
+        let controller = PlayerController(subtitleLoader: { _ in "" })
+        controller.seek(to: 50)
+        let first = controller.seekCount
+        controller.applyTime(10)
+        #expect(controller.currentTime == 50)
+        controller.seek(to: 80)
+        // The first one's end is not the second one's
+        controller.finishSeek(first)
+        controller.applyTime(10)
+        #expect(controller.currentTime == 80)
+        controller.finishSeek(controller.seekCount)
+        controller.applyTime(80.25)
+        #expect(controller.currentTime == 80.25)
+    }
 }

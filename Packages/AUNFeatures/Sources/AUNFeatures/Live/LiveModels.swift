@@ -103,7 +103,7 @@ public final class LiveWatchModel {
     private var language = AppLanguage.en
     private var loadedURL: URL?
     private var premiereIsGone = false
-    private var chatAt = Date.distantPast
+    private var chatDue = Date.distantPast
     private var stateAt = Date.distantPast
     private var beatAt = Date.distantPast
     private var replay: [Int: [LiveChatMessage]] = [:]
@@ -112,6 +112,8 @@ public final class LiveWatchModel {
     nonisolated static let replayWindowMs = 60_000
     nonisolated static let shownMessages = 100
     nonisolated static let replayPages = 5
+    /// After a read of the chat that failed.
+    nonisolated static let chatBackoff: TimeInterval = 60
     /// Behind the newest moment of a stream by more than this is behind (a stream's delay is not).
     nonisolated static let behindLiveSeconds = 30.0
 
@@ -146,13 +148,16 @@ public final class LiveWatchModel {
         }
     }
 
-    /// Runs while the screen is there.
+    /// Runs while the screen is there and the app is not in the background.
     public func run() async {
         while !Task.isCancelled {
             await tick()
             try? await Task.sleep(for: .seconds(1))
         }
-        if content?.mode == .live { _ = await live.beat(id: streamID, viewerID: viewerID, leaving: true) }
+        guard content?.mode == .live else { return }
+        // This task is cancelled, and a request in it would be too: counted out in one of its own
+        beatAt = .distantPast
+        Task.detached { [live, streamID, viewerID] in _ = await live.beat(id: streamID, viewerID: viewerID, leaving: true) }
     }
 
     public func returnToLive() {
@@ -198,7 +203,8 @@ public final class LiveWatchModel {
         stateAt = now()
         var mode = LiveMode(timed.state)
         if premiereIsGone, mode == .recording { mode = .ended }
-        if timed.state.chat.enabled == false, mode != .recording { (messages, pinned) = ([], nil) }
+        let hasChat = mode == .recording ? timed.state.chat.replay : timed.state.chat.enabled
+        if !hasChat { (messages, pinned) = ([], nil) }
         if let count = timed.state.viewers { viewers = count }
         let content = LiveContent(stream: stream, timed: timed, mode: mode)
         state = .loaded(content)
@@ -259,6 +265,8 @@ public final class LiveWatchModel {
             return
         }
         guard let premiere, player.phase == .ready, !premiere.isOver(at: now()) else { return isBehind = false }
+        // Until a seek lands the player reports where it was
+        guard !player.isSeeking else { return }
         let reading = PremiereFollower.Reading(
             moment: premiere.position(at: now()), time: player.currentTime, isPlaying: player.isPlaying,
             canKeepUp: player.canKeepUp, speed: player.speed)
@@ -275,9 +283,12 @@ public final class LiveWatchModel {
         let chat = content.timed.state.chat
         switch content.mode {
         case .live where chat.enabled, .soon where chat.enabled:
-            guard moment.timeIntervalSince(chatAt) >= (content.mode == .live ? 10 : 30) else { return }
-            chatAt = moment
-            guard let page = try? await live.chat(id: streamID) else { return }
+            guard moment >= chatDue else { return }
+            guard let page = try? await live.chat(id: streamID) else {
+                chatDue = moment.addingTimeInterval(Self.chatBackoff)
+                return
+            }
+            chatDue = moment.addingTimeInterval(content.mode == .live ? 10 : 30)
             (messages, pinned) = (page.messages, page.pinned)
         case .recording where chat.replay:
             await refreshReplay()
@@ -292,7 +303,10 @@ public final class LiveWatchModel {
         if !isReadingReplay {
             isReadingReplay = true
             // The one before, so a seek does not open an empty chat, and the next, so it is there in time
-            for n in [window, window + 1, window - 1] where n >= 0 && replay[n] == nil { replay[n] = await readWindow(n) }
+            for n in [window, window + 1, window - 1] where n >= 0 && replay[n] == nil && now() >= chatDue {
+                replay[n] = await readWindow(n)
+                if replay[n] == nil { chatDue = now().addingTimeInterval(Self.chatBackoff) }
+            }
             isReadingReplay = false
         }
         var shown: [LiveChatMessage] = []

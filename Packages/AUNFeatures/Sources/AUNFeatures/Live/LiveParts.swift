@@ -27,7 +27,15 @@ struct LiveTags: View {
     var isLive = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        // One row, or one under the other when large text makes them wider than the card
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) { tags }
+            VStack(alignment: .leading, spacing: 6) { tags }
+        }
+    }
+
+    @ViewBuilder private var tags: some View {
+        Group {
             if isLive { LiveTag(text: l10n("live.now"), isLive: true).accessibilityIdentifier("live-tag-now") }
             if kind == .premiere { LiveTag(text: l10n("live.premiere")).accessibilityIdentifier("live-tag-premiere") }
             if let event { LiveTag(text: l10n("live.event.\(event.rawValue)")).accessibilityIdentifier("live-tag-event") }
@@ -131,6 +139,7 @@ struct LiveChatView: View {
                 .padding(FanousScale.spacingMd)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fanousMaterial(.control) { _ in .rect }
+                .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("live-chat-pinned")
             }
             if messages.isEmpty {
@@ -148,7 +157,7 @@ struct LiveChatView: View {
                         }
                         .padding(FanousScale.spacingMd)
                     }
-                    .defaultScrollAnchor(.bottom)
+                    .defaultScrollAnchor(isReplay ? .top : .bottom)
                     .onChange(of: messages.last?.id) { _, last in
                         if let last { proxy.scrollTo(last, anchor: .bottom) }
                     }
