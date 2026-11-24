@@ -51,6 +51,7 @@ struct ViewerSafetyTests {
         #expect(beatsBeforeBlock >= 1)
 
         model.setBlocked(true)
+        try await until { await live.leaves == 1 }
         await model.settled()
         #expect(model.isBlocked)
         #expect(model.player.item == nil)
@@ -122,5 +123,39 @@ struct ViewerSafetyTests {
 
         reloaded.unblock(id: ViewerBlockStore.channelKey(id: "c1", name: "Daily Dars"))
         #expect(!reloaded.isChannelBlocked(id: "c1", name: "Daily Dars"))
+    }
+
+    @Test @MainActor func unblockChannelRemovesNameStoredEntryEvenWhenIDNowPresent() {
+        let suite = "AUNViewerSafetyTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = ViewerBlockStore(defaults: defaults)
+        store.blockChannel(id: nil, name: "Daily Dars")
+        #expect(store.isChannelBlocked(id: "ch-99", name: "Daily Dars"))
+        store.unblockChannel(id: "ch-99", name: "Daily Dars")
+        #expect(!store.isChannelBlocked(id: "ch-99", name: "Daily Dars"))
+        #expect(store.entries.isEmpty)
+    }
+
+    @Test @MainActor func filterRailsDropsEntireRailWhenAllChannelsAreBlocked() {
+        let suite = "AUNViewerSafetyTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = ViewerBlockStore(defaults: defaults)
+        store.blockChannel(id: "c1", name: "Blocked Channel")
+        let hidden = Video(id: "v1", title: "Hidden", channelID: "c1", channelName: "Blocked Channel")
+        let rails = [HomeRail(kind: .recent, videos: [hidden])]
+        #expect(store.filterRails(rails).isEmpty)
+    }
+
+    @Test func appEnvironmentWebBaseURLCoversQAStageProdAndFallback() {
+        let qa = AppEnvironment.qa.webBaseURL
+        let stage = AppEnvironment(name: "stage", apiBaseURL: URL(string: "https://videos.api.stage.alummahnow.net")!).webBaseURL
+        let prod = AppEnvironment(name: "prod", apiBaseURL: URL(string: "https://videos.api.alummahnow.net")!).webBaseURL
+        #expect(qa.absoluteString == "https://videos.qa.alummahnow.net")
+        #expect(stage.absoluteString == "https://videos.stage.alummahnow.net")
+        #expect(prod.absoluteString == "https://videos.alummahnow.net")
     }
 }

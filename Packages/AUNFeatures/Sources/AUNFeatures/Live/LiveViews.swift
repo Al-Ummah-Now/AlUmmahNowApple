@@ -186,8 +186,7 @@ import SwiftUI
                                 .foregroundStyle(Fanous.textSecondary)
                                 .multilineTextAlignment(.center)
                             Button(l10n("safety.unblock")) {
-                                blockStore.unblock(
-                                    id: ViewerBlockStore.channelKey(id: content.stream.channelID, name: name))
+                                blockStore.unblockChannel(id: content.stream.channelID, name: name)
                             }
                             .buttonStyle(FanousButtonStyle(.secondary))
                             .accessibilityIdentifier("live-unblock-channel")

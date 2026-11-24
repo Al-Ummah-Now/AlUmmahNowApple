@@ -224,6 +224,7 @@ struct LiveChatView: View {
                 Text(message.text).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .accessibilityElement(children: .combine)
             #if os(iOS) || os(macOS)
                 Menu {
                     Link(
