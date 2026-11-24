@@ -98,6 +98,22 @@ private let base = URL(string: "https://api.test")!
         }
     }
 
+    @Test func aRefusalMayGiveADate() async {
+        let noon = "Tue, 24 Nov 2026 12:00:00 GMT"
+        let device = Date(timeIntervalSince1970: 1_795_521_570)
+        for (status, at, sent, seconds) in [
+            (429, "Tue, 24 Nov 2026 12:00:45 GMT", noon, 45), (503, "Tue, 24 Nov 2026 12:00:45 GMT", noon, 45),
+            (429, "Tue, 24 Nov 2026 11:00:00 GMT", noon, 0),
+            // Without the answer's own date, from the device's clock
+            (429, noon, nil, 30),
+        ] as [(Int, String, String?, TimeInterval)] {
+            let headers = ["Retry-After": at, "Date": sent].compactMapValues { $0 }
+            let live = NativeLiveService(
+                baseURL: base, session: StubURLProtocol.session { _ in (status, headers, Data()) }, now: { device })
+            await #expect(throws: LiveRefused(retryAfter: seconds), "\(at)") { _ = try await live.chat(id: "s") }
+        }
+    }
+
     @Test func countsTheViewer() async throws {
         let live = service { request in
             let isBeat = request.httpMethod == "POST" && request.url?.path == "/api/live-streams/s/viewers"
