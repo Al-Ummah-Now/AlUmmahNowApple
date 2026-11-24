@@ -41,6 +41,10 @@ private actor StubLive: LiveServicing {
     func set(chatPollAfter: TimeInterval?) { self.chatPollAfter = chatPollAfter }
     func set(retryAfter: TimeInterval?) { self.retryAfter = retryAfter }
     func set(isSlow: Bool) { self.isSlow = isSlow }
+    /// Each answer takes this long on the test's clock.
+    var takes: (@Sendable () -> Void)?
+    func set(takes: (@Sendable () -> Void)?) { self.takes = takes }
+    private func answerTakes() { takes?() }
     private func refuse() throws {
         if let retryAfter { throw LiveRefused(retryAfter: retryAfter) }
     }
@@ -55,12 +59,15 @@ private actor StubLive: LiveServicing {
     func stream(id: String) async throws -> LiveStream { LiveStream(id: id, title: "T", status: current.status) }
     func state(id: String) async throws -> TimedLiveState {
         stateReads += 1
+        answerTakes()
         if isSlow { try await Task.sleep(for: .seconds(60)) }
         try refuse()
         return TimedLiveState(state: current, clockOffset: offset)
     }
     func chat(id: String) async throws -> LiveChatPage {
         chatReads += 1
+        answerTakes()
+        if isSlow { try await Task.sleep(for: .seconds(60)) }
         try refuse()
         if chatFails { throw CoreError.http(status: 503) }
         return LiveChatPage(
@@ -73,9 +80,20 @@ private actor StubLive: LiveServicing {
         // As URLSession: nothing is sent in a cancelled task
         if leaving, !Task.isCancelled { leaves += 1 }
         if !leaving { beats += 1 }
+        if !leaving { answerTakes() }
         try refuse()
         return 5
     }
+}
+
+/// A catalog that answers with an error.
+private struct BrokenCatalog: CatalogServicing {
+    let error: CoreError
+    func homeRails(limit: Int) async throws -> [HomeRail] { throw error }
+    func video(id: String) async throws -> Video { throw error }
+    func subtitles(videoID: String) async throws -> [SubtitleTrack] { throw error }
+    func chapters(videoID: String) async throws -> [Chapter] { throw error }
+    func subtitleText(url: URL) async throws -> String { throw error }
 }
 
 extension LiveWatchModel {
@@ -327,6 +345,87 @@ extension LiveWatchModel {
         await model.tick()
         #expect([await live.stateReads, await live.chatReads, await live.beats] == asked.map { $0 + 1 })
         model.player.stop()
+    }
+
+    @Test func aWaitBeginsWhenTheAnswerIsThere() async throws {
+        let url = URL(string: "https://x.test/p.m3u8")
+        let live = StubLive(LiveState(status: .live, playbackURL: url, chat: .init(enabled: true)))
+        let model = model(live)
+        await model.load(language: .en)
+        let clock = clock
+        await live.set(takes: { clock.advance(8) })
+        await model.tick()  // The chat and the beat are read
+        clock.advance(60)
+        await model.tick()  // So is the state: 8 s each
+        let asked = [await live.stateReads, await live.chatReads, await live.beats]
+        await live.set(takes: nil)
+        // The chat's 10 seconds are not over: they began when its answer came, 8 s before the beat's
+        clock.advance(1)
+        await model.tick()
+        #expect(await live.chatReads == asked[1])
+        clock.advance(1)
+        await model.tick()
+        #expect(await live.chatReads == asked[1] + 1)
+        // Nor the beat's 20
+        clock.advance(17)
+        await model.tick()
+        #expect(await live.beats == asked[2])
+        clock.advance(1)
+        await model.tick()
+        #expect(await live.beats == asked[2] + 1)
+        // The state's 60 began 16 s before the beat's
+        clock.advance(23)
+        await model.tick()
+        #expect(await live.stateReads == asked[0])
+        clock.advance(1)
+        await model.tick()
+        #expect(await live.stateReads == asked[0] + 1)
+        model.player.stop()
+    }
+
+    @Test func goingToTheBackgroundIsNotAFailure() async throws {
+        let url = URL(string: "https://x.test/p.m3u8")
+        let live = StubLive(LiveState(status: .live, playbackURL: url, chat: .init(enabled: true), pollAfter: 120))
+        let model = model(live)
+        await model.load(language: .en)
+        // The chat's answer is on its way
+        await live.set(isSlow: true)
+        func cancelled(_ isOnItsWay: @escaping () async -> Bool) async throws {
+            let run = Task { await model.run() }
+            for _ in 0..<200 {
+                if await isOnItsWay() { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            run.cancel()
+            await run.value
+        }
+        try await cancelled { await live.chatReads == 1 }
+        await live.set(isSlow: false)
+        await model.tick()
+        // Asked at once, not after a failure's minute
+        #expect(await live.chatReads == 2)
+        // And the state's
+        clock.advance(120)
+        await live.set(isSlow: true)
+        try await cancelled { await live.stateReads == 2 }
+        await live.set(isSlow: false)
+        await model.tick()
+        #expect(await live.stateReads == 3)
+        model.player.stop()
+    }
+
+    @Test func aPremieresVideoThatCouldNotBeReadIsAskedForAgain() async throws {
+        let live = StubLive(LiveState(status: .ended, kind: .premiere, premiereVideoID: "v", durationSeconds: 600))
+        let clock = clock
+        let failing = LiveWatchModel(streamID: "s", live: live, catalog: BrokenCatalog(error: .offline), now: { clock.now })
+        await failing.load(language: .en)
+        #expect(try content(failing).mode == .recording)
+        clock.advance(15)
+        await failing.poll()
+        #expect(await live.stateReads == 2)
+        let gone = LiveWatchModel(streamID: "s", live: live, catalog: BrokenCatalog(error: .notFound), now: { clock.now })
+        await gone.load(language: .en)
+        #expect(try content(gone).mode == .ended)
     }
 
     @Test func whatTheServerSaysIsKeptBetween5SecondsAnd10Minutes() {
