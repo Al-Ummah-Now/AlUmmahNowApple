@@ -143,7 +143,7 @@ import SwiftUI
             .onAppear { model.setActive(scenePhase != .background) }
             .onChange(of: scenePhase) { model.setActive(scenePhase != .background) }
             .onChange(of: blocked, initial: true) { _, nowBlocked in
-                if nowBlocked { model.player.stop() }
+                model.setBlocked(nowBlocked)
             }
             .onDisappear { model.close() }
         }
@@ -227,9 +227,11 @@ import SwiftUI
         @Environment(\.l10n) private var l10n
         @Environment(\.scenePhase) private var scenePhase
         @State private var model: LiveWatchModel
+        private let webBaseURL: URL
 
         init(streamID: String, core: CoreBridge) {
             _model = State(initialValue: LiveWatchModel(streamID: streamID, live: core.live, catalog: core.catalog))
+            self.webBaseURL = core.environment.webBaseURL
         }
 
         var body: some View {
@@ -250,12 +252,15 @@ import SwiftUI
                             } else {
                                 LiveNotice(content: content, untilStart: model.untilStart)
                             }
-                            LiveDetails(content: content, viewers: model.viewers)
+                            LiveDetails(content: content, viewers: model.viewers, webBaseURL: webBaseURL)
                             Spacer(minLength: 0)
                         }
                         if content.hasChat {
-                            LiveChatView(messages: model.messages, pinned: model.pinned, isReplay: content.mode == .recording)
-                                .frame(width: 480)
+                            LiveChatView(
+                                streamID: content.stream.id, webBaseURL: webBaseURL, messages: model.messages,
+                                pinned: model.pinned, isReplay: content.mode == .recording
+                            )
+                            .frame(width: 480)
                         }
                     }
                     .padding(60)

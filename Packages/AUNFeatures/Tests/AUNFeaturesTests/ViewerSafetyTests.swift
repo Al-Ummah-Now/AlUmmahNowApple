@@ -7,32 +7,72 @@ import Testing
 @Suite("ViewerSafetyTests")
 struct ViewerSafetyTests {
     @Test func reportURLsUsePublicReportRouteLocaleHostAndEncoding() {
+        let prodWeb = AppEnvironment.prod.webBaseURL
+        let qaWeb = AppEnvironment.qa.webBaseURL
+        #expect(prodWeb.absoluteString == "https://videos.alummahnow.net")
+        #expect(qaWeb.absoluteString == "https://videos.qa.alummahnow.net")
         #expect(
-            ViewerReportURL.video(id: "v 123", language: "en").absoluteString
+            ViewerReportURL.video(id: "v 123", language: "en", webBaseURL: prodWeb).absoluteString
                 == "https://videos.alummahnow.net/en/report?type=video&id=v%20123"
         )
         #expect(
-            ViewerReportURL.video(id: "v123", language: "ar").absoluteString
+            ViewerReportURL.video(id: "v123", language: "ar", webBaseURL: prodWeb).absoluteString
                 == "https://videos.alummahnow.net/ar/report?type=video&id=v123"
         )
         #expect(
-            ViewerReportURL.channel(id: "c1", name: "Seerah", language: "en").absoluteString
+            ViewerReportURL.channel(id: "c1", language: "en", webBaseURL: prodWeb).absoluteString
                 == "https://videos.alummahnow.net/en/report?type=channel&id=c1"
         )
         #expect(
-            ViewerReportURL.liveStream(id: "s1", language: "ar").absoluteString
+            ViewerReportURL.liveStream(id: "s1", language: "ar", webBaseURL: prodWeb).absoluteString
                 == "https://videos.alummahnow.net/ar/report?type=livestream&id=s1"
         )
         #expect(
-            ViewerReportURL.liveChat(streamID: "s1", messageID: "m9", language: "ar").absoluteString
+            ViewerReportURL.liveChat(streamID: "s1", messageID: "m9", language: "ar", webBaseURL: prodWeb).absoluteString
                 == "https://videos.alummahnow.net/ar/report?type=live_chat&stream=s1&message=m9"
         )
-        let qaWeb = AppEnvironment.qa.webBaseURL
-        #expect(qaWeb.absoluteString == "https://videos.qa.alummahnow.net")
         #expect(
             ViewerReportURL.video(id: "v1", language: "en", webBaseURL: qaWeb).absoluteString
                 == "https://videos.qa.alummahnow.net/en/report?type=video&id=v1"
         )
+    }
+
+    @Test @MainActor func liveWatchModelSetBlockedStopsPlaybackAndSuppressesBeats() async throws {
+        let clock = TestClock()
+        let url = URL(string: "https://x.test/live.m3u8")!
+        let live = StubLive(LiveState(status: .live, playbackURL: url, chat: .init(enabled: true)))
+        let model = LiveWatchModel(streamID: "s1", live: live, catalog: FixtureCatalogService(), now: { clock.now })
+        await model.load(language: .en)
+        await model.tick()
+        await model.settled()
+        #expect(model.player.item != nil)
+        let beatsBeforeBlock = await live.beats
+        let statesBeforeBlock = await live.stateReads
+        #expect(beatsBeforeBlock >= 1)
+
+        model.setBlocked(true)
+        await model.settled()
+        #expect(model.isBlocked)
+        #expect(model.player.item == nil)
+        #expect(await live.sent.last == true)
+
+        // While blocked, polling must not read state, chat, or send viewer beats.
+        clock.advance(120)
+        await model.tick()
+        await model.settled()
+        #expect(await live.beats == beatsBeforeBlock)
+        #expect(await live.stateReads == statesBeforeBlock)
+        #expect(model.player.item == nil)
+
+        // Unblocking resumes playback.
+        model.setBlocked(false)
+        for _ in 0..<50 {
+            if model.player.item != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!model.isBlocked)
+        #expect(model.player.item != nil)
+        model.close()
     }
 
     @Test func liveDTOsDecodeChannelIDAndChatUserID() throws {

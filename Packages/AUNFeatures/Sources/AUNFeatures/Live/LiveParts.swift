@@ -128,7 +128,7 @@ struct LiveChatView: View {
     let isReplay: Bool
 
     init(
-        streamID: String = "", webBaseURL: URL = ViewerReportURL.defaultWebBaseURL,
+        streamID: String = "", webBaseURL: URL,
         messages: [LiveChatMessage], pinned: LiveChatMessage?, isReplay: Bool
     ) {
         self.streamID = streamID
@@ -326,10 +326,14 @@ struct LiveDetails: View {
     @State private var confirmBlockChannel = false
     let content: LiveContent
     let viewers: Int?
-    var webBaseURL: URL = ViewerReportURL.defaultWebBaseURL
+    let webBaseURL: URL
 
     private var blockStore: ViewerBlockStore { .shared }
     private var channelName: String? { content.stream.channelName }
+    private var channelID: String? {
+        let trimmed = content.stream.channelID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
+    }
     private var isBlocked: Bool {
         blockStore.isChannelBlocked(id: content.stream.channelID, name: channelName)
     }
@@ -357,23 +361,22 @@ struct LiveDetails: View {
                             Label(l10n("safety.report.stream"), systemImage: "flag")
                         }
                         .accessibilityIdentifier("report-live-stream")
-                        if let channelName {
+                        if let channelID {
                             Link(
                                 destination: ViewerReportURL.channel(
-                                    id: content.stream.channelID, name: channelName, language: l10n.language.rawValue,
-                                    webBaseURL: webBaseURL)
+                                    id: channelID, language: l10n.language.rawValue, webBaseURL: webBaseURL)
                             ) {
                                 Label(l10n("safety.report.channel"), systemImage: "flag")
                             }
                             .accessibilityIdentifier("report-live-channel")
-                            if !isBlocked {
-                                Button(role: .destructive) {
-                                    confirmBlockChannel = true
-                                } label: {
-                                    Label(l10n("safety.block.channel"), systemImage: "hand.raised.slash")
-                                }
-                                .accessibilityIdentifier("block-live-channel")
+                        }
+                        if channelName != nil, !isBlocked {
+                            Button(role: .destructive) {
+                                confirmBlockChannel = true
+                            } label: {
+                                Label(l10n("safety.block.channel"), systemImage: "hand.raised.slash")
                             }
+                            .accessibilityIdentifier("block-live-channel")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")

@@ -85,7 +85,8 @@
         func watchDetails(theme: FanousThemeID, language: AppLanguage) {
             for style in Self.styles {
                 assertView(
-                    WatchDetails(content: content, seek: { _ in }).padding().frame(maxHeight: .infinity, alignment: .top)
+                    WatchDetails(content: content, webBaseURL: AppEnvironment.qa.webBaseURL, seek: { _ in }).padding()
+                        .frame(maxHeight: .infinity, alignment: .top)
                         .fanousMaterial(.page),
                     name: "watch", theme: theme, language: language, style: style)
             }
@@ -105,8 +106,10 @@
             for style in Self.styles {
                 assertView(
                     VStack(spacing: FanousScale.spacingLg) {
-                        LiveDetails(content: onAir, viewers: 128)
+                        LiveDetails(content: onAir, viewers: 128, webBaseURL: AppEnvironment.qa.webBaseURL)
                         LiveChatView(
+                            streamID: onAir.stream.id,
+                            webBaseURL: AppEnvironment.qa.webBaseURL,
                             messages: Array(fixture.messages.prefix(4)),
                             pinned: fixture.pinned,
                             isReplay: false

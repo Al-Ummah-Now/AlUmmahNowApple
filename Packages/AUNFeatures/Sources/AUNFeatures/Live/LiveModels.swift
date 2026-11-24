@@ -202,6 +202,25 @@ public final class LiveWatchModel {
         player.stop()
     }
 
+    /// True while the stream's channel is blocked on this device; stops playback, loading, polling, and viewer beats.
+    public private(set) var isBlocked = false
+
+    public func setBlocked(_ blocked: Bool) {
+        guard blocked != isBlocked else { return }
+        isBlocked = blocked
+        if blocked {
+            loadedURL = nil
+            player.stop()
+            if hasBeaten, content?.mode == .live {
+                sendBeat(leaving: true)
+                hasBeaten = false
+            }
+        } else if let content, !isClosed {
+            beatDue = .distantPast
+            Task { try? await play(content) }
+        }
+    }
+
     private static func everySecond(_ work: @MainActor () async -> Void) async {
         while !Task.isCancelled {
             await work()
@@ -290,9 +309,9 @@ public final class LiveWatchModel {
     }
 
     private func readWhatIsDue() async throws(CancellationError) {
-        guard let content else { return }
+        guard let content, !isBlocked else { return }
         if now().timeIntervalSince(stateAt) >= stateInterval(content) { try await refreshState(content.stream) }
-        guard let content = self.content else { return }
+        guard let content = self.content, !isBlocked else { return }
         try await refreshChat(content)
         if content.mode == .live, now() >= beatDue { beat() }
     }
@@ -346,6 +365,7 @@ public final class LiveWatchModel {
     }
 
     private func play(_ content: LiveContent) async throws(CancellationError) {
+        guard !isBlocked else { return }
         let state = content.timed.state
         if state.kind == .premiere {
             let startedAt = content.mode == .live ? state.startedAt : nil
@@ -366,7 +386,7 @@ public final class LiveWatchModel {
     }
 
     private func start(_ url: URL?, _ content: LiveContent, startAt: Double? = nil) {
-        guard !isClosed, let url, url != loadedURL else { return }
+        guard !isClosed, !isBlocked, let url, url != loadedURL else { return }
         loadedURL = url
         player.load(PlaybackItem(url: url, title: content.stream.title, subtitle: content.stream.channelName, startAt: startAt))
     }

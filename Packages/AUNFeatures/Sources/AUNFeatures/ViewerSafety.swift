@@ -6,8 +6,6 @@ import SwiftUI
 /// Web URLs for reporting videos, channels, live streams, and live chat messages from guest viewers
 /// (App Store 1.2, AlUmmahNowApple#91). Points at the public guest `/[locale]/report` page.
 public enum ViewerReportURL {
-    public static let defaultWebBaseURL = URL(string: "https://videos.alummahnow.net")!
-
     private static func localeSegment(_ language: String) -> String {
         language.lowercased().hasPrefix("ar") ? "ar" : "en"
     }
@@ -15,29 +13,30 @@ public enum ViewerReportURL {
     private static func build(webBaseURL: URL, language: String, queryItems: [URLQueryItem]) -> URL {
         var components = URLComponents(url: webBaseURL, resolvingAgainstBaseURL: false) ?? URLComponents()
         if components.scheme == nil { components.scheme = "https" }
-        if components.host == nil { components.host = "videos.alummahnow.net" }
+        if components.host == nil {
+            components.host = AppEnvironment.qa.webBaseURL.host
+        }
         components.path = "/\(localeSegment(language))/report"
         components.queryItems = queryItems.filter { !($0.value ?? "").isEmpty }
         components.fragment = nil
-        return components.url ?? defaultWebBaseURL
+        return components.url ?? webBaseURL
     }
 
-    public static func video(id: String, language: String, webBaseURL: URL = defaultWebBaseURL) -> URL {
+    public static func video(id: String, language: String, webBaseURL: URL) -> URL {
         build(
             webBaseURL: webBaseURL, language: language,
             queryItems: [URLQueryItem(name: "type", value: "video"), URLQueryItem(name: "id", value: id)]
         )
     }
 
-    public static func channel(id: String?, name: String?, language: String, webBaseURL: URL = defaultWebBaseURL) -> URL {
-        let target = id?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? id! : (name ?? "")
-        return build(
+    public static func channel(id: String, language: String, webBaseURL: URL) -> URL {
+        build(
             webBaseURL: webBaseURL, language: language,
-            queryItems: [URLQueryItem(name: "type", value: "channel"), URLQueryItem(name: "id", value: target)]
+            queryItems: [URLQueryItem(name: "type", value: "channel"), URLQueryItem(name: "id", value: id)]
         )
     }
 
-    public static func liveStream(id: String, language: String, webBaseURL: URL = defaultWebBaseURL) -> URL {
+    public static func liveStream(id: String, language: String, webBaseURL: URL) -> URL {
         build(
             webBaseURL: webBaseURL, language: language,
             queryItems: [URLQueryItem(name: "type", value: "livestream"), URLQueryItem(name: "id", value: id)]
@@ -45,7 +44,7 @@ public enum ViewerReportURL {
     }
 
     public static func liveChat(
-        streamID: String, messageID: String, language: String, webBaseURL: URL = defaultWebBaseURL
+        streamID: String, messageID: String, language: String, webBaseURL: URL
     ) -> URL {
         build(
             webBaseURL: webBaseURL, language: language,
@@ -294,6 +293,7 @@ struct ViewerBlockConfirmSheet: View {
                                     Button(l10n("safety.unblock")) { store.unblock(id: entry.id) }
                                         .buttonStyle(.borderless)
                                         .foregroundStyle(Fanous.accent)
+                                        .accessibilityLabel("\(l10n("safety.unblock")) \(entry.name)")
                                         .accessibilityIdentifier("unblock-\(entry.id)")
                                 }
                                 .listRowBackground(Rectangle().fill(Fanous.surfaceRaised))
