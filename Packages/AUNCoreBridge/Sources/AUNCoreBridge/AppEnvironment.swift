@@ -34,6 +34,18 @@ public struct AppEnvironment: Hashable, Sendable {
     public static let qaAuthIssuer = URL(string: "https://auth.qa.alummahnow.net")!
     public static let qa = AppEnvironment(name: "qa", apiBaseURL: URL(string: "https://videos.api.qa.alummahnow.net")!)
 
+    /// Web frontend matching `apiBaseURL` (e.g. `videos.api.qa.alummahnow.net` → `videos.qa.alummahnow.net`).
+    public var webBaseURL: URL {
+        var components = URLComponents(url: apiBaseURL, resolvingAgainstBaseURL: false)
+        if let host = components?.host {
+            components?.host = host.replacingOccurrences(of: ".api.", with: ".")
+        }
+        components?.path = ""
+        components?.query = nil
+        components?.fragment = nil
+        return components?.url ?? URL(string: "https://videos.alummahnow.net")!
+    }
+
     /// Reads the values the build configuration wrote to Info.plist. Falls back to QA, never to production.
     public static func fromInfoDictionary(_ info: [String: Any]?) -> AppEnvironment {
         guard let base = info?["AUNAPIBaseURL"] as? String, let url = URL(string: base), url.scheme == "https",

@@ -23,6 +23,7 @@ public struct LiveStream: Identifiable, Hashable, Sendable, Decodable {
     public var kind: LiveKind
     /// nil while event tags are off.
     public var eventType: LiveEventType?
+    public var channelID: String?
     public var channelName: String?
     public var thumbnailURL: URL?
     public var scheduledStart: Date?
@@ -31,6 +32,7 @@ public struct LiveStream: Identifiable, Hashable, Sendable, Decodable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, description, status, kind, eventType, channelName
+        case channelID = "channelId"
         case thumbnailURL = "thumbnailUrl"
         case scheduledStart = "scheduledStartTime"
         case startedAt = "actualStartTime"
@@ -39,8 +41,8 @@ public struct LiveStream: Identifiable, Hashable, Sendable, Decodable {
 
     public init(
         id: String, title: String, description: String? = nil, status: LiveStatus, kind: LiveKind = .live,
-        eventType: LiveEventType? = nil, channelName: String? = nil, thumbnailURL: URL? = nil, scheduledStart: Date? = nil,
-        startedAt: Date? = nil, viewers: Int? = nil
+        eventType: LiveEventType? = nil, channelID: String? = nil, channelName: String? = nil, thumbnailURL: URL? = nil,
+        scheduledStart: Date? = nil, startedAt: Date? = nil, viewers: Int? = nil
     ) {
         self.id = id
         self.title = title
@@ -48,6 +50,7 @@ public struct LiveStream: Identifiable, Hashable, Sendable, Decodable {
         self.status = status
         self.kind = kind
         self.eventType = eventType
+        self.channelID = channelID
         self.channelName = channelName
         self.thumbnailURL = thumbnailURL
         self.scheduledStart = scheduledStart
@@ -63,6 +66,7 @@ public struct LiveStream: Identifiable, Hashable, Sendable, Decodable {
         status = try c.decode(LiveStatus.self, forKey: .status)
         kind = (try? c.decodeIfPresent(LiveKind.self, forKey: .kind)) ?? .live
         eventType = try? c.decodeIfPresent(LiveEventType.self, forKey: .eventType)
+        channelID = try? c.decodeIfPresent(String.self, forKey: .channelID)
         channelName = try? c.decodeIfPresent(String.self, forKey: .channelName)
         thumbnailURL = try? c.decodeIfPresent(URL.self, forKey: .thumbnailURL)
         scheduledStart = try? c.decodeIfPresent(Date.self, forKey: .scheduledStart)
@@ -171,16 +175,23 @@ public struct LiveChatMessage: Identifiable, Hashable, Sendable, Decodable {
     public enum Role: String, Decodable, Hashable, Sendable { case owner, moderator }
 
     public var id: String
+    public var userID: String?
     public var authorName: String
     public var authorRole: Role?
     public var text: String
     /// Milliseconds from the stream's start.
     public var offsetMs: Int
 
-    enum CodingKeys: String, CodingKey { case id, authorName, authorRole, text, offsetMs }
+    enum CodingKeys: String, CodingKey {
+        case id, authorName, authorRole, text, offsetMs
+        case userID = "userId"
+    }
 
-    public init(id: String, authorName: String, authorRole: Role? = nil, text: String, offsetMs: Int) {
+    public init(
+        id: String, userID: String? = nil, authorName: String, authorRole: Role? = nil, text: String, offsetMs: Int
+    ) {
         self.id = id
+        self.userID = userID
         self.authorName = authorName
         self.authorRole = authorRole
         self.text = text
@@ -190,6 +201,7 @@ public struct LiveChatMessage: Identifiable, Hashable, Sendable, Decodable {
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
+        userID = try? c.decodeIfPresent(String.self, forKey: .userID)
         authorName = try c.decode(String.self, forKey: .authorName)
         authorRole = try? c.decodeIfPresent(Role.self, forKey: .authorRole)
         text = try c.decode(String.self, forKey: .text)

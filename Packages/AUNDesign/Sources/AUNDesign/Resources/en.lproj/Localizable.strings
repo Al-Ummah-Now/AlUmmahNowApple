@@ -443,6 +443,7 @@
 "notification.liveSoon" = "%1$@: %2$@ starts soon";
 "notification.premiereCancelled" = "“%@” couldn’t be shown. The video is unchanged.";
 "safety.moreActions" = "More actions";
+"safety.moreActionsFor" = "More actions for %@";
 "safety.report.video" = "Report video";
 "safety.report.channel" = "Report channel";
 "safety.report.stream" = "Report live stream";

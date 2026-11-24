@@ -149,19 +149,23 @@
                     HomeSkeleton().accessibilityLabel(l10n("common.loading"))
                 case .failed:
                     ErrorStateView { Task { await model.load() } }
-                case .loaded(let rails) where rails.isEmpty:
-                    EmptyStateView(title: l10n("home.empty"))
                 case .loaded(let rails):
                     let blockStore = ViewerBlockStore.shared
-                    HomeRailsContent(
-                        rails: blockStore.filterRails(rails),
-                        live: blockStore.filterLiveStreams(live.onAir + live.coming),
-                        openLive: { open(.live($0.id)) },
-                        seeAllLive: { open(.liveList) }, open: { open(.video($0.id)) }
-                    )
-                    .refreshable {
-                        await model.load()
-                        await live.load()
+                    let visibleRails = blockStore.filterRails(rails)
+                    let visibleLive = blockStore.filterLiveStreams(live.onAir + live.coming)
+                    if visibleRails.isEmpty && visibleLive.isEmpty {
+                        EmptyStateView(title: l10n("home.empty"))
+                    } else {
+                        HomeRailsContent(
+                            rails: visibleRails,
+                            live: visibleLive,
+                            openLive: { open(.live($0.id)) },
+                            seeAllLive: { open(.liveList) }, open: { open(.video($0.id)) }
+                        )
+                        .refreshable {
+                            await model.load()
+                            await live.load()
+                        }
                     }
                 }
             }

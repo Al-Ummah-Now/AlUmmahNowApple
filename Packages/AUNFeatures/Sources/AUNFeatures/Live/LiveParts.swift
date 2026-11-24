@@ -120,14 +120,19 @@ struct LiveRail: View {
 /// The messages beside a stream, or as they were beside its recording. Reading only.
 struct LiveChatView: View {
     @Environment(\.l10n) private var l10n
-    @State private var blockingAuthor: String?
+    @State private var blockingMessage: LiveChatMessage?
     let streamID: String
+    let webBaseURL: URL
     let messages: [LiveChatMessage]
     let pinned: LiveChatMessage?
     let isReplay: Bool
 
-    init(streamID: String = "", messages: [LiveChatMessage], pinned: LiveChatMessage?, isReplay: Bool) {
+    init(
+        streamID: String = "", webBaseURL: URL = ViewerReportURL.defaultWebBaseURL,
+        messages: [LiveChatMessage], pinned: LiveChatMessage?, isReplay: Bool
+    ) {
         self.streamID = streamID
+        self.webBaseURL = webBaseURL
         self.messages = messages
         self.pinned = pinned
         self.isReplay = isReplay
@@ -136,7 +141,7 @@ struct LiveChatView: View {
     private var blockStore: ViewerBlockStore { .shared }
     private var visibleMessages: [LiveChatMessage] { blockStore.filterMessages(messages) }
     private var visiblePinned: LiveChatMessage? {
-        pinned.flatMap { blockStore.isChatUserBlocked(name: $0.authorName) ? nil : $0 }
+        pinned.flatMap { blockStore.isChatUserBlocked(id: $0.userID, name: $0.authorName) ? nil : $0 }
     }
 
     var body: some View {
@@ -188,16 +193,16 @@ struct LiveChatView: View {
         #if os(iOS) || os(macOS)
             .sheet(
                 isPresented: Binding(
-                    get: { blockingAuthor != nil },
-                    set: { if !$0 { blockingAuthor = nil } }
+                    get: { blockingMessage != nil },
+                    set: { if !$0 { blockingMessage = nil } }
                 )
             ) {
-                if let author = blockingAuthor {
+                if let msg = blockingMessage {
                     ViewerBlockConfirmSheet(
-                        title: l10n("safety.block.userTitle", author),
+                        title: l10n("safety.block.userTitle", msg.authorName),
                         message: l10n("safety.block.userMessage")
                     ) {
-                        blockStore.blockChatUser(name: author)
+                        blockStore.blockChatUser(id: msg.userID, name: msg.authorName)
                     }
                 }
             }
@@ -223,13 +228,14 @@ struct LiveChatView: View {
                 Menu {
                     Link(
                         destination: ViewerReportURL.liveChat(
-                            streamID: streamID, messageID: message.id, language: l10n.language.rawValue)
+                            streamID: streamID, messageID: message.id, language: l10n.language.rawValue,
+                            webBaseURL: webBaseURL)
                     ) {
                         Label(l10n("safety.report.message"), systemImage: "flag")
                     }
                     .accessibilityIdentifier("report-chat-\(message.id)")
                     Button(role: .destructive) {
-                        blockingAuthor = message.authorName
+                        blockingMessage = message
                     } label: {
                         Label(l10n("safety.block.user"), systemImage: "hand.raised.slash")
                     }
@@ -238,9 +244,9 @@ struct LiveChatView: View {
                     Image(systemName: "ellipsis")
                         .font(.caption)
                         .foregroundStyle(Fanous.textSecondary)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
-                        .accessibilityLabel(l10n("safety.moreActions"))
+                        .accessibilityLabel(l10n("safety.moreActionsFor", message.authorName))
                 }
                 .menuIndicator(.hidden)
                 .buttonStyle(.plain)
@@ -320,9 +326,13 @@ struct LiveDetails: View {
     @State private var confirmBlockChannel = false
     let content: LiveContent
     let viewers: Int?
+    var webBaseURL: URL = ViewerReportURL.defaultWebBaseURL
 
     private var blockStore: ViewerBlockStore { .shared }
     private var channelName: String? { content.stream.channelName }
+    private var isBlocked: Bool {
+        blockStore.isChannelBlocked(id: content.stream.channelID, name: channelName)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -340,24 +350,30 @@ struct LiveDetails: View {
                 Spacer(minLength: 0)
                 #if os(iOS) || os(macOS)
                     Menu {
-                        Link(destination: ViewerReportURL.liveStream(id: content.stream.id, language: l10n.language.rawValue)) {
+                        Link(
+                            destination: ViewerReportURL.liveStream(
+                                id: content.stream.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
+                        ) {
                             Label(l10n("safety.report.stream"), systemImage: "flag")
                         }
                         .accessibilityIdentifier("report-live-stream")
                         if let channelName {
                             Link(
                                 destination: ViewerReportURL.channel(
-                                    id: nil, name: channelName, language: l10n.language.rawValue)
+                                    id: content.stream.channelID, name: channelName, language: l10n.language.rawValue,
+                                    webBaseURL: webBaseURL)
                             ) {
                                 Label(l10n("safety.report.channel"), systemImage: "flag")
                             }
                             .accessibilityIdentifier("report-live-channel")
-                            Button(role: .destructive) {
-                                confirmBlockChannel = true
-                            } label: {
-                                Label(l10n("safety.block.channel"), systemImage: "hand.raised.slash")
+                            if !isBlocked {
+                                Button(role: .destructive) {
+                                    confirmBlockChannel = true
+                                } label: {
+                                    Label(l10n("safety.block.channel"), systemImage: "hand.raised.slash")
+                                }
+                                .accessibilityIdentifier("block-live-channel")
                             }
-                            .accessibilityIdentifier("block-live-channel")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -384,7 +400,7 @@ struct LiveDetails: View {
                         title: l10n("safety.block.channelTitle", channelName),
                         message: l10n("safety.block.channelMessage")
                     ) {
-                        blockStore.blockChannel(id: nil, name: channelName)
+                        blockStore.blockChannel(id: content.stream.channelID, name: channelName)
                     }
                 }
             }

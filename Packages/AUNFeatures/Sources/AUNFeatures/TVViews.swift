@@ -19,7 +19,8 @@
                 TVHomeView(core: core) { path.append($0) }
                     .navigationDestination(for: ViewerDestination.self) { destination in
                         switch destination {
-                        case .video(let id): TVWatchView(videoID: id, catalog: core.catalog)
+                        case .video(let id):
+                            TVWatchView(videoID: id, catalog: core.catalog, webBaseURL: core.environment.webBaseURL)
                         case .live(let id): TVLiveWatchView(streamID: id, core: core)
                         case .liveList: EmptyView()
                         }
@@ -159,9 +160,11 @@
         @Environment(\.l10n) private var l10n
         @State private var model: WatchViewModel
         @State private var showingReport = false
+        private let webBaseURL: URL
 
-        init(videoID: String, catalog: any CatalogServicing) {
+        init(videoID: String, catalog: any CatalogServicing, webBaseURL: URL = ViewerReportURL.defaultWebBaseURL) {
             _model = State(initialValue: WatchViewModel(videoID: videoID, catalog: catalog))
+            self.webBaseURL = webBaseURL
         }
 
         var body: some View {
@@ -192,8 +195,9 @@
                             Text(
                                 l10n(
                                     "safety.report.tvBody",
-                                    ViewerReportURL.video(id: content.video.id, language: l10n.language.rawValue)
-                                        .absoluteString)
+                                    ViewerReportURL.video(
+                                        id: content.video.id, language: l10n.language.rawValue, webBaseURL: webBaseURL
+                                    ).absoluteString)
                             )
                             .multilineTextAlignment(.center)
                             Button(l10n("common.dismiss")) { showingReport = false }

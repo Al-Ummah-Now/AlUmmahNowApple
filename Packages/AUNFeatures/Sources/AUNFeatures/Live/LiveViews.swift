@@ -21,8 +21,11 @@ import SwiftUI
                 case .loading: ThemeLoader()
                 case .failed: ErrorStateView { Task { await model.load() } }
                 case .loaded:
+                    let blockStore = ViewerBlockStore.shared
                     LiveListContent(
-                        onAir: model.onAir, coming: model.coming, hasEvents: model.hasEvents, event: model.event,
+                        onAir: blockStore.filterLiveStreams(model.onAir),
+                        coming: blockStore.filterLiveStreams(model.coming),
+                        hasEvents: model.hasEvents, event: model.event,
                         choose: { event in Task { await model.choose(event) } }, open: open
                     )
                     .refreshable { await model.load() }
@@ -108,12 +111,24 @@ import SwiftUI
         /// under the player.
         private static let twoPaneWidth: CGFloat = 960
         @State private var model: LiveWatchModel
+        private let webBaseURL: URL
 
         public init(streamID: String, core: CoreBridge) {
             _model = State(initialValue: LiveWatchModel(streamID: streamID, live: core.live, catalog: core.catalog))
+            webBaseURL = core.environment.webBaseURL
+        }
+
+        private var blockStore: ViewerBlockStore { .shared }
+
+        private func isChannelBlocked(_ content: LiveContent) -> Bool {
+            blockStore.isChannelBlocked(id: content.stream.channelID, name: content.stream.channelName)
         }
 
         public var body: some View {
+            let blocked: Bool = {
+                if case .loaded(let content) = model.state { return isChannelBlocked(content) }
+                return false
+            }()
             Group {
                 switch model.state {
                 case .loading: ThemeLoader()
@@ -127,11 +142,14 @@ import SwiftUI
             // Nothing is asked for in the background, also while the sound plays on there
             .onAppear { model.setActive(scenePhase != .background) }
             .onChange(of: scenePhase) { model.setActive(scenePhase != .background) }
+            .onChange(of: blocked, initial: true) { _, nowBlocked in
+                if nowBlocked { model.player.stop() }
+            }
             .onDisappear { model.close() }
         }
 
         @ViewBuilder private func page(_ content: LiveContent, size: CGSize) -> some View {
-            if size.width >= Self.twoPaneWidth, size.width > size.height, content.hasChat {
+            if size.width >= Self.twoPaneWidth, size.width > size.height, content.hasChat, !isChannelBlocked(content) {
                 HStack(alignment: .top, spacing: FanousScale.spacingLg) {
                     ScrollView { main(content) }
                     chat(content).frame(width: 340).frame(maxHeight: .infinity)
@@ -141,7 +159,7 @@ import SwiftUI
                 ScrollView {
                     VStack(spacing: FanousScale.spacingLg) {
                         main(content)
-                        if content.hasChat { chat(content).frame(height: 420) }
+                        if content.hasChat, !isChannelBlocked(content) { chat(content).frame(height: 420) }
                     }
                     .padding()
                 }
@@ -150,13 +168,37 @@ import SwiftUI
 
         private func chat(_ content: LiveContent) -> some View {
             LiveChatView(
-                streamID: content.stream.id, messages: model.messages, pinned: model.pinned,
+                streamID: content.stream.id, webBaseURL: webBaseURL, messages: model.messages, pinned: model.pinned,
                 isReplay: content.mode == .recording)
         }
 
         private func main(_ content: LiveContent) -> some View {
             VStack(alignment: .leading, spacing: FanousScale.spacingMd) {
-                if content.mode == .live || content.mode == .recording {
+                if isChannelBlocked(content) {
+                    VStack(spacing: 12) {
+                        Image(systemName: "hand.raised.slash")
+                            .font(.title2)
+                            .foregroundStyle(Fanous.textSecondary)
+                            .accessibilityHidden(true)
+                        if let name = content.stream.channelName {
+                            Text(l10n("safety.blocked.channelBanner", name))
+                                .fanousFont(.body)
+                                .foregroundStyle(Fanous.textSecondary)
+                                .multilineTextAlignment(.center)
+                            Button(l10n("safety.unblock")) {
+                                blockStore.unblock(
+                                    id: ViewerBlockStore.channelKey(id: content.stream.channelID, name: name))
+                            }
+                            .buttonStyle(FanousButtonStyle(.secondary))
+                            .accessibilityIdentifier("live-unblock-channel")
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .fanousMaterial(.hero) { .rounded($0.lg) }
+                    .accessibilityIdentifier("live-channel-blocked")
+                } else if content.mode == .live || content.mode == .recording {
                     PlayerSurface(controller: model.player)
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .accessibilityIdentifier("player")
@@ -173,7 +215,7 @@ import SwiftUI
                 } else {
                     LiveNotice(content: content, untilStart: model.untilStart)
                 }
-                LiveDetails(content: content, viewers: model.viewers)
+                LiveDetails(content: content, viewers: model.viewers, webBaseURL: webBaseURL)
             }
         }
     }

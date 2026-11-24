@@ -4,37 +4,57 @@ import Foundation
 import SwiftUI
 
 /// Web URLs for reporting videos, channels, live streams, and live chat messages from guest viewers
-/// (App Store 1.2, AlUmmahNowApple#91).
+/// (App Store 1.2, AlUmmahNowApple#91). Points at the public guest `/[locale]/report` page.
 public enum ViewerReportURL {
+    public static let defaultWebBaseURL = URL(string: "https://videos.alummahnow.net")!
+
     private static func localeSegment(_ language: String) -> String {
         language.lowercased().hasPrefix("ar") ? "ar" : "en"
     }
 
-    private static func encoded(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
+    private static func build(webBaseURL: URL, language: String, queryItems: [URLQueryItem]) -> URL {
+        var components = URLComponents(url: webBaseURL, resolvingAgainstBaseURL: false) ?? URLComponents()
+        if components.scheme == nil { components.scheme = "https" }
+        if components.host == nil { components.host = "videos.alummahnow.net" }
+        components.path = "/\(localeSegment(language))/report"
+        components.queryItems = queryItems.filter { !($0.value ?? "").isEmpty }
+        components.fragment = nil
+        return components.url ?? defaultWebBaseURL
     }
 
-    public static func video(id: String, language: String) -> URL {
-        URL(string: "https://videos.alummahnow.net/\(localeSegment(language))/video/\(encoded(id))?report=video")!
+    public static func video(id: String, language: String, webBaseURL: URL = defaultWebBaseURL) -> URL {
+        build(
+            webBaseURL: webBaseURL, language: language,
+            queryItems: [URLQueryItem(name: "type", value: "video"), URLQueryItem(name: "id", value: id)]
+        )
     }
 
-    public static func channel(id: String?, name: String?, language: String) -> URL {
-        let target = id ?? name ?? ""
-        return URL(
-            string:
-                "https://videos.alummahnow.net/\(localeSegment(language))/contact?from=app-report&type=channel&id=\(encoded(target))"
-        )!
+    public static func channel(id: String?, name: String?, language: String, webBaseURL: URL = defaultWebBaseURL) -> URL {
+        let target = id?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? id! : (name ?? "")
+        return build(
+            webBaseURL: webBaseURL, language: language,
+            queryItems: [URLQueryItem(name: "type", value: "channel"), URLQueryItem(name: "id", value: target)]
+        )
     }
 
-    public static func liveStream(id: String, language: String) -> URL {
-        URL(string: "https://videos.alummahnow.net/\(localeSegment(language))/live/\(encoded(id))?report=livestream")!
+    public static func liveStream(id: String, language: String, webBaseURL: URL = defaultWebBaseURL) -> URL {
+        build(
+            webBaseURL: webBaseURL, language: language,
+            queryItems: [URLQueryItem(name: "type", value: "livestream"), URLQueryItem(name: "id", value: id)]
+        )
     }
 
-    public static func liveChat(streamID: String, messageID: String, language: String) -> URL {
-        URL(
-            string:
-                "https://videos.alummahnow.net/\(localeSegment(language))/contact?from=app-report&type=live_chat&stream=\(encoded(streamID))&message=\(encoded(messageID))"
-        )!
+    public static func liveChat(
+        streamID: String, messageID: String, language: String, webBaseURL: URL = defaultWebBaseURL
+    ) -> URL {
+        build(
+            webBaseURL: webBaseURL, language: language,
+            queryItems: [
+                URLQueryItem(name: "type", value: "live_chat"),
+                URLQueryItem(name: "stream", value: streamID),
+                URLQueryItem(name: "message", value: messageID),
+            ]
+        )
     }
 }
 
@@ -80,8 +100,8 @@ public final class ViewerBlockStore {
         save()
     }
 
-    public func blockChatUser(name: String) {
-        let keyID = Self.chatUserKey(name: name)
+    public func blockChatUser(id: String? = nil, name: String) {
+        let keyID = Self.chatUserKey(id: id, name: name)
         guard !entries.contains(where: { $0.id == keyID }) else { return }
         entries.insert(BlockedEntry(id: keyID, kind: .chatUser, name: name), at: 0)
         save()
@@ -93,18 +113,38 @@ public final class ViewerBlockStore {
     }
 
     public func isChannelBlocked(id: String?, name: String?) -> Bool {
-        let byID = id.map { Self.channelKey(id: $0, name: name ?? "") }
-        let byName = name.map { Self.channelKey(id: nil, name: $0) }
+        let cleanID = id?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let byID = (cleanID?.isEmpty == false) ? Self.channelKey(id: cleanID, name: name ?? "") : nil
+        let cleanName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let byName = (cleanName?.isEmpty == false) ? Self.channelKey(id: nil, name: cleanName!) : nil
         return entries.contains { entry in
-            entry.kind == .channel
-                && (entry.id == byID || entry.id == byName
-                    || (name != nil && entry.name.caseInsensitiveCompare(name!) == .orderedSame))
+            guard entry.kind == .channel else { return false }
+            if let byID, entry.id == byID { return true }
+            // When both the stored block and the queried channel carry a stable ID, match by ID only so
+            // two distinct channels that happen to share a display name never collide.
+            if byID != nil && entry.id.hasPrefix("channel:id:") { return false }
+            if let byName, entry.id == byName { return true }
+            if let cleanName, !cleanName.isEmpty, entry.name.caseInsensitiveCompare(cleanName) == .orderedSame {
+                return true
+            }
+            return false
         }
     }
 
-    public func isChatUserBlocked(name: String) -> Bool {
-        let keyID = Self.chatUserKey(name: name)
-        return entries.contains { $0.kind == .chatUser && $0.id == keyID }
+    public func isChatUserBlocked(id: String? = nil, name: String?) -> Bool {
+        let cleanID = id?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let byID = (cleanID?.isEmpty == false) ? Self.chatUserKey(id: cleanID, name: name ?? "") : nil
+        let cleanName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let byName = (cleanName?.isEmpty == false) ? Self.chatUserKey(id: nil, name: cleanName!) : nil
+        let legacyName = (cleanName?.isEmpty == false) ? "user:\(cleanName!.lowercased())" : nil
+        return entries.contains { entry in
+            guard entry.kind == .chatUser else { return false }
+            if let byID, entry.id == byID { return true }
+            if byID != nil && entry.id.hasPrefix("user:id:") { return false }
+            if let byName, entry.id == byName { return true }
+            if let legacyName, entry.id == legacyName { return true }
+            return false
+        }
     }
 
     public func filterVideos(_ videos: [Video]) -> [Video] {
@@ -119,20 +159,21 @@ public final class ViewerBlockStore {
     }
 
     public func filterLiveStreams(_ streams: [LiveStream]) -> [LiveStream] {
-        streams.filter { !isChannelBlocked(id: nil, name: $0.channelName) }
+        streams.filter { !isChannelBlocked(id: $0.channelID, name: $0.channelName) }
     }
 
     public func filterMessages(_ messages: [LiveChatMessage]) -> [LiveChatMessage] {
-        messages.filter { !isChatUserBlocked(name: $0.authorName) }
+        messages.filter { !isChatUserBlocked(id: $0.userID, name: $0.authorName) }
     }
 
     static func channelKey(id: String?, name: String) -> String {
-        if let id, !id.isEmpty { return "channel:id:\(id)" }
+        if let id = id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty { return "channel:id:\(id)" }
         return "channel:name:\(name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
     }
 
-    static func chatUserKey(name: String) -> String {
-        "user:\(name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+    static func chatUserKey(id: String? = nil, name: String) -> String {
+        if let id = id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty { return "user:id:\(id)" }
+        return "user:name:\(name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
     }
 
     private func save() {
@@ -195,12 +236,16 @@ struct ViewerBlockConfirmSheet: View {
     }
 
     @ViewBuilder private var buttons: some View {
-        Button(l10n("common.cancel")) { dismiss() }
+        let cancel = Button(l10n("common.cancel")) { dismiss() }
             .buttonStyle(FanousButtonStyle(.primary))
-            .keyboardShortcut(.cancelAction)
             .focused($cancelFocused)
             .accessibilityFocused($cancelSpoken)
             .accessibilityIdentifier("block-confirm-cancel")
+        #if !os(tvOS)
+            cancel.keyboardShortcut(.cancelAction)
+        #else
+            cancel
+        #endif
         Button(role: .destructive) {
             onConfirm()
             dismiss()

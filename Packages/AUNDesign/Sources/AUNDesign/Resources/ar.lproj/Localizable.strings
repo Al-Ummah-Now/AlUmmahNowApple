@@ -443,6 +443,7 @@
 "notification.liveSoon" = "%1$@: يبدأ «%2$@» قريبًا";
 "notification.premiereCancelled" = "تعذّر عرض «%@». لم يتغيّر المرئي.";
 "safety.moreActions" = "خيارات إضافية";
+"safety.moreActionsFor" = "خيارات إضافية لـ %@";
 "safety.report.video" = "الإبلاغ عن المرئي";
 "safety.report.channel" = "الإبلاغ عن القناة";
 "safety.report.stream" = "الإبلاغ عن البث المباشر";
