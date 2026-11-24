@@ -257,6 +257,7 @@ public struct LiveRefused: Error, Equatable {
 
     /// The date form of HTTP headers (RFC 9110).
     private static func date(_ text: String) -> Date? {
+        // swiftlint:disable:next display_format - an HTTP header, not shown
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "GMT")

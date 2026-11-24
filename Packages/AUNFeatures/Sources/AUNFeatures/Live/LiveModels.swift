@@ -12,6 +12,7 @@ public final class LiveListModel {
     /// The event filter is offered (the `liveEvents` switch).
     public private(set) var hasEvents = false
     public private(set) var event: LiveEventType?
+    private var latest = 0
     private let live: any LiveServicing
     private let now: @Sendable () -> Date
 
@@ -22,8 +23,12 @@ public final class LiveListModel {
 
     public var isEmpty: Bool { onAir.isEmpty && coming.isEmpty }
 
+    /// The latest load is the one that is shown: an earlier one still on its way is dropped.
     public func load() async {
+        latest += 1
+        let load = latest
         let features = await live.features()
+        guard load == latest else { return }
         hasEvents = features.isOn(.liveEvents)
         if !hasEvents { event = nil }
         // The coming list is Epic 17's: premieres, reminders and event tags
@@ -32,6 +37,7 @@ public final class LiveListModel {
             async let onAirNow = live.streams(.live, event: event)
             async let scheduled = hasComing ? live.streams(.scheduled, event: event) : []
             let (current, next) = try await (onAirNow, scheduled)
+            guard load == latest else { return }
             let moment = now()
             onAir = current
             coming = next.filter { ($0.scheduledStart ?? .distantPast) > moment }
@@ -41,6 +47,7 @@ public final class LiveListModel {
             return
         } catch {
             AUNLog.network.error("Live list failed: \(error)")
+            guard load == latest else { return }
             if case .loaded = state { return }
             state = .failed
         }
@@ -104,6 +111,7 @@ public final class LiveWatchModel {
     private var loadedURL: URL?
     private var premiereIsGone = false
     private var chatDue = Date.distantPast
+    private var replayDue = Date.distantPast
     private var stateAt = Date.distantPast
     /// The server's own wait for the state, over this app's.
     private var stateWait: TimeInterval?
@@ -255,7 +263,9 @@ public final class LiveWatchModel {
         var mode = LiveMode(timed.state)
         if premiereIsGone, mode == .recording { mode = .ended }
         let hasChat = mode == .recording ? timed.state.chat.replay : timed.state.chat.enabled
-        if !hasChat { (messages, pinned) = ([], nil) }
+        // The replay begins empty: what was written and pinned live is not what had been written by its first moment
+        let isReplayNew = mode == .recording && self.content?.mode != .recording
+        if !hasChat || isReplayNew { (messages, pinned) = ([], nil) }
         if let count = timed.state.viewers { viewers = count }
         let content = LiveContent(stream: stream, timed: timed, mode: mode)
         state = .loaded(content)
@@ -362,10 +372,10 @@ public final class LiveWatchModel {
             isReadingReplay = true
             defer { isReadingReplay = false }
             // The one before, so a seek does not open an empty chat, and the next, so it is there in time
-            for n in [window, window + 1, window - 1] where n >= 0 && replay[n] == nil && now() >= chatDue {
+            for n in [window, window + 1, window - 1] where n >= 0 && replay[n] == nil && now() >= replayDue {
                 let (list, wait) = try await readWindow(n)
                 replay[n] = list
-                if list == nil { chatDue = now().addingTimeInterval(wait ?? Self.chatBackoff) }
+                if list == nil { replayDue = now().addingTimeInterval(wait ?? Self.chatBackoff) }
             }
         }
         var shown: [LiveChatMessage] = []
