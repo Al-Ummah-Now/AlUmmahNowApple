@@ -143,6 +143,7 @@
 "studio.upload.error.limit" = "وصلت إلى حد الرفع. حاول لاحقًا.";
 "studio.upload.error.invalid" = "لم يقبل الخادم تفاصيل هذا المرئي.";
 "studio.upload.error.generic" = "توقف الرفع. أعد المحاولة للمتابعة من حيث توقف.";
+"studio.upload.error.stalled" = "توقف الرفع: لم يرد الخادم. أعد المحاولة للمتابعة من حيث توقف.";
 "studio.token.filename" = "اسم الملف";
 "studio.token.episode" = "رقم الحلقة";
 "studio.token.n" = "الترتيب في الدفعة";

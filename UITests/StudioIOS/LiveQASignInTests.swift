@@ -126,7 +126,11 @@ final class LiveQAUploadTests: LiveQATestCase {
         let deadline = Date().addingTimeInterval(240)
         while done.count < 1, failed.count < 1, Date() < deadline { sleep(2) }
         keep("upload-queue-en")
-        XCTAssertEqual(done.count, 1)
+        // What the queue said when it did not finish: "Uploading, 0%" is a request that never got going
+        let rows = app.staticTexts.allElementsBoundByIndex.map(\.label).filter {
+            $0.contains("%") || $0.localizedCaseInsensitiveContains("upload")
+        }
+        XCTAssertEqual(done.count, 1, "the upload did not finish; the queue says: \(rows)")
     }
 
     /// The Arabic form against QA: right to left, playlists loaded. Nothing is uploaded.

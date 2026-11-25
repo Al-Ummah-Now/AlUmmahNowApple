@@ -23,6 +23,10 @@ public final class UploadQueue {
     private let transfer: any TUSTransferring
     private let store: UploadStore
     private let maxParallel: Int
+    /// A byte transfer step (token, offset, create, one chunk) with no sign of life this long has stalled (Apple #105).
+    private let stallLimit: Duration
+    /// A stalled chunk is asked for again once; a second stall stops the job.
+    private static let stallRetries = 1
     private var tasks: [UUID: Task<Void, Never>] = [:]
     private let preEncoder: PreEncoder?
     private let encoderName: String
@@ -41,8 +45,9 @@ public final class UploadQueue {
 
     init(
         studio: any StudioServicing, transfer: any TUSTransferring, store: UploadStore, maxParallel: Int = 2,
-        preEncoder: PreEncoder? = nil, encoderName: String = PreEncoder.encoderName()
+        preEncoder: PreEncoder? = nil, encoderName: String = PreEncoder.encoderName(), stallLimit: Duration = .seconds(60)
     ) {
+        self.stallLimit = stallLimit
         self.studio = studio
         self.transfer = transfer
         self.store = store
@@ -68,7 +73,11 @@ public final class UploadQueue {
         let preEncoder = services.renditionPackaging.map {
             PreEncoder(packaging: $0, renditions: services.renditions, workRoot: PreEncoder.defaultWorkRoot)
         }
-        self.init(studio: services.studio, transfer: services.transfer, store: store, preEncoder: preEncoder)
+        // UI tests shorten the stall limit (`-AUNUploadStallSeconds 3`) to show a stalled upload without a minute's wait
+        let seconds = UserDefaults.standard.double(forKey: "AUNUploadStallSeconds")
+        self.init(
+            studio: services.studio, transfer: services.transfer, store: store, preEncoder: preEncoder,
+            stallLimit: seconds > 0 ? .seconds(seconds) : .seconds(60))
     }
 
     /// True when this build can pre-encode renditions (desktop Studio with Core's packaging).
@@ -317,11 +326,14 @@ public final class UploadQueue {
     /// The TUS upload URL and how much the server has: the saved upload, the reused one, or a new one.
     private func locate(_ id: UUID, endpoint: URL, headers: [String: String]) async throws -> (URL, Int64) {
         guard var job = job(id), var ticket = job.ticket else { throw CancellationError() }
+        let transfer = self.transfer
         var location = job.uploadURL
         if location == nil, let reused = ticket.tusUploadID { location = endpoint.appending(path: reused) }
         if let known = location {
             do {
-                return (known, try await transfer.offset(of: known, headers: headers))
+                return (
+                    known, try await guardedByStall(limit: stallLimit) { try await transfer.offset(of: known, headers: headers) }
+                )
             } catch CoreError.notFound {
                 // The proxy session expired: ask for a new one and start a new TUS upload.
                 ticket = try await studio.resumeUpload(videoID: ticket.videoID, channelID: job.channelID)
@@ -333,12 +345,14 @@ public final class UploadQueue {
                 job.ticket = ticket
             }
         }
-        let created = try await transfer.create(
-            endpoint: endpoint, headers: headers, size: job.fileSize,
-            metadata: [
-                "tusSessionId": ticket.tusSessionID, "videoId": ticket.videoID, "filename": job.fileName,
-                "filetype": job.mimeType,
-            ])
+        let size = job.fileSize
+        let metadata = [
+            "tusSessionId": ticket.tusSessionID, "videoId": ticket.videoID, "filename": job.fileName,
+            "filetype": job.mimeType,
+        ]
+        let created = try await guardedByStall(limit: stallLimit) {
+            try await transfer.create(endpoint: endpoint, headers: headers, size: size, metadata: metadata)
+        }
         update(id) { $0.uploadURL = created }
         return (created, 0)
     }
@@ -346,7 +360,9 @@ public final class UploadQueue {
     /// Sends the bytes the server does not have yet, one chunk file at a time.
     private func sendBytes(_ id: UUID, file: URL) async throws {
         guard let job = job(id), let ticket = job.ticket else { return }
-        var (endpoint, headers) = try await studio.tusEndpoint()
+        let studio = self.studio
+        let transfer = self.transfer
+        var (endpoint, headers) = try await guardedByStall(limit: stallLimit) { try await studio.tusEndpoint() }
         let (location, start) = try await locate(id, endpoint: endpoint, headers: headers)
         var offset = start
         update(id) { $0.offset = offset }
@@ -357,6 +373,7 @@ public final class UploadQueue {
         let chunkFile = FileManager.default.temporaryDirectory.appending(path: "studio-chunk-\(id.uuidString)")
         defer { try? FileManager.default.removeItem(at: chunkFile) }
         var attempts = 0
+        var stalls = 0
         while offset < job.fileSize {
             try Task.checkCancellation()
             try handle.seek(toOffset: UInt64(offset))
@@ -365,28 +382,47 @@ public final class UploadQueue {
             try data.write(to: chunkFile, options: .atomic)
             do {
                 let start = offset
-                offset = try await transfer.send(chunk: chunkFile, to: location, offset: start, headers: headers) {
-                    [weak self] sent in
-                    Task { @MainActor in self?.update(id, save: false) { $0.inFlight = sent } }
+                let activity = UploadActivity()
+                let sendHeaders = headers
+                offset = try await guardedByStall(limit: stallLimit, activity: activity) {
+                    try await transfer.send(chunk: chunkFile, to: location, offset: start, headers: sendHeaders) {
+                        [weak self] sent in
+                        activity.touch()
+                        Task { @MainActor in self?.update(id, save: false) { $0.inFlight = sent } }
+                    }
                 }
                 attempts = 0
+                stalls = 0
                 update(id) {
                     $0.offset = offset
                     $0.inFlight = 0
                 }
             } catch let error as CoreError where error == .signInRequired && attempts == 0 {
                 attempts += 1
-                (endpoint, headers) = try await studio.tusEndpoint()
+                (endpoint, headers) = try await guardedByStall(limit: stallLimit) { try await studio.tusEndpoint() }
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as CoreError where error.refusal != nil {
                 throw error
+            } catch is UploadStalled {
+                // Nothing moved for the whole limit: ask the server where it is and send the chunk again, once.
+                stalls += 1
+                guard stalls <= Self.stallRetries else { throw UploadStalled() }
+                update(id) { $0.inFlight = 0 }
+                (endpoint, headers) = try await guardedByStall(limit: stallLimit) { try await studio.tusEndpoint() }
+                let current = headers
+                offset =
+                    (try? await guardedByStall(limit: stallLimit) { try await transfer.offset(of: location, headers: current) })
+                    ?? offset
             } catch {
                 attempts += 1
                 guard attempts <= 4 else { throw error }
                 try await Task.sleep(for: .seconds(Double(attempts * attempts)))
-                (endpoint, headers) = try await studio.tusEndpoint()
-                offset = (try? await transfer.offset(of: location, headers: headers)) ?? offset
+                (endpoint, headers) = try await guardedByStall(limit: stallLimit) { try await studio.tusEndpoint() }
+                let current = headers
+                offset =
+                    (try? await guardedByStall(limit: stallLimit) { try await transfer.offset(of: location, headers: current) })
+                    ?? offset
                 update(id) { $0.inFlight = 0 }
             }
         }
@@ -403,6 +439,7 @@ public final class UploadQueue {
 
     /// The job's failure text, or nil when uploads are off for the account (nothing is said; the tab goes away).
     static func failureKey(_ error: any Error) -> String? {
+        if error is UploadStalled { return "studio.upload.error.stalled" }
         if let core = error as? CoreError, core.hidesEntryPoint { return nil }
         if let refusal = (error as? CoreError)?.refusal { return StudioFailure.refusalMessage(refusal) }
         return switch error as? CoreError {

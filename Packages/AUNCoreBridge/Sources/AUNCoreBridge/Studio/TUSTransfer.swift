@@ -11,14 +11,19 @@ public protocol TUSTransferring: AnyObject, Sendable {
     ) async throws -> Int64
 }
 
-/// Accepts every chunk after a short pause, for UI tests and previews.
+/// Accepts every chunk after a short pause, for UI tests and previews. `stalls` makes every chunk hang until it is
+/// cancelled, to show what a creator sees when the server stops answering.
 public final class FixtureTUSTransfer: TUSTransferring, @unchecked Sendable {
     public var onOrphanCompletion: (@Sendable () -> Void)?
     private let lock = NSLock()
     private var sizes: [URL: Int64] = [:]
     private let delay: Duration
+    private let stalls: Bool
 
-    public init(delay: Duration = .milliseconds(300)) { self.delay = delay }
+    public init(delay: Duration = .milliseconds(300), stalls: Bool = false) {
+        self.delay = delay
+        self.stalls = stalls
+    }
 
     public func create(endpoint: URL, headers: [String: String], size: Int64, metadata: [String: String]) async throws -> URL {
         endpoint.appending(path: UUID().uuidString)
@@ -32,6 +37,7 @@ public final class FixtureTUSTransfer: TUSTransferring, @unchecked Sendable {
     ) async throws -> Int64 {
         // URL resource values are cached per URL, and the chunk file is rewritten for every chunk.
         let size = ((try? FileManager.default.attributesOfItem(atPath: file.path())[.size]) as? NSNumber)?.int64Value ?? 0
+        if stalls { try await Task.sleep(for: .seconds(3600)) }
         progress(size / 2)
         try await Task.sleep(for: delay)
         progress(size)

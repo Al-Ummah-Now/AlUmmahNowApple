@@ -143,6 +143,7 @@
 "studio.upload.error.limit" = "You've reached your upload limit. Try again later.";
 "studio.upload.error.invalid" = "The server didn't accept this video's details.";
 "studio.upload.error.generic" = "The upload stopped. Retry to continue where it stopped.";
+"studio.upload.error.stalled" = "The upload stopped: the server did not answer. Try again to continue where it stopped.";
 "studio.token.filename" = "File name";
 "studio.token.episode" = "Episode number";
 "studio.token.n" = "Position in batch";
