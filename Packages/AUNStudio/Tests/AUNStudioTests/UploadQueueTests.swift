@@ -4,6 +4,17 @@ import Testing
 
 @testable import AUNStudio
 
+/// A value the test body and a transfer callback share
+private final class Box<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+    init(_ value: Value) { stored = value }
+    var value: Value {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
+}
+
 /// A transfer whose chunks (or create) can hang until cancelled, and that can be slow while still reporting progress.
 private final class StallingTransfer: TUSTransferring, @unchecked Sendable {
     var onOrphanCompletion: (@Sendable () -> Void)?
@@ -17,9 +28,13 @@ private final class StallingTransfer: TUSTransferring, @unchecked Sendable {
     private let hangingCreate: Bool
     /// A hanging chunk that the server nevertheless received in full (the answer was lost).
     private let landsBeforeHanging: Bool
-    /// What a later offset question does: answer, never answer, or say the session is gone.
-    enum OffsetAnswer { case server, hangs, gone }
+    /// What a later offset question does: answer, or never answer
+    enum OffsetAnswer { case server, hangs }
     private var _offsetAnswer: OffsetAnswer = .server
+    /// The next this many offset questions are answered "the session is gone" (404), then the server answers again
+    private var _goneAnswers = 0
+    /// Called with the chunk's number (1 for the first) just before it is sent
+    var beforeSend: (@Sendable (Int) async -> Void)?
     private var _sentOffsets: [Int64] = []
 
     init(
@@ -32,6 +47,11 @@ private final class StallingTransfer: TUSTransferring, @unchecked Sendable {
         self.progressEvery = progressEvery
         self.hangingCreate = hangingCreate
         self.landsBeforeHanging = landsBeforeHanging
+    }
+
+    var goneAnswers: Int {
+        get { lock.withLock { _goneAnswers } }
+        set { lock.withLock { _goneAnswers = newValue } }
     }
 
     var offsetAnswer: OffsetAnswer {
@@ -55,12 +75,17 @@ private final class StallingTransfer: TUSTransferring, @unchecked Sendable {
     }
 
     func offset(of url: URL, headers: [String: String]) async throws -> Int64 {
+        let gone = lock.withLock { () -> Bool in
+            guard _goneAnswers > 0 else { return false }
+            _goneAnswers -= 1
+            return true
+        }
+        if gone { throw CoreError.notFound }
         switch offsetAnswer {
         case .server: return lock.withLock { stored }
         case .hangs:
             try await Task.sleep(for: .seconds(30))
             return 0
-        case .gone: throw CoreError.notFound
         }
     }
 
@@ -68,9 +93,13 @@ private final class StallingTransfer: TUSTransferring, @unchecked Sendable {
         chunk file: URL, to url: URL, offset: Int64, headers: [String: String], progress: @escaping @Sendable (Int64) -> Void
     ) async throws -> Int64 {
         let size = ((try? FileManager.default.attributesOfItem(atPath: file.path())[.size]) as? NSNumber)?.int64Value ?? 0
-        let hang = lock.withLock { () -> Bool in
+        let number = lock.withLock { () -> Int in
             _sends += 1
             _sentOffsets.append(offset)
+            return _sends
+        }
+        await beforeSend?(number)
+        let hang = lock.withLock { () -> Bool in
             guard _hangingSends > 0 else { return false }
             _hangingSends -= 1
             return true
@@ -312,9 +341,15 @@ struct UploadQueueTests {
         // server is (1 MiB), not where the queue was, and the saved offset follows.
         let transfer = StallingTransfer(hangingSends: 1, landsBeforeHanging: true)
         let queue = UploadQueue(studio: RecordingStudio(), transfer: transfer, store: store(), stallLimit: .milliseconds(150))
+        // What the queue had saved at the moment the second chunk was about to go: the recovery has saved the server's offset
+        let savedBeforeSecondChunk = Box<Int64?>(nil)
+        transfer.beforeSend = { number in
+            if number == 2 { savedBeforeSecondChunk.value = await MainActor.run { queue.jobs[0].offset } }
+        }
         queue.accountID = "a1"
         queue.enqueue([job(try file(bytes: 2_500_000), title: "Landed")])
         try await waitUntilIdle(queue)
+        #expect(savedBeforeSecondChunk.value == 1 << 20, "the offset is saved when the stall is recovered, before chunk 2 runs")
         #expect(queue.jobs[0].state == .done)
         #expect(transfer.sentOffsets == [0, 1 << 20, 2 << 20], "no chunk is sent twice and none is skipped")
         #expect(queue.jobs[0].offset == 2_500_000)
@@ -334,17 +369,20 @@ struct UploadQueueTests {
 
     @Test func aSessionThatIsGoneAfterAStallEndsTheJobAndRetryOpensANewOne() async throws {
         let transfer = StallingTransfer(hangingSends: 1)
-        transfer.offsetAnswer = .gone
+        // The offset question after the stall, and the one Retry asks first, both find the session gone (404)
+        transfer.goneAnswers = 2
         let queue = UploadQueue(studio: RecordingStudio(), transfer: transfer, store: store(), stallLimit: .milliseconds(150))
         queue.accountID = "a1"
         queue.enqueue([job(try file(bytes: 10), title: "Gone")])
         try await waitUntilIdle(queue)
         #expect(queue.jobs[0].state == .failed)
         #expect(transfer.sends == 1)
-        transfer.offsetAnswer = .server
+        #expect(transfer.creates == 1)
         queue.resume(queue.jobs[0].id)
         try await waitUntilIdle(queue)
         #expect(queue.jobs[0].state == .done)
+        #expect(transfer.creates == 2, "Retry met the 404, asked for a new session and created a new upload")
+        #expect(transfer.goneAnswers == 0, "both 404s were met")
     }
 
     @Test func pausingWhileAChunkIsStalledPausesTheJobInsteadOfFailingIt() async throws {
