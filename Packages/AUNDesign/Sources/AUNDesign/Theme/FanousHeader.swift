@@ -163,3 +163,9 @@ extension View {
     /// would be plain white).
     public func fanousHeaderBar(title: String? = nil) -> some View { modifier(FanousHeaderBar(title: title)) }
 }
+
+extension View {
+    /// A List or Form section's header or footer text in the theme's muted colour. The system's secondary grey measures under
+    /// 4.5:1 on the cream page in light mode (Apple #107); `textMuted` is checked against the page in every theme.
+    public func fanousSectionText() -> some View { foregroundStyle(Fanous.textMuted) }
+}

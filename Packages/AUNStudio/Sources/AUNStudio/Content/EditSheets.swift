@@ -70,8 +70,10 @@ struct VideoEditView: View {
                 }
                 .studioRows()
                 if model.showsStats() {
-                    Section(l10n("studio.analytics.title")) {
+                    Section {
                         VideoStatsView(services: model.services, videoID: video.id, onFeatureOff: model.onStatsOff)
+                    } header: {
+                        Text(l10n("studio.analytics.title")).fanousSectionText()
                     }
                     .studioRows()
                 }
@@ -81,6 +83,7 @@ struct VideoEditView: View {
                         .accessibilityIdentifier("edit-delete")
                 } footer: {
                     Text(l10n("studio.content.deleteFooter", DisplayFormat.number(DeletedVideo.restoreDays, l10n.language)))
+                        .fanousSectionText()
                 }
                 .studioRows()
             }
@@ -157,6 +160,7 @@ struct BulkEditView: View {
                         identifier: "bulk-remove-tags")
                 } footer: {
                     Text(l10n("studio.bulk.footer", DisplayFormat.number(model.selection.count, l10n.language)))
+                        .fanousSectionText()
                 }
                 .studioRows()
             }
@@ -202,7 +206,7 @@ struct BulkScheduleView: View {
                         l10n("studio.upload.interval", DisplayFormat.number(intervalHours, l10n.language)),
                         value: $intervalHours, in: 0...168)
                 } footer: {
-                    Text(l10n("studio.upload.scheduleHelp"))
+                    Text(l10n("studio.upload.scheduleHelp")).fanousSectionText()
                 }
                 .studioRows()
             }

@@ -153,13 +153,13 @@ struct UploadView: View {
                 #endif
             }
         } header: {
-            Text(l10n("studio.upload.files"))
+            Text(l10n("studio.upload.files")).fanousSectionText()
         } footer: {
             if composer.files.isEmpty {
                 #if os(macOS)
-                    Text(l10n("studio.upload.empty"))
+                    Text(l10n("studio.upload.empty")).fanousSectionText()
                 #else
-                    Text(l10n("studio.upload.emptyMobile"))
+                    Text(l10n("studio.upload.emptyMobile")).fanousSectionText()
                 #endif
             }
         }
@@ -185,7 +185,7 @@ struct UploadView: View {
                     .accessibilityIdentifier("upload-problem")
             }
         } footer: {
-            Text(l10n("studio.upload.channelNote", channel.displayName(l10n.language)))
+            Text(l10n("studio.upload.channelNote", channel.displayName(l10n.language))).fanousSectionText()
         }
     }
 
@@ -328,9 +328,9 @@ private struct SetForAllSection: View {
                 label: l10n("studio.upload.tags"), text: $composer.tagsText, prompt: l10n("studio.upload.tagsHint"),
                 identifier: "upload-tags")
         } header: {
-            Text(l10n(composer.files.count > 1 ? "studio.upload.setForAll" : "studio.upload.details"))
+            Text(l10n(composer.files.count > 1 ? "studio.upload.setForAll" : "studio.upload.details")).fanousSectionText()
         } footer: {
-            Text(l10n("studio.upload.tokensHelp"))
+            Text(l10n("studio.upload.tokensHelp")).fanousSectionText()
         }
         .studioRows()
         playlistsSection.studioRows()
@@ -338,7 +338,7 @@ private struct SetForAllSection: View {
     }
 
     @ViewBuilder private var playlistsSection: some View {
-        Section(l10n("studio.upload.playlists")) {
+        Section {
             // The channel's playlists show as soon as the form opens: loading, then the list, empty or retry.
             if composer.playlistsLoading && composer.playlists.isEmpty {
                 ProgressView().frame(maxWidth: .infinity).accessibilityLabel(l10n("common.loading"))
@@ -362,6 +362,8 @@ private struct SetForAllSection: View {
                 }
                 .accessibilityIdentifier("upload-playlist-\(playlist.id)")
             }
+        } header: {
+            Text(l10n("studio.upload.playlists")).fanousSectionText()
         }
     }
 
@@ -385,7 +387,7 @@ private struct SetForAllSection: View {
                 }
             }
         } footer: {
-            if composer.scheduleEnabled { Text(l10n("studio.upload.scheduleHelp")) }
+            if composer.scheduleEnabled { Text(l10n("studio.upload.scheduleHelp")).fanousSectionText() }
         }
     }
 }
@@ -402,7 +404,7 @@ struct UploadQueueSection: View {
                 ForEach(jobs) { job in UploadJobRow(job: job, queue: session.uploads) }
             } header: {
                 HStack {
-                    Text(l10n("studio.upload.queue"))
+                    Text(l10n("studio.upload.queue")).fanousSectionText()
                     Spacer()
                     if jobs.contains(where: { $0.state == .done }) {
                         Button(l10n("studio.upload.clearDone")) { session.uploads.clearFinished() }
@@ -412,7 +414,7 @@ struct UploadQueueSection: View {
                 }
             } footer: {
                 #if os(iOS)
-                    Text(l10n("studio.upload.backgroundNote"))
+                    Text(l10n("studio.upload.backgroundNote")).fanousSectionText()
                 #endif
             }
         }
