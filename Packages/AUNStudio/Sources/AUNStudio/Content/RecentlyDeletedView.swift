@@ -30,7 +30,7 @@ struct RecentlyDeletedView: View {
                             row(item).tag(item.id).listRowBackground(Rectangle().fill(Fanous.surface))
                         }
                     } footer: {
-                        Text(l10n("studio.deleted.footer"))
+                        Text(l10n("studio.deleted.footer")).fanousSectionText()
                     }
                 }
                 .scrollContentBackground(.hidden)

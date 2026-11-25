@@ -85,6 +85,31 @@ final class StudioUploadTests: XCTestCase {
         }
     }
 
+    /// Section titles and footers use the theme's muted text token (#107): the Upload tab in both languages and themes,
+    /// the form's top and bottom and the finished queue.
+    @MainActor
+    func testUploadTabSectionTitlesAndFootersUseTheMutedToken() {
+        for (language, tab) in [("en", "Upload"), ("ar", "رفع")] {
+            for theme in ["dark", "light"] {
+                let app = launch(language, theme: theme)
+                openUpload(app, tab: tab)
+                let send = app.buttons["upload-send"]
+                XCTAssertTrue(app.textFields["upload-pattern"].waitForExistence(timeout: 30))
+                keep("studio-upload-top-\(language)-\(theme)")
+                while !send.waitForExistence(timeout: 2) || !send.isHittable { app.swipeUp() }
+                keep("studio-upload-bottom-\(language)-\(theme)")
+                send.tap()
+                let done = app.staticTexts.matching(
+                    NSPredicate(format: "label CONTAINS %@", language == "en" ? "Uploaded" : "اكتمل الرفع"))
+                let deadline = Date().addingTimeInterval(60)
+                while done.count < 2, Date() < deadline { sleep(1) }
+                app.swipeDown()
+                keep("studio-upload-queue-\(language)-\(theme)")
+                app.terminate()
+            }
+        }
+    }
+
     @MainActor
     func testArabicUploadFormIsRightToLeft() {
         let app = launch("ar")
