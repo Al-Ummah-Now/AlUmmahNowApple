@@ -110,6 +110,20 @@ final class StudioUploadTests: XCTestCase {
         }
     }
 
+    /// The status bar is light over the navy header in light mode too (#87): the Upload tab in both languages and themes.
+    @MainActor
+    func testUploadTabStatusBarIsLightOverTheHeader() {
+        for (language, tab) in [("en", "Upload"), ("ar", "رفع")] {
+            for theme in ["dark", "light"] {
+                let app = launch(language, theme: theme)
+                openUpload(app, tab: tab)
+                XCTAssertTrue(app.textFields["upload-pattern"].waitForExistence(timeout: 30))
+                keep("studio-upload-\(language)-\(theme)")
+                app.terminate()
+            }
+        }
+    }
+
     @MainActor
     func testArabicUploadFormIsRightToLeft() {
         let app = launch("ar")

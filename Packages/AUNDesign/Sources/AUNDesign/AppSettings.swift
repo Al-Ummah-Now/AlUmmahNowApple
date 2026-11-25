@@ -87,6 +87,58 @@ private struct FanousThemeRoot: ViewModifier {
     }
 }
 
+/// The person's light or dark choice for the window. On iOS it is the window's interface style rather than SwiftUI's
+/// `preferredColorScheme`: that preference also decides the status bar style for the whole window and then overrides a
+/// screen's own `toolbarColorScheme(.dark, for: .statusBar)`, so the status bar was dark over the navy header in light
+/// mode (Apple #87). The window's `overrideUserInterfaceStyle` changes the appearance everywhere in it, sheets and
+/// menus included, and leaves the status bar to the screens.
+private struct ColorSchemeChoice: ViewModifier {
+    let scheme: ColorScheme?
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+            content.background(WindowInterfaceStyle(scheme: scheme).allowsHitTesting(false).accessibilityHidden(true))
+        #else
+            content.preferredColorScheme(scheme)
+        #endif
+    }
+}
+
+#if os(iOS)
+    private struct WindowInterfaceStyle: UIViewRepresentable {
+        let scheme: ColorScheme?
+
+        func makeUIView(context: Context) -> StyleView {
+            let view = StyleView()
+            view.scheme = scheme
+            return view
+        }
+
+        func updateUIView(_ view: StyleView, context: Context) { view.scheme = scheme }
+
+        final class StyleView: UIView {
+            var scheme: ColorScheme? {
+                didSet { apply() }
+            }
+
+            override func didMoveToWindow() {
+                super.didMoveToWindow()
+                apply()
+            }
+
+            private func apply() {
+                let style: UIUserInterfaceStyle =
+                    switch scheme {
+                    case .dark?: .dark
+                    case .light?: .light
+                    default: .unspecified
+                    }
+                if window?.overrideUserInterfaceStyle != style { window?.overrideUserInterfaceStyle = style }
+            }
+        }
+    }
+#endif
+
 extension View {
     /// Applies language, direction, the site theme and the light or dark mode for a whole window.
     public func fanousRoot(_ settings: AppSettings, siteTheme: SiteThemeStore) -> some View {
@@ -94,7 +146,7 @@ extension View {
             .environment(\.l10n, L10n(settings.language))
             .environment(\.locale, settings.language.locale)
             .environment(\.layoutDirection, settings.language.isRTL ? .rightToLeft : .leftToRight)
-            .preferredColorScheme(settings.themeChosen ? settings.theme.colorScheme : nil)
+            .modifier(ColorSchemeChoice(scheme: settings.themeChosen ? settings.theme.colorScheme : nil))
             .modifier(UIKitDirection(language: settings.language))
     }
 

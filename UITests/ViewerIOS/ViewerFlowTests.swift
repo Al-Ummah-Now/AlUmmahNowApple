@@ -4,9 +4,9 @@ final class ViewerFlowTests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
     @MainActor
-    private func launch(_ language: String) -> XCUIApplication {
+    private func launch(_ language: String, theme: String = "dark") -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-AUNUseFixtures", "YES", "-AUNLanguage", language, "-AUNTheme", "dark"]
+        app.launchArguments = ["-AUNUseFixtures", "YES", "-AUNLanguage", language, "-AUNTheme", theme]
         app.launch()
         return app
     }
@@ -70,5 +70,21 @@ final class ViewerFlowTests: XCTestCase {
         app.buttons["settings-menu"].tap()
         app.buttons["العربية"].tap()
         XCTAssertTrue(app.staticTexts["الأكثر رواجًا"].waitForExistence(timeout: 5))
+    }
+
+    /// The status bar over the header is light in every mode: the header is dark in light mode too (Apple #87).
+    @MainActor
+    func testStatusBarStaysLightOverTheHeaderInEveryMode() {
+        for language in ["en", "ar"] {
+            for theme in ["dark", "light"] {
+                let app = launch(language, theme: theme)
+                _ = card(app)
+                let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                shot.name = "viewer-header-\(language)-\(theme)"
+                shot.lifetime = .keepAlways
+                add(shot)
+                app.terminate()
+            }
+        }
     }
 }

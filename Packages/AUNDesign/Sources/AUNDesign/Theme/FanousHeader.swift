@@ -131,6 +131,24 @@ public struct FanousHeaderTitle: View {
     }
 }
 
+extension View {
+    /// Light status bar content over the header, in every mode (Apple #87). The header is dark in light mode too. From
+    /// iOS 27 the status bar has its own toolbar placement and no longer follows the navigation bar's colour scheme, so
+    /// the time and icons were drawn dark on the navy header; `.statusBar` is Apple's switch for it. Earlier systems
+    /// follow the navigation bar's scheme, which `FanousHeaderBar` sets.
+    @ViewBuilder fileprivate func lightStatusBar() -> some View {
+        #if os(iOS)
+            if #available(iOS 27, *) {
+                toolbarColorScheme(.dark, for: .statusBar)
+            } else {
+                self
+            }
+        #else
+            self
+        #endif
+    }
+}
+
 private struct FanousHeaderBar: ViewModifier {
     @Environment(\.fanous) private var theme
     let title: String?
@@ -141,6 +159,7 @@ private struct FanousHeaderBar: ViewModifier {
                 .toolbarBackground(FanousHeader.style(theme), for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbarColorScheme(.dark, for: .navigationBar)
+                .lightStatusBar()
                 .toolbar {
                     if let title { ToolbarItem(placement: .principal) { FanousHeaderTitle(title) } }
                 }
