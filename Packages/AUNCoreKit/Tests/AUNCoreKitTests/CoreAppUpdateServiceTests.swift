@@ -80,7 +80,7 @@ struct CoreAppUpdateServiceTests {
         let prompt = try #require(try await check(Self.body("install"), source: .direct))
         let manifest = "https://github.com/Al-Ummah-Now/AlUmmahNowApple/releases/download/v1.3.0/app-release.json"
         #expect(prompt.action == .install(manifest: try #require(URL(string: manifest)), tag: "v1.3.0"))
-        let text = String(decoding: Self.body("install"), as: UTF8.self)
+        let text = try #require(String(bytes: Self.body("install"), encoding: .utf8))
         let elsewhere = Data(text.replacing("AlUmmahNowApple/releases", with: "Other/releases").utf8)
         #expect(try await check(elsewhere, source: .direct)?.action == .download)
         #expect(try await check(Self.body("install"), source: .direct, rootKeys: [])?.action == .download)
