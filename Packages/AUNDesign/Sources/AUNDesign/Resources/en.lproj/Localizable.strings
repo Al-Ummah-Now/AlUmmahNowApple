@@ -448,9 +448,9 @@
 "safety.report.channel" = "Report channel";
 "safety.report.stream" = "Report live stream";
 "safety.report.message" = "Report message";
-"safety.report.tvBody" = "To report this video, scan the code or visit %@ in a browser on your phone or computer.";
-"safety.report.tvStreamBody" = "To report this live stream, scan the code or visit %@ in a browser on your phone or computer.";
-"safety.report.tvMessageBody" = "To report this message, scan the code or visit %@ in a browser on your phone or computer.";
+"safety.report.tvBody" = "To report this video, scan the code or open this address in a browser on your phone or computer:";
+"safety.report.tvStreamBody" = "To report this live stream, scan the code or open this address in a browser on your phone or computer:";
+"safety.report.tvMessageBody" = "To report this message, scan the code or open this address in a browser on your phone or computer:";
 "safety.report.tvChatHint" = "Select a message to report it.";
 "safety.report.qrLabel" = "Report QR code";
 "safety.block.channel" = "Block channel";

@@ -194,7 +194,7 @@
                                 Button {
                                     report(content.video.id)
                                 } label: {
-                                    Label(l10n("safety.report.video"), systemImage: "flag")
+                                    Label(l10n("safety.report.video"), systemImage: "flag").font(.callout.weight(.semibold))
                                 }
                                 .buttonStyle(FanousButtonStyle(.secondary))
                                 .accessibilityIdentifier("tv-report-video")
@@ -240,13 +240,21 @@
                         .foregroundStyle(Fanous.textPrimary)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("tv-report-title")
-                    Text(l10n(request.bodyKey, request.url.absoluteString))
+                    Text(l10n(request.bodyKey))
                         .font(.body)
                         .foregroundStyle(Fanous.textSecondary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("tv-report-body")
-                    Button(l10n("common.dismiss"), action: dismiss)
+                    // On its own and left to right: an address among Arabic words wraps in a confusing order
+                    Text(verbatim: request.url.absoluteString)
+                        .font(.callout)
+                        .foregroundStyle(Fanous.textPrimary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .environment(\.layoutDirection, .leftToRight)
+                        .accessibilityIdentifier("tv-report-address")
+                    Button(action: dismiss) { Text(l10n("common.dismiss")).font(.callout.weight(.semibold)) }
                         .buttonStyle(FanousButtonStyle(.primary))
                         .accessibilityIdentifier("tv-report-dismiss")
                 }
@@ -256,6 +264,8 @@
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background { FanousSurfaceKind(kind: .page, shape: .rect).ignoresSafeArea() }
             .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
+            // The remote's Back closes it, as Dismiss does
+            .onExitCommand(perform: dismiss)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("tv-report-sheet")
         }

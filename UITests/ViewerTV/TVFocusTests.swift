@@ -64,17 +64,20 @@ final class TVFocusTests: XCTestCase {
         XCTAssertTrue(heading.waitForExistence(timeout: 10), file: file, line: line)
         XCTAssertEqual(heading.label, title, file: file, line: line)
         let body = app.staticTexts["tv-report-body"]
-        XCTAssertTrue(body.label.contains(address), "\(body.label) has no \(address)", file: file, line: line)
+        XCTAssertFalse(body.label.contains("http"), file: file, line: line)
+        let link = app.staticTexts["tv-report-address"]
+        XCTAssertTrue(link.label.hasSuffix(address), "\(link.label) has no \(address)", file: file, line: line)
         let dismiss = app.buttons["tv-report-dismiss"]
         waitForFocus(dismiss, file: file, line: line)
         // Clear of the edges a television may crop, and of each other
         let screen = app.windows.firstMatch.frame.insetBy(dx: 60, dy: 60)
-        for element in [app.images["tv-report-qr"], heading, body, dismiss] {
+        for element in [app.images["tv-report-qr"], heading, body, link, dismiss] {
             XCTAssertTrue(element.exists, file: file, line: line)
             XCTAssertTrue(screen.contains(element.frame), "\(element.identifier) \(element.frame) is cut", file: file, line: line)
         }
         XCTAssertLessThanOrEqual(heading.frame.maxY, body.frame.minY, file: file, line: line)
-        XCTAssertLessThanOrEqual(body.frame.maxY, dismiss.frame.minY, file: file, line: line)
+        XCTAssertLessThanOrEqual(body.frame.maxY, link.frame.minY, file: file, line: line)
+        XCTAssertLessThanOrEqual(link.frame.maxY, dismiss.frame.minY, file: file, line: line)
     }
 
     @MainActor

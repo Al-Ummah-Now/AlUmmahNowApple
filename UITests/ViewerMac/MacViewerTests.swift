@@ -27,6 +27,10 @@ final class MacViewerTests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: 30))
         XCTAssertTrue(app.staticTexts["الأكثر رواجًا"].exists)
         XCTAssertGreaterThan(element.frame.midX, app.windows.firstMatch.frame.midX)
+        // The toolbar keeps its items (language, theme, what is blocked), at its trailing end: the left
+        let settings = app.descendants(matching: .any)["settings-menu"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        XCTAssertLessThan(settings.frame.midX, app.windows.firstMatch.frame.midX)
     }
 
     @MainActor
