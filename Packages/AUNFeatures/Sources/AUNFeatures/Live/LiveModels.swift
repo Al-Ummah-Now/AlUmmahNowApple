@@ -202,17 +202,42 @@ public final class LiveWatchModel {
         player.stop()
     }
 
-    /// Pauses playback when opening the Report sheet so the live stream does not keep playing behind it.
-    public func pauseForReport() {
+    /// What is being reported, while its page is open (Apple TV).
+    public private(set) var reportRequest: ViewerReportRequest?
+    private enum AfterReport { case nothing, plays, returnsToLive }
+    private var afterReport = AfterReport.nothing
+
+    /// Opens the page that says where to report; nothing plays on behind it.
+    public func report(_ request: ViewerReportRequest) {
+        if player.player.timeControlStatus == .paused {
+            afterReport = .nothing
+        } else {
+            afterReport = content?.mode == .live && !isBehind ? .returnsToLive : .plays
+        }
         player.pause()
+        reportRequest = request
+    }
+
+    /// The page is closed: what was playing goes on, at the newest moment if that is where the viewer was.
+    public func reportClosed() {
+        guard reportRequest != nil else { return }
+        reportRequest = nil
+        let after = afterReport
+        afterReport = .nothing
+        guard after != .nothing, !isBlocked, !isClosed else { return }
+        player.play()
+        if after == .returnsToLive, content?.mode == .live { returnToLive() }
     }
 
     /// True while the stream's channel is blocked on this device; stops playback, loading, polling, and viewer beats.
     public private(set) var isBlocked = false
+    /// Blocked by what `show` found in the store: the page's own `onChange` may never hear of it, nor of its end.
+    private var isBlockedByShow = false
 
     public func setBlocked(_ blocked: Bool) {
         guard blocked != isBlocked else { return }
         isBlocked = blocked
+        isBlockedByShow = false
         if blocked {
             visit += 1
             loadedURL = nil
@@ -304,6 +329,11 @@ public final class LiveWatchModel {
     /// One second of the clock and the player.
     func step() {
         guard let content else { return }
+        if isBlockedByShow,
+            !ViewerBlockStore.shared.isChannelBlocked(id: content.stream.channelID, name: content.stream.channelName)
+        {
+            setBlocked(false)
+        }
         updateCountdown(content)
         follow(content)
     }
@@ -362,7 +392,9 @@ public final class LiveWatchModel {
         state = .loaded(content)
         updateCountdown(content)
         if ViewerBlockStore.shared.isChannelBlocked(id: stream.channelID, name: stream.channelName) {
+            let isNew = !isBlocked
             setBlocked(true)
+            if isNew { isBlockedByShow = true }
             return
         }
         try await play(content)

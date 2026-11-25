@@ -75,9 +75,23 @@ public final class WatchViewModel {
         }
     }
 
-    /// Pauses playback when opening the Report sheet so the video does not keep playing behind it.
-    public func pauseForReport() {
+    /// What is being reported, while its page is open (Apple TV).
+    public private(set) var reportRequest: ViewerReportRequest?
+    private var playsAfterReport = false
+
+    /// Opens the page that says where to report; the video does not go on behind it.
+    public func report(_ request: ViewerReportRequest) {
+        playsAfterReport = player.player.timeControlStatus != .paused
         player.pause()
+        reportRequest = request
+    }
+
+    /// The page is closed: the video goes on if it was playing.
+    public func reportClosed() {
+        guard reportRequest != nil else { return }
+        reportRequest = nil
+        if playsAfterReport { player.play() }
+        playsAfterReport = false
     }
 }
 

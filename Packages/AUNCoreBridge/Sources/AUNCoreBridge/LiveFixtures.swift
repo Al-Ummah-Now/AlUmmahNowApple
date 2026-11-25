@@ -15,11 +15,12 @@ public struct FixtureLiveService: LiveServicing {
         self.now = now
     }
 
-    public static let liveID = "fixture-live"
-    public static let secondLiveID = "fixture-live-2"
-    public static let comingID = "fixture-coming"
-    public static let premiereID = "fixture-premiere"
-    public static let recordingID = "fixture-recording"
+    // As long as real ones, so addresses and QR codes are too (UITests/Shared/FixtureIDs.swift has the same)
+    public static let liveID = "7c2e9b41-5d0f-4a86-9e13-b8f60d2a7c55"
+    public static let secondLiveID = "1f8d3a67-c4b2-4e90-8a5d-60e7f9b3d214"
+    public static let comingID = "b3a91e5c-7d24-4f68-a0c7-9e15d8f2460b"
+    public static let premiereID = "e60f4d92-38ab-4c17-b5e1-27a9c0d6f183"
+    public static let recordingID = "48d7b2f0-91ce-4a35-8f6b-c3e05a17d92e"
     public static let liveChannelID = "fixture-live-channel"
     public static let secondLiveChannelID = "fixture-live-channel-2"
 
@@ -91,6 +92,8 @@ public struct FixtureLiveService: LiveServicing {
         return TimedLiveState(state: state)
     }
 
+    public static func messageID(_ index: Int) -> String { "lcm_3k9xw7q2mzt8v5r1b6ny4c0\(index + 10)" }
+
     public var messages: [LiveChatMessage] {
         [
             ("Yusuf Rahman", "يوسف الرحمن", nil, "Assalamu alaikum from Toronto.", "السلام عليكم من تورنتو."),
@@ -109,14 +112,14 @@ public struct FixtureLiveService: LiveServicing {
             ),
         ].enumerated().map { index, m in
             LiveChatMessage(
-                id: "m\(index)", userID: "fixture-user-\(index)", authorName: text(m.0, m.1), authorRole: m.2,
+                id: Self.messageID(index), userID: "fixture-user-\(index)", authorName: text(m.0, m.1), authorRole: m.2,
                 text: text(m.3, m.4), offsetMs: index * 400)
         }
     }
 
     public var pinned: LiveChatMessage {
         LiveChatMessage(
-            id: "pin", userID: Self.liveChannelID, authorName: channel,
+            id: "lcm_8p2hd6s0jfw4q9x1t7mz5k3vb", userID: Self.liveChannelID, authorName: channel,
             text: text("Please keep to today’s subject.", "نرجو الالتزام بموضوع اليوم."),
             offsetMs: 0)
     }

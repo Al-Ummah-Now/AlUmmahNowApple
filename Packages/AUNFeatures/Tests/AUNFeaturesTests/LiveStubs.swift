@@ -34,6 +34,8 @@ actor StubLive: LiveServicing {
     private var heldBeat: CheckedContinuation<Void, Never>?
     var isBeatHeld: Bool { heldBeat != nil }
     func set(holdsBeats: Bool) { self.holdsBeats = holdsBeats }
+    private var beatCount = 5
+    func set(beatCount: Int) { self.beatCount = beatCount }
     private var beatFails = false
     func set(beatFails: Bool) { self.beatFails = beatFails }
     /// The state's answer comes whether or not its task is cancelled.
@@ -154,7 +156,7 @@ actor StubLive: LiveServicing {
         if !leaving { beats += 1 }
         if !leaving { answerTakes() }
         try refuse()
-        return 5
+        return beatCount
     }
 }
 

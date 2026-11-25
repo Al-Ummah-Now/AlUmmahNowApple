@@ -121,6 +121,9 @@ struct LiveRail: View {
 struct LiveChatView: View {
     @Environment(\.l10n) private var l10n
     @State private var blockingMessage: LiveChatMessage?
+    #if os(tvOS)
+        @FocusState private var focusedMessage: String?
+    #endif
     let streamID: String
     let webBaseURL: URL
     let messages: [LiveChatMessage]
@@ -142,6 +145,14 @@ struct LiveChatView: View {
     }
 
     private var blockStore: ViewerBlockStore { .shared }
+    /// The remote is on a message: a new one does not take the list away from it.
+    private var isReading: Bool {
+        #if os(tvOS)
+            focusedMessage != nil
+        #else
+            false
+        #endif
+    }
     private var visibleMessages: [LiveChatMessage] { blockStore.filterMessages(messages) }
     private var visiblePinned: LiveChatMessage? {
         pinned.flatMap { blockStore.isChatUserBlocked(id: $0.userID, name: $0.authorName) ? nil : $0 }
@@ -153,6 +164,14 @@ struct LiveChatView: View {
                 .foregroundStyle(Fanous.textPrimary)
                 .padding(FanousScale.spacingMd)
                 .accessibilityAddTraits(.isHeader)
+            #if os(tvOS)
+                if onReportMessage != nil, !visibleMessages.isEmpty || visiblePinned != nil {
+                    Text(l10n("safety.report.tvChatHint")).fanousFont(.caption)
+                        .foregroundStyle(Fanous.textSecondary)
+                        .padding([.horizontal, .bottom], FanousScale.spacingMd)
+                        .accessibilityIdentifier("tv-report-chat-hint")
+                }
+            #endif
             Rectangle().fill(Fanous.divider).frame(height: 1)
             if let visiblePinned {
                 HStack(alignment: .top, spacing: FanousScale.spacingSm) {
@@ -182,7 +201,7 @@ struct LiveChatView: View {
                     }
                     .defaultScrollAnchor(isReplay ? .top : .bottom)
                     .onChange(of: visibleMessages.last?.id) { _, last in
-                        if let last { proxy.scrollTo(last, anchor: .bottom) }
+                        if let last, !isReading { proxy.scrollTo(last, anchor: .bottom) }
                     }
                 }
                 .frame(minHeight: 160)
@@ -224,7 +243,8 @@ struct LiveChatView: View {
                             .padding(.horizontal, 8)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TVRowButtonStyle())
+                    .focused($focusedMessage, equals: message.id)
                     .accessibilityHint(l10n("safety.report.message"))
                     .accessibilityIdentifier("tv-report-chat-\(message.id)")
                 } else {

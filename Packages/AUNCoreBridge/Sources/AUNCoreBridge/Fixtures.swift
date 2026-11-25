@@ -18,6 +18,9 @@ public struct FixtureCatalogService: CatalogServicing {
         return copy
     }
 
+    /// The first video under an id as long as real ones (`-AUNOpenVideo`).
+    public static let longID = "9a4f6c20-e8d1-47b3-b5f9-0d72e6a18c34"
+
     public static let videos: [Video] = (1...8).map { index in
         // Arabic fixture titles are written the way an Arabic creator types them, with ٠–٩.
         let arabicIndex = index.formatted(.number.locale(AppLanguage.ar.locale))  // swiftlint:disable:this display_format
@@ -47,6 +50,11 @@ public struct FixtureCatalogService: CatalogServicing {
     }
 
     public func video(id: String) async throws -> Video {
+        if id == Self.longID {
+            var video = Self.videos[0]
+            video.id = id
+            return served(video)
+        }
         guard let video = Self.videos.first(where: { $0.id == id }) else { throw CoreError.notFound }
         return served(video)
     }

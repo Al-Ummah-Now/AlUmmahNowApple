@@ -242,19 +242,11 @@ import SwiftUI
 #endif
 
 #if os(tvOS)
-    private struct TVReportRequest: Identifiable {
-        let id: String
-        let titleKey: String
-        let bodyKey: String
-        let url: URL
-    }
-
     /// Full screen; the chat is beside it, for reading and reporting.
     struct TVLiveWatchView: View {
         @Environment(\.l10n) private var l10n
         @Environment(\.scenePhase) private var scenePhase
         @State private var model: LiveWatchModel
-        @State private var reportRequest: TVReportRequest?
         private let webBaseURL: URL
 
         init(streamID: String, core: CoreBridge) {
@@ -263,25 +255,13 @@ import SwiftUI
         }
 
         private func openStreamReport(_ stream: LiveStream) {
-            model.pauseForReport()
-            reportRequest = TVReportRequest(
-                id: "stream:\(stream.id)",
-                titleKey: "safety.report.stream",
-                bodyKey: "safety.report.tvStreamBody",
-                url: ViewerReportURL.liveStream(
-                    id: stream.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
-            )
+            model.report(.liveStream(id: stream.id, language: l10n.language.rawValue, webBaseURL: webBaseURL))
         }
 
         private func openMessageReport(streamID: String, message: LiveChatMessage) {
-            model.pauseForReport()
-            reportRequest = TVReportRequest(
-                id: "chat:\(message.id)",
-                titleKey: "safety.report.message",
-                bodyKey: "safety.report.tvMessageBody",
-                url: ViewerReportURL.liveChat(
-                    streamID: streamID, messageID: message.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
-            )
+            model.report(
+                .liveChat(
+                    streamID: streamID, messageID: message.id, language: l10n.language.rawValue, webBaseURL: webBaseURL))
         }
 
         var body: some View {
@@ -309,6 +289,7 @@ import SwiftUI
                             HStack(spacing: 20) {
                                 if model.isBehind, content.mode == .live || content.mode == .recording {
                                     Button(l10n("live.return")) { model.returnToLive() }
+                                        .buttonStyle(FanousButtonStyle(.secondary))
                                         .accessibilityIdentifier("live-return")
                                 }
                                 Button {
@@ -332,14 +313,10 @@ import SwiftUI
                         }
                     }
                     .padding(60)
-                    .sheet(item: $reportRequest) { request in
-                        TVReportSheet(
-                            title: l10n(request.titleKey),
-                            bodyKey: request.bodyKey,
-                            url: request.url
-                        ) {
-                            reportRequest = nil
-                        }
+                    .fullScreenCover(
+                        item: Binding(get: { model.reportRequest }, set: { if $0 == nil { model.reportClosed() } })
+                    ) { request in
+                        TVReportPage(request: request) { model.reportClosed() }
                     }
                 }
             }

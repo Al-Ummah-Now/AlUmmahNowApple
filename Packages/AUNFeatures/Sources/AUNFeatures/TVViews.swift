@@ -162,12 +162,15 @@
     struct TVWatchView: View {
         @Environment(\.l10n) private var l10n
         @State private var model: WatchViewModel
-        @State private var showingReport = false
         private let webBaseURL: URL
 
         init(videoID: String, catalog: any CatalogServicing, webBaseURL: URL) {
             _model = State(initialValue: WatchViewModel(videoID: videoID, catalog: catalog))
             self.webBaseURL = webBaseURL
+        }
+
+        private func report(_ id: String) {
+            model.report(.video(id: id, language: l10n.language.rawValue, webBaseURL: webBaseURL))
         }
 
         var body: some View {
@@ -181,18 +184,15 @@
                 case .loaded(let content):
                     Group {
                         if content.video.isPlayable {
-                            PlayerSurface(controller: model.player) {
-                                model.pauseForReport()
-                                showingReport = true
-                            }
-                            .ignoresSafeArea()
-                            .accessibilityIdentifier("player")
+                            PlayerSurface(controller: model.player) { report(content.video.id) }
+                                .ignoresSafeArea()
+                                .accessibilityIdentifier("player")
                         } else {
                             VStack(spacing: 24) {
                                 Text(l10n("watch.notReady")).foregroundStyle(Fanous.textPrimary)
                                     .accessibilityIdentifier("watch-not-ready")
                                 Button {
-                                    showingReport = true
+                                    report(content.video.id)
                                 } label: {
                                     Label(l10n("safety.report.video"), systemImage: "flag")
                                 }
@@ -202,15 +202,10 @@
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .sheet(isPresented: $showingReport) {
-                        TVReportSheet(
-                            title: l10n("safety.report.video"),
-                            bodyKey: "safety.report.tvBody",
-                            url: ViewerReportURL.video(
-                                id: content.video.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
-                        ) {
-                            showingReport = false
-                        }
+                    .fullScreenCover(
+                        item: Binding(get: { model.reportRequest }, set: { if $0 == nil { model.reportClosed() } })
+                    ) { request in
+                        TVReportPage(request: request) { model.reportClosed() }
                     }
                 }
             }
@@ -219,47 +214,47 @@
         }
     }
 
-    /// Apple TV report sheet with a scannable QR code on a quiet-zone pad and the full URL underneath.
-    struct TVReportSheet: View {
+    /// Where to report on Apple TV: a scannable QR code on a quiet-zone pad, and the address beside it. Full screen, with
+    /// room for the longest address (a chat message's) in either language.
+    struct TVReportPage: View {
         @Environment(\.l10n) private var l10n
-        let title: String
-        let bodyKey: String
-        let url: URL
+        let request: ViewerReportRequest
         let dismiss: () -> Void
 
         var body: some View {
-            HStack(alignment: .center, spacing: 44) {
-                if let qr = Self.qrImage(for: url.absoluteString) {
+            HStack(alignment: .center, spacing: 90) {
+                if let qr = Self.qrImage(for: request.url.absoluteString) {
                     Image(uiImage: qr)
                         .interpolation(.none)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 260, height: 260)
-                        .padding(16)
-                        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.white))
+                        .frame(width: 420, height: 420)
+                        .padding(24)
+                        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color.white))
                         .accessibilityLabel(l10n("safety.report.qrLabel"))
                         .accessibilityIdentifier("tv-report-qr")
                 }
-                VStack(alignment: .leading, spacing: 20) {
-                    Text(title)
+                VStack(alignment: .leading, spacing: 36) {
+                    Text(l10n(request.titleKey))
                         .font(.title2.weight(.bold))
                         .foregroundStyle(Fanous.textPrimary)
                         .accessibilityAddTraits(.isHeader)
-                    Text(l10n(bodyKey, url.absoluteString))
-                        .font(.callout)
+                        .accessibilityIdentifier("tv-report-title")
+                    Text(l10n(request.bodyKey, request.url.absoluteString))
+                        .font(.body)
                         .foregroundStyle(Fanous.textSecondary)
                         .multilineTextAlignment(.leading)
-                        .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("tv-report-body")
                     Button(l10n("common.dismiss"), action: dismiss)
+                        .buttonStyle(FanousButtonStyle(.primary))
                         .accessibilityIdentifier("tv-report-dismiss")
                 }
-                .frame(maxWidth: 620, alignment: .leading)
+                .frame(maxWidth: 1000, alignment: .leading)
             }
-            .padding(.horizontal, 48)
-            .padding(.vertical, 32)
+            .padding(80)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Fanous.background)
+            .background { FanousSurfaceKind(kind: .page, shape: .rect).ignoresSafeArea() }
             .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("tv-report-sheet")
