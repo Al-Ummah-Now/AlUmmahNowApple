@@ -46,6 +46,7 @@ struct LiveTags: View {
 /// A stream in a list: as a video's card, with what it is and when.
 struct LiveCardContent: View {
     @Environment(\.l10n) private var l10n
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let stream: LiveStream
 
     var body: some View {
@@ -61,7 +62,7 @@ struct LiveCardContent: View {
                 Text(DisplayFormat.meta([stream.channelName, when], l10n.language))
                     .fanousFont(.caption)
                     .foregroundStyle(Fanous.part(\.cardVideoMeta))
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             }
             .padding(.horizontal, 2)
         }

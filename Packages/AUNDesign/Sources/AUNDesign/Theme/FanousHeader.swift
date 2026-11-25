@@ -127,6 +127,7 @@ public struct FanousHeaderTitle: View {
             .font(large ? .system(size: 28, weight: .bold) : .headline)
             .foregroundStyle(Color(theme.parts.navText))
             .lineLimit(1)
+            .minimumScaleFactor(0.75)
             .accessibilityAddTraits(.isHeader)
     }
 }

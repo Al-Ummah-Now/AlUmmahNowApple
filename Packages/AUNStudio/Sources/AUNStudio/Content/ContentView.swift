@@ -184,8 +184,9 @@ struct ContentView: View {
             } else {
                 List(selection: $model.selection) {
                     ForEach(model.items) { video in
-                        HStack(spacing: FanousScale.spacingSm) {
+                        VideoRowWithAction {
                             VideoRow(video: video)
+                        } action: {
                             if opensOnTap {
                                 // The card's action at its trailing end (owner rule); a tap anywhere also opens it.
                                 Button(l10n("studio.content.edit")) { editing = video }
@@ -292,39 +293,90 @@ struct ContentView: View {
     }
 }
 
-/// One video in the list: thumbnail, title, status and numbers.
+/// A video row and its action: side by side, or at accessibility text sizes the action under the row (at its trailing
+/// end), so the title keeps the row's width.
+struct VideoRowWithAction<Row: View, Action: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ViewBuilder let row: () -> Row
+    @ViewBuilder let action: () -> Action
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                row()
+                HStack {
+                    Spacer(minLength: 0)
+                    action()
+                }
+            }
+        } else {
+            HStack(spacing: FanousScale.spacingSm) {
+                row()
+                action()
+            }
+        }
+    }
+}
+
+/// One video in the list: thumbnail, title, status and numbers. At accessibility text sizes they stack, so the text
+/// gets the whole width.
 struct VideoRow: View {
     @Environment(\.l10n) private var l10n
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let video: StudioVideo
     /// Leads the details with the video's status (Processing, Failed…), as the Dashboard lists mixed statuses.
     var showsStatus = false
 
     var body: some View {
-        HStack(spacing: FanousScale.spacingMd) {
-            ThumbnailImage(url: video.thumbnailURL)
-                .frame(width: 96)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
-                // Three lines before truncating: long Arabic titles otherwise lose the part that tells them apart ("…الجزء").
-                Text(video.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(3)
-                // Up to two lines: narrow cards (the Mac Dashboard's half-width column) wrap rather than cut the
-                // status and views. The date has its own column, so it never wraps ("Nov / 6, 2026").
-                Text(details).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(2)
-            }
-            // Its own height, not the thumbnail's: the title and details wrap instead of truncating to one line.
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: FanousScale.spacingSm)
-            if let date = video.dateCreated {
-                Text(DisplayFormat.shortDay(date, l10n.language))
-                    .fanousFont(.caption).foregroundStyle(Fanous.textMuted)
-                    .lineLimit(1).fixedSize()
-                    .frame(maxHeight: .infinity, alignment: .top)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                    thumbnail(width: 160)
+                    titleAndDetails
+                    date
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(spacing: FanousScale.spacingMd) {
+                    thumbnail(width: 96)
+                    titleAndDetails
+                        // Its own height, not the thumbnail's: the title and details wrap instead of truncating to one line.
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: FanousScale.spacingSm)
+                    date
+                        .lineLimit(1).fixedSize()
+                        .frame(maxHeight: .infinity, alignment: .top)
+                }
             }
         }
         .padding(.vertical, FanousScale.spacingXs)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("video-\(video.id)")
+    }
+
+    private func thumbnail(width: CGFloat) -> some View {
+        ThumbnailImage(url: video.thumbnailURL)
+            .frame(width: width)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityHidden(true)
+    }
+
+    private var titleAndDetails: some View {
+        VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
+            // Three lines before truncating: long Arabic titles otherwise lose the part that tells them apart ("…الجزء").
+            Text(video.displayTitle(l10n.language)).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 6 : 3)
+            // Up to two lines: narrow cards (the Mac Dashboard's half-width column) wrap rather than cut the
+            // status and views. The date has its own column, so it never wraps ("Nov / 6, 2026").
+            Text(details).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
+        }
+    }
+
+    @ViewBuilder private var date: some View {
+        if let date = video.dateCreated {
+            Text(DisplayFormat.shortDay(date, l10n.language)).fanousFont(.caption).foregroundStyle(Fanous.textMuted)
+        }
     }
 
     private var details: String {

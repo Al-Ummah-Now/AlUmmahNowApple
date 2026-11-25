@@ -147,6 +147,7 @@
 
     public struct WatchView: View {
         @Environment(\.l10n) private var l10n
+        @Environment(\.dynamicTypeSize) private var dynamicTypeSize
         #if os(iOS)
             @Environment(\.horizontalSizeClass) private var sizeClass
         #endif
@@ -294,7 +295,8 @@
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .aspectRatio(16 / 9, contentMode: .fit)
+                    // A 16:9 card at ordinary text sizes; at accessibility sizes it takes the height its words need
+                    .aspectRatio(dynamicTypeSize.isAccessibilitySize ? nil : 16 / 9, contentMode: .fit)
                     .fanousMaterial(.hero) { .rounded($0.lg) }
                     .padding(.horizontal)
                     .accessibilityIdentifier("watch-not-ready")
