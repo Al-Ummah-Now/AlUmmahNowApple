@@ -228,34 +228,36 @@
         let dismiss: () -> Void
 
         var body: some View {
-            VStack(spacing: 16) {
-                Text(title)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(Fanous.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
+            HStack(alignment: .center, spacing: 44) {
                 if let qr = Self.qrImage(for: url.absoluteString) {
                     Image(uiImage: qr)
                         .interpolation(.none)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 248, height: 248)
-                        .padding(12)
-                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
+                        .frame(width: 260, height: 260)
+                        .padding(16)
+                        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.white))
                         .accessibilityLabel(l10n("safety.report.qrLabel"))
                         .accessibilityIdentifier("tv-report-qr")
                 }
-                Text(l10n(bodyKey, url.absoluteString))
-                    .font(.callout)
-                    .foregroundStyle(Fanous.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 960)
-                Button(l10n("common.dismiss"), action: dismiss)
-                    .accessibilityIdentifier("tv-report-dismiss")
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(title)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(Fanous.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(l10n(bodyKey, url.absoluteString))
+                        .font(.callout)
+                        .foregroundStyle(Fanous.textSecondary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(l10n("common.dismiss"), action: dismiss)
+                        .accessibilityIdentifier("tv-report-dismiss")
+                }
+                .frame(maxWidth: 620, alignment: .leading)
             }
-            .padding(.horizontal, 40)
-            .padding(.vertical, 24)
+            .padding(.horizontal, 48)
+            .padding(.vertical, 32)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Fanous.background)
             .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
