@@ -7,7 +7,7 @@ import Foundation
 public enum AppUpdateKeys {
     public static let rootKeys = ["Mf2IQATA0Y1AF5eaeIr41q3bFuogvHqz2rktf8A4nag="]
 
-    static func bundled(_ name: String) -> String? {
+    public static func bundled(_ name: String) -> String? {
         Bundle.module.url(forResource: name, withExtension: nil).flatMap { try? String(contentsOf: $0, encoding: .utf8) }
     }
 }
