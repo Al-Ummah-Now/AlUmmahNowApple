@@ -10,15 +10,15 @@ public enum SampleVideos {
 
     /// Titles a creator might give, in the app's language, so screenshots show real names (the title pattern is
     /// `{{filename}}`).
-    static func names(language: String?) -> [String] {
-        language == "ar"
+    static func names(language: AppLanguage) -> [String] {
+        language == .ar
             ? ["مقدمة في التفسير", "خطبة الجمعة", "من السيرة النبوية", "أساسيات التجويد", "تذكرة رمضان"]
             : ["Introduction to Tafsir", "Friday khutbah", "From the Seerah", "Tajweed basics", "Ramadan reminder"]
     }
 
     /// Writes `count` one-second H.264 clips into the app's upload folder.
-    public static func make(count: Int) async -> [URL] {
-        let names = names(language: UserDefaults.standard.string(forKey: "AUNLanguage"))
+    public static func make(count: Int, language: AppLanguage) async -> [URL] {
+        let names = names(language: language)
         var urls: [URL] = []
         for index in 0..<count {
             let url = UploadStore.filesDirectory.appending(
