@@ -48,9 +48,14 @@ struct VideoEditView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField(l10n("studio.edit.title"), text: $title).accessibilityIdentifier("edit-title")
-                    TextField(l10n("studio.upload.description"), text: $description, axis: .vertical).lineLimit(3...10)
-                        .accessibilityIdentifier("edit-description")
+                    TextField(l10n("studio.edit.title"), text: $title, prompt: fanousPrompt(l10n("studio.edit.title")))
+                        .accessibilityIdentifier("edit-title")
+                    TextField(
+                        l10n("studio.upload.description"), text: $description,
+                        prompt: fanousPrompt(l10n("studio.upload.description")), axis: .vertical
+                    )
+                    .lineLimit(3...10)
+                    .accessibilityIdentifier("edit-description")
                     Toggle(l10n("visibility.public"), isOn: $isPublic).accessibilityIdentifier("edit-public")
                     Picker(l10n("studio.upload.category"), selection: $category) {
                         Text(l10n("studio.upload.none")).tag(VideoCategory?.none)
