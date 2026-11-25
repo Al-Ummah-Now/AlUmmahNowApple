@@ -35,7 +35,11 @@ struct CreatorTermsGateView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
+            // Stacked at the accessibility sizes, each icon keeps nearer to its own text than to the link above it.
+            VStack(
+                alignment: .leading,
+                spacing: dynamicTypeSize.isAccessibilitySize ? FanousScale.spacingLg : FanousScale.spacingXs
+            ) {
                 Link(destination: AUNSupportLinks.terms(language: l10n.language.rawValue, environment: session.environment)) {
                     row(.firstTextBaseline) {
                         Image(systemName: "doc.text")
