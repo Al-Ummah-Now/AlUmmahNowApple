@@ -51,10 +51,11 @@ public final class UploadQueue {
     /// Called when an upload fails with `403 terms_required`, carrying the job's account ID so a late response from a
     /// previous account never gates the newly active account.
     var onTermsRequired: ((String) -> Void)?
-    /// Called when an upload completes successfully so session refusal-retry counters reset.
-    var onUploadSucceeded: (() -> Void)?
     private(set) var isBlocked = false
     private var blockedByTerms = false
+    /// How often each upload was resumed by itself after `403 terms_required`, while the server called the Terms accepted.
+    private var termsResumes: [UUID: Int] = [:]
+    private static let maxTermsResumes = 2
 
     init(
         studio: any StudioServicing, transfer: any TUSTransferring, store: UploadStore, maxParallel: Int = 2,
@@ -121,6 +122,7 @@ public final class UploadQueue {
     }
 
     public func resume(_ id: UUID) {
+        termsResumes[id] = nil
         update(id) {
             $0.state = .waiting
             $0.failure = nil
@@ -134,6 +136,7 @@ public final class UploadQueue {
         preEncodeTasks[id]?.cancel()
         if let job = jobs.first(where: { $0.id == id }), job.ownsFile { try? FileManager.default.removeItem(at: job.file) }
         jobs.removeAll { $0.id == id }
+        termsResumes[id] = nil
         save()
     }
 
@@ -145,6 +148,7 @@ public final class UploadQueue {
             if job.ownsFile { try? FileManager.default.removeItem(at: job.file) }
         }
         jobs.removeAll { $0.accountID == accountID }
+        termsResumes = termsResumes.filter { id, _ in jobs.contains { $0.id == id } }
         save()
     }
 
@@ -219,7 +223,7 @@ public final class UploadQueue {
                 $0.state = .done
                 $0.failure = nil
             }
-            onUploadSucceeded?()
+            termsResumes[id] = nil
             if job.ownsFile { try? FileManager.default.removeItem(at: job.file) }
         } catch {
             handleRunFailure(error, for: job)
@@ -469,12 +473,17 @@ public final class UploadQueue {
 }
 
 extension UploadQueue {
-    /// Creator Terms were accepted for `targetAccountID`: resume only that account's jobs paused on `403 terms_required`.
-    func unblockTerms(forAccount targetAccountID: String) {
-        let hadPaused = jobs.contains {
+    /// Resumes the uploads of `targetAccountID` that `403 terms_required` paused, and only those. `automatic` (the server
+    /// calls the Terms accepted although it refused the upload) resumes each upload `maxTermsResumes` times at most.
+    /// Returns whether none of them stays paused.
+    @discardableResult
+    func unblockTerms(forAccount targetAccountID: String, automatic: Bool = false) -> Bool {
+        let paused = jobs.filter {
             $0.accountID == targetAccountID && $0.state == .paused && $0.failure == Self.termsRequiredKey
         }
-        guard hadPaused || (blockedByTerms && accountID == targetAccountID) else { return }
+        if !automatic { for job in jobs where job.accountID == targetAccountID { termsResumes[job.id] = nil } }
+        let ready = automatic ? paused.filter { termsResumes[$0.id, default: 0] < Self.maxTermsResumes } : paused
+        guard !ready.isEmpty || (paused.isEmpty && blockedByTerms && accountID == targetAccountID) else { return paused.isEmpty }
         if accountID == targetAccountID {
             blockedByTerms = false
             if !jobs.contains(where: {
@@ -483,14 +492,15 @@ extension UploadQueue {
                 isBlocked = false
             }
         }
-        for job in jobs
-        where job.accountID == targetAccountID && job.state == .paused && job.failure == Self.termsRequiredKey {
+        for job in ready {
+            if automatic { termsResumes[job.id, default: 0] += 1 }
             update(job.id) {
                 $0.state = .waiting
                 $0.failure = nil
             }
         }
         kick()
+        return ready.count == paused.count
     }
 
     func handleRunFailure(_ error: Error, for job: UploadJob) {

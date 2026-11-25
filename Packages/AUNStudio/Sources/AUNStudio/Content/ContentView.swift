@@ -21,13 +21,18 @@ struct ContentView: View {
 
     init(session: StudioSession, channelID: String) {
         self.session = session
+        _model = State(initialValue: Self.model(for: session, channelID: channelID))
+    }
+
+    /// The model's errors belong to the account it was made for, also when another one is active by then.
+    static func model(for session: StudioSession, channelID: String) -> ContentModel {
         let ownerAccountID = session.account?.id
         let model = ContentModel(channelID: channelID, services: session.services)
         model.onError = { [weak session] in session?.note($0, forAccount: ownerAccountID) }
         model.showsStats = { [weak session] in session?.showsAnalytics ?? false }
         model.onStatsOff = { [weak session] in session?.featureOff(.analytics) }
         model.showsBulkSchedule = { [weak session] in session?.shows(.bulkSchedule) ?? false }
-        _model = State(initialValue: model)
+        return model
     }
 
     var body: some View {

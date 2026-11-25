@@ -81,6 +81,15 @@ actor FixtureTermsState {
     var refusedOnce = false
     var acceptedAfterRefusal = false
 
+    private var readsSinceRefusal = 0
+
+    /// `lateRead`: nothing can be read until the second read after an upload was refused.
+    func canRead() -> Bool {
+        guard refusedOnce else { return false }
+        readsSinceRefusal += 1
+        return readsSinceRefusal > 1
+    }
+
     func markRefused() { refusedOnce = true }
     func markAccepted() { acceptedAfterRefusal = true }
 }
@@ -91,7 +100,7 @@ public struct FixtureStudioService: StudioServicing {
     public enum AccountState: String, Sendable { case creator, invitation, pendingDeletion }
     /// Creator Terms fixture behaviour for UI tests (`-AUNFixtureTermsMode`).
     public enum TermsMode: String, Sendable {
-        case accepted, required, failed, acceptError, acceptSlow, acceptVersionChanged, refuseUpload
+        case accepted, required, failed, acceptError, acceptSlow, acceptVersionChanged, refuseUpload, lateRead
     }
     public static let defaultTermsVersion = "2026-11-24"
 
@@ -112,6 +121,9 @@ public struct FixtureStudioService: StudioServicing {
         self.featuresOff = featuresOff
         self.termsMode = termsMode
     }
+
+    /// Uploads are refused until the Terms are accepted.
+    private var refusesUploads: Bool { termsMode == .refuseUpload || termsMode == .lateRead }
 
     /// Every feature on for a creator; without a creator tier, uploads and channel creation are off.
     public func features(channelID: String?) async throws -> UserFeatures {
@@ -147,8 +159,9 @@ public struct FixtureStudioService: StudioServicing {
 
     public func creatorAccess() async throws -> CreatorAccess {
         if termsMode == .failed { throw CoreError.offline }
+        if termsMode == .lateRead, await !termsState.canRead() { throw CoreError.offline }
         let accepted: Bool
-        if termsMode == .refuseUpload {
+        if refusesUploads {
             let refused = await termsState.refusedOnce
             let done = await termsState.acceptedAfterRefusal
             accepted = !refused || done
@@ -175,7 +188,7 @@ public struct FixtureStudioService: StudioServicing {
         case .acceptVersionChanged:
             throw CoreError.refused(Refusal(code: Refusal.termsVersionChanged, currentVersion: "2026-12-01"))
         case .acceptSlow: try await Task.sleep(for: .seconds(5))
-        case .refuseUpload: await termsState.markAccepted()
+        case .refuseUpload, .lateRead: await termsState.markAccepted()
         case .accepted, .required, .failed: return
         }
     }
@@ -216,7 +229,7 @@ public struct FixtureStudioService: StudioServicing {
 
     public func initiateUpload(_ upload: UploadInitiation, channelID: String) async throws -> UploadTicket {
         try refuseWrites(upload: true)
-        if termsMode == .refuseUpload {
+        if refusesUploads {
             let accepted = await termsState.acceptedAfterRefusal
             if !accepted {
                 await termsState.markRefused()

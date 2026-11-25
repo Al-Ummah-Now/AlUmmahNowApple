@@ -482,3 +482,4 @@
 "studio.terms.agree" = "أوافق وأتابع";
 "studio.terms.saving" = "جارٍ الحفظ…";
 "studio.terms.versionChanged" = "تم تحديث شروط الاستخدام. يرجى مراجعة أحدث نسخة والموافقة مجددًا.";
+"studio.terms.versionLoaded" = "تم تحميل أحدث نسخة من الشروط. يرجى مراجعتها والموافقة مجددًا.";
