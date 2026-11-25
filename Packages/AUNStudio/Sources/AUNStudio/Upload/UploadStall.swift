@@ -4,15 +4,29 @@ import Foundation
 /// chunk stopped moving. The job stops with a message and Retry instead of sitting at "Uploading, 0%" (Apple #105).
 struct UploadStalled: Error, Equatable {}
 
-/// When a step last showed life. A chunk touches it as bytes leave; a step that never touches it is judged by how
-/// long it has run.
+/// When a step last showed life, on a clock that stops while the device sleeps (`SuspendingClock`). A chunk touches it
+/// as bytes leave; a step that never touches it is judged by how long it has run. `now` is injectable for tests.
 final class UploadActivity: @unchecked Sendable {
+    private static let origin = SuspendingClock.now
+    /// Time since the process started counting, not counting system sleep.
+    static let systemNow: @Sendable () -> Duration = { SuspendingClock.now - origin }
+
+    let now: @Sendable () -> Duration
     private let lock = NSLock()
-    private var last = ContinuousClock.now
+    private var last: Duration
 
-    func touch() { lock.withLock { last = .now } }
+    init(now: @escaping @Sendable () -> Duration = UploadActivity.systemNow) {
+        self.now = now
+        last = now()
+    }
 
-    var idle: Duration { lock.withLock { ContinuousClock.now - last } }
+    func touch() { touch(at: now()) }
+
+    func touch(at current: Duration) { lock.withLock { last = current } }
+
+    var idle: Duration { idle(at: now()) }
+
+    func idle(at current: Duration) -> Duration { lock.withLock { current - last } }
 }
 
 /// One outcome for a race between an operation and its watchdog: whichever finishes first resumes the caller, the
@@ -88,9 +102,17 @@ func guardedByStall<T: Sendable>(
             let step = tick ?? max(.milliseconds(5), min(limit / 4, .seconds(5)))
             race.add(
                 Task {
+                    var lastTick = activity.now()
                     while !Task.isCancelled {
                         try? await Task.sleep(for: step)
-                        if activity.idle > limit {
+                        guard !Task.isCancelled else { return }
+                        let current = activity.now()
+                        // The app was suspended (iOS keeps a background upload going while this process is frozen, so no
+                        // callback reached it) or the device slept: the silence was ours, not the server's. Start the
+                        // window again from here.
+                        if current - lastTick > step * 3 { activity.touch(at: current) }
+                        lastTick = current
+                        if activity.idle(at: current) > limit {
                             race.finish(.failure(UploadStalled()))
                             return
                         }

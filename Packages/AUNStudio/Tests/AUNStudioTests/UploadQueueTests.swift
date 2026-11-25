@@ -15,15 +15,31 @@ private final class StallingTransfer: TUSTransferring, @unchecked Sendable {
     private let slowSendFor: Duration
     private let progressEvery: Duration
     private let hangingCreate: Bool
+    /// A hanging chunk that the server nevertheless received in full (the answer was lost).
+    private let landsBeforeHanging: Bool
+    /// What a later offset question does: answer, never answer, or say the session is gone.
+    enum OffsetAnswer { case server, hangs, gone }
+    private var _offsetAnswer: OffsetAnswer = .server
+    private var _sentOffsets: [Int64] = []
 
     init(
-        hangingSends: Int, slowSendFor: Duration = .zero, progressEvery: Duration = .milliseconds(30), hangingCreate: Bool = false
+        hangingSends: Int, slowSendFor: Duration = .zero, progressEvery: Duration = .milliseconds(30),
+        hangingCreate: Bool = false,
+        landsBeforeHanging: Bool = false
     ) {
         _hangingSends = hangingSends
         self.slowSendFor = slowSendFor
         self.progressEvery = progressEvery
         self.hangingCreate = hangingCreate
+        self.landsBeforeHanging = landsBeforeHanging
     }
+
+    var offsetAnswer: OffsetAnswer {
+        get { lock.withLock { _offsetAnswer } }
+        set { lock.withLock { _offsetAnswer = newValue } }
+    }
+    /// The offset of every chunk sent, in order
+    var sentOffsets: [Int64] { lock.withLock { _sentOffsets } }
 
     var hangingSends: Int {
         get { lock.withLock { _hangingSends } }
@@ -38,7 +54,15 @@ private final class StallingTransfer: TUSTransferring, @unchecked Sendable {
         return endpoint.appending(path: "upload-1")
     }
 
-    func offset(of url: URL, headers: [String: String]) async throws -> Int64 { lock.withLock { stored } }
+    func offset(of url: URL, headers: [String: String]) async throws -> Int64 {
+        switch offsetAnswer {
+        case .server: return lock.withLock { stored }
+        case .hangs:
+            try await Task.sleep(for: .seconds(30))
+            return 0
+        case .gone: throw CoreError.notFound
+        }
+    }
 
     func send(
         chunk file: URL, to url: URL, offset: Int64, headers: [String: String], progress: @escaping @Sendable (Int64) -> Void
@@ -46,12 +70,16 @@ private final class StallingTransfer: TUSTransferring, @unchecked Sendable {
         let size = ((try? FileManager.default.attributesOfItem(atPath: file.path())[.size]) as? NSNumber)?.int64Value ?? 0
         let hang = lock.withLock { () -> Bool in
             _sends += 1
+            _sentOffsets.append(offset)
             guard _hangingSends > 0 else { return false }
             _hangingSends -= 1
             return true
         }
         // Honours cancellation, as URLSession does
-        if hang { try await Task.sleep(for: .seconds(30)) }
+        if hang {
+            if landsBeforeHanging { lock.withLock { stored = offset + size } }
+            try await Task.sleep(for: .seconds(30))
+        }
         if slowSendFor > .zero {
             let steps = max(1, Int(slowSendFor / progressEvery))
             for step in 1...steps {
@@ -277,6 +305,77 @@ struct UploadQueueTests {
         #expect(queue.jobs[0].state == .failed)
         #expect(queue.jobs[0].failure == "studio.upload.error.stalled")
         #expect(transfer.sends == 0)
+    }
+
+    @Test func aStalledChunkThatLandedContinuesFromTheServersOffsetAndSavesIt() async throws {
+        // 2.5 MB is three chunks. The first reaches the server and its answer is lost: the second must start where the
+        // server is (1 MiB), not where the queue was, and the saved offset follows.
+        let transfer = StallingTransfer(hangingSends: 1, landsBeforeHanging: true)
+        let queue = UploadQueue(studio: RecordingStudio(), transfer: transfer, store: store(), stallLimit: .milliseconds(150))
+        queue.accountID = "a1"
+        queue.enqueue([job(try file(bytes: 2_500_000), title: "Landed")])
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .done)
+        #expect(transfer.sentOffsets == [0, 1 << 20, 2 << 20], "no chunk is sent twice and none is skipped")
+        #expect(queue.jobs[0].offset == 2_500_000)
+    }
+
+    @Test func anOffsetThatStallsTooEndsTheJobWithoutAnotherChunk() async throws {
+        let transfer = StallingTransfer(hangingSends: .max)
+        transfer.offsetAnswer = .hangs
+        let queue = UploadQueue(studio: RecordingStudio(), transfer: transfer, store: store(), stallLimit: .milliseconds(150))
+        queue.accountID = "a1"
+        queue.enqueue([job(try file(bytes: 10), title: "OffsetStuck")])
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .failed)
+        #expect(queue.jobs[0].failure == "studio.upload.error.stalled")
+        #expect(transfer.sends == 1, "the chunk is not sent again to a server that does not answer")
+    }
+
+    @Test func aSessionThatIsGoneAfterAStallEndsTheJobAndRetryOpensANewOne() async throws {
+        let transfer = StallingTransfer(hangingSends: 1)
+        transfer.offsetAnswer = .gone
+        let queue = UploadQueue(studio: RecordingStudio(), transfer: transfer, store: store(), stallLimit: .milliseconds(150))
+        queue.accountID = "a1"
+        queue.enqueue([job(try file(bytes: 10), title: "Gone")])
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .failed)
+        #expect(transfer.sends == 1)
+        transfer.offsetAnswer = .server
+        queue.resume(queue.jobs[0].id)
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .done)
+    }
+
+    @Test func pausingWhileAChunkIsStalledPausesTheJobInsteadOfFailingIt() async throws {
+        let transfer = StallingTransfer(hangingSends: .max)
+        let queue = UploadQueue(studio: RecordingStudio(), transfer: transfer, store: store(), stallLimit: .seconds(30))
+        queue.accountID = "a1"
+        queue.enqueue([job(try file(bytes: 10), title: "Pause")])
+        for _ in 0..<200 where transfer.sends == 0 { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(transfer.sends == 1)
+        queue.pause(queue.jobs[0].id)
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .paused)
+        #expect(queue.jobs[0].failure == nil)
+    }
+
+    @Test func switchingAccountStopsTheOldAccountsStalledUploadBeforeItAsksForATokenAgain() async throws {
+        let transfer = StallingTransfer(hangingSends: .max)
+        let queue = UploadQueue(studio: RecordingStudio(), transfer: transfer, store: store(), stallLimit: .milliseconds(300))
+        queue.accountID = "a1"
+        queue.enqueue([job(try file(bytes: 10), title: "Mine", account: "a1")])
+        for _ in 0..<200 where transfer.sends == 0 { try await Task.sleep(for: .milliseconds(20)) }
+        queue.accountID = "a2"
+        // Longer than the stall limit and its recovery: nothing of a1's job runs as a2
+        try await Task.sleep(for: .milliseconds(900))
+        #expect(queue.jobs[0].state == .waiting)
+        #expect(queue.jobs[0].failure == nil)
+        #expect(transfer.sends == 1, "the chunk is not sent again under the new account")
+        queue.accountID = "a1"
+        for _ in 0..<50 where transfer.sends < 2 { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(transfer.sends >= 2, "back on its own account the job runs again")
+        queue.pause(queue.jobs[0].id)
     }
 
     @Test func theStalledMessageIsAFailureTextInBothLanguages() throws {
