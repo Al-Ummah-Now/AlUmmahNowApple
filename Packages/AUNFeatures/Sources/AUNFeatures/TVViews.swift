@@ -228,7 +228,7 @@
         let dismiss: () -> Void
 
         var body: some View {
-            VStack(spacing: 20) {
+            VStack(spacing: 16) {
                 Text(title)
                     .font(.title2.weight(.bold))
                     .foregroundStyle(Fanous.textPrimary)
@@ -238,8 +238,8 @@
                         .interpolation(.none)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 280, height: 280)
-                        .padding(16)
+                        .frame(width: 248, height: 248)
+                        .padding(12)
                         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
                         .accessibilityLabel(l10n("safety.report.qrLabel"))
                         .accessibilityIdentifier("tv-report-qr")
@@ -254,7 +254,8 @@
                 Button(l10n("common.dismiss"), action: dismiss)
                     .accessibilityIdentifier("tv-report-dismiss")
             }
-            .padding(40)
+            .padding(.horizontal, 40)
+            .padding(.vertical, 24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Fanous.background)
             .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
