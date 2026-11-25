@@ -33,7 +33,13 @@ public final class UploadQueue {
     private var preEncodeTasks: [UUID: Task<Void, Never>] = [:]
     /// Only jobs of this account run; the token belongs to the active account.
     public var accountID: String? {
-        didSet { if accountID != oldValue { kick() } }
+        didSet {
+            guard accountID != oldValue else { return }
+            // A running upload belongs to its own account: stop the ones of any other account now, so none of them
+            // asks for a token (or retries a chunk) as the account that just became active.
+            for job in jobs where job.accountID != accountID { tasks[job.id]?.cancel() }
+            kick()
+        }
     }
     /// Called when the server refuses for the whole account (pending deletion, ban). The queue pauses rather than
     /// fails its jobs, and runs nothing until `unblock()`.
@@ -73,11 +79,21 @@ public final class UploadQueue {
         let preEncoder = services.renditionPackaging.map {
             PreEncoder(packaging: $0, renditions: services.renditions, workRoot: PreEncoder.defaultWorkRoot)
         }
-        // UI tests shorten the stall limit (`-AUNUploadStallSeconds 3`) to show a stalled upload without a minute's wait
-        let seconds = UserDefaults.standard.double(forKey: "AUNUploadStallSeconds")
         self.init(
             studio: services.studio, transfer: services.transfer, store: store, preEncoder: preEncoder,
-            stallLimit: seconds > 0 ? .seconds(seconds) : .seconds(60))
+            stallLimit: Self.fixtureStallLimit(services) ?? .seconds(60))
+    }
+
+    /// UI tests shorten the stall limit (`-AUNUploadStallSeconds 3`) to show a stalled upload without a minute's wait. Only
+    /// in a debug build, and only on fixtures (they never persist uploads); a release build ignores it.
+    private static func fixtureStallLimit(_ services: StudioServices) -> Duration? {
+        #if DEBUG
+            guard !services.persistsUploads else { return nil }
+            let seconds = UserDefaults.standard.double(forKey: "AUNUploadStallSeconds")
+            return seconds > 0 ? .seconds(seconds) : nil
+        #else
+            return nil
+        #endif
     }
 
     /// True when this build can pre-encode renditions (desktop Studio with Core's packaging).
@@ -357,12 +373,19 @@ public final class UploadQueue {
         return (created, 0)
     }
 
+    /// The upload endpoint and the token of the job's own account, under the stall guard. It refuses (cancels) when
+    /// another account has become the active one: that token is not this job's.
+    private func endpoint(for id: UUID) async throws -> (url: URL, headers: [String: String]) {
+        guard let job = job(id), job.accountID == accountID else { throw CancellationError() }
+        let studio = self.studio
+        return try await guardedByStall(limit: stallLimit) { try await studio.tusEndpoint() }
+    }
+
     /// Sends the bytes the server does not have yet, one chunk file at a time.
     private func sendBytes(_ id: UUID, file: URL) async throws {
         guard let job = job(id), let ticket = job.ticket else { return }
-        let studio = self.studio
         let transfer = self.transfer
-        var (endpoint, headers) = try await guardedByStall(limit: stallLimit) { try await studio.tusEndpoint() }
+        var (endpoint, headers) = try await self.endpoint(for: id)
         let (location, start) = try await locate(id, endpoint: endpoint, headers: headers)
         var offset = start
         update(id) { $0.offset = offset }
@@ -399,7 +422,7 @@ public final class UploadQueue {
                 }
             } catch let error as CoreError where error == .signInRequired && attempts == 0 {
                 attempts += 1
-                (endpoint, headers) = try await guardedByStall(limit: stallLimit) { try await studio.tusEndpoint() }
+                (endpoint, headers) = try await self.endpoint(for: id)
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as CoreError where error.refusal != nil {
@@ -408,17 +431,20 @@ public final class UploadQueue {
                 // Nothing moved for the whole limit: ask the server where it is and send the chunk again, once.
                 stalls += 1
                 guard stalls <= Self.stallRetries else { throw UploadStalled() }
-                update(id) { $0.inFlight = 0 }
-                (endpoint, headers) = try await guardedByStall(limit: stallLimit) { try await studio.tusEndpoint() }
+                (endpoint, headers) = try await self.endpoint(for: id)
                 let current = headers
-                offset =
-                    (try? await guardedByStall(limit: stallLimit) { try await transfer.offset(of: location, headers: current) })
-                    ?? offset
+                // The chunk may have landed before the silence: take the server's offset, and save it. An offset that
+                // stalls too, or a session that is gone (404), ends the job here; Retry opens the upload again.
+                offset = try await guardedByStall(limit: stallLimit) { try await transfer.offset(of: location, headers: current) }
+                update(id) {
+                    $0.offset = offset
+                    $0.inFlight = 0
+                }
             } catch {
                 attempts += 1
                 guard attempts <= 4 else { throw error }
                 try await Task.sleep(for: .seconds(Double(attempts * attempts)))
-                (endpoint, headers) = try await guardedByStall(limit: stallLimit) { try await studio.tusEndpoint() }
+                (endpoint, headers) = try await self.endpoint(for: id)
                 let current = headers
                 offset =
                     (try? await guardedByStall(limit: stallLimit) { try await transfer.offset(of: location, headers: current) })
