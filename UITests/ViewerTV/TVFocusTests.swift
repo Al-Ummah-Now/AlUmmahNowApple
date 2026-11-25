@@ -52,4 +52,25 @@ final class TVFocusTests: XCTestCase {
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.otherElements["player"].waitForExistence(timeout: 20))
     }
+
+    @MainActor
+    func testTransportBarReportOpensQRCodeSheet() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AUNUseFixtures", "YES", "-AUNFixturePlayable", "YES", "-AUNLanguage", "en"]
+        app.launch()
+        waitForFocus(app.buttons["hero"])
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.otherElements["player"].waitForExistence(timeout: 20))
+        let report = app.cells["tv-report-video"]
+        if !report.exists { XCUIRemote.shared.press(.up) }
+        XCTAssertTrue(report.waitForExistence(timeout: 20))
+        for _ in 0..<2 where !report.hasFocus { XCUIRemote.shared.press(.up) }
+        for _ in 0..<6 where !report.hasFocus { XCUIRemote.shared.press(.right) }
+        for _ in 0..<8 where !report.hasFocus { XCUIRemote.shared.press(.left) }
+        XCTAssertTrue(report.hasFocus)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.descendants(matching: .any)["tv-report-sheet"].firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.images["tv-report-qr"].waitForExistence(timeout: 10))
+        XCUIRemote.shared.press(.menu)
+    }
 }

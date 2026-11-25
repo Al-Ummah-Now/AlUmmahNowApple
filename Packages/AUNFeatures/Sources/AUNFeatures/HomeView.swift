@@ -154,7 +154,17 @@
                     let visibleRails = blockStore.filterRails(rails)
                     let visibleLive = blockStore.filterLiveStreams(live.onAir + live.coming)
                     if visibleRails.isEmpty && visibleLive.isEmpty {
-                        EmptyStateView(title: l10n("home.empty"))
+                        ScrollView {
+                            EmptyStateView(
+                                title: l10n("home.empty"),
+                                message: rails.isEmpty ? nil : l10n("safety.blocked.homeEmpty")
+                            )
+                            .padding(.top, 80)
+                        }
+                        .refreshable {
+                            await model.load()
+                            await live.load()
+                        }
                     } else {
                         HomeRailsContent(
                             rails: visibleRails,
@@ -174,8 +184,15 @@
             .task { await model.load() }
             .task {
                 await live.load()
-                hasLive = !live.isEmpty
+                updateHasLive()
             }
+            .onChange(of: ViewerBlockStore.shared.entries) { _, _ in
+                updateHasLive()
+            }
+        }
+
+        private func updateHasLive() {
+            hasLive = !ViewerBlockStore.shared.filterLiveStreams(live.onAir + live.coming).isEmpty
         }
     }
 #endif

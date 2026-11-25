@@ -175,46 +175,66 @@ import SwiftUI
         private func main(_ content: LiveContent) -> some View {
             VStack(alignment: .leading, spacing: FanousScale.spacingMd) {
                 if isChannelBlocked(content) {
-                    VStack(spacing: 12) {
-                        Image(systemName: "hand.raised.slash")
-                            .font(.title2)
-                            .foregroundStyle(Fanous.textSecondary)
-                            .accessibilityHidden(true)
-                        if let name = content.stream.channelName {
-                            Text(l10n("safety.blocked.channelBanner", name))
-                                .fanousFont(.body)
-                                .foregroundStyle(Fanous.textSecondary)
-                                .multilineTextAlignment(.center)
-                            Button(l10n("safety.unblock")) {
-                                blockStore.unblockChannel(id: content.stream.channelID, name: name)
+                    let displayName = content.stream.channelName ?? l10n("safety.blockedList.kind.channel")
+                    let channelID = content.stream.channelID?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    HStack {
+                        Spacer(minLength: 0)
+                        Menu {
+                            Link(
+                                destination: ViewerReportURL.liveStream(
+                                    id: content.stream.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
+                            ) {
+                                Label(l10n("safety.report.stream"), systemImage: "flag")
                             }
-                            .buttonStyle(FanousButtonStyle(.secondary))
-                            .accessibilityIdentifier("live-unblock-channel")
+                            .accessibilityIdentifier("report-live-stream")
+                            if let channelID, !channelID.isEmpty {
+                                Link(
+                                    destination: ViewerReportURL.channel(
+                                        id: channelID, language: l10n.language.rawValue, webBaseURL: webBaseURL)
+                                ) {
+                                    Label(l10n("safety.report.channel"), systemImage: "flag")
+                                }
+                                .accessibilityIdentifier("report-live-channel")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3)
+                                .foregroundStyle(Fanous.textSecondary)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                                .accessibilityLabel(l10n("safety.moreActions"))
                         }
+                        .menuIndicator(.hidden)
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("live-actions-menu")
                     }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .aspectRatio(16 / 9, contentMode: .fit)
-                    .fanousMaterial(.hero) { .rounded($0.lg) }
-                    .accessibilityIdentifier("live-channel-blocked")
-                } else if content.mode == .live || content.mode == .recording {
-                    PlayerSurface(controller: model.player)
-                        .aspectRatio(16 / 9, contentMode: .fit)
-                        .accessibilityIdentifier("player")
-                    if model.player.phase == .failed {
-                        Text(l10n("player.error")).font(.footnote).foregroundStyle(Fanous.errorText)
-                            .accessibilityIdentifier("player-error")
-                    }
-                    if model.isBehind {
-                        Button(l10n("live.return")) { model.returnToLive() }
-                            .buttonStyle(FanousButtonStyle(.secondary))
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                            .accessibilityIdentifier("live-return")
+                    BlockedChannelCard(
+                        channelDisplayName: displayName,
+                        cardIdentifier: "live-channel-blocked",
+                        unblockIdentifier: "live-unblock-channel"
+                    ) {
+                        blockStore.unblockChannel(id: content.stream.channelID, name: content.stream.channelName)
                     }
                 } else {
-                    LiveNotice(content: content, untilStart: model.untilStart)
+                    if content.mode == .live || content.mode == .recording {
+                        PlayerSurface(controller: model.player)
+                            .aspectRatio(16 / 9, contentMode: .fit)
+                            .accessibilityIdentifier("player")
+                        if model.player.phase == .failed {
+                            Text(l10n("player.error")).font(.footnote).foregroundStyle(Fanous.errorText)
+                                .accessibilityIdentifier("player-error")
+                        }
+                        if model.isBehind {
+                            Button(l10n("live.return")) { model.returnToLive() }
+                                .buttonStyle(FanousButtonStyle(.secondary))
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .accessibilityIdentifier("live-return")
+                        }
+                    } else {
+                        LiveNotice(content: content, untilStart: model.untilStart)
+                    }
+                    LiveDetails(content: content, viewers: model.viewers, webBaseURL: webBaseURL)
                 }
-                LiveDetails(content: content, viewers: model.viewers, webBaseURL: webBaseURL)
             }
         }
     }
@@ -226,6 +246,7 @@ import SwiftUI
         @Environment(\.l10n) private var l10n
         @Environment(\.scenePhase) private var scenePhase
         @State private var model: LiveWatchModel
+        @State private var showingReport = false
         private let webBaseURL: URL
 
         init(streamID: String, core: CoreBridge) {
@@ -243,13 +264,28 @@ import SwiftUI
                     HStack(alignment: .top, spacing: 40) {
                         VStack(alignment: .leading, spacing: 24) {
                             if content.mode == .live || content.mode == .recording {
-                                PlayerSurface(controller: model.player).aspectRatio(16 / 9, contentMode: .fit)
-                                    .accessibilityIdentifier("player")
+                                PlayerSurface(
+                                    controller: model.player,
+                                    reportTitle: l10n("safety.report.stream"),
+                                    reportIdentifier: "tv-report-stream"
+                                ) {
+                                    model.player.pause()
+                                    showingReport = true
+                                }
+                                .aspectRatio(16 / 9, contentMode: .fit)
+                                .accessibilityIdentifier("player")
                                 if model.isBehind {
                                     Button(l10n("live.return")) { model.returnToLive() }.accessibilityIdentifier("live-return")
                                 }
                             } else {
                                 LiveNotice(content: content, untilStart: model.untilStart)
+                                Button {
+                                    showingReport = true
+                                } label: {
+                                    Label(l10n("safety.report.stream"), systemImage: "flag")
+                                }
+                                .buttonStyle(FanousButtonStyle(.secondary))
+                                .accessibilityIdentifier("tv-report-stream")
                             }
                             LiveDetails(content: content, viewers: model.viewers, webBaseURL: webBaseURL)
                             Spacer(minLength: 0)
@@ -263,6 +299,16 @@ import SwiftUI
                         }
                     }
                     .padding(60)
+                    .sheet(isPresented: $showingReport) {
+                        TVReportSheet(
+                            title: l10n("safety.report.stream"),
+                            bodyKey: "safety.report.tvStreamBody",
+                            url: ViewerReportURL.liveStream(
+                                id: content.stream.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
+                        ) {
+                            showingReport = false
+                        }
+                    }
                 }
             }
             .task { await model.load(language: l10n.language) }

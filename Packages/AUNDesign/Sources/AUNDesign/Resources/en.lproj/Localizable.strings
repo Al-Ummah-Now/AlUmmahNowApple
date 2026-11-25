@@ -448,7 +448,8 @@
 "safety.report.channel" = "Report channel";
 "safety.report.stream" = "Report live stream";
 "safety.report.message" = "Report message";
-"safety.report.tvBody" = "To report this video, visit %@ in a browser on your phone or computer.";
+"safety.report.tvBody" = "To report this video, scan the code or visit %@ in a browser on your phone or computer.";
+"safety.report.tvStreamBody" = "To report this live stream, scan the code or visit %@ in a browser on your phone or computer.";
 "safety.block.channel" = "Block channel";
 "safety.block.user" = "Block user";
 "safety.block.confirm" = "Block";
@@ -457,9 +458,11 @@
 "safety.block.userTitle" = "Block %@?";
 "safety.block.userMessage" = "Live chat messages from this user will be hidden on this device. You can unblock them any time in Settings.";
 "safety.blocked.channelBanner" = "Videos from %@ are hidden on this device.";
+"safety.blocked.homeEmpty" = "Videos from channels you blocked are hidden on this device. You can unblock them in Settings.";
 "safety.blockedList.title" = "Blocked channels and users";
 "safety.blockedList.emptyTitle" = "Nothing blocked";
 "safety.blockedList.emptyMessage" = "Channels and live chat users you block on this device appear here.";
 "safety.blockedList.kind.channel" = "Channel";
 "safety.blockedList.kind.user" = "Live chat user";
 "safety.unblock" = "Unblock";
+"safety.unblockFor" = "Unblock %@";

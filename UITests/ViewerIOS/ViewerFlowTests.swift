@@ -87,4 +87,62 @@ final class ViewerFlowTests: XCTestCase {
             }
         }
     }
+
+    @MainActor
+    func testBlockChannelHidesWatchDetailsAndHomeAndUnblocksFromSettings() {
+        let app = launch("en")
+        card(app).tap()
+        let menu = app.buttons["watch-actions-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 20))
+        menu.tap()
+        XCTAssertTrue(app.buttons["report-video"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["report-channel"].exists)
+        let blockBtn = app.buttons["block-channel"]
+        XCTAssertTrue(blockBtn.exists)
+        blockBtn.tap()
+        XCTAssertTrue(app.buttons["block-confirm-cancel"].waitForExistence(timeout: 10))
+        app.buttons["block-confirm-action"].tap()
+
+        // Blocked page hides title, description, and chapters, showing only the blocked card + Unblock.
+        XCTAssertTrue(app.buttons["watch-unblock-channel"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["watch-title"].exists)
+        XCTAssertFalse(app.staticTexts["watch-description"].exists)
+        XCTAssertFalse(app.buttons["chapter-c1"].exists)
+
+        // Back to Home: blocked channel is hidden, unblock from Settings restores Home.
+        let back = app.navigationBars.buttons.matching(NSPredicate(format: "identifier != 'watch-actions-menu'")).firstMatch
+        if back.waitForExistence(timeout: 5) { back.tap() } else { app.navigationBars.buttons.element(boundBy: 0).tap() }
+        XCTAssertTrue(app.buttons["settings-menu"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons[firstCard].exists)
+        app.buttons["settings-menu"].tap()
+        app.buttons["settings-blocked-list"].tap()
+        let unblock = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'unblock-'")).firstMatch
+        XCTAssertTrue(unblock.waitForExistence(timeout: 10))
+        unblock.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["blocked-list-empty"].firstMatch.waitForExistence(timeout: 10))
+        app.buttons["blocked-list-done"].tap()
+        XCTAssertTrue(app.buttons[firstCard].waitForExistence(timeout: 15))
+    }
+
+    @MainActor
+    func testLiveChatBlockUserHidesMessageAndKeepsOtherMessages() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-AUNUseFixtures", "YES", "-AUNFixtureLive", "YES", "-AUNOpenLive", "fixture-live",
+            "-AUNLanguage", "en", "-AUNTheme", "dark",
+        ]
+        app.launch()
+        let chatMenu = app.buttons["chat-actions-m0"]
+        XCTAssertTrue(chatMenu.waitForExistence(timeout: 30))
+        chatMenu.tap()
+        let blockUser = app.buttons["block-chat-user-m0"]
+        XCTAssertTrue(blockUser.waitForExistence(timeout: 10))
+        blockUser.tap()
+        XCTAssertTrue(app.buttons["block-confirm-action"].waitForExistence(timeout: 10))
+        app.buttons["block-confirm-action"].tap()
+
+        let gone = NSPredicate(format: "exists == false")
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: gone, evaluatedWith: chatMenu)], timeout: 10), .completed)
+        XCTAssertTrue(app.buttons["chat-actions-m2"].exists)
+    }
 }

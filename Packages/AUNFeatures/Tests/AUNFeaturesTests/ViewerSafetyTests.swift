@@ -1,4 +1,5 @@
 import AUNCoreBridge
+import AUNDesign
 import Foundation
 import Testing
 
@@ -157,5 +158,47 @@ struct ViewerSafetyTests {
         #expect(qa.absoluteString == "https://videos.qa.alummahnow.net")
         #expect(stage.absoluteString == "https://videos.stage.alummahnow.net")
         #expect(prod.absoluteString == "https://videos.alummahnow.net")
+    }
+
+    @Test @MainActor func liveWatchModelReChecksBlockedAfterChatAndBumpsVisitOnBlock() async throws {
+        let clock = TestClock()
+        let url = URL(string: "https://x.test/live.m3u8")!
+        let live = StubLive(LiveState(status: .live, playbackURL: url, chat: .init(enabled: true)))
+        let model = LiveWatchModel(streamID: "s1", live: live, catalog: FixtureCatalogService(), now: { clock.now })
+        await model.load(language: .en)
+        await model.tick()
+        await model.settled()
+        let beatsAfterFirst = await live.beats
+
+        // Blocking while a poll runs must bump visit and never send a follow-up normal beat.
+        model.setBlocked(true)
+        try await until { await live.leaves == 1 }
+        await model.settled()
+        clock.advance(60)
+        await model.tick()
+        await model.settled()
+        #expect(await live.beats == beatsAfterFirst)
+        #expect(await live.leaves == 1)
+        model.close()
+    }
+
+    @Test func allSafetyKeysLocalizeInEnglishAndArabic() {
+        let keys = [
+            "safety.moreActions", "safety.moreActionsFor", "safety.report.video", "safety.report.channel",
+            "safety.report.stream", "safety.report.message", "safety.report.tvBody", "safety.report.tvStreamBody",
+            "safety.block.channel", "safety.block.user", "safety.block.confirm", "safety.block.channelTitle",
+            "safety.block.channelMessage", "safety.block.userTitle", "safety.block.userMessage",
+            "safety.blocked.channelBanner", "safety.blocked.homeEmpty", "safety.blockedList.title",
+            "safety.blockedList.emptyTitle", "safety.blockedList.emptyMessage", "safety.blockedList.kind.channel",
+            "safety.blockedList.kind.user", "safety.unblock", "safety.unblockFor",
+        ]
+        for language in AppLanguage.allCases {
+            let l10n = L10n(language)
+            for key in keys {
+                let value = l10n(key)
+                #expect(!value.contains("⟦"), "Missing \(language.rawValue) string for \(key)")
+                #expect(!value.isEmpty)
+            }
+        }
     }
 }

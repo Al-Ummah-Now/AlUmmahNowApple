@@ -2,7 +2,10 @@
     import AUNCoreBridge
     import AUNDesign
     import AUNPlayer
+    import CoreImage
+    import CoreImage.CIFilterBuiltins
     import SwiftUI
+    import UIKit
 
     /// Apple TV shell: focus-driven, no touch affordances.
     public struct ViewerRootView: View {
@@ -179,6 +182,7 @@
                     Group {
                         if content.video.isPlayable {
                             PlayerSurface(controller: model.player) {
+                                model.player.pause()
                                 showingReport = true
                             }
                             .ignoresSafeArea()
@@ -199,25 +203,71 @@
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .sheet(isPresented: $showingReport) {
-                        VStack(spacing: 24) {
-                            Text(l10n("safety.report.video")).font(.title2.weight(.bold))
-                            Text(
-                                l10n(
-                                    "safety.report.tvBody",
-                                    ViewerReportURL.video(
-                                        id: content.video.id, language: l10n.language.rawValue, webBaseURL: webBaseURL
-                                    ).absoluteString)
-                            )
-                            .multilineTextAlignment(.center)
-                            Button(l10n("common.dismiss")) { showingReport = false }
+                        TVReportSheet(
+                            title: l10n("safety.report.video"),
+                            bodyKey: "safety.report.tvBody",
+                            url: ViewerReportURL.video(
+                                id: content.video.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
+                        ) {
+                            showingReport = false
                         }
-                        .padding(60)
-                        .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
                     }
                 }
             }
             .task { await model.load(language: l10n.language) }
             .onDisappear { model.player.stop() }
+        }
+    }
+
+    /// Apple TV report sheet with a scannable QR code on a quiet-zone pad and the full URL underneath.
+    struct TVReportSheet: View {
+        @Environment(\.l10n) private var l10n
+        let title: String
+        let bodyKey: String
+        let url: URL
+        let dismiss: () -> Void
+
+        var body: some View {
+            VStack(spacing: 28) {
+                Text(title)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(Fanous.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                if let qr = Self.qrImage(for: url.absoluteString) {
+                    Image(uiImage: qr)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 240, height: 240)
+                        .padding(16)
+                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
+                        .accessibilityLabel(url.absoluteString)
+                        .accessibilityIdentifier("tv-report-qr")
+                }
+                Text(l10n(bodyKey, url.absoluteString))
+                    .foregroundStyle(Fanous.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 960)
+                Button(l10n("common.dismiss"), action: dismiss)
+                    .accessibilityIdentifier("tv-report-dismiss")
+            }
+            .padding(60)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Fanous.background)
+            .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("tv-report-sheet")
+        }
+
+        private static func qrImage(for text: String) -> UIImage? {
+            let filter = CIFilter.qrCodeGenerator()
+            filter.message = Data(text.utf8)
+            filter.correctionLevel = "M"
+            guard let output = filter.outputImage else { return nil }
+            let scaled = output.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+            let context = CIContext()
+            guard let cg = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+            return UIImage(cgImage: cg)
         }
     }
 #endif

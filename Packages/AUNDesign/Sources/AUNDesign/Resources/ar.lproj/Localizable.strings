@@ -448,7 +448,8 @@
 "safety.report.channel" = "الإبلاغ عن القناة";
 "safety.report.stream" = "الإبلاغ عن البث المباشر";
 "safety.report.message" = "الإبلاغ عن الرسالة";
-"safety.report.tvBody" = "للإبلاغ عن هذا المرئي، افتح %@ في المتصفح على هاتفك أو حاسوبك.";
+"safety.report.tvBody" = "للإبلاغ عن هذا المرئي، امسح الرمز أو افتح %@ في المتصفح على هاتفك أو حاسوبك.";
+"safety.report.tvStreamBody" = "للإبلاغ عن هذا البث المباشر، امسح الرمز أو افتح %@ في المتصفح على هاتفك أو حاسوبك.";
 "safety.block.channel" = "حظر القناة";
 "safety.block.user" = "حظر المستخدم";
 "safety.block.confirm" = "حظر";
@@ -457,9 +458,11 @@
 "safety.block.userTitle" = "حظر %@؟";
 "safety.block.userMessage" = "ستُخفى رسائل هذا المستخدم في محادثة البث المباشر على هذا الجهاز. يمكنك إلغاء الحظر في أي وقت من الإعدادات.";
 "safety.blocked.channelBanner" = "مرئيات %@ مخفية على هذا الجهاز.";
+"safety.blocked.homeEmpty" = "مرئيات القنوات التي حظرتها مخفية على هذا الجهاز. يمكنك إلغاء حظرها من الإعدادات.";
 "safety.blockedList.title" = "القنوات والمستخدمون المحظورون";
 "safety.blockedList.emptyTitle" = "لا يوجد محظورون";
 "safety.blockedList.emptyMessage" = "تظهر هنا القنوات ومستخدمو محادثة البث المباشر الذين حظرتهم على هذا الجهاز.";
 "safety.blockedList.kind.channel" = "قناة";
 "safety.blockedList.kind.user" = "مستخدم في المحادثة";
 "safety.unblock" = "إلغاء الحظر";
+"safety.unblockFor" = "إلغاء حظر %@";

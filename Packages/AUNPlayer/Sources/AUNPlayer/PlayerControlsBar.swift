@@ -120,7 +120,8 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
     @MainActor
     enum TransportMenus {
         static func items(
-            controller: PlayerController, l10n: L10n, onReport: (@MainActor () -> Void)? = nil
+            controller: PlayerController, l10n: L10n, reportTitle: String? = nil,
+            reportIdentifier: String = "tv-report-video", onReport: (@MainActor () -> Void)? = nil
         ) -> [UIMenuElement] {
             var menus: [UIMenuElement] = [
                 UIMenu(
@@ -148,12 +149,12 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
             ]
             if let onReport {
                 let report = UIAction(
-                    title: l10n("safety.report.video"),
+                    title: reportTitle ?? l10n("safety.report.video"),
                     image: UIImage(systemName: "flag")
                 ) { _ in
                     MainActor.assumeIsolated { onReport() }
                 }
-                report.accessibilityIdentifier = "tv-report-video"
+                report.accessibilityIdentifier = reportIdentifier
                 menus.append(report)
             }
             return menus

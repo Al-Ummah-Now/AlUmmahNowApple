@@ -159,7 +159,7 @@ struct LiveChatView: View {
                 .padding(FanousScale.spacingMd)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fanousMaterial(.control) { _ in .rect }
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("live-chat-pinned")
             }
             if visibleMessages.isEmpty {
@@ -235,7 +235,7 @@ struct LiveChatView: View {
                         Label(l10n("safety.report.message"), systemImage: "flag")
                     }
                     .accessibilityIdentifier("report-chat-\(message.id)")
-                    Button(role: .destructive) {
+                    Button {
                         blockingMessage = message
                     } label: {
                         Label(l10n("safety.block.user"), systemImage: "hand.raised.slash")
@@ -335,6 +335,10 @@ struct LiveDetails: View {
         let trimmed = content.stream.channelID?.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed?.isEmpty == false ? trimmed : nil
     }
+    private var blockLabel: String? {
+        if let channelName, !channelName.isEmpty { return channelName }
+        return channelID != nil ? l10n("safety.blockedList.kind.channel") : nil
+    }
     private var isBlocked: Bool {
         blockStore.isChannelBlocked(id: content.stream.channelID, name: channelName)
     }
@@ -371,8 +375,8 @@ struct LiveDetails: View {
                             }
                             .accessibilityIdentifier("report-live-channel")
                         }
-                        if channelName != nil, !isBlocked {
-                            Button(role: .destructive) {
+                        if blockLabel != nil, !isBlocked {
+                            Button {
                                 confirmBlockChannel = true
                             } label: {
                                 Label(l10n("safety.block.channel"), systemImage: "hand.raised.slash")
@@ -399,12 +403,12 @@ struct LiveDetails: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         #if os(iOS) || os(macOS)
             .sheet(isPresented: $confirmBlockChannel) {
-                if let channelName {
+                if let label = blockLabel {
                     ViewerBlockConfirmSheet(
-                        title: l10n("safety.block.channelTitle", channelName),
+                        title: l10n("safety.block.channelTitle", label),
                         message: l10n("safety.block.channelMessage")
                     ) {
-                        blockStore.blockChannel(id: content.stream.channelID, name: channelName)
+                        blockStore.blockChannel(id: content.stream.channelID, name: label)
                     }
                 }
             }

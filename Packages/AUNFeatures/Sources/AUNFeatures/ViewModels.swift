@@ -59,6 +59,7 @@ public final class WatchViewModel {
             async let chapters = try? catalog.chapters(videoID: videoID)
             let (loadedTracks, loadedChapters) = await (tracks ?? [], chapters ?? [])
             state = .loaded(WatchContent(video: video, chapters: loadedChapters))
+            guard !ViewerBlockStore.shared.isChannelBlocked(id: video.channelID, name: video.channelName) else { return }
             guard video.isPlayable, let url = video.playURL else { return }
             player.load(
                 PlaybackItem(
