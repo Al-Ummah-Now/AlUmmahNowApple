@@ -195,12 +195,11 @@
             }
             .fanousPage()
             .task { await model.load(language: l10n.language) }
-            .onChange(of: blocked, initial: true) { wasBlocked, nowBlocked in
-                if nowBlocked {
-                    model.player.stop()
-                } else if wasBlocked {
-                    Task { await model.load(language: l10n.language) }
-                }
+            .onChange(of: blocked, initial: true) { _, nowBlocked in
+                if nowBlocked { model.holdBack() }
+            }
+            .onChange(of: model.isHeldBack && !blocked, initial: true) { _, isFree in
+                if isFree { Task { await model.load(language: l10n.language) } }
             }
             .onDisappear { model.player.stop() }
             #if os(macOS)
