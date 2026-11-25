@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "repo": "AlUmmahNowApple",
+  "serial": 1,
+  "keys": [
+    {
+      "keyId": "fee74dc0",
+      "publicKey": "bjayx5XLeWofafOvabjDeFNsUReR2sBv/xWL9JcOP1A="
+    }
+  ],
+  "revoked": [],
+  "yanked": []
+}

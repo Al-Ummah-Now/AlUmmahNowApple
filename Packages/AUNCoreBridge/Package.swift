@@ -9,6 +9,8 @@ let package = Package(
     dependencies: [],
     targets: [
         .target(name: "AUNCoreBridge", dependencies: [], resources: [.copy("Resources/fixture-video.mp4")]),
-        .testTarget(name: "AUNCoreBridgeTests", dependencies: ["AUNCoreBridge"]),
+        .testTarget(
+            name: "AUNCoreBridgeTests", dependencies: ["AUNCoreBridge"],
+            resources: [.copy("Resources/app-update-versions.json")]),
     ]
 )
