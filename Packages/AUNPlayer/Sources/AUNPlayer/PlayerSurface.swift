@@ -6,11 +6,18 @@ import SwiftUI
     /// AVKit's player view: gives PiP, AirPlay, fullscreen and system transport controls.
     public struct PlayerSurface: UIViewControllerRepresentable {
         let controller: PlayerController
+        let reportTitle: String?
+        let reportIdentifier: String
         let onReport: (@MainActor () -> Void)?
         @Environment(\.l10n) private var l10n
 
-        public init(controller: PlayerController, onReport: (@MainActor () -> Void)? = nil) {
+        public init(
+            controller: PlayerController, reportTitle: String? = nil, reportIdentifier: String = "tv-report-video",
+            onReport: (@MainActor () -> Void)? = nil
+        ) {
             self.controller = controller
+            self.reportTitle = reportTitle
+            self.reportIdentifier = reportIdentifier
             self.onReport = onReport
         }
 
@@ -49,7 +56,8 @@ import SwiftUI
         public func updateUIViewController(_ view: AVPlayerViewController, context: Context) {
             #if os(tvOS)
                 view.transportBarCustomMenuItems = TransportMenus.items(
-                    controller: controller, l10n: l10n, onReport: onReport)
+                    controller: controller, l10n: l10n, reportTitle: reportTitle,
+                    reportIdentifier: reportIdentifier, onReport: onReport)
             #endif
         }
 

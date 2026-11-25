@@ -19,6 +19,10 @@
             let trimmed = content.video.channelID?.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed?.isEmpty == false ? trimmed : nil
         }
+        private var blockLabel: String? {
+            if let channelName, !channelName.isEmpty { return channelName }
+            return channelID != nil ? l10n("safety.blockedList.kind.channel") : nil
+        }
         private var isBlocked: Bool { blockStore.isChannelBlocked(id: content.video.channelID, name: channelName) }
 
         var body: some View {
@@ -50,8 +54,8 @@
                             }
                             .accessibilityIdentifier("report-channel")
                         }
-                        if channelName != nil, !isBlocked {
-                            Button(role: .destructive) {
+                        if blockLabel != nil, !isBlocked {
+                            Button {
                                 confirmBlockChannel = true
                             } label: {
                                 Label(l10n("safety.block.channel"), systemImage: "hand.raised.slash")
@@ -70,22 +74,6 @@
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("watch-actions-menu")
                 }
-                if isBlocked, let channelName {
-                    HStack(spacing: FanousScale.spacingSm) {
-                        Text(l10n("safety.blocked.channelBanner", channelName))
-                            .fanousFont(.caption)
-                            .foregroundStyle(Fanous.textSecondary)
-                        Spacer(minLength: 0)
-                        Button(l10n("safety.unblock")) {
-                            blockStore.unblockChannel(id: content.video.channelID, name: channelName)
-                        }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(Fanous.accent)
-                    }
-                    .padding(FanousScale.spacingMd)
-                    .fanousMaterial(.card) { .rounded($0.md) }
-                    .accessibilityIdentifier("channel-blocked-banner")
-                }
                 let description = content.video.displayDescription(l10n.language)
                 if !description.isEmpty {
                     Text(description).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
@@ -98,12 +86,12 @@
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .sheet(isPresented: $confirmBlockChannel) {
-                if let channelName {
+                if let label = blockLabel {
                     ViewerBlockConfirmSheet(
-                        title: l10n("safety.block.channelTitle", channelName),
+                        title: l10n("safety.block.channelTitle", label),
                         message: l10n("safety.block.channelMessage")
                     ) {
-                        blockStore.blockChannel(id: content.video.channelID, name: channelName)
+                        blockStore.blockChannel(id: content.video.channelID, name: label)
                     }
                 }
             }
@@ -196,7 +184,13 @@
                 case .failed:
                     ErrorStateView { Task { await model.load(language: l10n.language) } }
                 case .loaded(let content):
-                    if usesTwoPanes { twoPanes(content) } else { singleColumn(content) }
+                    if isChannelBlocked(content) {
+                        blockedPage(content)
+                    } else if usesTwoPanes {
+                        twoPanes(content)
+                    } else {
+                        singleColumn(content)
+                    }
                 }
             }
             .fanousPage()
@@ -230,34 +224,60 @@
             }
         #endif
 
+        /// Blocked watch page: hides title, description, chapters and player, showing only the report menu and one Unblock card.
+        private func blockedPage(_ content: WatchContent) -> some View {
+            let displayName = content.video.channelName ?? l10n("safety.blockedList.kind.channel")
+            let channelID = content.video.channelID?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return ScrollView {
+                VStack(spacing: FanousScale.spacingLg) {
+                    HStack {
+                        Spacer(minLength: 0)
+                        Menu {
+                            Link(
+                                destination: ViewerReportURL.video(
+                                    id: content.video.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
+                            ) {
+                                Label(l10n("safety.report.video"), systemImage: "flag")
+                            }
+                            .accessibilityIdentifier("report-video")
+                            if let channelID, !channelID.isEmpty {
+                                Link(
+                                    destination: ViewerReportURL.channel(
+                                        id: channelID, language: l10n.language.rawValue, webBaseURL: webBaseURL)
+                                ) {
+                                    Label(l10n("safety.report.channel"), systemImage: "flag")
+                                }
+                                .accessibilityIdentifier("report-channel")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3)
+                                .foregroundStyle(Fanous.textSecondary)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                                .accessibilityLabel(l10n("safety.moreActions"))
+                        }
+                        .menuIndicator(.hidden)
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("watch-actions-menu")
+                    }
+                    BlockedChannelCard(
+                        channelDisplayName: displayName,
+                        cardIdentifier: "watch-channel-blocked",
+                        unblockIdentifier: "watch-unblock-channel"
+                    ) {
+                        blockStore.unblockChannel(id: content.video.channelID, name: content.video.channelName)
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+            }
+        }
+
         @ViewBuilder
         private func playerArea(_ content: WatchContent) -> some View {
             VStack(spacing: 8) {
-                if isChannelBlocked(content) {
-                    VStack(spacing: 12) {
-                        Image(systemName: "hand.raised.slash")
-                            .font(.title2)
-                            .foregroundStyle(Fanous.textSecondary)
-                            .accessibilityHidden(true)
-                        if let name = content.video.channelName {
-                            Text(l10n("safety.blocked.channelBanner", name))
-                                .fanousFont(.body)
-                                .foregroundStyle(Fanous.textSecondary)
-                                .multilineTextAlignment(.center)
-                            Button(l10n("safety.unblock")) {
-                                blockStore.unblockChannel(id: content.video.channelID, name: name)
-                            }
-                            .buttonStyle(FanousButtonStyle(.secondary))
-                            .accessibilityIdentifier("watch-unblock-channel")
-                        }
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .aspectRatio(16 / 9, contentMode: .fit)
-                    .fanousMaterial(.hero) { .rounded($0.lg) }
-                    .padding(.horizontal)
-                    .accessibilityIdentifier("watch-channel-blocked")
-                } else if content.video.isPlayable {
+                if content.video.isPlayable {
                     PlayerSurface(controller: model.player)
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .accessibilityIdentifier("player")

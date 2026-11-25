@@ -11,6 +11,7 @@
         @State private var selection: String? = "home"
         /// Something is on air or coming: the Live section is there.
         @State private var hasLive = false
+        @State private var showingBlocked = false
         private let core: CoreBridge
 
         public init(core: CoreBridge) { self.core = core }
@@ -34,8 +35,11 @@
                 .navigationSplitViewColumnWidth(min: 160, ideal: 200)
             } detail: {
                 detail
-                    .toolbar { ToolbarItem { SettingsMenu() } }
+                    .toolbar { ToolbarItem { SettingsMenu { showingBlocked = true } } }
                     .navigationTitle(l10n("app.name"))
+            }
+            .sheet(isPresented: $showingBlocked) {
+                BlockedListSheet(store: .shared)
             }
             .frame(minWidth: 900, minHeight: 560)
             // A universal link reuses this window (instead of a new one) and opens the video in its own window.

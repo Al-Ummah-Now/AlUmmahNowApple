@@ -66,7 +66,7 @@ struct RailHeader: View {
 struct SettingsMenu: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.l10n) private var l10n
-    @State private var showingBlocked = false
+    var onOpenBlockedList: (() -> Void)?
 
     var body: some View {
         Menu {
@@ -81,13 +81,15 @@ struct SettingsMenu: View {
                 }
             }
             #if os(iOS) || os(macOS)
-                Divider()
-                Button {
-                    showingBlocked = true
-                } label: {
-                    Label(l10n("safety.blockedList.title"), systemImage: "hand.raised.slash")
+                if let onOpenBlockedList {
+                    Divider()
+                    Button {
+                        onOpenBlockedList()
+                    } label: {
+                        Label(l10n("safety.blockedList.title"), systemImage: "hand.raised.slash")
+                    }
+                    .accessibilityIdentifier("settings-blocked-list")
                 }
-                .accessibilityIdentifier("settings-blocked-list")
             #endif
         } label: {
             Image(systemName: "gearshape")
@@ -96,11 +98,6 @@ struct SettingsMenu: View {
                 .accessibilityLabel(l10n("common.settings"))
         }
         .accessibilityIdentifier("settings-menu")
-        #if os(iOS) || os(macOS)
-            .sheet(isPresented: $showingBlocked) {
-                BlockedListSheet(store: .shared)
-            }
-        #endif
     }
 }
 

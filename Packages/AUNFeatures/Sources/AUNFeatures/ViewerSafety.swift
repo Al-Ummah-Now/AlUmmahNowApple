@@ -207,6 +207,9 @@ struct ViewerBlockConfirmSheet: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var cancelFocused: Bool
     @AccessibilityFocusState private var cancelSpoken: Bool
+    @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 20
+    @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 15
+    @ScaledMetric(relativeTo: .subheadline) private var labelSize: CGFloat = 15
 
     let title: String
     let message: String
@@ -220,12 +223,12 @@ struct ViewerBlockConfirmSheet: View {
                     .foregroundStyle(Fanous.errorText)
                     .accessibilityHidden(true)
                 Text(title)
-                    .fanousFont(.title)
+                    .font(.system(size: titleSize, weight: .bold))
                     .foregroundStyle(Fanous.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(message)
-                    .fanousFont(.body)
+                    .font(.system(size: bodySize))
                     .foregroundStyle(Fanous.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 ViewThatFits {
@@ -255,11 +258,17 @@ struct ViewerBlockConfirmSheet: View {
     }
 
     @ViewBuilder private var buttons: some View {
-        let cancel = Button(l10n("common.cancel")) { dismiss() }
-            .buttonStyle(FanousButtonStyle(.primary))
-            .focused($cancelFocused)
-            .accessibilityFocused($cancelSpoken)
-            .accessibilityIdentifier("block-confirm-cancel")
+        let cancel = Button {
+            dismiss()
+        } label: {
+            Text(l10n("common.cancel"))
+                .font(.system(size: labelSize, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .buttonStyle(FanousButtonStyle(.primary))
+        .focused($cancelFocused)
+        .accessibilityFocused($cancelSpoken)
+        .accessibilityIdentifier("block-confirm-cancel")
         #if !os(tvOS)
             cancel.keyboardShortcut(.cancelAction)
         #else
@@ -269,10 +278,54 @@ struct ViewerBlockConfirmSheet: View {
             onConfirm()
             dismiss()
         } label: {
-            Text(l10n("safety.block.confirm")).foregroundStyle(Fanous.errorText)
+            Text(l10n("safety.block.confirm"))
+                .font(.system(size: labelSize, weight: .semibold))
+                .foregroundStyle(Fanous.errorText)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .buttonStyle(FanousButtonStyle(.secondary))
         .accessibilityIdentifier("block-confirm-action")
+    }
+}
+
+/// Full-width blocked-channel placeholder with wrapped message and Unblock action (scales with Dynamic Type).
+struct BlockedChannelCard: View {
+    @Environment(\.l10n) private var l10n
+    @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 16
+    @ScaledMetric(relativeTo: .subheadline) private var labelSize: CGFloat = 15
+
+    let channelDisplayName: String
+    let cardIdentifier: String
+    let unblockIdentifier: String
+    let onUnblock: () -> Void
+
+    var body: some View {
+        VStack(spacing: FanousScale.spacingMd) {
+            Image(systemName: "hand.raised.slash")
+                .font(.title2)
+                .foregroundStyle(Fanous.textSecondary)
+                .accessibilityHidden(true)
+            Text(l10n("safety.blocked.channelBanner", channelDisplayName))
+                .font(.system(size: bodySize))
+                .foregroundStyle(Fanous.textPrimary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                onUnblock()
+            } label: {
+                Text(l10n("safety.unblock"))
+                    .font(.system(size: labelSize, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(FanousButtonStyle(.secondary))
+            .accessibilityIdentifier(unblockIdentifier)
+        }
+        .padding(FanousScale.spacingXl)
+        .frame(maxWidth: 640, minHeight: 220)
+        .frame(maxWidth: .infinity)
+        .fanousMaterial(.hero) { .rounded($0.lg) }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(cardIdentifier)
     }
 }
 
@@ -281,6 +334,9 @@ struct ViewerBlockConfirmSheet: View {
     struct BlockedListSheet: View {
         @Environment(\.l10n) private var l10n
         @Environment(\.dismiss) private var dismiss
+        @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 16
+        @ScaledMetric(relativeTo: .caption) private var captionSize: CGFloat = 13
+        @ScaledMetric(relativeTo: .subheadline) private var labelSize: CGFloat = 15
         let store: ViewerBlockStore
 
         var body: some View {
@@ -291,31 +347,23 @@ struct ViewerBlockConfirmSheet: View {
                             title: l10n("safety.blockedList.emptyTitle"),
                             message: l10n("safety.blockedList.emptyMessage")
                         )
+                        .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("blocked-list-empty")
                     } else {
                         List {
                             ForEach(store.entries) { entry in
-                                HStack(spacing: FanousScale.spacingMd) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(entry.name)
-                                            .fanousFont(.body)
-                                            .foregroundStyle(Fanous.textPrimary)
-                                        Text(
-                                            l10n(
-                                                entry.kind == .channel
-                                                    ? "safety.blockedList.kind.channel" : "safety.blockedList.kind.user"
-                                            )
-                                        )
-                                        .fanousFont(.caption)
-                                        .foregroundStyle(Fanous.textSecondary)
+                                ViewThatFits(in: .horizontal) {
+                                    HStack(spacing: FanousScale.spacingMd) {
+                                        entryLabels(entry)
+                                        Spacer(minLength: 0)
+                                        unblockButton(entry)
                                     }
-                                    Spacer(minLength: 0)
-                                    Button(l10n("safety.unblock")) { store.unblock(id: entry.id) }
-                                        .buttonStyle(.borderless)
-                                        .foregroundStyle(Fanous.accent)
-                                        .accessibilityLabel("\(l10n("safety.unblock")) \(entry.name)")
-                                        .accessibilityIdentifier("unblock-\(entry.id)")
+                                    VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                                        entryLabels(entry)
+                                        unblockButton(entry)
+                                    }
                                 }
+                                .padding(.vertical, 4)
                                 .listRowBackground(Rectangle().fill(Fanous.surfaceRaised))
                             }
                         }
@@ -348,6 +396,38 @@ struct ViewerBlockConfirmSheet: View {
             #if os(macOS)
                 .frame(minWidth: 420, minHeight: 360)
             #endif
+        }
+
+        private func entryLabels(_ entry: BlockedEntry) -> some View {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.name)
+                    .font(.system(size: bodySize, weight: .medium))
+                    .foregroundStyle(Fanous.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    l10n(
+                        entry.kind == .channel
+                            ? "safety.blockedList.kind.channel" : "safety.blockedList.kind.user"
+                    )
+                )
+                .font(.system(size: captionSize))
+                .foregroundStyle(Fanous.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+
+        private func unblockButton(_ entry: BlockedEntry) -> some View {
+            Button {
+                store.unblock(id: entry.id)
+            } label: {
+                Text(l10n("safety.unblock"))
+                    .font(.system(size: labelSize, weight: .semibold))
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(Fanous.accent)
+            .frame(minHeight: 44)
+            .accessibilityLabel(l10n("safety.unblockFor", entry.name))
+            .accessibilityIdentifier("unblock-\(entry.id)")
         }
     }
 #endif

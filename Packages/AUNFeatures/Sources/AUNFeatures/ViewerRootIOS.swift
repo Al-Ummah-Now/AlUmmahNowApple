@@ -7,6 +7,7 @@
     public struct ViewerRootView: View {
         @Environment(\.l10n) private var l10n
         @State private var path: [ViewerDestination] = []
+        @State private var showingBlocked = false
         private let core: CoreBridge
 
         /// `initial` opens a page at launch (`-AUNOpenVideo <id>`, `-AUNOpenLive <id>`), for UI automation.
@@ -20,11 +21,18 @@
                 HomeView(core: core) { path.append($0) }
                     .navigationTitle(l10n("app.name"))
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .topBarTrailing) { SettingsMenu() } }
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            SettingsMenu { showingBlocked = true }
+                        }
+                    }
                     .fanousNavigationBar()
                     .navigationDestination(for: ViewerDestination.self) { destination in
                         screen(destination).navigationBarTitleDisplayMode(.inline).fanousNavigationBar()
                     }
+            }
+            .sheet(isPresented: $showingBlocked) {
+                BlockedListSheet(store: .shared)
             }
             .onOpenURL { url in
                 if let destination = ViewerLinks.destination(for: url) { path = [destination] }

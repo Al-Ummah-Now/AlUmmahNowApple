@@ -209,6 +209,7 @@ public final class LiveWatchModel {
         guard blocked != isBlocked else { return }
         isBlocked = blocked
         if blocked {
+            visit += 1
             loadedURL = nil
             player.stop()
             if hasBeaten, content?.mode == .live {
@@ -313,6 +314,7 @@ public final class LiveWatchModel {
         if now().timeIntervalSince(stateAt) >= stateInterval(content) { try await refreshState(content.stream) }
         guard let content = self.content, !isBlocked else { return }
         try await refreshChat(content)
+        guard !isBlocked else { return }
         if content.mode == .live, now() >= beatDue { beat() }
     }
 
@@ -352,6 +354,9 @@ public final class LiveWatchModel {
         if !hasChat || isReplayNew { (messages, pinned) = ([], nil) }
         if let count = timed.state.viewers { viewers = count }
         let content = LiveContent(stream: stream, timed: timed, mode: mode)
+        if ViewerBlockStore.shared.isChannelBlocked(id: stream.channelID, name: stream.channelName) {
+            isBlocked = true
+        }
         state = .loaded(content)
         updateCountdown(content)
         try await play(content)

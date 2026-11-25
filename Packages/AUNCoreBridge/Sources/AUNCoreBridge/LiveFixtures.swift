@@ -16,26 +16,37 @@ public struct FixtureLiveService: LiveServicing {
     }
 
     public static let liveID = "fixture-live"
+    public static let secondLiveID = "fixture-live-2"
     public static let comingID = "fixture-coming"
     public static let premiereID = "fixture-premiere"
     public static let recordingID = "fixture-recording"
+    public static let liveChannelID = "fixture-live-channel"
+    public static let secondLiveChannelID = "fixture-live-channel-2"
 
     private func text(_ en: String, _ ar: String) -> String { language == .ar ? ar : en }
 
     private var channel: String { text("Noor Learning", "نور للتعلّم") }
+    private var secondChannel: String { text("Al-Bayan Institute", "معهد البيان") }
 
     public var all: [LiveStream] {
         [
             LiveStream(
                 id: Self.liveID, title: text("Questions after Maghrib", "أسئلة بعد المغرب"),
                 description: text("Weekly. Questions are answered at the end.", "كل أسبوع. تُجاب الأسئلة في الآخر."),
-                status: .live, eventType: .halqa, channelName: channel, startedAt: now.addingTimeInterval(-1500), viewers: 128),
+                status: .live, eventType: .halqa, channelID: Self.liveChannelID, channelName: channel,
+                startedAt: now.addingTimeInterval(-1500), viewers: 128),
             LiveStream(
                 id: Self.comingID, title: text("Friday sermon", "خطبة الجمعة"), status: .scheduled, eventType: .jumuah,
-                channelName: channel, scheduledStart: now.addingTimeInterval(9 * 3600)),
+                channelID: Self.liveChannelID, channelName: channel, scheduledStart: now.addingTimeInterval(9 * 3600)),
             LiveStream(
                 id: Self.premiereID, title: text("Tafsir of Surah Al-Kahf", "تفسير سورة الكهف"), status: .scheduled,
-                kind: .premiere, channelName: channel, scheduledStart: now.addingTimeInterval(7954)),
+                kind: .premiere, channelID: Self.liveChannelID, channelName: channel,
+                scheduledStart: now.addingTimeInterval(7954)),
+            LiveStream(
+                id: Self.secondLiveID, title: text("Evening Quran Recitation", "تلاوة قرآنية مسائية"),
+                description: text("Live recitation from Surah Al-Mulk.", "تلاوة مباشرة من سورة الملك."),
+                status: .live, eventType: .halqa, channelID: Self.secondLiveChannelID, channelName: secondChannel,
+                startedAt: now.addingTimeInterval(-600), viewers: 64),
         ]
     }
 
@@ -51,7 +62,7 @@ public struct FixtureLiveService: LiveServicing {
         if id == Self.recordingID {
             return LiveStream(
                 id: id, title: text("Questions after Maghrib, last week", "أسئلة بعد المغرب، الأسبوع الماضي"), status: .ended,
-                channelName: channel)
+                channelID: Self.liveChannelID, channelName: channel)
         }
         guard let stream = all.first(where: { $0.id == id }) else { throw CoreError.notFound }
         return stream
@@ -61,10 +72,10 @@ public struct FixtureLiveService: LiveServicing {
         let clip = playable ? FixtureCatalogService.playableClip : URL(string: "https://fixtures.invalid/live/master.m3u8")
         let state: LiveState
         switch id {
-        case Self.liveID:
+        case Self.liveID, Self.secondLiveID:
             state = LiveState(
                 status: .live, sessionStatus: "live", playbackURL: clip, startedAt: now.addingTimeInterval(-1500),
-                eventType: .halqa, viewers: 128, chat: .init(enabled: true))
+                eventType: .halqa, viewers: id == Self.secondLiveID ? 64 : 128, chat: .init(enabled: true))
         case Self.premiereID:
             state = LiveState(
                 status: .scheduled, kind: .premiere, scheduledStart: now.addingTimeInterval(7954), durationSeconds: 1860,
@@ -98,13 +109,15 @@ public struct FixtureLiveService: LiveServicing {
             ),
         ].enumerated().map { index, m in
             LiveChatMessage(
-                id: "m\(index)", authorName: text(m.0, m.1), authorRole: m.2, text: text(m.3, m.4), offsetMs: index * 400)
+                id: "m\(index)", userID: "fixture-user-\(index)", authorName: text(m.0, m.1), authorRole: m.2,
+                text: text(m.3, m.4), offsetMs: index * 400)
         }
     }
 
     public var pinned: LiveChatMessage {
         LiveChatMessage(
-            id: "pin", authorName: channel, text: text("Please keep to today’s subject.", "نرجو الالتزام بموضوع اليوم."),
+            id: "pin", userID: Self.liveChannelID, authorName: channel,
+            text: text("Please keep to today’s subject.", "نرجو الالتزام بموضوع اليوم."),
             offsetMs: 0)
     }
 
