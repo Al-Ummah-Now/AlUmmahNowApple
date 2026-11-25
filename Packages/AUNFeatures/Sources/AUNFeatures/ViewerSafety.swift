@@ -83,11 +83,16 @@ public final class ViewerBlockStore {
     public private(set) var entries: [BlockedEntry] = []
 
     private let defaults: UserDefaults
+    private let persists: Bool
     private let key = "AUNViewerBlockedEntries"
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        if let data = defaults.data(forKey: key), let decoded = try? JSONDecoder().decode([BlockedEntry].self, from: data) {
+        let ephemeralFixtures = defaults === UserDefaults.standard && defaults.bool(forKey: "AUNUseFixtures")
+        self.persists = !ephemeralFixtures
+        if persists, let data = defaults.data(forKey: key),
+            let decoded = try? JSONDecoder().decode([BlockedEntry].self, from: data)
+        {
             entries = decoded
         }
     }
@@ -99,8 +104,9 @@ public final class ViewerBlockStore {
         save()
     }
 
-    public func blockChatUser(id: String? = nil, name: String) {
-        let keyID = Self.chatUserKey(id: id, name: name)
+    /// Blocks a live-chat user by stable user ID only (parity with Android #70; never falls back to display name).
+    public func blockChatUser(id: String?, name: String) {
+        guard let keyID = Self.chatUserKey(id: id) else { return }
         guard !entries.contains(where: { $0.id == keyID }) else { return }
         entries.insert(BlockedEntry(id: keyID, kind: .chatUser, name: name), at: 0)
         save()
@@ -149,20 +155,9 @@ public final class ViewerBlockStore {
         }
     }
 
-    public func isChatUserBlocked(id: String? = nil, name: String?) -> Bool {
-        let cleanID = id?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let byID = (cleanID?.isEmpty == false) ? Self.chatUserKey(id: cleanID, name: name ?? "") : nil
-        let cleanName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let byName = (cleanName?.isEmpty == false) ? Self.chatUserKey(id: nil, name: cleanName!) : nil
-        let legacyName = (cleanName?.isEmpty == false) ? "user:\(cleanName!.lowercased())" : nil
-        return entries.contains { entry in
-            guard entry.kind == .chatUser else { return false }
-            if let byID, entry.id == byID { return true }
-            if byID != nil && entry.id.hasPrefix("user:id:") { return false }
-            if let byName, entry.id == byName { return true }
-            if let legacyName, entry.id == legacyName { return true }
-            return false
-        }
+    public func isChatUserBlocked(id: String? = nil, name: String? = nil) -> Bool {
+        guard let byID = Self.chatUserKey(id: id) else { return false }
+        return entries.contains { $0.kind == .chatUser && $0.id == byID }
     }
 
     public func filterVideos(_ videos: [Video]) -> [Video] {
@@ -189,12 +184,13 @@ public final class ViewerBlockStore {
         return "channel:name:\(name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
     }
 
-    static func chatUserKey(id: String? = nil, name: String) -> String {
-        if let id = id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty { return "user:id:\(id)" }
-        return "user:name:\(name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+    static func chatUserKey(id: String?) -> String? {
+        guard let id = id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else { return nil }
+        return "user:id:\(id)"
     }
 
     private func save() {
+        guard persists else { return }
         if let data = try? JSONEncoder().encode(entries) {
             defaults.set(data, forKey: key)
         }
@@ -316,7 +312,10 @@ struct BlockedChannelCard: View {
             } label: {
                 Text(l10n("safety.unblock"))
                     .font(.system(size: labelSize, weight: .semibold))
+                    .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 6)
             }
             .buttonStyle(FanousButtonStyle(.secondary))
             .accessibilityIdentifier(unblockIdentifier)
@@ -399,9 +398,15 @@ struct BlockedChannelCard: View {
             #endif
         }
 
+        private func displayName(for entry: BlockedEntry) -> String {
+            let trimmed = entry.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+            return l10n(entry.kind == .channel ? "safety.blockedList.kind.channel" : "safety.blockedList.kind.user")
+        }
+
         private func entryLabels(_ entry: BlockedEntry) -> some View {
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
+                Text(displayName(for: entry))
                     .font(.system(size: bodySize, weight: .medium))
                     .foregroundStyle(Fanous.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -427,7 +432,7 @@ struct BlockedChannelCard: View {
             .buttonStyle(.borderless)
             .foregroundStyle(Fanous.accent)
             .frame(minHeight: 44)
-            .accessibilityLabel(l10n("safety.unblockFor", entry.name))
+            .accessibilityLabel(l10n("safety.unblockFor", displayName(for: entry)))
             .accessibilityIdentifier("unblock-\(entry.id)")
         }
     }

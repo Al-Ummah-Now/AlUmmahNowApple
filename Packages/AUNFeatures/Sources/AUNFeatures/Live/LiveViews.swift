@@ -198,9 +198,9 @@ import SwiftUI
                             }
                         } label: {
                             Image(systemName: "ellipsis.circle")
-                                .font(.title3)
+                                .font(.system(size: 22))
                                 .foregroundStyle(Fanous.textSecondary)
-                                .frame(width: 44, height: 44)
+                                .frame(minWidth: 44, minHeight: 44)
                                 .contentShape(Rectangle())
                                 .accessibilityLabel(l10n("safety.moreActions"))
                         }
@@ -208,6 +208,7 @@ import SwiftUI
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("live-actions-menu")
                     }
+                    .padding(.bottom, 4)
                     BlockedChannelCard(
                         channelDisplayName: displayName,
                         cardIdentifier: "live-channel-blocked",
@@ -241,17 +242,46 @@ import SwiftUI
 #endif
 
 #if os(tvOS)
-    /// Full screen; the chat is beside it, for reading.
+    private struct TVReportRequest: Identifiable {
+        let id: String
+        let titleKey: String
+        let bodyKey: String
+        let url: URL
+    }
+
+    /// Full screen; the chat is beside it, for reading and reporting.
     struct TVLiveWatchView: View {
         @Environment(\.l10n) private var l10n
         @Environment(\.scenePhase) private var scenePhase
         @State private var model: LiveWatchModel
-        @State private var showingReport = false
+        @State private var reportRequest: TVReportRequest?
         private let webBaseURL: URL
 
         init(streamID: String, core: CoreBridge) {
             _model = State(initialValue: LiveWatchModel(streamID: streamID, live: core.live, catalog: core.catalog))
             self.webBaseURL = core.environment.webBaseURL
+        }
+
+        private func openStreamReport(_ stream: LiveStream) {
+            model.pauseForReport()
+            reportRequest = TVReportRequest(
+                id: "stream:\(stream.id)",
+                titleKey: "safety.report.stream",
+                bodyKey: "safety.report.tvStreamBody",
+                url: ViewerReportURL.liveStream(
+                    id: stream.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
+            )
+        }
+
+        private func openMessageReport(streamID: String, message: LiveChatMessage) {
+            model.pauseForReport()
+            reportRequest = TVReportRequest(
+                id: "chat:\(message.id)",
+                titleKey: "safety.report.message",
+                bodyKey: "safety.report.tvMessageBody",
+                url: ViewerReportURL.liveChat(
+                    streamID: streamID, messageID: message.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
+            )
         }
 
         var body: some View {
@@ -267,20 +297,22 @@ import SwiftUI
                                 PlayerSurface(
                                     controller: model.player,
                                     reportTitle: l10n("safety.report.stream"),
-                                    reportIdentifier: "tv-report-stream"
+                                    reportIdentifier: "tv-report-stream-transport"
                                 ) {
-                                    model.player.pause()
-                                    showingReport = true
+                                    openStreamReport(content.stream)
                                 }
                                 .aspectRatio(16 / 9, contentMode: .fit)
                                 .accessibilityIdentifier("player")
-                                if model.isBehind {
-                                    Button(l10n("live.return")) { model.returnToLive() }.accessibilityIdentifier("live-return")
-                                }
                             } else {
                                 LiveNotice(content: content, untilStart: model.untilStart)
+                            }
+                            HStack(spacing: 20) {
+                                if model.isBehind, content.mode == .live || content.mode == .recording {
+                                    Button(l10n("live.return")) { model.returnToLive() }
+                                        .accessibilityIdentifier("live-return")
+                                }
                                 Button {
-                                    showingReport = true
+                                    openStreamReport(content.stream)
                                 } label: {
                                     Label(l10n("safety.report.stream"), systemImage: "flag")
                                 }
@@ -293,20 +325,20 @@ import SwiftUI
                         if content.hasChat {
                             LiveChatView(
                                 streamID: content.stream.id, webBaseURL: webBaseURL, messages: model.messages,
-                                pinned: model.pinned, isReplay: content.mode == .recording
+                                pinned: model.pinned, isReplay: content.mode == .recording,
+                                onReportMessage: { openMessageReport(streamID: content.stream.id, message: $0) }
                             )
                             .frame(width: 480)
                         }
                     }
                     .padding(60)
-                    .sheet(isPresented: $showingReport) {
+                    .sheet(item: $reportRequest) { request in
                         TVReportSheet(
-                            title: l10n("safety.report.stream"),
-                            bodyKey: "safety.report.tvStreamBody",
-                            url: ViewerReportURL.liveStream(
-                                id: content.stream.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
+                            title: l10n(request.titleKey),
+                            bodyKey: request.bodyKey,
+                            url: request.url
                         ) {
-                            showingReport = false
+                            reportRequest = nil
                         }
                     }
                 }

@@ -202,6 +202,11 @@ public final class LiveWatchModel {
         player.stop()
     }
 
+    /// Pauses playback when opening the Report sheet so the live stream does not keep playing behind it.
+    public func pauseForReport() {
+        player.pause()
+    }
+
     /// True while the stream's channel is blocked on this device; stops playback, loading, polling, and viewer beats.
     public private(set) var isBlocked = false
 
@@ -354,11 +359,12 @@ public final class LiveWatchModel {
         if !hasChat || isReplayNew { (messages, pinned) = ([], nil) }
         if let count = timed.state.viewers { viewers = count }
         let content = LiveContent(stream: stream, timed: timed, mode: mode)
-        if ViewerBlockStore.shared.isChannelBlocked(id: stream.channelID, name: stream.channelName) {
-            isBlocked = true
-        }
         state = .loaded(content)
         updateCountdown(content)
+        if ViewerBlockStore.shared.isChannelBlocked(id: stream.channelID, name: stream.channelName) {
+            setBlocked(true)
+            return
+        }
         try await play(content)
     }
 

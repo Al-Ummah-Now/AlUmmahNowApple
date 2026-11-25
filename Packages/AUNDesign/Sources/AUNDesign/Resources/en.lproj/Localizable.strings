@@ -450,6 +450,8 @@
 "safety.report.message" = "Report message";
 "safety.report.tvBody" = "To report this video, scan the code or visit %@ in a browser on your phone or computer.";
 "safety.report.tvStreamBody" = "To report this live stream, scan the code or visit %@ in a browser on your phone or computer.";
+"safety.report.tvMessageBody" = "To report this message, scan the code or visit %@ in a browser on your phone or computer.";
+"safety.report.qrLabel" = "Report QR code";
 "safety.block.channel" = "Block channel";
 "safety.block.user" = "Block user";
 "safety.block.confirm" = "Block";

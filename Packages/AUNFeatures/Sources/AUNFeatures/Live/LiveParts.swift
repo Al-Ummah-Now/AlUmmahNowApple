@@ -126,16 +126,19 @@ struct LiveChatView: View {
     let messages: [LiveChatMessage]
     let pinned: LiveChatMessage?
     let isReplay: Bool
+    let onReportMessage: ((LiveChatMessage) -> Void)?
 
     init(
         streamID: String = "", webBaseURL: URL,
-        messages: [LiveChatMessage], pinned: LiveChatMessage?, isReplay: Bool
+        messages: [LiveChatMessage], pinned: LiveChatMessage?, isReplay: Bool,
+        onReportMessage: ((LiveChatMessage) -> Void)? = nil
     ) {
         self.streamID = streamID
         self.webBaseURL = webBaseURL
         self.messages = messages
         self.pinned = pinned
         self.isReplay = isReplay
+        self.onReportMessage = onReportMessage
     }
 
     private var blockStore: ViewerBlockStore { .shared }
@@ -210,52 +213,78 @@ struct LiveChatView: View {
     }
 
     private func line(_ message: LiveChatMessage) -> some View {
-        HStack(alignment: .top, spacing: FanousScale.spacingXs) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    if isReplay {
-                        Text(DisplayFormat.duration(Double(message.offsetMs) / 1000, l10n.language)).monospacedDigit()
-                            .foregroundStyle(Fanous.textSecondary)
-                    }
-                    Text(message.authorName).fontWeight(.semibold).foregroundStyle(Fanous.textSecondary)
-                    if let role = message.authorRole { LiveTag(text: l10n("live.chat.role.\(role.rawValue)")) }
-                }
-                .fanousFont(.caption)
-                Text(message.text).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .accessibilityElement(children: .combine)
-            #if os(iOS) || os(macOS)
-                Menu {
-                    Link(
-                        destination: ViewerReportURL.liveChat(
-                            streamID: streamID, messageID: message.id, language: l10n.language.rawValue,
-                            webBaseURL: webBaseURL)
-                    ) {
-                        Label(l10n("safety.report.message"), systemImage: "flag")
-                    }
-                    .accessibilityIdentifier("report-chat-\(message.id)")
+        Group {
+            #if os(tvOS)
+                if let onReportMessage {
                     Button {
-                        blockingMessage = message
+                        onReportMessage(message)
                     } label: {
-                        Label(l10n("safety.block.user"), systemImage: "hand.raised.slash")
+                        messageBody(message)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 8)
+                            .contentShape(Rectangle())
                     }
-                    .accessibilityIdentifier("block-chat-user-\(message.id)")
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.caption)
-                        .foregroundStyle(Fanous.textSecondary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                        .accessibilityLabel(l10n("safety.moreActionsFor", message.authorName))
+                    .buttonStyle(.plain)
+                    .accessibilityHint(l10n("safety.report.message"))
+                    .accessibilityIdentifier("tv-report-chat-\(message.id)")
+                } else {
+                    messageBody(message)
                 }
-                .menuIndicator(.hidden)
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("chat-actions-\(message.id)")
+            #else
+                let userID = message.userID?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let hasUserID = userID?.isEmpty == false
+                HStack(alignment: .top, spacing: FanousScale.spacingXs) {
+                    messageBody(message)
+                    Menu {
+                        Link(
+                            destination: ViewerReportURL.liveChat(
+                                streamID: streamID, messageID: message.id, language: l10n.language.rawValue,
+                                webBaseURL: webBaseURL)
+                        ) {
+                            Label(l10n("safety.report.message"), systemImage: "flag")
+                        }
+                        .accessibilityIdentifier("report-chat-\(message.id)")
+                        if hasUserID {
+                            Button {
+                                blockingMessage = message
+                            } label: {
+                                Label(l10n("safety.block.user"), systemImage: "hand.raised.slash")
+                            }
+                            .accessibilityIdentifier("block-chat-user-\(message.id)")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.caption)
+                            .foregroundStyle(Fanous.textSecondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                            .accessibilityLabel(l10n("safety.moreActionsFor", message.authorName))
+                    }
+                    .menuIndicator(.hidden)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("chat-actions-\(message.id)")
+                }
             #endif
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live-chat-message-\(message.id)")
+    }
+
+    private func messageBody(_ message: LiveChatMessage) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                if isReplay {
+                    Text(DisplayFormat.duration(Double(message.offsetMs) / 1000, l10n.language)).monospacedDigit()
+                        .foregroundStyle(Fanous.textSecondary)
+                }
+                Text(message.authorName).fontWeight(.semibold).foregroundStyle(Fanous.textSecondary)
+                if let role = message.authorRole { LiveTag(text: l10n("live.chat.role.\(role.rawValue)")) }
+            }
+            .fanousFont(.caption)
+            Text(message.text).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -408,7 +437,7 @@ struct LiveDetails: View {
                         title: l10n("safety.block.channelTitle", label),
                         message: l10n("safety.block.channelMessage")
                     ) {
-                        blockStore.blockChannel(id: content.stream.channelID, name: label)
+                        blockStore.blockChannel(id: content.stream.channelID, name: channelName ?? "")
                     }
                 }
             }

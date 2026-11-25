@@ -160,7 +160,7 @@ struct ViewerSafetyTests {
         #expect(prod.absoluteString == "https://videos.alummahnow.net")
     }
 
-    @Test @MainActor func liveWatchModelReChecksBlockedAfterChatAndBumpsVisitOnBlock() async throws {
+    @Test @MainActor func liveWatchModelReChecksBlockedMidChatReadAndBumpsVisitMidBeat() async throws {
         let clock = TestClock()
         let url = URL(string: "https://x.test/live.m3u8")!
         let live = StubLive(LiveState(status: .live, playbackURL: url, chat: .init(enabled: true)))
@@ -169,23 +169,114 @@ struct ViewerSafetyTests {
         await model.tick()
         await model.settled()
         let beatsAfterFirst = await live.beats
+        #expect(beatsAfterFirst == 1)
 
-        // Blocking while a poll runs must bump visit and never send a follow-up normal beat.
+        // Hold the next chat read mid-flight while a beat is also due, then block before chat returns:
+        // the guard after refreshChat must prevent a new normal beat from firing.
+        clock.advance(25)
+        await live.set(holdsChat: true)
+        let pollTask = Task { await model.poll() }
+        try await until { await live.isChatHeld }
         model.setBlocked(true)
+        await live.set(holdsChat: false)
+        await live.releaseChat()
+        await pollTask.value
         try await until { await live.leaves == 1 }
-        await model.settled()
-        clock.advance(60)
-        await model.tick()
         await model.settled()
         #expect(await live.beats == beatsAfterFirst)
         #expect(await live.leaves == 1)
+
+        // Unblock, hold a beat mid-flight, then block again before the beat answers:
+        // visit bump must ignore the stale beat's viewer count and still send leave.
+        model.setBlocked(false)
+        await live.set(holdsBeats: true)
+        let beatPoll = Task { await model.poll() }
+        try await until { await live.isBeatHeld }
+        model.setBlocked(true)
+        await live.set(holdsBeats: false)
+        await live.releaseBeat()
+        await beatPoll.value
+        try await until { await live.leaves == 2 }
+        await model.settled()
+        #expect(model.isBlocked)
+        #expect(model.player.item == nil)
         model.close()
+    }
+
+    @Test @MainActor func liveWatchModelShowStopsPlaybackAndSendsLeaveWhenBlockedOutsideView() async throws {
+        let clock = TestClock()
+        let url = URL(string: "https://x.test/live.m3u8")!
+        let live = StubLive(LiveState(status: .live, playbackURL: url, chat: .init(enabled: true)))
+        let channelID = "ch-race-\(UUID().uuidString)"
+        await live.set(channelID: channelID, channelName: "Race Channel")
+        defer { ViewerBlockStore.shared.unblockChannel(id: channelID, name: "Race Channel") }
+
+        let model = LiveWatchModel(streamID: "s-race", live: live, catalog: FixtureCatalogService(), now: { clock.now })
+        await model.load(language: .en)
+        await model.tick()
+        await model.settled()
+        #expect(model.player.item != nil)
+        #expect(await live.beats == 1)
+
+        // Block in the shared store without calling setBlocked(true) (simulates another window / onChange race),
+        // then let refreshState -> show() land: must stop player and send leave.
+        ViewerBlockStore.shared.blockChannel(id: channelID, name: "Race Channel")
+        clock.advance(65)
+        await model.tick()
+        try await until { await live.leaves == 1 }
+        await model.settled()
+        #expect(model.isBlocked)
+        #expect(model.player.item == nil)
+        #expect(await live.leaves == 1)
+        model.close()
+    }
+
+    @Test @MainActor func chatUserWithoutIDIsNotBlockedByNameAndUnnamedChannelStoresEmptyName() {
+        let suite = "AUNViewerSafetyTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = ViewerBlockStore(defaults: defaults)
+        store.blockChatUser(id: nil, name: "Ahmad")
+        store.blockChatUser(id: "   ", name: "Ahmad")
+        #expect(store.entries.isEmpty)
+        #expect(!store.isChatUserBlocked(id: nil, name: "Ahmad"))
+
+        store.blockChannel(id: "ch-nameless", name: "")
+        #expect(store.isChannelBlocked(id: "ch-nameless", name: nil))
+        #expect(store.entries.first?.name == "")
+    }
+
+    @Test @MainActor func pauseForReportPausesWatchAndLivePlaybackWithoutClearingItem() async {
+        let clock = TestClock()
+        let url = URL(string: "https://x.test/live.m3u8")!
+        let live = StubLive(LiveState(status: .live, playbackURL: url))
+        let liveModel = LiveWatchModel(streamID: "s1", live: live, catalog: FixtureCatalogService(), now: { clock.now })
+        await liveModel.load(language: .en)
+        #expect(liveModel.player.item != nil)
+        #expect(liveModel.player.player.timeControlStatus != .paused)
+        liveModel.pauseForReport()
+        #expect(liveModel.player.player.timeControlStatus == .paused)
+        #expect(liveModel.player.item != nil)
+        liveModel.close()
+
+        let catalog = HeldCatalog()
+        await catalog.release()
+        let watchModel = WatchViewModel(videoID: "v1", catalog: catalog)
+        await watchModel.load(language: .en)
+        #expect(watchModel.player.item != nil)
+        #expect(watchModel.player.player.timeControlStatus != .paused)
+        watchModel.pauseForReport()
+        #expect(watchModel.player.player.timeControlStatus == .paused)
+        #expect(watchModel.player.item != nil)
+        watchModel.player.stop()
     }
 
     @Test func allSafetyKeysLocalizeInEnglishAndArabic() {
         let keys = [
             "safety.moreActions", "safety.moreActionsFor", "safety.report.video", "safety.report.channel",
             "safety.report.stream", "safety.report.message", "safety.report.tvBody", "safety.report.tvStreamBody",
+            "safety.report.tvMessageBody", "safety.report.qrLabel",
             "safety.block.channel", "safety.block.user", "safety.block.confirm", "safety.block.channelTitle",
             "safety.block.channelMessage", "safety.block.userTitle", "safety.block.userMessage",
             "safety.blocked.channelBanner", "safety.blocked.homeEmpty", "safety.blockedList.title",
