@@ -170,7 +170,7 @@ struct AppUpdateTests {
         await first.dismiss(version: "1.3.0")
         let second = try service(defaults: suite) { _ in (200, [:], Self.body) }
         #expect(try await second.check().prompt == nil)
-        let newer = Data(String(decoding: Self.body, as: UTF8.self).replacing("1.3.0", with: "1.3.1").utf8)
+        let newer = Data(try #require(String(bytes: Self.body, encoding: .utf8)).replacing("1.3.0", with: "1.3.1").utf8)
         let third = try service(defaults: suite) { _ in (200, [:], newer) }
         #expect(try await third.check().prompt?.version == "1.3.1")
     }
