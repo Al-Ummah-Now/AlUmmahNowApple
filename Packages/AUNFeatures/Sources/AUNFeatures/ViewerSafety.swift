@@ -205,6 +205,7 @@ public final class ViewerBlockStore {
 struct ViewerBlockConfirmSheet: View {
     @Environment(\.l10n) private var l10n
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @FocusState private var cancelFocused: Bool
     @AccessibilityFocusState private var cancelSpoken: Bool
     @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 20
@@ -250,7 +251,7 @@ struct ViewerBlockConfirmSheet: View {
         .fanousPage()
         .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
         #if os(iOS)
-            .presentationDetents([.medium, .large])
+            .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
             .presentationBackground { FanousSurfaceKind(kind: .page, shape: .rect) }
         #elseif os(macOS)
             .frame(minWidth: 400, minHeight: 280)
