@@ -110,13 +110,15 @@ public enum FanousTypeface {
 }
 
 extension FanousTheme {
-    /// The font for a role in the theme's typeface, scaled with Dynamic Type.
-    public func font(_ role: FanousTextRole, arabic: Bool) -> Font {
+    /// The font for a role in the theme's typeface, scaled with Dynamic Type. A bundled face scales itself
+    /// (`relativeTo`); the system face at a fixed size does not, so the caller passes Dynamic Type's `scale` for the
+    /// role's text style (`fanousFont` does).
+    public func font(_ role: FanousTextRole, arabic: Bool, scale: Double = 1) -> Font {
         FanousTypeface.register()
         let style = role.style(arabic: arabic)
         let weight = FanousTypeface.weight(style.weight)
         guard let family = FanousTypeface.family(arabic ? tokens.font.arabic : tokens.font.latin) else {
-            return .system(size: style.size, weight: weight)
+            return .system(size: style.size * scale, weight: weight)
         }
         return .custom(family, size: style.size, relativeTo: role.textStyle).weight(weight)
     }
@@ -125,16 +127,25 @@ extension FanousTheme {
 private struct FanousFontModifier: ViewModifier {
     @Environment(\.fanous) private var theme
     @Environment(\.locale) private var locale
+    /// 100 at the default text size, scaled by Dynamic Type as the role's text style is: the factor for the system face
+    /// and for the line spacing and tracking, which otherwise stay at their default-size values.
+    @ScaledMetric private var hundred: CGFloat
     let role: FanousTextRole
 
+    init(role: FanousTextRole) {
+        self.role = role
+        _hundred = ScaledMetric(wrappedValue: 100, relativeTo: role.textStyle)
+    }
+
     func body(content: Content) -> some View {
+        let scale = hundred / 100
         let arabic = locale.language.languageCode == .arabic
         let style = role.style(arabic: arabic)
         let family = FanousTypeface.family(arabic ? theme.tokens.font.arabic : theme.tokens.font.latin)
         content
-            .font(theme.font(role, arabic: arabic))
-            .tracking(style.letterSpacing)
-            .lineSpacing(FanousTypeface.extraLeading(family: family, style: style))
+            .font(theme.font(role, arabic: arabic, scale: scale))
+            .tracking(style.letterSpacing * scale)
+            .lineSpacing(FanousTypeface.extraLeading(family: family, style: style) * scale)
     }
 }
 

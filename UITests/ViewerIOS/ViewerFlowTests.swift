@@ -156,4 +156,41 @@ final class ViewerFlowTests: XCTestCase {
         unblock.tap()
         XCTAssertTrue(app.descendants(matching: .any)["blocked-list-empty"].firstMatch.waitForExistence(timeout: 10))
     }
+
+    /// Text in the Fanous type roles grows with Dynamic Type, in the system face too (#107): the "Trending" heading and a
+    /// card's title are taller at an accessibility size than at the default, in English and Arabic.
+    @MainActor
+    func testTextGrowsWithDynamicType() {
+        for (language, heading) in [("en", "Trending"), ("ar", "الأكثر رواجًا")] {
+            var heights: [String: CGFloat] = [:]
+            for size in ["UICTContentSizeCategoryL", "UICTContentSizeCategoryAccessibilityL"] {
+                for theme in ["dark", "light"] {
+                    let app = XCUIApplication()
+                    app.launchArguments = [
+                        "-AUNUseFixtures", "YES", "-AUNLanguage", language, "-AUNTheme", theme,
+                        "-UIPreferredContentSizeCategoryName", size,
+                    ]
+                    app.launch()
+                    let title = app.staticTexts[heading].firstMatch
+                    var swipes = 0
+                    while !title.waitForExistence(timeout: 10), swipes < 4 {
+                        app.swipeUp()
+                        swipes += 1
+                    }
+                    XCTAssertTrue(title.exists, heading)
+                    heights[size] = title.frame.height
+                    if size == "UICTContentSizeCategoryAccessibilityL" {
+                        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                        shot.name = "viewer-dynamictype-\(language)-\(theme)"
+                        shot.lifetime = .keepAlways
+                        add(shot)
+                    }
+                    app.terminate()
+                }
+            }
+            XCTAssertGreaterThan(
+                heights["UICTContentSizeCategoryAccessibilityL", default: 0],
+                heights["UICTContentSizeCategoryL", default: 0] * 1.2, "\(language) heading did not grow")
+        }
+    }
 }
