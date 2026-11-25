@@ -47,12 +47,18 @@ public struct Refusal: Equatable, Sendable {
     public var retryAfter: Int?
     /// The plan entitlement that refused it, for `upgrade_required`.
     public var entitlement: String?
+    /// Latest Creator Terms version returned on 409 `terms_version_changed`.
+    public var currentVersion: String?
 
-    public init(code: String, message: String? = nil, retryAfter: Int? = nil, entitlement: String? = nil) {
+    public init(
+        code: String, message: String? = nil, retryAfter: Int? = nil, entitlement: String? = nil,
+        currentVersion: String? = nil
+    ) {
         self.code = code
         self.message = message
         self.retryAfter = retryAfter
         self.entitlement = entitlement
+        self.currentVersion = currentVersion
     }
 
     /// No creator tier: uploads and channel creation are by invitation (403).
@@ -69,12 +75,17 @@ public struct Refusal: Equatable, Sendable {
     public static let banned = "videos_banned"
     /// Dislikes were removed from the product (410).
     public static let dislikesDisabled = "dislikes_disabled"
+    /// The creator has not accepted the current Creator Terms & Community Guidelines (403).
+    public static let termsRequired = "terms_required"
+    /// The Creator Terms version changed before acceptance was recorded (409, `currentVersion`).
+    public static let termsVersionChanged = "terms_version_changed"
 
     /// A gated API's answer while its feature is off for the caller (404, no message); see `CoreError.featureOff`.
     public static let featureOff = "feature_off"
 
     public static let known: Set<String> = [
         uploadsByInvitation, channelLimit, uploadLimit, upgradeRequired, accountPendingDeletion, banned, dislikesDisabled,
+        termsRequired, termsVersionChanged,
     ]
 
     /// The refusal in an error body, if it carries a known code (in `code`, or in `error` as `upgrade_required` does).
@@ -83,9 +94,11 @@ public struct Refusal: Equatable, Sendable {
         let candidates = [object["code"], object["error"]].compactMap { $0 as? String }
         guard let code = candidates.first(where: known.contains) else { return nil }
         let message = (object["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentVersion = (object["currentVersion"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return Refusal(
             code: code, message: message?.isEmpty == false ? message : nil,
-            retryAfter: (object["retryAfter"] as? NSNumber)?.intValue, entitlement: object["entitlement"] as? String)
+            retryAfter: (object["retryAfter"] as? NSNumber)?.intValue, entitlement: object["entitlement"] as? String,
+            currentVersion: currentVersion?.isEmpty == false ? currentVersion : nil)
     }
 
     /// A tier or plan refusal: nothing to say, the entry point is hidden.

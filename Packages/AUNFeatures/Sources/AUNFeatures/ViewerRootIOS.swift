@@ -23,7 +23,7 @@
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            SettingsMenu { showingBlocked = true }
+                            SettingsMenu(environment: core.environment) { showingBlocked = true }
                         }
                     }
                     .fanousNavigationBar()

@@ -28,8 +28,11 @@ public enum StudioBootstrap {
         if defaults.bool(forKey: "AUNUseFixtures") {
             let state = defaults.string(forKey: "AUNFixtureAccountState").flatMap(FixtureStudioService.AccountState.init)
             let off = (defaults.string(forKey: "AUNFixtureFeaturesOff") ?? "").split(separator: ",").map(String.init)
+            let termsMode =
+                defaults.string(forKey: "AUNFixtureTermsMode").flatMap(FixtureStudioService.TermsMode.init) ?? .accepted
             return .fixtures(
-                signedIn: defaults.bool(forKey: "AUNFixtureSignedIn"), accountState: state ?? .creator, featuresOff: Set(off))
+                signedIn: defaults.bool(forKey: "AUNFixtureSignedIn"), accountState: state ?? .creator,
+                featuresOff: Set(off), termsMode: termsMode)
         }
         let environment = AppEnvironment.fromInfoDictionary(bundle.infoDictionary)
         do {

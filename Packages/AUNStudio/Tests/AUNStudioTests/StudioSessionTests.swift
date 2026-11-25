@@ -132,4 +132,117 @@ struct StudioSessionTests {
         #expect(session.accounts.isEmpty)
         #expect(session.channel == nil)
     }
+
+    private final class TermsStudioService: StudioServicing, @unchecked Sendable {
+        let base = FixtureStudioService()
+        var accessResult: Result<CreatorAccess, any Error> = .success(
+            CreatorAccess(termsAccepted: false, termsVersion: "2026-11-24"))
+        var acceptError: (any Error)?
+        var acceptCalls = 0
+        var acceptedVersions: [String] = []
+
+        func channels() async throws -> [StudioChannel] { try await base.channels() }
+        func playlists(channelID: String) async throws -> [StudioPlaylist] { try await base.playlists(channelID: channelID) }
+        func initiateUpload(_ upload: UploadInitiation, channelID: String) async throws -> UploadTicket {
+            try await base.initiateUpload(upload, channelID: channelID)
+        }
+        func resumeUpload(videoID: String, channelID: String) async throws -> UploadTicket {
+            try await base.resumeUpload(videoID: videoID, channelID: channelID)
+        }
+        func completeUpload(videoID: String, fileSize: Int64, channelID: String) async throws {
+            try await base.completeUpload(videoID: videoID, fileSize: fileSize, channelID: channelID)
+        }
+        func tusEndpoint() async throws -> (url: URL, headers: [String: String]) { try await base.tusEndpoint() }
+        func setLanguage(_ language: VideoLanguage, videoID: String, channelID: String) async throws {
+            try await base.setLanguage(language, videoID: videoID, channelID: channelID)
+        }
+        func addToPlaylists(_ playlistIDs: [String], videoID: String, orderKey: String, channelID: String) async throws {
+            try await base.addToPlaylists(playlistIDs, videoID: videoID, orderKey: orderKey, channelID: channelID)
+        }
+        func schedule(videoID: String, at date: Date, timeZone: TimeZone, channelID: String) async throws {
+            try await base.schedule(videoID: videoID, at: date, timeZone: timeZone, channelID: channelID)
+        }
+        func content(channelID: String, query: ContentQuery, cursor: String?) async throws -> ContentPage {
+            try await base.content(channelID: channelID, query: query, cursor: cursor)
+        }
+        func contentCounts(channelID: String) async throws -> ContentCounts { try await base.contentCounts(channelID: channelID) }
+        func updateVideo(_ id: String, _ edit: VideoEdit, channelID: String) async throws {
+            try await base.updateVideo(id, edit, channelID: channelID)
+        }
+        func deleteVideos(_ ids: [String], channelID: String) async throws -> BulkResult {
+            try await base.deleteVideos(ids, channelID: channelID)
+        }
+        func bulkUpdate(_ ids: [String], _ changes: BulkChanges, channelID: String) async throws -> BulkResult {
+            try await base.bulkUpdate(ids, changes, channelID: channelID)
+        }
+        func bulkSchedule(_ ids: [String], startAt: Date, intervalMinutes: Int, timeZone: TimeZone) async throws -> BulkResult {
+            try await base.bulkSchedule(ids, startAt: startAt, intervalMinutes: intervalMinutes, timeZone: timeZone)
+        }
+        func addToPlaylist(_ playlistID: String, videoIDs: [String], channelID: String) async throws {
+            try await base.addToPlaylist(playlistID, videoIDs: videoIDs, channelID: channelID)
+        }
+        func deletedVideos(channelID: String, cursor: String?) async throws -> (items: [DeletedVideo], cursor: String?) {
+            try await base.deletedVideos(channelID: channelID, cursor: cursor)
+        }
+        func restoreVideos(_ ids: [String]) async throws -> BulkResult { try await base.restoreVideos(ids) }
+        func purgeVideos(_ ids: [String]) async throws -> BulkResult { try await base.purgeVideos(ids) }
+        func channelStats(channelID: String, period: DateInterval) async throws -> ChannelStats {
+            try await base.channelStats(channelID: channelID, period: period)
+        }
+        func videoStats(videoID: String, period: DateInterval) async throws -> VideoStats {
+            try await base.videoStats(videoID: videoID, period: period)
+        }
+        func creatorAccess() async throws -> CreatorAccess { try accessResult.get() }
+        func acceptCreatorTerms(version: String) async throws {
+            acceptCalls += 1
+            acceptedVersions.append(version)
+            if let acceptError { throw acceptError }
+        }
+    }
+
+    @Test func creatorTermsGateHandlesErrorNilRequiredAndAccept() async {
+        let studio = TermsStudioService()
+        studio.accessResult = .failure(CoreError.offline)
+        var services = StudioServices.fixtures(signedIn: true)
+        services.studio = studio
+        let session = StudioSession(services: services, authenticator: FixtureWebAuthenticator(), defaults: defaults())
+        #expect(session.creatorTermsState == .loading)
+
+        await session.start()
+        #expect(session.creatorTermsState == .failed)
+
+        // Explicit false requires acceptance
+        studio.accessResult = .success(CreatorAccess(termsAccepted: false, termsVersion: "2026-11-24"))
+        await session.refreshCreatorAccess()
+        #expect(session.creatorTermsState == .required)
+        #expect(session.termsVersion == "2026-11-24")
+
+        // Foreground refresh while .required keeps .required (does not flash .loading)
+        await session.refreshCreatorAccess()
+        #expect(session.creatorTermsState == .required)
+
+        // Failed POST stays .required and sets termsNotice without clobbering unrelated session.notice
+        session.notice = StudioNotice("studio.error.signIn")
+        studio.acceptError = CoreError.http(status: 503)
+        let failed = await session.acceptCreatorTerms(shownVersion: "2026-11-24")
+        #expect(!failed)
+        #expect(session.creatorTermsState == .required)
+        #expect(session.termsNotice != nil)
+        #expect(session.notice?.key == "studio.error.signIn")
+
+        // Successful POST sends the seen version, unlocks Upload, clears termsNotice, keeps unrelated notice
+        studio.acceptError = nil
+        let ok = await session.acceptCreatorTerms(shownVersion: "2026-11-24")
+        #expect(ok)
+        #expect(studio.acceptedVersions.last == "2026-11-24")
+        #expect(session.creatorTermsState == .accepted)
+        #expect(session.termsNotice == nil)
+        #expect(session.notice?.key == "studio.error.signIn")
+
+        // Older server omitting termsAccepted (nil) falls through to .accepted so creators are not locked out
+        let compatSession = StudioSession(services: services, authenticator: FixtureWebAuthenticator(), defaults: defaults())
+        studio.accessResult = .success(CreatorAccess(termsAccepted: nil))
+        await compatSession.start()
+        #expect(compatSession.creatorTermsState == .accepted)
+    }
 }

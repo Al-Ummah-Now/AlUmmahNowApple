@@ -469,3 +469,16 @@
 "safety.blockedList.kind.user" = "Live chat user";
 "safety.unblock" = "Unblock";
 "safety.unblockFor" = "Unblock %@";
+"common.help" = "Help";
+"common.contact" = "Contact us";
+"common.privacyPolicy" = "Privacy policy";
+"common.termsOfService" = "Terms of Service";
+"common.communityGuidelines" = "Community Guidelines";
+"studio.terms.title" = "Agree to Terms before uploading";
+"studio.terms.body" = "Before uploading your first video, review and accept our Terms of Service and Community Guidelines.";
+"studio.terms.updatedBody" = "Our Terms of Service and Community Guidelines have been updated. Review and accept the latest version to continue uploading.";
+"studio.upload.state.waitingForTerms" = "Waiting for Creator Terms agreement";
+"studio.terms.checkbox" = "I have read and agree to the Terms of Service and Community Guidelines.";
+"studio.terms.agree" = "I agree and continue";
+"studio.terms.saving" = "Saving…";
+"studio.terms.versionChanged" = "The Terms of Service were updated. Please review the latest version and agree again.";

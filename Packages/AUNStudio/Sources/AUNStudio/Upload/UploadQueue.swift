@@ -35,6 +35,7 @@ public final class UploadQueue {
     public var accountID: String? {
         didSet {
             guard accountID != oldValue else { return }
+            blockedByTerms = false
             // A running upload belongs to its own account: stop the ones of any other account now, so none of them
             // asks for a token (or retries a chunk) as the account that just became active.
             for job in jobs where job.accountID != accountID { tasks[job.id]?.cancel() }
@@ -47,7 +48,13 @@ public final class UploadQueue {
     /// Called when the server says uploads are off for the account (`feature_off`, 402, no creator tier). The job is
     /// dropped without a message and Studio reads its features again, which hides the Upload tab.
     var onFeatureOff: (() -> Void)?
+    /// Called when an upload fails with `403 terms_required`, carrying the job's account ID so a late response from a
+    /// previous account never gates the newly active account.
+    var onTermsRequired: ((String) -> Void)?
+    /// Called when an upload completes successfully so session refusal-retry counters reset.
+    var onUploadSucceeded: (() -> Void)?
     private(set) var isBlocked = false
+    private var blockedByTerms = false
 
     init(
         studio: any StudioServicing, transfer: any TUSTransferring, store: UploadStore, maxParallel: Int = 2,
@@ -151,6 +158,7 @@ public final class UploadQueue {
     func unblock() {
         guard isBlocked else { return }
         isBlocked = false
+        blockedByTerms = false
         for job in jobs where job.state == .paused && job.failure == Self.accountStateKey {
             update(job.id) {
                 $0.state = .waiting
@@ -161,6 +169,7 @@ public final class UploadQueue {
     }
 
     static let accountStateKey = "studio.account.pendingDeletion"
+    static let termsRequiredKey = "studio.terms.title"
 
     /// Starts as many waiting jobs of the active account as the parallel limit allows.
     public func kick() {
@@ -210,30 +219,10 @@ public final class UploadQueue {
                 $0.state = .done
                 $0.failure = nil
             }
+            onUploadSucceeded?()
             if job.ownsFile { try? FileManager.default.removeItem(at: job.file) }
-        } catch is CancellationError {
-            update(id) { if $0.state != .paused { $0.state = .waiting } }
-        } catch let error as CoreError where error.refusal?.isAccountState == true {
-            // Not a failure of this file: pause it, keep its progress, and wait for the account to be restored.
-            isBlocked = true
-            update(id) {
-                $0.state = .paused
-                $0.inFlight = 0
-                $0.failure = Self.accountStateKey
-            }
-            if let refusal = error.refusal { onAccountState?(refusal) }
         } catch {
-            AUNLog.studio.error("Upload \(id, privacy: .public) failed: \(error)")
-            guard let key = Self.failureKey(error) else {
-                remove(id)
-                onFeatureOff?()
-                return
-            }
-            update(id) {
-                $0.state = .failed
-                $0.inFlight = 0
-                $0.failure = key
-            }
+            handleRunFailure(error, for: job)
         }
     }
 
@@ -475,6 +464,76 @@ public final class UploadQueue {
         case .http(let status) where status == 429: "studio.upload.error.limit"
         case .invalid: "studio.upload.error.invalid"
         default: "studio.upload.error.generic"
+        }
+    }
+}
+
+extension UploadQueue {
+    /// Creator Terms were accepted for `targetAccountID`: resume only that account's jobs paused on `403 terms_required`.
+    func unblockTerms(forAccount targetAccountID: String) {
+        let hadPaused = jobs.contains {
+            $0.accountID == targetAccountID && $0.state == .paused && $0.failure == Self.termsRequiredKey
+        }
+        guard hadPaused || (blockedByTerms && accountID == targetAccountID) else { return }
+        if accountID == targetAccountID {
+            blockedByTerms = false
+            if !jobs.contains(where: {
+                $0.accountID == targetAccountID && $0.state == .paused && $0.failure == Self.accountStateKey
+            }) {
+                isBlocked = false
+            }
+        }
+        for job in jobs
+        where job.accountID == targetAccountID && job.state == .paused && job.failure == Self.termsRequiredKey {
+            update(job.id) {
+                $0.state = .waiting
+                $0.failure = nil
+            }
+        }
+        kick()
+    }
+
+    func handleRunFailure(_ error: Error, for job: UploadJob) {
+        let id = job.id
+        if error is CancellationError {
+            update(id) { if $0.state != .paused { $0.state = .waiting } }
+            return
+        }
+        if let coreError = error as? CoreError, coreError.refusal?.code == Refusal.termsRequired {
+            // Pause the job cleanly and reopen the Creator Terms gate for its account; accepting resumes it via `unblockTerms()`.
+            if job.accountID == accountID {
+                isBlocked = true
+                blockedByTerms = true
+            }
+            update(id) {
+                $0.state = .paused
+                $0.inFlight = 0
+                $0.failure = Self.termsRequiredKey
+            }
+            onTermsRequired?(job.accountID)
+            return
+        }
+        if let coreError = error as? CoreError, let refusal = coreError.refusal, refusal.isAccountState {
+            // Not a failure of this file: pause it, keep its progress, and wait for the account to be restored.
+            isBlocked = true
+            update(id) {
+                $0.state = .paused
+                $0.inFlight = 0
+                $0.failure = Self.accountStateKey
+            }
+            onAccountState?(refusal)
+            return
+        }
+        AUNLog.studio.error("Upload \(id, privacy: .public) failed: \(error)")
+        guard let key = Self.failureKey(error) else {
+            remove(id)
+            onFeatureOff?()
+            return
+        }
+        update(id) {
+            $0.state = .failed
+            $0.inFlight = 0
+            $0.failure = key
         }
     }
 }

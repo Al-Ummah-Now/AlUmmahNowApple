@@ -47,7 +47,20 @@ struct UploadView: View {
         // Two columns when there is room (iPad landscape, Mac): the files, send and queue beside Set for all. One
         // column otherwise, in the same order as before.
         GeometryReader { proxy in
-            if proxy.size.width >= 900, setForAllShown {
+            if session.creatorTermsState == .required {
+                Form {
+                    Section {
+                        CreatorTermsGateView(session: session)
+                            .id(session.account?.id)
+                            .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 36, trailing: 16))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+                    UploadQueueSection(session: session).studioRows()
+                }
+                .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
+            } else if proxy.size.width >= 900, setForAllShown {
                 HStack(alignment: .top, spacing: 0) {
                     Form { mainSections }.formStyle(.grouped).scrollContentBackground(.hidden)
                     Form { setForAll }.formStyle(.grouped).scrollContentBackground(.hidden)
@@ -401,7 +414,9 @@ struct UploadQueueSection: View {
         let jobs = session.uploads.jobs.filter { $0.accountID == session.account?.id }
         if !jobs.isEmpty {
             Section {
-                ForEach(jobs) { job in UploadJobRow(job: job, queue: session.uploads) }
+                ForEach(jobs) { job in
+                    UploadJobRow(job: job, queue: session.uploads, isTermsGateOpen: session.needsCreatorTerms)
+                }
             } header: {
                 HStack {
                     Text(l10n("studio.upload.queue")).fanousSectionText()
@@ -421,10 +436,11 @@ struct UploadQueueSection: View {
     }
 }
 
-private struct UploadJobRow: View {
+struct UploadJobRow: View {
     @Environment(\.l10n) private var l10n
     let job: UploadJob
     let queue: UploadQueue
+    let isTermsGateOpen: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
@@ -443,6 +459,19 @@ private struct UploadJobRow: View {
         .accessibilityIdentifier("upload-job-\(job.index)")
     }
 
+    static func isPausedForTerms(_ job: UploadJob) -> Bool {
+        job.state == .paused && job.failure == UploadQueue.termsRequiredKey
+    }
+
+    static func pausedStatusKey(for job: UploadJob) -> String {
+        isPausedForTerms(job) ? "studio.upload.state.waitingForTerms" : "studio.upload.state.paused"
+    }
+
+    static func showsResumeAction(for job: UploadJob, isTermsGateOpen: Bool) -> Bool {
+        guard job.state == .paused || job.state == .failed else { return false }
+        return !(isPausedForTerms(job) && isTermsGateOpen)
+    }
+
     private var status: String {
         switch job.state {
         case .waiting: l10n("studio.upload.state.waiting")
@@ -452,7 +481,7 @@ private struct UploadJobRow: View {
                 "studio.upload.state.uploading",
                 DisplayFormat.percent(job.fraction, l10n.language))
         case .finishing: l10n("studio.upload.state.finishing")
-        case .paused: l10n("studio.upload.state.paused")
+        case .paused: l10n(Self.pausedStatusKey(for: job))
         case .failed: l10n(job.failure ?? "studio.upload.error.generic")
         case .done:
             job.scheduleDate.map {
@@ -468,8 +497,10 @@ private struct UploadJobRow: View {
                 Button(l10n("studio.upload.pause")) { queue.pause(job.id) }
                     .accessibilityIdentifier("upload-pause-\(job.index)")
             case .paused, .failed:
-                Button(l10n(job.state == .failed ? "common.retry" : "studio.upload.resume")) { queue.resume(job.id) }
-                    .accessibilityIdentifier("upload-resume-\(job.index)")
+                if Self.showsResumeAction(for: job, isTermsGateOpen: isTermsGateOpen) {
+                    Button(l10n(job.state == .failed ? "common.retry" : "studio.upload.resume")) { queue.resume(job.id) }
+                        .accessibilityIdentifier("upload-resume-\(job.index)")
+                }
                 Button(l10n("studio.upload.remove")) { queue.remove(job.id) }
                     .accessibilityIdentifier("upload-remove-\(job.index)")
             case .finishing, .done:

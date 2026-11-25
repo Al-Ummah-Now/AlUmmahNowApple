@@ -27,6 +27,8 @@ enum StudioFailure {
         case Refusal.uploadLimit: "studio.upload.error.limit"
         case Refusal.accountPendingDeletion: "studio.account.pendingDeletion"
         case Refusal.banned: "studio.account.banned"
+        case Refusal.termsRequired: "studio.terms.title"
+        case Refusal.termsVersionChanged: "studio.terms.versionChanged"
         default: "studio.error.generic"
         }
     }

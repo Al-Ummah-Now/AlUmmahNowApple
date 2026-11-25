@@ -32,18 +32,36 @@ public struct AppEnvironment: Hashable, Sendable {
 
     public static let qaAdminAPI = URL(string: "https://admin.api.qa.alummahnow.net")!
     public static let qaAuthIssuer = URL(string: "https://auth.qa.alummahnow.net")!
+    public static let qaWebBase = URL(string: "https://videos.qa.alummahnow.net")!
+    public static let qaWwwBase = URL(string: "https://www.qa.alummahnow.net")!
     public static let qa = AppEnvironment(name: "qa", apiBaseURL: URL(string: "https://videos.api.qa.alummahnow.net")!)
 
-    /// Web frontend matching `apiBaseURL` (e.g. `videos.api.qa.alummahnow.net` → `videos.qa.alummahnow.net`).
+    /// Public videos web origin derived from `apiBaseURL`. Falls back to QA, never to production.
     public var webBaseURL: URL {
-        var components = URLComponents(url: apiBaseURL, resolvingAgainstBaseURL: false)
-        if let host = components?.host {
-            components?.host = host.replacingOccurrences(of: ".api.", with: ".")
+        guard let host = apiBaseURL.host?.lowercased() else { return Self.qaWebBase }
+        if host == "videos.api.alummahnow.net" || host == "videos.alummahnow.net" {
+            return URL(string: "https://videos.alummahnow.net")!
         }
-        components?.path = ""
-        components?.query = nil
-        components?.fragment = nil
-        return components?.url ?? URL(string: "https://videos.qa.alummahnow.net")!
+        if host.contains(".api.") {
+            let webHost = host.replacingOccurrences(of: ".api.", with: ".")
+            if let url = URL(string: "https://\(webHost)") { return url }
+        }
+        return Self.qaWebBase
+    }
+
+    /// Public corporate/legal website origin (`www`) derived from `apiBaseURL`. Falls back to QA, never to production.
+    public var wwwBaseURL: URL {
+        guard let host = apiBaseURL.host?.lowercased() else { return Self.qaWwwBase }
+        if host == "videos.api.alummahnow.net" || host == "videos.alummahnow.net" {
+            return URL(string: "https://www.alummahnow.net")!
+        }
+        if host.hasSuffix(".staging.alummahnow.net") {
+            return URL(string: "https://www.staging.alummahnow.net")!
+        }
+        if host.hasSuffix(".stage.alummahnow.net") {
+            return URL(string: "https://www.stage.alummahnow.net")!
+        }
+        return Self.qaWwwBase
     }
 
     /// Reads the values the build configuration wrote to Info.plist. Falls back to QA, never to production.
