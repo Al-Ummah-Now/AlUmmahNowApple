@@ -164,6 +164,8 @@ actor StubLive: LiveServicing {
 actor HeldCatalog: CatalogServicing {
     private var held: CheckedContinuation<Void, Never>?
     private var isReleased = false
+    private var channelID: String?
+    func set(channelID: String?) { self.channelID = channelID }
     var isHeld: Bool { held != nil }
     func release() {
         isReleased = true
@@ -173,7 +175,8 @@ actor HeldCatalog: CatalogServicing {
     func homeRails(limit: Int) async throws -> [HomeRail] { [] }
     func video(id: String) async throws -> Video {
         if !isReleased { await withCheckedContinuation { held = $0 } }
-        return Video(id: id, title: "T", playURL: URL(string: "https://media.test/v.m3u8"), uploadStatus: "ready")
+        return Video(
+            id: id, title: "T", playURL: URL(string: "https://media.test/v.m3u8"), channelID: channelID, uploadStatus: "ready")
     }
     func subtitles(videoID: String) async throws -> [SubtitleTrack] { [] }
     func chapters(videoID: String) async throws -> [Chapter] { [] }

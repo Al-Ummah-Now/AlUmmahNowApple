@@ -209,10 +209,10 @@ public final class LiveWatchModel {
 
     /// Opens the page that says where to report; nothing plays on behind it.
     public func report(_ request: ViewerReportRequest) {
-        if player.player.timeControlStatus == .paused {
-            afterReport = .nothing
-        } else {
-            afterReport = content?.mode == .live && !isBehind ? .returnsToLive : .plays
+        // Another page over an open one: paused by the first
+        if reportRequest == nil {
+            let plays = player.player.timeControlStatus != .paused
+            afterReport = !plays ? .nothing : content?.mode == .live && !isBehind ? .returnsToLive : .plays
         }
         player.pause()
         reportRequest = request

@@ -280,6 +280,31 @@ struct ViewerSafetyTests {
         model.close()
     }
 
+    /// Blocked while it loads, and free again before any page has shown that: the page loads it again by `isHeldBack`.
+    @Test @MainActor func aVideoHeldBackWhileItLoadedIsKnownAsThat() async throws {
+        let channelID = "ch-held-\(UUID().uuidString)"
+        let catalog = HeldCatalog()
+        await catalog.set(channelID: channelID)
+        defer { ViewerBlockStore.shared.unblockChannel(id: channelID, name: nil) }
+        let model = WatchViewModel(videoID: "v1", catalog: catalog)
+        let loading = Task { await model.load(language: .en) }
+        try await until { await catalog.isHeld }
+        ViewerBlockStore.shared.blockChannel(id: channelID, name: "Held")
+        await catalog.release()
+        await loading.value
+        #expect(model.isHeldBack && model.player.item == nil)
+        ViewerBlockStore.shared.unblockChannel(id: channelID, name: nil)
+        #expect(model.isHeldBack)
+        await model.load(language: .en)
+        #expect(!model.isHeldBack && model.player.item != nil)
+        // Blocked while it plays
+        model.holdBack()
+        #expect(model.isHeldBack && model.player.item == nil)
+        await model.load(language: .en)
+        #expect(!model.isHeldBack && model.player.item != nil)
+        model.player.stop()
+    }
+
     private static let web = URL(string: "https://videos.alummahnow.net")!
 
     @Test @MainActor func reportingPausesTheVideoAndClosingGoesOnOnlyIfItWasPlaying() async {
@@ -295,6 +320,11 @@ struct ViewerSafetyTests {
         #expect(model.player.item != nil)
         model.reportClosed()
         #expect(model.reportRequest == nil)
+        #expect(model.player.player.timeControlStatus != .paused)
+        // Two pages, one over the other: it goes on as it was before the first
+        model.report(request)
+        model.report(.video(id: "v2", language: "en", webBaseURL: Self.web))
+        model.reportClosed()
         #expect(model.player.player.timeControlStatus != .paused)
         // Closed again by the cover's own binding: nothing more happens
         model.player.pause()
@@ -330,6 +360,11 @@ struct ViewerSafetyTests {
             #expect(model.reportRequest == nil)
             #expect(model.player.player.timeControlStatus != .paused)
         }
+        // Two pages, one over the other: it goes on as it was before the first
+        model.report(stream)
+        model.report(message)
+        model.reportClosed()
+        #expect(model.player.player.timeControlStatus != .paused)
         // Blocked, or the page gone, while the report was open
         model.report(stream)
         model.setBlocked(true)

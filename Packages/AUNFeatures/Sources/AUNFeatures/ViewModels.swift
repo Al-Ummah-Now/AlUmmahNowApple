@@ -49,9 +49,20 @@ public final class WatchViewModel {
             subtitleLoader: { url in try await catalog.subtitleText(url: url) }, positions: positions)
     }
 
+    /// Not played because its channel is blocked on this device: loaded again once it is not, whether or not a page has
+    /// shown it as blocked in between (blocked and unblocked in other windows).
+    public private(set) var isHeldBack = false
+
+    /// Its channel was blocked: nothing plays.
+    public func holdBack() {
+        isHeldBack = true
+        player.stop()
+    }
+
     /// Loads the page and starts this video. The next video never starts by itself (spec 21.6).
     public func load(language: AppLanguage, autoplay: Bool = true) async {
         state = .loading
+        isHeldBack = false
         do {
             let video = try await catalog.video(id: videoID)
             // Subtitles and chapters are optional extras: the video should still play if they fail.
@@ -59,7 +70,9 @@ public final class WatchViewModel {
             async let chapters = try? catalog.chapters(videoID: videoID)
             let (loadedTracks, loadedChapters) = await (tracks ?? [], chapters ?? [])
             state = .loaded(WatchContent(video: video, chapters: loadedChapters))
-            guard !ViewerBlockStore.shared.isChannelBlocked(id: video.channelID, name: video.channelName) else { return }
+            guard !ViewerBlockStore.shared.isChannelBlocked(id: video.channelID, name: video.channelName) else {
+                return isHeldBack = true
+            }
             guard video.isPlayable, let url = video.playURL else { return }
             player.load(
                 PlaybackItem(
@@ -81,7 +94,8 @@ public final class WatchViewModel {
 
     /// Opens the page that says where to report; the video does not go on behind it.
     public func report(_ request: ViewerReportRequest) {
-        playsAfterReport = player.player.timeControlStatus != .paused
+        // Another page over an open one: paused by the first
+        if reportRequest == nil { playsAfterReport = player.player.timeControlStatus != .paused }
         player.pause()
         reportRequest = request
     }
