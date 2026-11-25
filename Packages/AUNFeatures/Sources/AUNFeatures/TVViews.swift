@@ -191,6 +191,7 @@
                         } label: {
                             Label(l10n("safety.report.video"), systemImage: "flag")
                         }
+                        .buttonStyle(FanousButtonStyle(.secondary))
                         .padding(40)
                         .accessibilityIdentifier("tv-report-video")
                     }
@@ -208,6 +209,7 @@
                             Button(l10n("common.dismiss")) { showingReport = false }
                         }
                         .padding(60)
+                        .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
                     }
                 }
             }
