@@ -20,7 +20,6 @@ public struct StudioNotice: Identifiable, Hashable, Sendable {
 public final class StudioSession {
     public enum Phase: Equatable { case loading, signedOut, signedIn }
     public enum ChannelsState: Equatable { case idle, loading, loaded, failed }
-    public enum CreatorTermsState: Equatable { case loading, failed, required, accepted }
 
     public private(set) var phase: Phase = .loading
     public private(set) var accounts: [StudioAccount] = []
@@ -30,31 +29,20 @@ public final class StudioSession {
     public private(set) var channelsState: ChannelsState = .idle
     public private(set) var channel: StudioChannel?
     public private(set) var isSigningIn = false
-    /// Account whose Creator Terms acceptance POST is currently in flight (nil when idle or after switching accounts).
-    private var acceptingTermsAccountID: String?
-    public var isAcceptingTerms: Bool { acceptingTermsAccountID != nil && acceptingTermsAccountID == account?.id }
     public var notice: StudioNotice?
-    /// Dedicated notice for CreatorTermsGateView so Terms errors/clears never clobber unrelated notices or double-announce.
-    public var termsNotice: StudioNotice?
     /// What the account may do as a creator; nil until read (or when the server cannot say).
-    public private(set) var creator: CreatorAccess?
-    /// State of Creator Terms acceptance: only an explicit `.required` gates Upload; loading/failed let the server decide.
-    public private(set) var creatorTermsState: CreatorTermsState = .loading
-    /// Latest Creator Terms version reported by the server (`GET /api/me/creator` or 409 `currentVersion`).
-    public private(set) var termsVersion: String?
-    /// Incremented whenever the active Terms version changes while the gate is open (or on 409) so the checkbox resets.
-    public private(set) var termsVersionBumpSerial = 0
-    /// True after a 409 `terms_version_changed` or a known version bump while the gate is open (survives Dismiss / errors).
-    public private(set) var termsUpdatedWhileOpen = false
-    private var termsGeneration = 0
-    private var uploadRefusalResumeCount = 0
+    public internal(set) var creator: CreatorAccess?
+    /// The account and the Creator Terms (`CreatorTerms.swift`).
+    public internal(set) var creatorTerms: CreatorTerms = .unknown
+    /// The last Terms version the server gave this account, so a newer one can be called an update.
+    var knownTermsVersion: String?
+    /// Counts reads and agreements, so only the last one's answer counts.
+    var termsTurn = 0
     /// Environment used for web/legal links.
     public var environment: AppEnvironment { services.environment }
-    /// True when the server explicitly reported that this account has not yet accepted the Creator Terms.
-    public var needsCreatorTerms: Bool { creatorTermsState == .required }
     /// A refusal that applies to the whole videos account (`videos_account_pending_deletion`, `videos_banned`).
     /// Studio shows it once, as a banner, instead of one error per action.
-    public private(set) var accountState: Refusal?
+    public internal(set) var accountState: Refusal?
     /// Which features the account sees in the current channel (`GET /api/me/features`); nil until the first read.
     /// While nil, or for a key the server leaves out, the feature is hidden (fail closed).
     public private(set) var features: UserFeatures?
@@ -81,7 +69,6 @@ public final class StudioSession {
         uploads.onAccountState = { [weak self] in self?.accountState = $0 }
         uploads.onFeatureOff = { [weak self] in Task { await self?.refreshFeatures() } }
         uploads.onTermsRequired = { [weak self] accountID in self?.requireCreatorTerms(for: accountID) }
-        uploads.onUploadSucceeded = { [weak self] in self?.uploadRefusalResumeCount = 0 }
     }
 
     /// Channels the person may upload to: the picker's list.
@@ -139,14 +126,7 @@ public final class StudioSession {
             account = nil
             uploads.accountID = nil
             creator = nil
-            termsGeneration += 1
-            uploadRefusalResumeCount = 0
-            acceptingTermsAccountID = nil
-            creatorTermsState = .loading
-            termsVersion = nil
-            termsVersionBumpSerial = 0
-            termsUpdatedWhileOpen = false
-            termsNotice = nil
+            forgetTerms()
             features = nil
             hiddenSections = []
             accountState = nil
@@ -267,14 +247,7 @@ public final class StudioSession {
         allChannels = []
         channel = nil
         creator = nil
-        termsGeneration += 1
-        uploadRefusalResumeCount = 0
-        acceptingTermsAccountID = nil
-        creatorTermsState = .loading
-        termsVersion = nil
-        termsVersionBumpSerial = 0
-        termsUpdatedWhileOpen = false
-        termsNotice = nil
+        forgetTerms()
         features = nil
         hiddenSections = []
         accountState = nil
@@ -293,181 +266,4 @@ public final class StudioSession {
     }
 
     static func channelKey(_ accountID: String) -> String { "AUNStudioChannel.\(accountID)" }
-}
-
-extension StudioSession {
-    /// Reopens the Creator Terms gate for `accountID` (e.g. after a `403 terms_required` upload refusal).
-    /// Always re-reads `GET /api/me/creator` so a newer Terms version is shown before the creator taps Agree.
-    /// Ignores late refusals from another account and never cancels an in-flight Agree POST for the active account.
-    public func requireCreatorTerms(for accountID: String? = nil) {
-        if let accountID, account?.id != accountID { return }
-        if !isAcceptingTerms { termsGeneration += 1 }
-        creatorTermsState = .required
-        if !isAcceptingTerms {
-            Task { await refreshCreatorAccess(fromUploadRefusal: true) }
-        }
-    }
-
-    /// Records acceptance of the Creator Terms & Community Guidelines on the server (`POST /api/me/creator/terms`).
-    /// Never reads a version and posts it in the same tap, and never falls back to `termsVersion` when `shownVersion` is nil.
-    @discardableResult
-    public func acceptCreatorTerms(shownVersion: String?) async -> Bool {
-        guard !isAcceptingTerms, let targetAccountID = account?.id else { return false }
-        termsGeneration += 1
-        let generation = termsGeneration
-        acceptingTermsAccountID = targetAccountID
-        defer {
-            if acceptingTermsAccountID == targetAccountID && termsGeneration == generation {
-                acceptingTermsAccountID = nil
-            }
-        }
-        do {
-            let candidate = shownVersion?.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let version = candidate, !version.isEmpty else {
-                return try await fetchVersionWithoutPosting(targetAccountID: targetAccountID, generation: generation)
-            }
-            try await services.studio.acceptCreatorTerms(version: version)
-            guard isCurrentTermsCall(accountID: targetAccountID, generation: generation) else { return false }
-            creator?.termsAccepted = true
-            termsVersion = version
-            uploadRefusalResumeCount = 0
-            completeCreatorTermsAcceptance(for: targetAccountID)
-            return true
-        } catch {
-            return handleAcceptTermsError(error, targetAccountID: targetAccountID, generation: generation)
-        }
-    }
-
-    /// Reads `GET /api/me/creator`. Called after sign-in, on foreground return, and after `403 terms_required`.
-    public func refreshCreatorAccess(fromUploadRefusal: Bool = false) async {
-        guard let targetAccountID = account?.id, !isAcceptingTerms else { return }
-        let generation = termsGeneration
-        // Keep `.required` steady across foreground returns (e.g. after reading Terms in Safari) so the checkbox is not wiped.
-        if creatorTermsState != .accepted && creatorTermsState != .required { creatorTermsState = .loading }
-        do {
-            let access = try await services.studio.creatorAccess()
-            guard account?.id == targetAccountID, termsGeneration == generation, !isAcceptingTerms else { return }
-            applyCreatorAccess(access, for: targetAccountID, fromUploadRefusal: fromUploadRefusal)
-        } catch {
-            guard account?.id == targetAccountID, termsGeneration == generation, !isAcceptingTerms else { return }
-            AUNLog.studio.error("Reading creator access failed: \(error)")
-            if creatorTermsState != .accepted && creatorTermsState != .required { creatorTermsState = .failed }
-        }
-    }
-
-    private func applyCreatorAccess(_ access: CreatorAccess, for targetAccountID: String, fromUploadRefusal: Bool) {
-        let previousVersion = termsVersion
-        let wasRequired = creatorTermsState == .required
-        creator = access
-        if let incoming = access.termsVersion?.trimmingCharacters(in: .whitespacesAndNewlines), !incoming.isEmpty {
-            termsVersion = incoming
-        }
-        if access.termsAccepted == false {
-            creatorTermsState = .required
-            if wasRequired, let latest = termsVersion, !latest.isEmpty, latest != previousVersion {
-                termsVersionBumpSerial += 1
-                if previousVersion != nil {
-                    termsUpdatedWhileOpen = true
-                    termsNotice = StudioNotice("studio.terms.versionChanged")
-                } else if termsNotice?.key == "studio.error.generic" {
-                    termsNotice = nil
-                }
-            } else if termsVersion != nil, termsNotice?.key == "studio.error.generic" {
-                termsNotice = nil
-            }
-        } else if access.termsAccepted == nil && fromUploadRefusal {
-            // Do not unblock jobs on a nil answer to a 403-triggered read (avoids a 403 -> nil -> unblock -> 403 loop).
-            creatorTermsState = .required
-            termsNotice = StudioNotice("studio.error.generic")
-        } else if fromUploadRefusal {
-            // Bound automatic resume when a 403-triggered read says termsAccepted == true (e.g. mixed isolates mid-deploy).
-            if uploadRefusalResumeCount < 2 {
-                uploadRefusalResumeCount += 1
-                completeCreatorTermsAcceptance(for: targetAccountID)
-            } else {
-                creatorTermsState = .required
-                termsNotice = StudioNotice("studio.error.generic")
-            }
-        } else {
-            uploadRefusalResumeCount = 0
-            completeCreatorTermsAcceptance(for: targetAccountID)
-        }
-        applyPendingDeletionState(access.pendingDeletion)
-    }
-
-    private func applyPendingDeletionState(_ pendingDeletion: Bool) {
-        if pendingDeletion {
-            accountState = Refusal(code: Refusal.accountPendingDeletion)
-        } else if accountState?.code == Refusal.accountPendingDeletion {
-            accountState = nil
-            uploads.unblock()
-        }
-    }
-
-    private func isCurrentTermsCall(accountID: String, generation: Int) -> Bool {
-        account?.id == accountID && termsGeneration == generation
-    }
-
-    private func completeCreatorTermsAcceptance(for accountID: String) {
-        creatorTermsState = .accepted
-        termsUpdatedWhileOpen = false
-        termsNotice = nil
-        uploads.unblockTerms(forAccount: accountID)
-    }
-
-    /// Fetches the current version to display without posting acceptance in the same tap.
-    /// Because this is triggered by an explicit tap, `termsAccepted != false` (true or nil / feature off) unblocks cleanly.
-    private func fetchVersionWithoutPosting(targetAccountID: String, generation: Int) async throws -> Bool {
-        let previousVersion = termsVersion
-        let access = try await services.studio.creatorAccess()
-        guard isCurrentTermsCall(accountID: targetAccountID, generation: generation) else { return false }
-        creator = access
-        if let incoming = access.termsVersion?.trimmingCharacters(in: .whitespacesAndNewlines), !incoming.isEmpty {
-            termsVersion = incoming
-        }
-        if access.termsAccepted != false {
-            uploadRefusalResumeCount = 0
-            completeCreatorTermsAcceptance(for: targetAccountID)
-            return true
-        }
-        if let fetched = access.termsVersion?.trimmingCharacters(in: .whitespacesAndNewlines), !fetched.isEmpty {
-            creatorTermsState = .required
-            termsVersion = fetched
-            termsVersionBumpSerial += 1
-            if previousVersion != nil && fetched != previousVersion {
-                termsUpdatedWhileOpen = true
-                termsNotice = StudioNotice("studio.terms.versionChanged")
-            } else if termsNotice?.key == "studio.error.generic" {
-                termsNotice = nil
-            }
-            return false
-        }
-        creatorTermsState = .required
-        termsNotice = StudioNotice("studio.error.generic")
-        return false
-    }
-
-    private func handleAcceptTermsError(_ error: any Error, targetAccountID: String, generation: Int) -> Bool {
-        guard isCurrentTermsCall(accountID: targetAccountID, generation: generation) else { return false }
-        if (error as? CoreError) == .featureOff {
-            creator?.termsAccepted = nil
-            termsVersion = nil
-            completeCreatorTermsAcceptance(for: targetAccountID)
-            return true
-        }
-        if case .refused(let refusal) = error as? CoreError, refusal.code == Refusal.termsVersionChanged {
-            if let latest = refusal.currentVersion, !latest.isEmpty {
-                termsVersion = latest
-                creator?.termsVersion = latest
-            }
-            termsVersionBumpSerial += 1
-            termsUpdatedWhileOpen = true
-            creatorTermsState = .required
-            termsNotice = StudioNotice("studio.terms.versionChanged")
-            return false
-        }
-        AUNLog.studio.error("Accepting creator terms failed: \(error)")
-        termsNotice = StudioNotice.from(error)
-        return false
-    }
 }

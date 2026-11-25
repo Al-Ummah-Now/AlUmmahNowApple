@@ -8,24 +8,16 @@ struct CreatorTermsGateView: View {
     @Environment(\.l10n) private var l10n
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let session: StudioSession
-    @State private var agreed: Bool
-    /// The Terms version shown to the creator when the gate opened (pinned until bumped on 409 / refresh).
-    @State private var shownVersion: String?
+    let gate: CreatorTerms.Gate
     @ScaledMetric(relativeTo: .title2) private var titleSize: CGFloat = 20
     @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 15
     @ScaledMetric(relativeTo: .subheadline) private var labelSize: CGFloat = 14
-    @ScaledMetric(relativeTo: .subheadline) private var linkIconWidth: CGFloat = 24
+    @ScaledMetric(relativeTo: .subheadline) private var linkIconWidth: CGFloat = 17
     @ScaledMetric(relativeTo: .body) private var checkboxSize: CGFloat = 22
-
-    init(session: StudioSession, initialAgreed: Bool = false) {
-        self.session = session
-        _agreed = State(initialValue: initialAgreed)
-        _shownVersion = State(initialValue: session.termsVersion)
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-            HStack(alignment: .top, spacing: FanousScale.spacingMd) {
+            row(spacing: FanousScale.spacingMd) {
                 Image(systemName: "checkmark.shield")
                     .font(.title2)
                     .foregroundStyle(Fanous.accent)
@@ -36,7 +28,7 @@ struct CreatorTermsGateView: View {
                         .foregroundStyle(Fanous.textPrimary)
                         .accessibilityAddTraits(.isHeader)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(l10n(session.termsUpdatedWhileOpen ? "studio.terms.updatedBody" : "studio.terms.body"))
+                    Text(l10n(gate.updated ? "studio.terms.updatedBody" : "studio.terms.body"))
                         .font(.system(size: bodySize))
                         .foregroundStyle(Fanous.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -45,7 +37,7 @@ struct CreatorTermsGateView: View {
 
             VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
                 Link(destination: AUNSupportLinks.terms(language: l10n.language.rawValue, environment: session.environment)) {
-                    HStack(alignment: .firstTextBaseline, spacing: FanousScale.spacingSm) {
+                    row(.firstTextBaseline) {
                         Image(systemName: "doc.text")
                             .frame(width: linkIconWidth, alignment: .center)
                             .accessibilityHidden(true)
@@ -61,7 +53,7 @@ struct CreatorTermsGateView: View {
                     destination: AUNSupportLinks.communityGuidelines(
                         language: l10n.language.rawValue, environment: session.environment)
                 ) {
-                    HStack(alignment: .firstTextBaseline, spacing: FanousScale.spacingSm) {
+                    row(.firstTextBaseline) {
                         Image(systemName: "book")
                             .frame(width: linkIconWidth, alignment: .center)
                             .accessibilityHidden(true)
@@ -78,18 +70,17 @@ struct CreatorTermsGateView: View {
             .foregroundStyle(Fanous.accent)
 
             Button {
-                guard !session.isAcceptingTerms else { return }
-                agreed.toggle()
+                session.setTermsAgreed(!gate.agreed)
             } label: {
-                HStack(alignment: .top, spacing: FanousScale.spacingSm) {
+                row {
                     ZStack {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(agreed ? Fanous.primary : Fanous.surfaceRaised)
+                            .fill(gate.agreed ? Fanous.primary : Fanous.surfaceRaised)
                             .frame(width: checkboxSize, height: checkboxSize)
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(agreed ? Fanous.primary : Fanous.textPrimary, lineWidth: 2)
+                            .strokeBorder(gate.agreed ? Fanous.primary : Fanous.textPrimary, lineWidth: 2)
                             .frame(width: checkboxSize, height: checkboxSize)
-                        if agreed {
+                        if gate.agreed {
                             Image(systemName: "checkmark")
                                 .font(.system(size: max(12, checkboxSize * 0.55), weight: .bold))
                                 .foregroundStyle(Fanous.onPrimary)
@@ -106,20 +97,19 @@ struct CreatorTermsGateView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(NonDimmingPlainButtonStyle())
-            .disabled(session.isAcceptingTerms)
-            .accessibilityAddTraits(agreed ? .isSelected : [])
+            .disabled(gate.saving)
+            .accessibilityAddTraits(gate.agreed ? .isSelected : [])
             .accessibilityIdentifier("creator-terms-toggle")
 
-            if let notice = session.termsNotice {
-                noticeBanner(notice)
+            if let message = gate.message {
+                messageBanner(message)
             }
 
-            let canAgree = agreed && !session.isAcceptingTerms
+            let canAgree = gate.agreed && !gate.saving
             Button {
-                let versionAtTap = shownVersion
-                Task { await session.acceptCreatorTerms(shownVersion: versionAtTap) }
+                Task { await session.acceptCreatorTerms() }
             } label: {
-                if session.isAcceptingTerms {
+                if gate.saving {
                     HStack(spacing: FanousScale.spacingSm) {
                         ProgressView()
                             .controlSize(.small)
@@ -140,7 +130,7 @@ struct CreatorTermsGateView: View {
             }
             .buttonStyle(TermsAgreeButtonStyle(isActive: canAgree))
             .disabled(!canAgree)
-            .accessibilityLabel(l10n(session.isAcceptingTerms ? "studio.terms.saving" : "studio.terms.agree"))
+            .accessibilityLabel(l10n(gate.saving ? "studio.terms.saving" : "studio.terms.agree"))
             .accessibilityIdentifier("creator-terms-agree")
         }
         .padding(FanousScale.spacingXl)
@@ -149,31 +139,32 @@ struct CreatorTermsGateView: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("creator-terms-gate")
-        .onChange(of: session.termsVersion) { old, next in
-            guard let next, !next.isEmpty else { return }
-            if shownVersion == nil || next != old {
-                shownVersion = next
-                agreed = false
-            }
-        }
-        .onChange(of: session.termsVersionBumpSerial) { _, _ in
-            agreed = false
-            shownVersion = session.termsVersion
-        }
     }
 
-    @ViewBuilder private func noticeBanner(_ notice: StudioNotice) -> some View {
+    /// An icon beside its text; above it at the accessibility sizes, where the longest words need the whole width.
+    private func row<Content: View>(
+        _ alignment: VerticalAlignment = .top, spacing: CGFloat = FanousScale.spacingSm,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        let layout =
+            dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: FanousScale.spacingXs))
+            : AnyLayout(HStackLayout(alignment: alignment, spacing: spacing))
+        return layout { content() }
+    }
+
+    @ViewBuilder private func messageBanner(_ message: CreatorTerms.Message) -> some View {
         Group {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
                     Image(systemName: "exclamationmark.circle")
                         .font(.system(size: min(labelSize, 28)))
                         .accessibilityHidden(true)
-                    Text(l10n(notice.key))
+                    Text(l10n(message.key))
                         .font(.system(size: labelSize, weight: .medium))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button(l10n("common.dismiss")) { session.termsNotice = nil }
+                    Button(l10n("common.dismiss")) { session.dismissTermsMessage() }
                         .buttonStyle(.borderless)
                         .font(.system(size: labelSize, weight: .semibold))
                         .frame(minHeight: 44, alignment: .leading)
@@ -181,11 +172,11 @@ struct CreatorTermsGateView: View {
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: FanousScale.spacingSm) {
                     Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
-                    Text(l10n(notice.key))
+                    Text(l10n(message.key))
                         .font(.system(size: labelSize, weight: .medium))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button(l10n("common.dismiss")) { session.termsNotice = nil }
+                    Button(l10n("common.dismiss")) { session.dismissTermsMessage() }
                         .buttonStyle(.borderless)
                         .font(.system(size: labelSize, weight: .semibold))
                 }
@@ -196,8 +187,8 @@ struct CreatorTermsGateView: View {
         .fanousMaterial(.raised) { .rounded($0.md) }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("notice")
-        .onAppear { AccessibilityNotification.Announcement(l10n(notice.key)).post() }
-        .onChange(of: notice.id) { _, _ in AccessibilityNotification.Announcement(l10n(notice.key)).post() }
+        .onAppear { AccessibilityNotification.Announcement(l10n(message.key)).post() }
+        .onChange(of: message) { _, _ in AccessibilityNotification.Announcement(l10n(message.key)).post() }
     }
 }
 

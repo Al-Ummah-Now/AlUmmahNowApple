@@ -47,31 +47,29 @@ struct UploadView: View {
         // Two columns when there is room (iPad landscape, Mac): the files, send and queue beside Set for all. One
         // column otherwise, in the same order as before.
         GeometryReader { proxy in
-            if session.creatorTermsState == .required {
-                Form {
-                    Section {
-                        CreatorTermsGateView(session: session)
-                            .id(session.account?.id)
-                            .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 36, trailing: 16))
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
+            let gate = session.creatorTerms.gate
+            let twoColumns = gate == nil && proxy.size.width >= 900 && setForAllShown
+            HStack(alignment: .top, spacing: 0) {
+                // The gate opens in the same form, from its top: another scroll view would lose the header's light
+                // status bar.
+                ScrollViewReader { scroll in
+                    Form {
+                        if let gate {
+                            termsGate(gate)
+                        } else {
+                            mainSections(includingSetForAll: !twoColumns)
+                        }
                     }
-                    UploadQueueSection(session: session).studioRows()
+                    .formStyle(.grouped)
+                    .scrollContentBackground(.hidden)
+                    .onChange(of: session.needsCreatorTerms) { _, needed in
+                        if needed { scroll.scrollTo(Self.gateRow, anchor: .top) }
+                    }
                 }
-                .formStyle(.grouped)
-                .scrollContentBackground(.hidden)
-            } else if proxy.size.width >= 900, setForAllShown {
-                HStack(alignment: .top, spacing: 0) {
-                    Form { mainSections }.formStyle(.grouped).scrollContentBackground(.hidden)
+                if twoColumns {
                     Form { setForAll }.formStyle(.grouped).scrollContentBackground(.hidden)
                         .frame(width: min(520, proxy.size.width * 0.45))
                 }
-            } else {
-                Form {
-                    mainSections(includingSetForAll: true)
-                }
-                .formStyle(.grouped)
-                .scrollContentBackground(.hidden)
             }
         }
         .fanousPage()
@@ -102,6 +100,20 @@ struct UploadView: View {
         #endif
     }
 
+    private static let gateRow = "creator-terms-row"
+
+    /// The Terms wait for an agreement: the gate, and the uploads that wait with it.
+    @ViewBuilder private func termsGate(_ gate: CreatorTerms.Gate) -> some View {
+        Section {
+            CreatorTermsGateView(session: session, gate: gate)
+                .id(Self.gateRow)
+                .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 36, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+        UploadQueueSection(session: session).studioRows()
+    }
+
     /// Set for all is shown once there are files to send to a channel.
     private var setForAllShown: Bool { uploadRefusal == nil && session.channel != nil && !composer.files.isEmpty }
 
@@ -112,8 +124,6 @@ struct UploadView: View {
             }
         }
     }
-
-    @ViewBuilder private var mainSections: some View { mainSections(includingSetForAll: false) }
 
     @ViewBuilder private func mainSections(includingSetForAll: Bool) -> some View {
         if let refusal = uploadRefusal {
