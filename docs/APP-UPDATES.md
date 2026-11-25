@@ -1,6 +1,6 @@
 # App updates on Apple platforms (APPUPD-10): plan
 
-Spec: wiki `epics/AUN-APP-UPDATES-app-updates.md` §4.1.1, §7, §9, §12. Nothing here is built yet.
+Spec: wiki `epics/AUN-APP-UPDATES-app-updates.md` §4.1.1, §7, §9, §12. A1 is built (no caller yet); the rest is planned.
 
 ## What each app does
 
@@ -15,7 +15,7 @@ Spec: wiki `epics/AUN-APP-UPDATES-app-updates.md` §4.1.1, §7, §9, §12. Nothi
 1. **A1, the check.** `AUNCoreBridge`: `UpdateChecking`, the answer, the states and the install source
    (`AppTransaction`). Store builds decide in plain Swift, without linking aun-core into the viewer apps; the version
    rules run the shared cases in AlUmmahNowCore `spec/app-updates/versions.json`. `AUNCoreKit`: aun-core `0.4.0-rc.7`
-   (now `rc.3`) and the `UpdateChecker` adapter for Studio for Mac, with the Apple root key and key list compiled in.
+   and the `UpdateChecker` adapter for Studio for Mac, with the Apple root key and key list compiled in.
    Off unless the server's `enabled` is true.
 2. **A2, the notice.** Bar, forced screen and (Studio for Mac) Settings → Updates: en + ar, ٠–٩, light and dark, RTL; a
    focusable row on Apple TV. Screenshots for the audit.

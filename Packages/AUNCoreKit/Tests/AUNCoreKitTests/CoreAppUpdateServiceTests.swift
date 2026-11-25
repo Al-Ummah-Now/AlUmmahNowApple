@@ -93,16 +93,68 @@ struct CoreAppUpdateServiceTests {
         #expect(keyless.action == .download)
         #expect(try await check(Self.body("notice", status: "required", minimum: "1.3.0"), rootKeys: [])?.kind == .forced)
     }
+
+    private func service(
+        suite: String, _ data: Data, status: Int = 200, version: String = "1.2.0.0"
+    ) throws -> CoreAppUpdateService {
+        var identity = self.identity()
+        identity.version = version
+        return try CoreAppUpdateService(
+            identity: identity, apiBaseURL: try #require(URL(string: "https://videos.api.qa.alummahnow.net")),
+            session: FixedAnswerProtocol.session(data, status: status), defaults: try #require(UserDefaults(suiteName: suite)))
+    }
+
+    @Test func aClosedNoticeStaysClosedAndAMinimumAlreadySeenHoldsOfflineAcrossLaunches() async throws {
+        let suite = "net.alummahnow.tests.core-updates.\(UUID().uuidString)"
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        let first = try service(suite: suite, Self.body("download"))
+        #expect(await first.offlinePrompt() == nil)
+        #expect(try await first.check().prompt?.version == "1.3.0")
+        await first.dismiss(version: "1.3.0")
+        #expect(try await service(suite: suite, Self.body("download")).check().prompt == nil)
+        // Below a minimum nothing can be closed
+        let required = Self.body("download", status: "required", minimum: "1.3.0")
+        #expect(try await service(suite: suite, required).check().prompt?.kind == .forced)
+        let offline = try service(suite: suite, Data())
+        #expect(await offline.offlinePrompt() == AppUpdatePrompt(kind: .requiredSoon))
+        #expect(await (try service(suite: suite, Data(), version: "1.3.0.0")).offlinePrompt() == nil)
+    }
+
+    @Test func notesAndMessageNeedBothLanguages() async throws {
+        func body(_ notes: String, _ message: String) throws -> Data {
+            let text = try #require(String(bytes: Self.body("download", status: "required", minimum: "1.3.0"), encoding: .utf8))
+            return Data(
+                text.replacing("\"checkHours\":6", with: "\"checkHours\":6,\"notes\":\(notes),\"message\":\(message)").utf8)
+        }
+        let both = try #require(try await check(try body(#"{"en":"Faster.","ar":"أسرع."}"#, #"{"en":"Too old.","ar":"قديم."}"#)))
+        #expect(both.notes == AppUpdateText(en: "Faster.", ar: "أسرع."))
+        #expect(both.message == AppUpdateText(en: "Too old.", ar: "قديم."))
+        let one = try #require(try await check(try body(#"{"en":"Faster.","ar":""}"#, "null")))
+        #expect(one.notes == nil)
+        #expect(one.message == nil)
+    }
+
+    @Test func aServerErrorOrAGarbledAnswerThrowsAndChangesNothing() async throws {
+        let suite = "net.alummahnow.tests.core-updates.\(UUID().uuidString)"
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        let failing = try service(suite: suite, Self.body("download"), status: 503)
+        await #expect(throws: CoreError.http(status: 503)) { try await failing.check() }
+        for text in ["[]", "{}", #"{"update":{"enabled":true,"minimumVersion":7}}"#] {
+            let garbled = try service(suite: suite, Data(text.utf8))
+            await #expect(throws: CoreError.decoding) { try await garbled.check() }
+        }
+        #expect(UserDefaults(suiteName: suite)?.string(forKey: "AUNCoreAppUpdateState") == nil)
+    }
 }
 
 /// Answers every request with the same bytes.
 private final class FixedAnswerProtocol: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var answers: [String: Data] = [:]
+    nonisolated(unsafe) private static var answers: [String: (Data, Int)] = [:]
 
-    static func session(_ data: Data) -> URLSession {
+    static func session(_ data: Data, status: Int = 200) -> URLSession {
         let token = UUID().uuidString
-        lock.withLock { answers[token] = data }
+        lock.withLock { answers[token] = (data, status) }
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [FixedAnswerProtocol.self]
         config.httpAdditionalHeaders = ["X-Stub-Token": token]
@@ -115,8 +167,8 @@ private final class FixedAnswerProtocol: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         let token = request.value(forHTTPHeaderField: "X-Stub-Token") ?? ""
-        guard let url = request.url, let data = Self.lock.withLock({ Self.answers[token] }),
-            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [:])
+        guard let url = request.url, let (data, status) = Self.lock.withLock({ Self.answers[token] }),
+            let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: [:])
         else { return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
