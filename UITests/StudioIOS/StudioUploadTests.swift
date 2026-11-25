@@ -5,12 +5,13 @@ final class StudioUploadTests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
     @MainActor
-    private func launch(_ language: String) -> XCUIApplication {
+    private func launch(_ language: String, theme: String = "dark", extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = [
-            "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNSampleVideos", "2", "-AUNLanguage", language,
-            "-AUNTheme", "dark", "-ApplePersistenceIgnoreState", "YES",
-        ]
+        app.launchArguments =
+            [
+                "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNSampleVideos", "2", "-AUNLanguage", language,
+                "-AUNTheme", theme, "-ApplePersistenceIgnoreState", "YES",
+            ] + extra
         app.launch()
         return app
     }
@@ -57,6 +58,31 @@ final class StudioUploadTests: XCTestCase {
         XCTAssertEqual(done.count, 2)
         keep("upload-done-en")
         XCTAssertTrue(app.staticTexts["Tafsir 1"].firstMatch.exists)
+    }
+
+    /// A server that stops answering: the upload ends in the stopped state with Retry, in both languages and themes
+    /// (Apple #105).
+    @MainActor
+    func testAnUploadThatStopsMovingStopsWithRetry() {
+        for (language, tab, stopped, retry) in [
+            ("en", "Upload", "The upload stopped", "Try again"), ("ar", "رفع", "توقف الرفع", "إعادة المحاولة"),
+        ] {
+            for theme in ["dark", "light"] {
+                let app = launch(
+                    language, theme: theme, extra: ["-AUNFixtureStalledUploads", "YES", "-AUNUploadStallSeconds", "3"])
+                openUpload(app, tab: tab)
+                let send = app.buttons["upload-send"]
+                while !send.waitForExistence(timeout: 2) || !send.isHittable { app.swipeUp() }
+                send.tap()
+                let text = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", stopped))
+                let deadline = Date().addingTimeInterval(60)
+                while text.count < 2, Date() < deadline { sleep(1) }
+                XCTAssertEqual(text.count, 2, "both clips stop with the message")
+                XCTAssertTrue(app.buttons[retry].firstMatch.exists, "Retry is offered")
+                keep("upload-stalled-\(language)-\(theme)")
+                app.terminate()
+            }
+        }
     }
 
     @MainActor

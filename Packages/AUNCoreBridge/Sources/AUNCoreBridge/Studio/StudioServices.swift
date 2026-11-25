@@ -47,7 +47,8 @@ public struct StudioServices: Sendable {
         var services = StudioServices(
             environment: .qa,
             accounts: FixtureAccountService(signedIn: signedIn ? [FixtureAccountService.creator] : []),
-            studio: FixtureStudioService(accountState: accountState, featuresOff: featuresOff), transfer: FixtureTUSTransfer(),
+            studio: FixtureStudioService(accountState: accountState, featuresOff: featuresOff),
+            transfer: FixtureTUSTransfer(stalls: UserDefaults.standard.bool(forKey: "AUNFixtureStalledUploads")),
             search: FixtureSearchService())
         services.persistsUploads = false
         services.transcription = FixtureTranscriber()

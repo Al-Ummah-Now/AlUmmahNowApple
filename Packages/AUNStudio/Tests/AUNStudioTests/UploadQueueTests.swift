@@ -4,6 +4,66 @@ import Testing
 
 @testable import AUNStudio
 
+/// A transfer whose chunks (or create) can hang until cancelled, and that can be slow while still reporting progress.
+private final class StallingTransfer: TUSTransferring, @unchecked Sendable {
+    var onOrphanCompletion: (@Sendable () -> Void)?
+    private let lock = NSLock()
+    private var _hangingSends: Int
+    private var _sends = 0
+    private var _creates = 0
+    private var stored: Int64 = 0
+    private let slowSendFor: Duration
+    private let progressEvery: Duration
+    private let hangingCreate: Bool
+
+    init(
+        hangingSends: Int, slowSendFor: Duration = .zero, progressEvery: Duration = .milliseconds(30), hangingCreate: Bool = false
+    ) {
+        _hangingSends = hangingSends
+        self.slowSendFor = slowSendFor
+        self.progressEvery = progressEvery
+        self.hangingCreate = hangingCreate
+    }
+
+    var hangingSends: Int {
+        get { lock.withLock { _hangingSends } }
+        set { lock.withLock { _hangingSends = newValue } }
+    }
+    var sends: Int { lock.withLock { _sends } }
+    var creates: Int { lock.withLock { _creates } }
+
+    func create(endpoint: URL, headers: [String: String], size: Int64, metadata: [String: String]) async throws -> URL {
+        lock.withLock { _creates += 1 }
+        if hangingCreate { try await Task.sleep(for: .seconds(30)) }
+        return endpoint.appending(path: "upload-1")
+    }
+
+    func offset(of url: URL, headers: [String: String]) async throws -> Int64 { lock.withLock { stored } }
+
+    func send(
+        chunk file: URL, to url: URL, offset: Int64, headers: [String: String], progress: @escaping @Sendable (Int64) -> Void
+    ) async throws -> Int64 {
+        let size = ((try? FileManager.default.attributesOfItem(atPath: file.path())[.size]) as? NSNumber)?.int64Value ?? 0
+        let hang = lock.withLock { () -> Bool in
+            _sends += 1
+            guard _hangingSends > 0 else { return false }
+            _hangingSends -= 1
+            return true
+        }
+        // Honours cancellation, as URLSession does
+        if hang { try await Task.sleep(for: .seconds(30)) }
+        if slowSendFor > .zero {
+            let steps = max(1, Int(slowSendFor / progressEvery))
+            for step in 1...steps {
+                try await Task.sleep(for: progressEvery)
+                progress(size * Int64(step) / Int64(steps))
+            }
+        }
+        lock.withLock { stored = offset + size }
+        return offset + size
+    }
+}
+
 /// Records Studio calls; can refuse the first initiate.
 private actor RecordingStudio: StudioServicing {
     var calls: [String] = []
@@ -166,6 +226,71 @@ struct UploadQueueTests {
         try await waitUntilIdle(queue)
         #expect(queue.jobs[0].state == .done)
         #expect(await studio.calls == ["complete:v-Three:10"])
+    }
+
+    // MARK: A transfer that goes quiet (Apple #105)
+
+    @Test func aChunkThatNeverMovesStopsTheJobWithRetryAfterOneAskAgain() async throws {
+        let transfer = StallingTransfer(hangingSends: .max)
+        let queue = UploadQueue(studio: RecordingStudio(), transfer: transfer, store: store(), stallLimit: .milliseconds(150))
+        queue.accountID = "a1"
+        queue.enqueue([job(try file(bytes: 10), title: "Stuck")])
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .failed)
+        #expect(queue.jobs[0].failure == "studio.upload.error.stalled")
+        #expect(transfer.sends == 2, "the chunk is sent, and asked for again once")
+        // Retry carries on from where it stopped, with the upload the server already has
+        transfer.hangingSends = 0
+        queue.resume(queue.jobs[0].id)
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .done)
+        #expect(transfer.creates == 1)
+    }
+
+    @Test func aStallThatClearsOnTheSecondAskNeverShowsAsAFailure() async throws {
+        let transfer = StallingTransfer(hangingSends: 1)
+        let queue = UploadQueue(studio: RecordingStudio(), transfer: transfer, store: store(), stallLimit: .milliseconds(150))
+        queue.accountID = "a1"
+        queue.enqueue([job(try file(bytes: 10), title: "Blip")])
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .done)
+        #expect(queue.jobs[0].failure == nil)
+        #expect(transfer.sends == 2)
+    }
+
+    @Test func aSlowChunkThatKeepsMovingIsNotAStall() async throws {
+        let transfer = StallingTransfer(hangingSends: 0, slowSendFor: .milliseconds(500), progressEvery: .milliseconds(30))
+        let queue = UploadQueue(studio: RecordingStudio(), transfer: transfer, store: store(), stallLimit: .milliseconds(150))
+        queue.accountID = "a1"
+        queue.enqueue([job(try file(bytes: 10), title: "Slow")])
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .done)
+        #expect(transfer.sends == 1)
+    }
+
+    @Test func aCreateThatNeverAnswersStopsTheJobToo() async throws {
+        let transfer = StallingTransfer(hangingSends: 0, hangingCreate: true)
+        let queue = UploadQueue(studio: RecordingStudio(), transfer: transfer, store: store(), stallLimit: .milliseconds(150))
+        queue.accountID = "a1"
+        queue.enqueue([job(try file(bytes: 10), title: "NoCreate")])
+        try await waitUntilIdle(queue)
+        #expect(queue.jobs[0].state == .failed)
+        #expect(queue.jobs[0].failure == "studio.upload.error.stalled")
+        #expect(transfer.sends == 0)
+    }
+
+    @Test func theStalledMessageIsAFailureTextInBothLanguages() throws {
+        #expect(UploadQueue.failureKey(UploadStalled()) == "studio.upload.error.stalled")
+        // The text is in both languages' strings files, and says the upload stopped (the live test looks for it)
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "AUNDesign/Sources/AUNDesign/Resources")
+        for language in ["en", "ar"] {
+            let text = try String(contentsOf: resources.appending(path: "\(language).lproj/Localizable.strings"), encoding: .utf8)
+            let line = try #require(
+                text.split(separator: "\n").first { $0.hasPrefix("\"studio.upload.error.stalled\"") }, "\(language)")
+            #expect(line.hasSuffix(";"))
+        }
     }
 }
 
