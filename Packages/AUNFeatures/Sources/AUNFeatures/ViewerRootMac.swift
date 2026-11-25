@@ -35,7 +35,7 @@
                 .navigationSplitViewColumnWidth(min: 160, ideal: 200)
             } detail: {
                 detail
-                    .toolbar { ToolbarItem { SettingsMenu { showingBlocked = true } } }
+                    .toolbar { ToolbarItem { SettingsMenu(environment: core.environment) { showingBlocked = true } } }
                     .navigationTitle(l10n("app.name"))
             }
             .sheet(isPresented: $showingBlocked) {

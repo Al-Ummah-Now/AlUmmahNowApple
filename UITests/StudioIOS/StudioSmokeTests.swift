@@ -102,4 +102,72 @@ final class StudioSignInTests: XCTestCase {
         app.buttons["accounts-done"].tap()
         XCTAssertTrue(account.waitForExistence(timeout: 10))
     }
+
+    @MainActor
+    func testCreatorTermsGatePausesUploadShowsQueueAndResumesAfterAgree() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNLanguage", "en",
+            "-AUNTheme", "dark", "-AUNFixtureTermsMode", "refuseUpload", "-AUNSampleVideos", "1",
+            "-ApplePersistenceIgnoreState", "YES",
+        ]
+        app.launch()
+        XCTAssertTrue(identity(app).waitForExistence(timeout: 30))
+        let uploadCandidates = [
+            app.tabBars.buttons["Upload"], app.buttons["Upload"].firstMatch, app.cells["Upload"].firstMatch,
+            app.cells.containing(.staticText, identifier: "Upload").firstMatch,
+        ]
+        var openedUpload = false
+        for _ in 0..<20 {
+            if let hit = uploadCandidates.first(where: { $0.exists && $0.isHittable }) {
+                hit.tap()
+                openedUpload = true
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        XCTAssertTrue(openedUpload, "Expected Upload tab/item")
+
+        let send = app.buttons["upload-send"]
+        for _ in 0..<8 where !send.waitForExistence(timeout: 2) || !send.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(send.waitForExistence(timeout: 10))
+        send.tap()
+
+        // 403 terms_required opens the gate while keeping the paused upload visible underneath.
+        let toggle = app.buttons["creator-terms-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
+        let agree = app.buttons["creator-terms-agree"]
+        XCTAssertTrue(agree.waitForExistence(timeout: 10))
+        XCTAssertFalse(agree.isEnabled, "Agree must be a real disabled Button until the checkbox is ticked")
+        let queuedJob = app.descendants(matching: .any)["upload-job-0"].firstMatch
+        for _ in 0..<4 where !queuedJob.waitForExistence(timeout: 2) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(queuedJob.exists, "Paused upload job must remain visible under the Creator Terms gate")
+        XCTAssertFalse(
+            app.buttons["upload-resume-0"].exists,
+            "Resume must stay hidden while the job is paused under the open Creator Terms gate")
+        XCTAssertTrue(app.buttons["upload-remove-0"].exists)
+        XCTAssertTrue(
+            app.staticTexts["Waiting for Creator Terms agreement"].waitForExistence(timeout: 5),
+            "Paused row under the gate must explain it waits for Creator Terms agreement")
+        for _ in 0..<4 where !toggle.isHittable {
+            app.swipeDown()
+        }
+
+        toggle.tap()
+        XCTAssertTrue(agree.isEnabled, "Agree must enable once the checkbox is ticked")
+        agree.tap()
+
+        // Gate closes and the paused upload resumes and finishes.
+        let closed = NSPredicate(format: "exists == false")
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: closed, evaluatedWith: toggle)], timeout: 15), .completed)
+        let clearDone = app.buttons["upload-clear-done"]
+        for _ in 0..<6 where !clearDone.waitForExistence(timeout: 2) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(clearDone.exists)
+    }
 }

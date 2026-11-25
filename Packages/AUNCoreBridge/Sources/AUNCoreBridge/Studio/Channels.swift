@@ -64,15 +64,26 @@ public struct CreatorAccess: Hashable, Sendable, Decodable {
     /// An admin ran "Delete videos data": writes are refused until it is restored.
     public var pendingDeletion: Bool
     public var tierName: String?
+    /// `false` when the server explicitly reports this account has not yet accepted the Creator Terms.
+    public var termsAccepted: Bool?
+    /// The version of the Creator Terms reported by `GET /api/me/creator` (sent back on `POST /api/me/creator/terms`).
+    public var termsVersion: String?
 
-    public init(canUpload: Bool = true, canCreateChannel: Bool = true, pendingDeletion: Bool = false, tierName: String? = nil) {
+    public init(
+        canUpload: Bool = true, canCreateChannel: Bool = true, pendingDeletion: Bool = false, tierName: String? = nil,
+        termsAccepted: Bool? = nil, termsVersion: String? = nil
+    ) {
         self.canUpload = canUpload
         self.canCreateChannel = canCreateChannel
         self.pendingDeletion = pendingDeletion
         self.tierName = tierName
+        self.termsAccepted = termsAccepted
+        self.termsVersion = termsVersion
     }
 
-    enum CodingKeys: String, CodingKey { case canUpload, canCreateChannel, pendingDeletion, tier }
+    enum CodingKeys: String, CodingKey {
+        case canUpload, canCreateChannel, pendingDeletion, tier, termsAccepted, termsVersion
+    }
     private struct Tier: Decodable { let name: String? }
 
     public init(from decoder: any Decoder) throws {
@@ -81,5 +92,7 @@ public struct CreatorAccess: Hashable, Sendable, Decodable {
         canCreateChannel = try c.decodeIfPresent(Bool.self, forKey: .canCreateChannel) ?? false
         pendingDeletion = try c.decodeIfPresent(Bool.self, forKey: .pendingDeletion) ?? false
         tierName = (try? c.decodeIfPresent(Tier.self, forKey: .tier))?.name
+        termsAccepted = try c.decodeIfPresent(Bool.self, forKey: .termsAccepted)
+        termsVersion = try c.decodeIfPresent(String.self, forKey: .termsVersion)
     }
 }

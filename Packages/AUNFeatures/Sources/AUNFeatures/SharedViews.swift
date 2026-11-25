@@ -66,6 +66,7 @@ struct RailHeader: View {
 struct SettingsMenu: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.l10n) private var l10n
+    let environment: AppEnvironment
     var onOpenBlockedList: (() -> Void)?
 
     var body: some View {
@@ -91,6 +92,23 @@ struct SettingsMenu: View {
                     .accessibilityIdentifier("settings-blocked-list")
                 }
             #endif
+            Divider()
+            Link(destination: AUNSupportLinks.help(language: l10n.language.rawValue, environment: environment)) {
+                Label(l10n("common.help"), systemImage: "questionmark.circle")
+            }
+            .accessibilityIdentifier("settings-help")
+            Link(destination: AUNSupportLinks.contact(language: l10n.language.rawValue, environment: environment)) {
+                Label(l10n("common.contact"), systemImage: "envelope")
+            }
+            .accessibilityIdentifier("settings-contact")
+            Link(destination: AUNSupportLinks.privacy(language: l10n.language.rawValue, environment: environment)) {
+                Label(l10n("common.privacyPolicy"), systemImage: "hand.raised")
+            }
+            .accessibilityIdentifier("settings-privacy")
+            Link(destination: AUNSupportLinks.terms(language: l10n.language.rawValue, environment: environment)) {
+                Label(l10n("common.termsOfService"), systemImage: "doc.text")
+            }
+            .accessibilityIdentifier("settings-terms")
         } label: {
             Image(systemName: "gearshape")
                 .font(.system(size: 17, weight: .medium))

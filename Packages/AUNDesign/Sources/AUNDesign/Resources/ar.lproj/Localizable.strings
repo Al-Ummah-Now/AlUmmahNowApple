@@ -469,3 +469,16 @@
 "safety.blockedList.kind.user" = "مستخدم في المحادثة";
 "safety.unblock" = "إلغاء الحظر";
 "safety.unblockFor" = "إلغاء حظر %@";
+"common.help" = "المساعدة";
+"common.contact" = "تواصل معنا";
+"common.privacyPolicy" = "سياسة الخصوصية";
+"common.termsOfService" = "شروط الاستخدام";
+"common.communityGuidelines" = "إرشادات المجتمع";
+"studio.terms.title" = "الموافقة على الشروط قبل الرفع";
+"studio.terms.body" = "قبل رفع أول مرئي لك، يرجى مراجعة شروط الاستخدام وإرشادات المجتمع والموافقة عليها.";
+"studio.terms.updatedBody" = "تم تحديث شروط الاستخدام وإرشادات المجتمع. يرجى مراجعة أحدث نسخة والموافقة عليها لمواصلة الرفع.";
+"studio.upload.state.waitingForTerms" = "بانتظار الموافقة على شروط المنشئين";
+"studio.terms.checkbox" = "قرأتُ شروط الاستخدام وإرشادات المجتمع وأوافق عليهما.";
+"studio.terms.agree" = "أوافق وأتابع";
+"studio.terms.saving" = "جارٍ الحفظ…";
+"studio.terms.versionChanged" = "تم تحديث شروط الاستخدام. يرجى مراجعة أحدث نسخة والموافقة مجددًا.";

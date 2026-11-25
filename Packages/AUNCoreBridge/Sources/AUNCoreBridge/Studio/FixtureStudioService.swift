@@ -76,22 +76,41 @@ actor FixtureContentStore {
     }
 }
 
+/// Tracks fixture Creator Terms upload refusal and acceptance across `FixtureStudioService` calls.
+actor FixtureTermsState {
+    var refusedOnce = false
+    var acceptedAfterRefusal = false
+
+    func markRefused() { refusedOnce = true }
+    func markAccepted() { acceptedAfterRefusal = true }
+}
+
 /// Bilingual channels and videos for UI tests, snapshots and previews.
 public struct FixtureStudioService: StudioServicing {
     /// The account states UI tests can start in (`-AUNFixtureAccountState`).
     public enum AccountState: String, Sendable { case creator, invitation, pendingDeletion }
+    /// Creator Terms fixture behaviour for UI tests (`-AUNFixtureTermsMode`).
+    public enum TermsMode: String, Sendable {
+        case accepted, required, failed, acceptError, acceptSlow, acceptVersionChanged, refuseUpload
+    }
+    public static let defaultTermsVersion = "2026-11-24"
 
     let store = FixtureContentStore()
     let media = FixtureMediaStore()
+    let termsState = FixtureTermsState()
     private let original = FixtureContentStore()
     let accountState: AccountState
+    let termsMode: TermsMode
     /// Feature keys switched off for UI tests (`-AUNFixtureFeaturesOff upload,analytics`): `UserFeature` raw values, and
     /// `analytics`, whose routes then answer 404 `feature_off`.
     let featuresOff: Set<String>
 
-    public init(accountState: AccountState = .creator, featuresOff: Set<String> = []) {
+    public init(
+        accountState: AccountState = .creator, featuresOff: Set<String> = [], termsMode: TermsMode = .accepted
+    ) {
         self.accountState = accountState
         self.featuresOff = featuresOff
+        self.termsMode = termsMode
     }
 
     /// Every feature on for a creator; without a creator tier, uploads and channel creation are off.
@@ -127,10 +146,37 @@ public struct FixtureStudioService: StudioServicing {
     }
 
     public func creatorAccess() async throws -> CreatorAccess {
+        if termsMode == .failed { throw CoreError.offline }
+        let accepted: Bool
+        if termsMode == .refuseUpload {
+            let refused = await termsState.refusedOnce
+            let done = await termsState.acceptedAfterRefusal
+            accepted = !refused || done
+        } else {
+            accepted = termsMode == .accepted
+        }
         switch accountState {
-        case .creator: CreatorAccess(tierName: "Creator")
-        case .invitation: CreatorAccess(canUpload: false, canCreateChannel: false)
-        case .pendingDeletion: CreatorAccess(canUpload: false, canCreateChannel: false, pendingDeletion: true)
+        case .creator:
+            return CreatorAccess(tierName: "Creator", termsAccepted: accepted, termsVersion: Self.defaultTermsVersion)
+        case .invitation:
+            return CreatorAccess(
+                canUpload: false, canCreateChannel: false, termsAccepted: accepted,
+                termsVersion: Self.defaultTermsVersion)
+        case .pendingDeletion:
+            return CreatorAccess(
+                canUpload: false, canCreateChannel: false, pendingDeletion: true, termsAccepted: accepted,
+                termsVersion: Self.defaultTermsVersion)
+        }
+    }
+
+    public func acceptCreatorTerms(version: String) async throws {
+        switch termsMode {
+        case .acceptError: throw CoreError.http(status: 503)
+        case .acceptVersionChanged:
+            throw CoreError.refused(Refusal(code: Refusal.termsVersionChanged, currentVersion: "2026-12-01"))
+        case .acceptSlow: try await Task.sleep(for: .seconds(5))
+        case .refuseUpload: await termsState.markAccepted()
+        case .accepted, .required, .failed: return
         }
     }
 
@@ -170,6 +216,13 @@ public struct FixtureStudioService: StudioServicing {
 
     public func initiateUpload(_ upload: UploadInitiation, channelID: String) async throws -> UploadTicket {
         try refuseWrites(upload: true)
+        if termsMode == .refuseUpload {
+            let accepted = await termsState.acceptedAfterRefusal
+            if !accepted {
+                await termsState.markRefused()
+                throw CoreError.refused(Refusal(code: Refusal.termsRequired))
+            }
+        }
         return UploadTicket(videoID: "fixture-video-\(UUID().uuidString.prefix(8))", tusSessionID: "fixture", chunkSize: 1 << 20)
     }
 

@@ -41,6 +41,8 @@ public protocol StudioServicing: Sendable {
 
     // Creator tier and account state
     func creatorAccess() async throws -> CreatorAccess
+    /// Records acceptance of the Terms of Service and Community Guidelines (`POST /api/me/creator/terms`) for the version shown.
+    func acceptCreatorTerms(version: String) async throws
     /// Which features this person sees (`GET /api/me/features`); with a channel, judged by that channel's owner's tier
     /// and the person's role there.
     func features(channelID: String?) async throws -> UserFeatures
@@ -52,7 +54,8 @@ public protocol StudioServicing: Sendable {
 
 extension StudioServicing {
     /// Services that cannot tell allow everything; the server still refuses with a code.
-    public func creatorAccess() async throws -> CreatorAccess { CreatorAccess() }
+    public func creatorAccess() async throws -> CreatorAccess { CreatorAccess(termsAccepted: true) }
+    public func acceptCreatorTerms(version: String) async throws {}
     /// Services that cannot tell show nothing gated (fail closed).
     public func features(channelID: String?) async throws -> UserFeatures { .none }
     /// Services without the comments routes answer "not found".
@@ -100,6 +103,14 @@ public struct NativeStudioService: StudioServicing {
         } catch {
             throw CoreError.decoding
         }
+    }
+
+    private struct AcceptTermsBody: Encodable {
+        let version: String
+    }
+
+    public func acceptCreatorTerms(version: String) async throws {
+        try await client.sendRaw(.post, "/api/me/creator/terms", body: AcceptTermsBody(version: version))
     }
 
     public func features(channelID: String?) async throws -> UserFeatures {

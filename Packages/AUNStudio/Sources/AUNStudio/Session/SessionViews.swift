@@ -59,6 +59,12 @@ struct NoticeView: View {
             .fanousMaterial(.card) { .rounded($0.md) }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("notice")
+            .onAppear {
+                AccessibilityNotification.Announcement(l10n(notice.key)).post()
+            }
+            .onChange(of: notice.id) { _, _ in
+                AccessibilityNotification.Announcement(l10n(notice.key)).post()
+            }
         }
     }
 }
@@ -110,6 +116,7 @@ public struct ConfirmSheet: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .fanousPage()
+        .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
         #if os(iOS)
             .presentationDetents([.medium, .large])
             .presentationBackground { FanousSurfaceKind(kind: .page, shape: .rect) }
@@ -161,17 +168,31 @@ struct AccountsView: View {
                     .accessibilityIdentifier("account-add")
                 }
                 .studioRows()
+                Section {
+                    StudioSupportLinksSection(environment: session.environment, idPrefix: "accounts")
+                }
+                .foregroundStyle(Fanous.accent)
+                .studioRows()
                 if session.notice != nil { Section { NoticeView(session: session) } }
             }
             .scrollContentBackground(.hidden)
             .fanousPage()
             .navigationTitle(l10n("studio.account.title"))
+            #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
+                #if os(iOS)
+                    ToolbarItem(placement: .principal) {
+                        Text(l10n("studio.account.title")).fanousFont(.headline).foregroundStyle(Fanous.textPrimary)
+                    }
+                #endif
                 ToolbarItem(placement: .cancellationAction) {
                     Button(l10n("common.dismiss")) { dismiss() }.accessibilityIdentifier("accounts-done")
                 }
             }
         }
+        .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
         .sheet(item: $leaving) { account in
             ConfirmSheet(
                 title: l10n("studio.signOut.title", account.label), message: l10n("studio.signOut.message"),
@@ -205,7 +226,13 @@ struct AccountsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(account.label).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
                         if let email = account.email, email != account.label {
-                            Text(email).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+                            Text(email)
+                                .fanousFont(.caption)
+                                .foregroundStyle(Fanous.textSecondary)
+                                .environment(\.layoutDirection, .leftToRight)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                                .truncationMode(.tail)
                         }
                         if account.needsReauth {
                             Text(l10n("studio.account.reauth")).fanousFont(.caption).foregroundStyle(Fanous.errorText)
@@ -289,6 +316,9 @@ struct IdentityMenu: View {
                     }
                     .accessibilityIdentifier("channel-\(channel.id)")
                 }
+            }
+            Section {
+                StudioSupportLinksSection(environment: session.environment, idPrefix: "identity")
             }
             Section {
                 Button {
