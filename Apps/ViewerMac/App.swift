@@ -9,6 +9,10 @@ struct ViewerMacApp: App {
     @State private var siteTheme = SiteThemeStore.live()
     private let core = ViewerBootstrap.makeCore()
 
+    init() {
+        AppKitLayoutDirection.match(AppSettings().language)
+    }
+
     var body: some Scene {
         WindowGroup {
             ViewerRootView(core: core)

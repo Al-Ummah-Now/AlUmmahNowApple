@@ -288,14 +288,18 @@ import SwiftUI
                             }
                             HStack(spacing: 20) {
                                 if model.isBehind, content.mode == .live || content.mode == .recording {
-                                    Button(l10n("live.return")) { model.returnToLive() }
-                                        .buttonStyle(FanousButtonStyle(.secondary))
-                                        .accessibilityIdentifier("live-return")
+                                    Button {
+                                        model.returnToLive()
+                                    } label: {
+                                        Text(l10n("live.return")).font(.callout.weight(.semibold))
+                                    }
+                                    .buttonStyle(FanousButtonStyle(.secondary))
+                                    .accessibilityIdentifier("live-return")
                                 }
                                 Button {
                                     openStreamReport(content.stream)
                                 } label: {
-                                    Label(l10n("safety.report.stream"), systemImage: "flag")
+                                    Label(l10n("safety.report.stream"), systemImage: "flag").font(.callout.weight(.semibold))
                                 }
                                 .buttonStyle(FanousButtonStyle(.secondary))
                                 .accessibilityIdentifier("tv-report-stream")

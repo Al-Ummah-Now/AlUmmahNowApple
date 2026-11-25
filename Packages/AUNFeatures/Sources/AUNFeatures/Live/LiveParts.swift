@@ -166,7 +166,7 @@ struct LiveChatView: View {
                 .accessibilityAddTraits(.isHeader)
             #if os(tvOS)
                 if onReportMessage != nil, !visibleMessages.isEmpty || visiblePinned != nil {
-                    Text(l10n("safety.report.tvChatHint")).fanousFont(.caption)
+                    Text(l10n("safety.report.tvChatHint")).font(.caption2)
                         .foregroundStyle(Fanous.textSecondary)
                         .padding([.horizontal, .bottom], FanousScale.spacingMd)
                         .accessibilityIdentifier("tv-report-chat-hint")
