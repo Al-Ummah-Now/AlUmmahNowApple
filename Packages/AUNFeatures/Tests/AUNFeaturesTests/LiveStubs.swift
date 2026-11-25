@@ -45,6 +45,21 @@ actor StubLive: LiveServicing {
         heldState?.resume()
         heldState = nil
     }
+    /// Chat reads can be held back mid-flight so tests can block while a poll is in flight.
+    private var holdsChat = false
+    private var heldChat: CheckedContinuation<Void, Never>?
+    var isChatHeld: Bool { heldChat != nil }
+    func set(holdsChat: Bool) { self.holdsChat = holdsChat }
+    func releaseChat() {
+        heldChat?.resume()
+        heldChat = nil
+    }
+    var streamChannelID: String?
+    var streamChannelName: String?
+    func set(channelID: String?, channelName: String?) {
+        streamChannelID = channelID
+        streamChannelName = channelName
+    }
     /// Chat reads on their way at once, at most.
     private(set) var mostChatReads = 0
     private var chatReadsNow = 0
@@ -93,7 +108,9 @@ actor StubLive: LiveServicing {
         if status == .live, let heldEvent, event == heldEvent { await withCheckedContinuation { held = $0 } }
         return lists[status] ?? []
     }
-    func stream(id: String) async throws -> LiveStream { LiveStream(id: id, title: "T", status: current.status) }
+    func stream(id: String) async throws -> LiveStream {
+        LiveStream(id: id, title: "T", status: current.status, channelID: streamChannelID, channelName: streamChannelName)
+    }
     func state(id: String) async throws -> TimedLiveState {
         stateReads += 1
         answerTakes()
@@ -108,6 +125,7 @@ actor StubLive: LiveServicing {
         mostChatReads = max(mostChatReads, chatReadsNow)
         defer { chatReadsNow -= 1 }
         answerTakes()
+        if holdsChat { await withCheckedContinuation { heldChat = $0 } }
         if isSlow { try await Task.sleep(for: .seconds(60)) }
         try refuse()
         if chatFails { throw CoreError.http(status: 503) }

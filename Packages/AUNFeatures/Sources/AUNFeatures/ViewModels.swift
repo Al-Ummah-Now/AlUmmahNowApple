@@ -74,6 +74,11 @@ public final class WatchViewModel {
             state = .failed
         }
     }
+
+    /// Pauses playback when opening the Report sheet so the video does not keep playing behind it.
+    public func pauseForReport() {
+        player.pause()
+    }
 }
 
 extension HomeRailKind {

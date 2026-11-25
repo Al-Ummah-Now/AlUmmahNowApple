@@ -182,7 +182,7 @@
                     Group {
                         if content.video.isPlayable {
                             PlayerSurface(controller: model.player) {
-                                model.player.pause()
+                                model.pauseForReport()
                                 showingReport = true
                             }
                             .ignoresSafeArea()
@@ -238,10 +238,10 @@
                         .interpolation(.none)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 200, height: 200)
-                        .padding(14)
+                        .frame(width: 280, height: 280)
+                        .padding(16)
                         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
-                        .accessibilityLabel(url.absoluteString)
+                        .accessibilityLabel(l10n("safety.report.qrLabel"))
                         .accessibilityIdentifier("tv-report-qr")
                 }
                 Text(l10n(bodyKey, url.absoluteString))

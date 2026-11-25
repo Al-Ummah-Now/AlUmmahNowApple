@@ -91,7 +91,7 @@
                         title: l10n("safety.block.channelTitle", label),
                         message: l10n("safety.block.channelMessage")
                     ) {
-                        blockStore.blockChannel(id: content.video.channelID, name: label)
+                        blockStore.blockChannel(id: content.video.channelID, name: channelName ?? "")
                     }
                 }
             }
@@ -251,9 +251,9 @@
                             }
                         } label: {
                             Image(systemName: "ellipsis.circle")
-                                .font(.title3)
+                                .font(.system(size: 22))
                                 .foregroundStyle(Fanous.textSecondary)
-                                .frame(width: 44, height: 44)
+                                .frame(minWidth: 44, minHeight: 44)
                                 .contentShape(Rectangle())
                                 .accessibilityLabel(l10n("safety.moreActions"))
                         }
@@ -261,6 +261,7 @@
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("watch-actions-menu")
                     }
+                    .padding(.bottom, 4)
                     BlockedChannelCard(
                         channelDisplayName: displayName,
                         cardIdentifier: "watch-channel-blocked",

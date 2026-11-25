@@ -73,4 +73,35 @@ final class TVFocusTests: XCTestCase {
         XCTAssertTrue(app.images["tv-report-qr"].waitForExistence(timeout: 10))
         XCUIRemote.shared.press(.menu)
     }
+
+    @MainActor
+    func testLivePageReportButtonAndChatMessageReportOpenQRCodeSheet() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-AUNUseFixtures", "YES", "-AUNFixtureLive", "YES", "-AUNOpenLive", "fixture-live", "-AUNLanguage", "en",
+        ]
+        app.launch()
+        let reportStream = app.buttons["tv-report-stream"]
+        XCTAssertTrue(reportStream.waitForExistence(timeout: 25))
+        for _ in 0..<4 where !reportStream.hasFocus { XCUIRemote.shared.press(.down) }
+        for _ in 0..<4 where !reportStream.hasFocus { XCUIRemote.shared.press(.left) }
+        XCTAssertTrue(reportStream.hasFocus)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.descendants(matching: .any)["tv-report-sheet"].firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.images["tv-report-qr"].waitForExistence(timeout: 10))
+        XCUIRemote.shared.press(.menu)
+
+        // Move focus right into live chat and open QR report for whichever message row gains focus.
+        let focusedChat = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'tv-report-chat-' AND hasFocus == true")
+        )
+        .firstMatch
+        for _ in 0..<6 where !focusedChat.exists { XCUIRemote.shared.press(.right) }
+        for _ in 0..<4 where !focusedChat.exists { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(focusedChat.waitForExistence(timeout: 10))
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.descendants(matching: .any)["tv-report-sheet"].firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.images["tv-report-qr"].waitForExistence(timeout: 10))
+        XCUIRemote.shared.press(.menu)
+    }
 }

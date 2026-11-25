@@ -144,5 +144,16 @@ final class ViewerFlowTests: XCTestCase {
         let gone = NSPredicate(format: "exists == false")
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: gone, evaluatedWith: chatMenu)], timeout: 10), .completed)
         XCTAssertTrue(app.buttons["chat-actions-m2"].exists)
+
+        // Navigate back to Home and remove the block from Settings so the unblock path is exercised too.
+        let back = app.navigationBars.buttons.matching(NSPredicate(format: "identifier != 'live-actions-menu'")).firstMatch
+        if back.waitForExistence(timeout: 5) { back.tap() } else { app.navigationBars.buttons.element(boundBy: 0).tap() }
+        XCTAssertTrue(app.buttons["settings-menu"].waitForExistence(timeout: 15))
+        app.buttons["settings-menu"].tap()
+        app.buttons["settings-blocked-list"].tap()
+        let unblock = app.buttons["unblock-user:id:fixture-user-0"]
+        XCTAssertTrue(unblock.waitForExistence(timeout: 10))
+        unblock.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["blocked-list-empty"].firstMatch.waitForExistence(timeout: 10))
     }
 }
