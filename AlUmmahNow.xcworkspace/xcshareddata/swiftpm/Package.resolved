@@ -1,13 +1,13 @@
 {
-  "originHash" : "aeaed9d8fd73d67c93ed1d897f458d5b74ad77fd3adf661bc617867806446fa3",
+  "originHash" : "68626ba5a3d0f1d8d182c5560bd5c23b2a5ded4a29eb5217a95e47ee4fa0ac4d",
   "pins" : [
     {
       "identity" : "alummahnowcore",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Al-Ummah-Now/AlUmmahNowCore",
       "state" : {
-        "revision" : "362d9ae2a2e3844da4413998c4bc7344f232333e",
-        "version" : "0.4.0-rc.3"
+        "revision" : "8a23c438e0ffef65f19862c2777573af64ddf155",
+        "version" : "0.4.0-rc.7"
       }
     },
     {
