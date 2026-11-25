@@ -157,14 +157,18 @@ final class ViewerFlowTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["blocked-list-empty"].firstMatch.waitForExistence(timeout: 10))
     }
 
-    /// Text in the Fanous type roles grows with Dynamic Type, in the system face too (#107): the "Trending" heading and a
-    /// card's title are taller at an accessibility size than at the default, in English and Arabic.
+    /// Text in the Fanous type roles grows with Dynamic Type, in the system face too (#107): the "Trending" heading and
+    /// the first trending card (its title and details) are taller at an accessibility size than at the default, in
+    /// English and Arabic, light and dark.
     @MainActor
     func testTextGrowsWithDynamicType() {
+        let normal = "UICTContentSizeCategoryL"
+        let large = "UICTContentSizeCategoryAccessibilityL"
         for (language, heading) in [("en", "Trending"), ("ar", "الأكثر رواجًا")] {
-            var heights: [String: CGFloat] = [:]
-            for size in ["UICTContentSizeCategoryL", "UICTContentSizeCategoryAccessibilityL"] {
-                for theme in ["dark", "light"] {
+            for theme in ["dark", "light"] {
+                var headings: [String: CGFloat] = [:]
+                var cards: [String: CGFloat] = [:]
+                for size in [normal, large] {
                     let app = XCUIApplication()
                     app.launchArguments = [
                         "-AUNUseFixtures", "YES", "-AUNLanguage", language, "-AUNTheme", theme,
@@ -172,14 +176,17 @@ final class ViewerFlowTests: XCTestCase {
                     ]
                     app.launch()
                     let title = app.staticTexts[heading].firstMatch
+                    let card = app.buttons[firstCard]
                     var swipes = 0
-                    while !title.waitForExistence(timeout: 10), swipes < 4 {
+                    while !(title.waitForExistence(timeout: 10) && card.exists), swipes < 4 {
                         app.swipeUp()
                         swipes += 1
                     }
                     XCTAssertTrue(title.exists, heading)
-                    heights[size] = title.frame.height
-                    if size == "UICTContentSizeCategoryAccessibilityL" {
+                    XCTAssertTrue(card.exists, firstCard)
+                    headings[size] = title.frame.height
+                    cards[size] = card.frame.height
+                    if size == large {
                         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                         shot.name = "viewer-dynamictype-\(language)-\(theme)"
                         shot.lifetime = .keepAlways
@@ -187,10 +194,10 @@ final class ViewerFlowTests: XCTestCase {
                     }
                     app.terminate()
                 }
+                let context = "\(language) \(theme)"
+                XCTAssertGreaterThan(headings[large, default: 0], headings[normal, default: 0] * 1.2, "heading, \(context)")
+                XCTAssertGreaterThan(cards[large, default: 0], cards[normal, default: 0] * 1.05, "card, \(context)")
             }
-            XCTAssertGreaterThan(
-                heights["UICTContentSizeCategoryAccessibilityL", default: 0],
-                heights["UICTContentSizeCategoryL", default: 0] * 1.2, "\(language) heading did not grow")
         }
     }
 }

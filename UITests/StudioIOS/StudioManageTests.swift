@@ -5,12 +5,15 @@ final class StudioManageTests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
     @MainActor
-    private func launch(_ language: String, theme: String = "dark", featuresOff: String = "") -> XCUIApplication {
+    private func launch(
+        _ language: String, theme: String = "dark", featuresOff: String = "", extra: [String] = []
+    ) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = [
-            "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNLanguage", language, "-AUNTheme", theme,
-            "-AUNFixtureFeaturesOff", featuresOff, "-ApplePersistenceIgnoreState", "YES",
-        ]
+        app.launchArguments =
+            [
+                "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", "YES", "-AUNLanguage", language, "-AUNTheme", theme,
+                "-AUNFixtureFeaturesOff", featuresOff, "-ApplePersistenceIgnoreState", "YES",
+            ] + extra
         app.launch()
         return app
     }
@@ -34,6 +37,24 @@ final class StudioManageTests: XCTestCase {
         shot.name = name
         shot.lifetime = .keepAlways
         add(shot)
+    }
+
+    /// At accessibility text sizes a Content row stacks and its Edit button goes under it, so the title keeps the row's
+    /// width (#107).
+    @MainActor
+    func testContentRowsStackAtAccessibilitySizes() {
+        let app = launch("en", extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        tab(app, "Content")
+        let first = row(app, "fixture-content-1")
+        XCTAssertTrue(first.waitForExistence(timeout: 20))
+        let edit = app.buttons["edit-fixture-content-1"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 10))
+        XCTAssertGreaterThanOrEqual(edit.frame.minY, first.frame.maxY - 1, "the action is under the row")
+        XCTAssertGreaterThan(first.frame.width, app.windows.firstMatch.frame.width * 0.7, "the row keeps the width")
+        keep("content-accessibility-en")
+        tab(app, "Dashboard")
+        XCTAssertTrue(app.descendants(matching: .any)["dashboard-counts"].firstMatch.waitForExistence(timeout: 20))
+        keep("dashboard-accessibility-en")
     }
 
     @MainActor

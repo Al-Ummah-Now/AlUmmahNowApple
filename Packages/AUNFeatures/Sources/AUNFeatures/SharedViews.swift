@@ -5,6 +5,7 @@ import SwiftUI
 /// Card content shared by phone, tablet, desktop and TV: the web's `.video-card`, a lifted thumbnail over plain text.
 struct VideoCardContent: View {
     @Environment(\.l10n) private var l10n
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let video: Video
     var lifted = false
 
@@ -26,7 +27,7 @@ struct VideoCardContent: View {
                 Text(metadata)
                     .fanousFont(.caption)
                     .foregroundStyle(Fanous.part(\.cardVideoMeta))
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             }
             .padding(.horizontal, 2)
         }

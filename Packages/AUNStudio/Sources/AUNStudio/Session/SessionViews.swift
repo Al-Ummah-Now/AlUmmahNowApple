@@ -263,7 +263,9 @@ struct AvatarView: View {
     var body: some View {
         ZStack {
             Circle().fill(Fanous.surfaceRaised)
+            // The initial is part of the avatar's drawing: it keeps the circle's size, whatever the text size
             Text(Self.initial(of: name)).fanousFont(.label).foregroundStyle(Fanous.accent)
+                .dynamicTypeSize(...DynamicTypeSize.large)
             if let url {
                 AsyncImage(url: url) { phase in
                     if case .success(let image) = phase { image.resizable().scaledToFill() }
@@ -346,6 +348,7 @@ struct IdentityMenu: View {
                 AvatarView(name: name, url: url, size: 32, ring: false)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(name).fanousFont(.label).fontWeight(.semibold).foregroundStyle(Fanous.textPrimary).lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     if let role = session.channel?.role {
                         Text(l10n("studio.role.\(role.rawValue)")).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
                     }
@@ -467,6 +470,9 @@ struct DashboardContent: View {
         }
     }
 
+    /// A tile in the scrolling row is 120 pt wide at the default text size and grows with it.
+    @ScaledMetric(relativeTo: .caption) private var kpiWidth: CGFloat = 120
+
     /// The channel's videos by status, as tiles; Failed turns red when there are any.
     private var kpis: some View {
         let tiles = ForEach(StudioStatus.allCases, id: \.self) { status in
@@ -475,7 +481,7 @@ struct DashboardContent: View {
         return ViewThatFits(in: .horizontal) {
             HStack(spacing: FanousScale.spacingMd) { tiles }
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: FanousScale.spacingMd) { tiles.frame(width: 120) }
+                HStack(spacing: FanousScale.spacingMd) { tiles.frame(width: kpiWidth) }
                     .padding(.vertical, FanousScale.spacingSm)
             }
         }
@@ -556,6 +562,9 @@ struct DashboardSection<Rows: View>: View {
 /// A count tile: the number large, the status under it, in the card material.
 struct KPITile: View {
     @Environment(\.l10n) private var l10n
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The count's size: 26 pt at the default text size.
+    @ScaledMetric(relativeTo: .title) private var countSize: CGFloat = 26
     let label: String
     let value: Int
     var alert = false
@@ -563,9 +572,11 @@ struct KPITile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(DisplayFormat.number(value, l10n.language))
-                .font(.system(size: 26, weight: .bold)).monospacedDigit()
+                .font(.system(size: countSize, weight: .bold)).monospacedDigit()
                 .foregroundStyle(alert && value > 0 ? Fanous.errorText : Fanous.textPrimary)
-            Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).lineLimit(1)
+            Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
         }
         .padding(FanousScale.spacingMd)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -577,6 +588,7 @@ struct KPITile: View {
 /// A held comment: who wrote it, where, and its text.
 struct HeldCommentRow: View {
     @Environment(\.l10n) private var l10n
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let comment: HeldComment
 
     var body: some View {
@@ -584,7 +596,7 @@ struct HeldCommentRow: View {
             Text(comment.authorName).fanousFont(.label).foregroundStyle(Fanous.textPrimary)
             Text(comment.text).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(3)
             Text(comment.displayTargetTitle(l10n.language)).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)

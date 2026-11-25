@@ -106,6 +106,9 @@ import SwiftUI
 
     public struct LiveWatchView: View {
         @Environment(\.l10n) private var l10n
+        /// The chat card's height below the player: 420 pt at the default text size, growing with it (its header, a
+        /// pinned message of several lines and the messages need the room), never beyond 1000.
+        @ScaledMetric(relativeTo: .body) private var chatHeight: CGFloat = 420
         @Environment(\.scenePhase) private var scenePhase
         /// Wide enough for the chat beside the player: landscape iPad and Mac windows. A portrait iPad of any size has it
         /// under the player.
@@ -159,7 +162,9 @@ import SwiftUI
                 ScrollView {
                     VStack(spacing: FanousScale.spacingLg) {
                         main(content)
-                        if content.hasChat, !isChannelBlocked(content) { chat(content).frame(height: 420) }
+                        if content.hasChat, !isChannelBlocked(content) {
+                            chat(content).frame(height: min(chatHeight, 1000))
+                        }
                     }
                     .padding()
                 }

@@ -69,6 +69,24 @@ import Testing
         #expect(FanousTypeface.family(FanousThemeID.fawanees.tokens.font.latin) == nil)
     }
 
+    /// The system face does not scale a fixed size by itself, so it takes Dynamic Type's factor; a bundled face scales
+    /// through `relativeTo` and must not take it too (that would scale it twice).
+    @Test(arguments: everyTheme, [false, true])
+    func theScaleGoesToTheSystemFaceOnly(_ theme: FanousTheme, arabic: Bool) {
+        for role in FanousTextRole.allCases {
+            let style = role.style(arabic: arabic)
+            let family = FanousTypeface.family(arabic ? theme.tokens.font.arabic : theme.tokens.font.latin)
+            let doubled = theme.font(role, arabic: arabic, scale: 2)
+            let plain = theme.font(role, arabic: arabic)
+            if family == nil {
+                #expect(doubled == .system(size: style.size * 2, weight: FanousTypeface.weight(style.weight)))
+                #expect(plain == .system(size: style.size, weight: FanousTypeface.weight(style.weight)))
+            } else {
+                #expect(doubled == plain, "\(theme.id) \(role) arabic=\(arabic): a bundled face is not scaled twice")
+            }
+        }
+    }
+
     @Test func bundledFontsRegister() throws {
         FanousTypeface.register()
         let urls = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []

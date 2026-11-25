@@ -111,6 +111,31 @@ final class AdminFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["approve"].waitForExistence(timeout: 10))
     }
 
+    /// The decision sheet at the largest accessibility size: the reasons scroll into reach and Send works (#107).
+    @MainActor
+    func testRejectSheetAtTheLargestTextSize() {
+        let app = launch(extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        // At this size the review page's decision buttons are below the fold (its list is lazy), so scroll to them
+        let item = row(app, "fx-risk")
+        XCTAssertTrue(item.waitForExistence(timeout: 30))
+        scrollTo(item, in: app)
+        // A row taller than the screen: tap near its top, which is on screen, not its centre
+        item.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.1)).tap()
+        let approve = app.buttons["approve"]
+        let reject = app.buttons["reject"]
+        XCTAssertTrue(approve.waitForExistence(timeout: 5) || app.navigationBars.count > 0, "the review page opens")
+        scrollTo(reject, in: app)
+        reject.tap()
+        let send = app.buttons["sheet-send"]
+        XCTAssertTrue(send.waitForExistence(timeout: 10))
+        let reason = app.buttons["reason-spam_scam"]
+        scrollTo(reason, in: app)
+        reason.tap()
+        XCTAssertTrue(send.isEnabled && send.isHittable)
+        send.tap()
+        XCTAssertTrue(app.staticTexts["Rejected “Charity drive update”"].waitForExistence(timeout: 10))
+    }
+
     @MainActor
     func testRejectNeedsAReason() {
         let app = launch()
