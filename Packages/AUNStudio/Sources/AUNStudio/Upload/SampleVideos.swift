@@ -8,11 +8,21 @@ public enum SampleVideos {
         max(0, min(5, defaults.integer(forKey: "AUNSampleVideos")))
     }
 
+    /// Titles a creator might give, in the app's language, so screenshots show real names (the title pattern is
+    /// `{{filename}}`).
+    static func names(language: String?) -> [String] {
+        language == "ar"
+            ? ["مقدمة في التفسير", "خطبة الجمعة", "من السيرة النبوية", "أساسيات التجويد", "تذكرة رمضان"]
+            : ["Introduction to Tafsir", "Friday khutbah", "From the Seerah", "Tajweed basics", "Ramadan reminder"]
+    }
+
     /// Writes `count` one-second H.264 clips into the app's upload folder.
     public static func make(count: Int) async -> [URL] {
+        let names = names(language: UserDefaults.standard.string(forKey: "AUNLanguage"))
         var urls: [URL] = []
         for index in 0..<count {
-            let url = UploadStore.filesDirectory.appending(path: "sample-\(UUID().uuidString.prefix(8))/Sample \(index + 1).mp4")
+            let url = UploadStore.filesDirectory.appending(
+                path: "sample-\(UUID().uuidString.prefix(8))/\(names[index % names.count]).mp4")
             do {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try await write(url, shade: UInt8(40 + index * 50))

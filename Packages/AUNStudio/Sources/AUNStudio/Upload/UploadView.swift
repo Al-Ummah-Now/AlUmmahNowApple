@@ -17,7 +17,7 @@ struct LabeledField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
             Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).accessibilityHidden(true)
-            TextField(label, text: $text, prompt: Text(prompt)).autocorrectionDisabled()
+            TextField(label, text: $text, prompt: fanousPrompt(prompt)).autocorrectionDisabled()
                 .accessibilityIdentifier(identifier)
         }
     }
@@ -283,7 +283,7 @@ private struct FileRow: View {
                             guard let current = composer.files.firstIndex(where: { $0.id == id }) else { return }
                             composer.files[current].titleOverride = value.isEmpty ? nil : value
                         }),
-                    prompt: Text(composer.title(at: index, channelName: channelName, language: l10n.language))
+                    prompt: fanousPrompt(composer.title(at: index, channelName: channelName, language: l10n.language))
                 )
                 .accessibilityIdentifier("upload-title-\(index)")
                 Text(
@@ -314,9 +314,12 @@ private struct SetForAllSection: View {
     var body: some View {
         Section {
             HStack {
-                TextField(l10n("studio.upload.titlePattern"), text: $composer.settings.titlePattern)
-                    .autocorrectionDisabled()
-                    .accessibilityIdentifier("upload-pattern")
+                TextField(
+                    l10n("studio.upload.titlePattern"), text: $composer.settings.titlePattern,
+                    prompt: fanousPrompt(l10n("studio.upload.titlePattern"))
+                )
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("upload-pattern")
                 Menu {
                     ForEach(TitlePattern.tokens, id: \.self) { token in
                         Button(l10n("studio.token.\(token)")) { composer.settings.titlePattern += "{{\(token)}}" }
@@ -333,9 +336,12 @@ private struct SetForAllSection: View {
                         DisplayFormat.number(composer.settings.firstEpisode, l10n.language)),
                     value: $composer.settings.firstEpisode, in: 0...9999)
             }
-            TextField(l10n("studio.upload.description"), text: $composer.settings.description, axis: .vertical)
-                .lineLimit(3...8)
-                .accessibilityIdentifier("upload-description")
+            TextField(
+                l10n("studio.upload.description"), text: $composer.settings.description,
+                prompt: fanousPrompt(l10n("studio.upload.description")), axis: .vertical
+            )
+            .lineLimit(3...8)
+            .accessibilityIdentifier("upload-description")
             Picker(l10n("studio.upload.category"), selection: $composer.settings.category) {
                 Text(l10n("studio.upload.none")).tag(VideoCategory?.none)
                 ForEach(VideoCategory.allCases, id: \.self) { Text(l10n("category.\($0.rawValue)")).tag(VideoCategory?.some($0)) }

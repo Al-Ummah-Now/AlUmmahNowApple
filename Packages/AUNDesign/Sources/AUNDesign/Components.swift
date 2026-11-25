@@ -392,3 +392,9 @@ extension FanousCard where Status == EmptyView {
         hasFooter = true
     }
 }
+
+/// A text field's placeholder in the theme's placeholder colour (`formPlaceholder`, at least 4.5:1 on the raised field
+/// surface in every theme and mode). The system's placeholder grey is about 1.7:1 on a light field (Apple #107).
+@MainActor public func fanousPrompt(_ text: String) -> Text {
+    Text(text).foregroundStyle(Fanous.part(\.formPlaceholder))
+}
