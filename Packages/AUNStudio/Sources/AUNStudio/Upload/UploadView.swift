@@ -17,7 +17,7 @@ struct LabeledField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
             Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).accessibilityHidden(true)
-            TextField(label, text: $text, prompt: fanousPrompt(prompt)).autocorrectionDisabled()
+            TextField(label, text: $text, prompt: fanousPrompt(prompt)).autocorrectionDisabled().fanousFieldAlignment()
                 .accessibilityIdentifier(identifier)
         }
     }
@@ -77,7 +77,7 @@ struct UploadView: View {
         .task {
             let count = SampleVideos.requestedCount()
             guard count > 0, composer.files.isEmpty else { return }
-            let samples = await SampleVideos.make(count: count)
+            let samples = await SampleVideos.make(count: count, language: l10n.language)
             composer.add(samples.compactMap { PickedVideo.make(file: $0, ownsFile: true) })
         }
         .task(id: session.channel?.id) {
@@ -285,6 +285,7 @@ private struct FileRow: View {
                         }),
                     prompt: fanousPrompt(composer.title(at: index, channelName: channelName, language: l10n.language))
                 )
+                .fanousFieldAlignment()
                 .accessibilityIdentifier("upload-title-\(index)")
                 Text(
                     verbatim: DisplayFormat.meta(
@@ -318,6 +319,7 @@ private struct SetForAllSection: View {
                     l10n("studio.upload.titlePattern"), text: $composer.settings.titlePattern,
                     prompt: fanousPrompt(l10n("studio.upload.titlePattern"))
                 )
+                .fanousFieldAlignment()
                 .autocorrectionDisabled()
                 .accessibilityIdentifier("upload-pattern")
                 Menu {
@@ -340,6 +342,7 @@ private struct SetForAllSection: View {
                 l10n("studio.upload.description"), text: $composer.settings.description,
                 prompt: fanousPrompt(l10n("studio.upload.description")), axis: .vertical
             )
+            .fanousFieldAlignment()
             .lineLimit(3...8)
             .accessibilityIdentifier("upload-description")
             Picker(l10n("studio.upload.category"), selection: $composer.settings.category) {

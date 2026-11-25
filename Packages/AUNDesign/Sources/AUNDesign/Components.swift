@@ -398,3 +398,24 @@ extension FanousCard where Status == EmptyView {
 @MainActor public func fanousPrompt(_ text: String) -> Text {
     Text(text).foregroundStyle(Fanous.part(\.formPlaceholder))
 }
+
+extension View {
+    /// A text field's placeholder and text start where the line starts: at the right in Arabic. A latin value (a title
+    /// pattern like {{filename}}) stays readable: the line starts at the right, its characters keep their own order.
+    public func fanousFieldAlignment() -> some View { modifier(FieldAlignment()) }
+}
+
+private struct FieldAlignment: ViewModifier {
+    @Environment(\.locale) private var locale
+
+    func body(content: Content) -> some View {
+        // The UIKit field behind a TextField is already mirrored by the app's forced direction (UIKitLayoutDirection),
+        // and a leading alignment then lands on the left. Laid out left to right and aligned to the trailing edge it is
+        // at the right. The locale decides, not the environment's layout direction, which a sheet may not carry.
+        if locale.language.languageCode == .arabic {
+            content.multilineTextAlignment(.trailing).environment(\.layoutDirection, .leftToRight)
+        } else {
+            content
+        }
+    }
+}

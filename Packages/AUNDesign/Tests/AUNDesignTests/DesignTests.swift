@@ -87,6 +87,14 @@ import Testing
         }
     }
 
+    /// `fanousPrompt` draws placeholders in `formPlaceholder` on the raised field surface (#107): readable in every theme
+    /// and mode.
+    @Test(arguments: everyTheme)
+    func placeholdersMeetWCAGAAOnTheFieldSurface(_ theme: FanousTheme) {
+        let ratio = theme.parts.formPlaceholder.contrast(with: theme.colors.surfaceRaised)
+        #expect(ratio >= 4.5, "\(theme.id) dark=\(theme.isDark): \(ratio)")
+    }
+
     @Test func bundledFontsRegister() throws {
         FanousTypeface.register()
         let urls = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
