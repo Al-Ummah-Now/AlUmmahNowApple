@@ -330,11 +330,16 @@ struct ViewerBlockConfirmSheet: View {
                 .toolbar {
                     #if os(iOS)
                         ToolbarItem(placement: .principal) {
-                            Text(l10n("safety.blockedList.title")).fanousFont(.headline).foregroundStyle(Fanous.textPrimary)
+                            Text(l10n("safety.blockedList.title"))
+                                .fanousFont(.headline)
+                                .foregroundStyle(Fanous.textPrimary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
                         }
                     #endif
                     ToolbarItem(placement: .cancellationAction) {
                         Button(l10n("common.dismiss")) { dismiss() }
+                            .foregroundStyle(Fanous.textPrimary)
                             .accessibilityIdentifier("blocked-list-done")
                     }
                 }
