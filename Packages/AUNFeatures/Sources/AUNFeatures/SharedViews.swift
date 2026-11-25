@@ -94,7 +94,12 @@ struct SettingsMenu: View {
         } label: {
             Image(systemName: "gearshape")
                 .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(Fanous.part(\.navIcon))
+                // The Mac's toolbar is the page's colour, not the navy header
+                #if os(macOS)
+                    .foregroundStyle(Fanous.textPrimary)
+                #else
+                    .foregroundStyle(Fanous.part(\.navIcon))
+                #endif
                 .accessibilityLabel(l10n("common.settings"))
         }
         .accessibilityIdentifier("settings-menu")
