@@ -119,8 +119,10 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
     /// The tvOS player's transport bar menus for quality, speed and subtitles.
     @MainActor
     enum TransportMenus {
-        static func items(controller: PlayerController, l10n: L10n) -> [UIMenuElement] {
-            [
+        static func items(
+            controller: PlayerController, l10n: L10n, onReport: (@MainActor () -> Void)? = nil
+        ) -> [UIMenuElement] {
+            var menus: [UIMenuElement] = [
                 UIMenu(
                     title: l10n("player.quality"), image: UIImage(systemName: "slider.horizontal.3"),
                     children: controller.qualityOptions.map { option in
@@ -144,6 +146,17 @@ func speedLabel(_ speed: Float, _ l10n: L10n) -> String {
                             }
                         }),
             ]
+            if let onReport {
+                let report = UIAction(
+                    title: l10n("safety.report.video"),
+                    image: UIImage(systemName: "flag")
+                ) { _ in
+                    MainActor.assumeIsolated { onReport() }
+                }
+                report.accessibilityIdentifier = "tv-report-video"
+                menus.append(report)
+            }
+            return menus
         }
 
         private static func action(_ title: String, on: Bool, handler: @escaping @MainActor () -> Void) -> UIAction {

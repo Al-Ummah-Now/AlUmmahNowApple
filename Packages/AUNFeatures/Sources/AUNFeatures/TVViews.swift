@@ -178,23 +178,26 @@
                 case .loaded(let content):
                     Group {
                         if content.video.isPlayable {
-                            PlayerSurface(controller: model.player).ignoresSafeArea().accessibilityIdentifier("player")
+                            PlayerSurface(controller: model.player) {
+                                showingReport = true
+                            }
+                            .ignoresSafeArea()
+                            .accessibilityIdentifier("player")
                         } else {
-                            Text(l10n("watch.notReady")).foregroundStyle(Fanous.textPrimary).accessibilityIdentifier(
-                                "watch-not-ready")
+                            VStack(spacing: 24) {
+                                Text(l10n("watch.notReady")).foregroundStyle(Fanous.textPrimary)
+                                    .accessibilityIdentifier("watch-not-ready")
+                                Button {
+                                    showingReport = true
+                                } label: {
+                                    Label(l10n("safety.report.video"), systemImage: "flag")
+                                }
+                                .buttonStyle(FanousButtonStyle(.secondary))
+                                .accessibilityIdentifier("tv-report-video")
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .overlay(alignment: .topTrailing) {
-                        Button {
-                            showingReport = true
-                        } label: {
-                            Label(l10n("safety.report.video"), systemImage: "flag")
-                        }
-                        .buttonStyle(FanousButtonStyle(.secondary))
-                        .padding(40)
-                        .accessibilityIdentifier("tv-report-video")
-                    }
                     .sheet(isPresented: $showingReport) {
                         VStack(spacing: 24) {
                             Text(l10n("safety.report.video")).font(.title2.weight(.bold))
