@@ -57,6 +57,33 @@ public enum ViewerReportURL {
     }
 }
 
+/// What is being reported on Apple TV, which has no browser: the page that says where to report it.
+public struct ViewerReportRequest: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let titleKey: String
+    public let bodyKey: String
+    public let url: URL
+
+    public static func video(id: String, language: String, webBaseURL: URL) -> Self {
+        Self(
+            id: "video:\(id)", titleKey: "safety.report.video", bodyKey: "safety.report.tvBody",
+            url: ViewerReportURL.video(id: id, language: language, webBaseURL: webBaseURL))
+    }
+
+    public static func liveStream(id: String, language: String, webBaseURL: URL) -> Self {
+        Self(
+            id: "stream:\(id)", titleKey: "safety.report.stream", bodyKey: "safety.report.tvStreamBody",
+            url: ViewerReportURL.liveStream(id: id, language: language, webBaseURL: webBaseURL))
+    }
+
+    public static func liveChat(streamID: String, messageID: String, language: String, webBaseURL: URL) -> Self {
+        Self(
+            id: "chat:\(messageID)", titleKey: "safety.report.message", bodyKey: "safety.report.tvMessageBody",
+            url: ViewerReportURL.liveChat(
+                streamID: streamID, messageID: messageID, language: language, webBaseURL: webBaseURL))
+    }
+}
+
 /// One blocked channel or live-chat author stored on this device while the viewer is guest-only.
 public struct BlockedEntry: Identifiable, Hashable, Codable, Sendable {
     public enum Kind: String, Codable, Hashable, Sendable { case channel, chatUser }
@@ -254,13 +281,21 @@ struct ViewerBlockConfirmSheet: View {
         #endif
     }
 
+    /// Large text fills the button's own height: its marks and tails stay clear of the edge.
+    private var labelInsets: EdgeInsets {
+        dynamicTypeSize.isAccessibilitySize
+            ? EdgeInsets(top: 8, leading: 6, bottom: 8, trailing: 6) : EdgeInsets()
+    }
+
     @ViewBuilder private var buttons: some View {
         let cancel = Button {
             dismiss()
         } label: {
             Text(l10n("common.cancel"))
                 .font(.system(size: labelSize, weight: .semibold))
+                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(labelInsets)
         }
         .buttonStyle(FanousButtonStyle(.primary))
         .focused($cancelFocused)
@@ -278,7 +313,9 @@ struct ViewerBlockConfirmSheet: View {
             Text(l10n("safety.block.confirm"))
                 .font(.system(size: labelSize, weight: .semibold))
                 .foregroundStyle(Fanous.errorText)
+                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(labelInsets)
         }
         .buttonStyle(FanousButtonStyle(.secondary))
         .accessibilityIdentifier("block-confirm-action")

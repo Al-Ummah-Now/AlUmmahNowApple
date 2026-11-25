@@ -53,55 +53,132 @@ final class TVFocusTests: XCTestCase {
         XCTAssertTrue(app.otherElements["player"].waitForExistence(timeout: 20))
     }
 
+    /// The report page for `title`, its whole address, and everything inside the screen; Dismiss has the focus.
     @MainActor
-    func testTransportBarReportOpensQRCodeSheet() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-AUNUseFixtures", "YES", "-AUNFixturePlayable", "YES", "-AUNLanguage", "en"]
-        app.launch()
-        waitForFocus(app.buttons["hero"])
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.otherElements["player"].waitForExistence(timeout: 20))
-        let report = app.cells["tv-report-video"]
-        if !report.exists { XCUIRemote.shared.press(.up) }
-        XCTAssertTrue(report.waitForExistence(timeout: 20))
-        for _ in 0..<2 where !report.hasFocus { XCUIRemote.shared.press(.up) }
-        for _ in 0..<6 where !report.hasFocus { XCUIRemote.shared.press(.right) }
-        for _ in 0..<8 where !report.hasFocus { XCUIRemote.shared.press(.left) }
-        XCTAssertTrue(report.hasFocus)
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.descendants(matching: .any)["tv-report-sheet"].firstMatch.waitForExistence(timeout: 15))
-        XCTAssertTrue(app.images["tv-report-qr"].waitForExistence(timeout: 10))
-        XCUIRemote.shared.press(.menu)
+    private func checkReportPage(
+        _ app: XCUIApplication, title: String, address: String, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            app.descendants(matching: .any)["tv-report-sheet"].firstMatch.waitForExistence(timeout: 15), file: file, line: line)
+        let heading = app.staticTexts["tv-report-title"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 10), file: file, line: line)
+        XCTAssertEqual(heading.label, title, file: file, line: line)
+        let body = app.staticTexts["tv-report-body"]
+        XCTAssertTrue(body.label.contains(address), "\(body.label) has no \(address)", file: file, line: line)
+        let dismiss = app.buttons["tv-report-dismiss"]
+        waitForFocus(dismiss, file: file, line: line)
+        // Clear of the edges a television may crop, and of each other
+        let screen = app.windows.firstMatch.frame.insetBy(dx: 60, dy: 60)
+        for element in [app.images["tv-report-qr"], heading, body, dismiss] {
+            XCTAssertTrue(element.exists, file: file, line: line)
+            XCTAssertTrue(screen.contains(element.frame), "\(element.identifier) \(element.frame) is cut", file: file, line: line)
+        }
+        XCTAssertLessThanOrEqual(heading.frame.maxY, body.frame.minY, file: file, line: line)
+        XCTAssertLessThanOrEqual(body.frame.maxY, dismiss.frame.minY, file: file, line: line)
     }
 
     @MainActor
-    func testLivePageReportButtonAndChatMessageReportOpenQRCodeSheet() {
+    private func gone(_ element: XCUIElement) -> Bool {
+        let missing = NSPredicate(format: "exists == false")
+        return XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: missing, object: element)], timeout: 15) == .completed
+    }
+
+    @MainActor
+    func testTransportBarReportOpensQRCodePage() {
+        for (language, title) in [("en", "Report video"), ("ar", "الإبلاغ عن المرئي")] {
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "-AUNUseFixtures", "YES", "-AUNFixturePlayable", "YES", "-AUNLanguage", language,
+                "-AUNOpenVideo", FixtureIDs.video,
+            ]
+            app.launch()
+            XCTAssertTrue(app.otherElements["player"].waitForExistence(timeout: 30))
+            let report = app.cells["tv-report-video"]
+            if !report.exists { XCUIRemote.shared.press(.up) }
+            XCTAssertTrue(report.waitForExistence(timeout: 20))
+            for _ in 0..<2 where !report.hasFocus { XCUIRemote.shared.press(.up) }
+            for _ in 0..<6 where !report.hasFocus { XCUIRemote.shared.press(.right) }
+            for _ in 0..<8 where !report.hasFocus { XCUIRemote.shared.press(.left) }
+            XCTAssertTrue(report.hasFocus)
+            XCUIRemote.shared.press(.select)
+            checkReportPage(app, title: title, address: "/\(language)/report?type=video&id=\(FixtureIDs.video)")
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(gone(app.buttons["tv-report-dismiss"]))
+            XCTAssertTrue(app.otherElements["player"].waitForExistence(timeout: 15))
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    private func openLive(_ language: String, _ id: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
-            "-AUNUseFixtures", "YES", "-AUNFixtureLive", "YES", "-AUNOpenLive", "fixture-live", "-AUNLanguage", "en",
+            "-AUNUseFixtures", "YES", "-AUNFixtureLive", "YES", "-AUNFixturePlayable", "YES", "-AUNOpenLive", id,
+            "-AUNLanguage", language,
         ]
         app.launch()
-        let reportStream = app.buttons["tv-report-stream"]
-        XCTAssertTrue(reportStream.waitForExistence(timeout: 25))
-        for _ in 0..<4 where !reportStream.hasFocus { XCUIRemote.shared.press(.down) }
-        for _ in 0..<4 where !reportStream.hasFocus { XCUIRemote.shared.press(.left) }
-        XCTAssertTrue(reportStream.hasFocus)
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.descendants(matching: .any)["tv-report-sheet"].firstMatch.waitForExistence(timeout: 15))
-        XCTAssertTrue(app.images["tv-report-qr"].waitForExistence(timeout: 10))
-        XCUIRemote.shared.press(.menu)
+        return app
+    }
 
-        // Move focus right into live chat and open QR report for whichever message row gains focus.
+    /// With the remote: the stream's button, then a message, each to its own page and back to where it was.
+    @MainActor
+    private func reportStreamAndMessage(
+        _ language: String, streamTitle: String, messageTitle: String, hint: String, toChat: XCUIRemote.Button
+    ) {
+        let app = openLive(language, FixtureIDs.live)
+        let reportStream = app.buttons["tv-report-stream"]
+        XCTAssertTrue(reportStream.waitForExistence(timeout: 30))
+        XCTAssertEqual(app.staticTexts["tv-report-chat-hint"].label, hint)
+        let away: XCUIRemote.Button = toChat == .right ? .left : .right
+        for _ in 0..<4 where !reportStream.hasFocus { XCUIRemote.shared.press(.down) }
+        for _ in 0..<4 where !reportStream.hasFocus { XCUIRemote.shared.press(away) }
+        waitForFocus(reportStream)
+        XCUIRemote.shared.press(.select)
+        checkReportPage(app, title: streamTitle, address: "/\(language)/report?type=livestream&id=\(FixtureIDs.live)")
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(gone(app.buttons["tv-report-dismiss"]))
+        // The page under it is as it was, not left or loaded again
+        waitForFocus(reportStream)
+
         let focusedChat = app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH 'tv-report-chat-' AND hasFocus == true")
         )
         .firstMatch
-        for _ in 0..<6 where !focusedChat.exists { XCUIRemote.shared.press(.right) }
+        for _ in 0..<6 where !focusedChat.exists { XCUIRemote.shared.press(toChat) }
         for _ in 0..<4 where !focusedChat.exists { XCUIRemote.shared.press(.down) }
         XCTAssertTrue(focusedChat.waitForExistence(timeout: 10))
+        let message = String(focusedChat.identifier.dropFirst("tv-report-chat-".count))
         XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.descendants(matching: .any)["tv-report-sheet"].firstMatch.waitForExistence(timeout: 15))
-        XCTAssertTrue(app.images["tv-report-qr"].waitForExistence(timeout: 10))
-        XCUIRemote.shared.press(.menu)
+        checkReportPage(
+            app, title: messageTitle,
+            address: "/\(language)/report?type=live_chat&stream=\(FixtureIDs.live)&message=\(message)")
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(gone(app.buttons["tv-report-dismiss"]))
+        waitForFocus(app.buttons["tv-report-chat-\(message)"])
+        app.terminate()
+    }
+
+    @MainActor
+    func testLivePageReportsTheStreamAndAMessage() {
+        reportStreamAndMessage(
+            "en", streamTitle: "Report live stream", messageTitle: "Report message", hint: "Select a message to report it.",
+            toChat: .right)
+    }
+
+    @MainActor
+    func testArabicLivePageReportsTheStreamAndAMessage() {
+        reportStreamAndMessage(
+            "ar", streamTitle: "الإبلاغ عن البث المباشر", messageTitle: "الإبلاغ عن الرسالة",
+            hint: "اختر رسالة للإبلاغ عنها.", toChat: .left)
+    }
+
+    @MainActor
+    func testAStreamThatIsNotOnAirCanBeReported() {
+        let app = openLive("en", FixtureIDs.coming)
+        XCTAssertTrue(app.descendants(matching: .any)["live-notice"].firstMatch.waitForExistence(timeout: 30))
+        waitForFocus(app.buttons["tv-report-stream"])
+        XCUIRemote.shared.press(.select)
+        checkReportPage(
+            app, title: "Report live stream", address: "/en/report?type=livestream&id=\(FixtureIDs.coming)")
     }
 }

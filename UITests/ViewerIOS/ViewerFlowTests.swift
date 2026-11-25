@@ -128,14 +128,14 @@ final class ViewerFlowTests: XCTestCase {
     func testLiveChatBlockUserHidesMessageAndKeepsOtherMessages() {
         let app = XCUIApplication()
         app.launchArguments = [
-            "-AUNUseFixtures", "YES", "-AUNFixtureLive", "YES", "-AUNOpenLive", "fixture-live",
+            "-AUNUseFixtures", "YES", "-AUNFixtureLive", "YES", "-AUNOpenLive", FixtureIDs.live,
             "-AUNLanguage", "en", "-AUNTheme", "dark",
         ]
         app.launch()
-        let chatMenu = app.buttons["chat-actions-m0"]
+        let chatMenu = app.buttons["chat-actions-\(FixtureIDs.message(0))"]
         XCTAssertTrue(chatMenu.waitForExistence(timeout: 30))
         chatMenu.tap()
-        let blockUser = app.buttons["block-chat-user-m0"]
+        let blockUser = app.buttons["block-chat-user-\(FixtureIDs.message(0))"]
         XCTAssertTrue(blockUser.waitForExistence(timeout: 10))
         blockUser.tap()
         XCTAssertTrue(app.buttons["block-confirm-action"].waitForExistence(timeout: 10))
@@ -143,7 +143,7 @@ final class ViewerFlowTests: XCTestCase {
 
         let gone = NSPredicate(format: "exists == false")
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: gone, evaluatedWith: chatMenu)], timeout: 10), .completed)
-        XCTAssertTrue(app.buttons["chat-actions-m2"].exists)
+        XCTAssertTrue(app.buttons["chat-actions-\(FixtureIDs.message(2))"].exists)
 
         // Navigate back to Home and remove the block from Settings so the unblock path is exercised too.
         let back = app.navigationBars.buttons.matching(NSPredicate(format: "identifier != 'live-actions-menu'")).firstMatch

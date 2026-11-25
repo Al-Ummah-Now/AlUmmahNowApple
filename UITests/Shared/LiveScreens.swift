@@ -10,11 +10,11 @@ final class LiveScreens: XCTestCase {
     @MainActor
     func testLiveScreens() {
         let pages: [(String, [String], String)] = [
-            ("home", [], "live-card-fixture-live"),
-            ("live", ["-AUNOpenLive", "fixture-live"], "live-title"),
-            ("premiere", ["-AUNOpenLive", "fixture-premiere"], "live-countdown"),
-            ("coming", ["-AUNOpenLive", "fixture-coming"], "live-notice"),
-            ("recording", ["-AUNOpenLive", "fixture-recording"], "live-title"),
+            ("home", [], "live-card-\(FixtureIDs.live)"),
+            ("live", ["-AUNOpenLive", FixtureIDs.live], "live-title"),
+            ("premiere", ["-AUNOpenLive", FixtureIDs.premiere], "live-countdown"),
+            ("coming", ["-AUNOpenLive", FixtureIDs.coming], "live-notice"),
+            ("recording", ["-AUNOpenLive", FixtureIDs.recording], "live-title"),
         ]
         for language in StoreScreenshot.languages {
             for theme in StoreScreenshot.themes {

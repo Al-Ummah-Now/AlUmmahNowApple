@@ -64,6 +64,9 @@ public struct FanousButtonStyle: ButtonStyle {
 private struct FanousButtonBody: View {
     @Environment(\.fanous) private var theme
     @Environment(\.isEnabled) private var enabled
+    #if os(tvOS)
+        @Environment(\.isFocused) private var focused
+    #endif
     let kind: FanousButtonStyle.Kind
     let configuration: ButtonStyleConfiguration
 
@@ -84,6 +87,9 @@ private struct FanousButtonBody: View {
             .offset(y: pressed && kind == .primary ? 1 : 0)
             .opacity(enabled ? 1 : 0.55)
             .animation(.easeOut(duration: FanousScale.durationFast), value: pressed)
+            #if os(tvOS)
+                .tvFocus(focused, shape)
+            #endif
     }
 
     @ViewBuilder private func surface(_ shape: FanousShape, pressed: Bool) -> some View {
@@ -110,6 +116,44 @@ private struct FanousButtonBody: View {
         }
     }
 }
+
+#if os(tvOS)
+    extension View {
+        /// The theme's focus ring, for what the remote is on: a style of our own has no focus look of the system's.
+        fileprivate func tvFocus(_ focused: Bool, _ shape: FanousShape) -> some View {
+            overlay {
+                if focused { shape.strokeBorder(Fanous.part(\.buttonSecondaryFocus), lineWidth: 5).padding(-9) }
+            }
+            .scaleEffect(focused ? 1.05 : 1)
+            .animation(.easeOut(duration: FanousScale.durationFast), value: focused)
+        }
+    }
+
+    /// A row of a list that can be selected, on Apple TV: nothing at rest, a raised surface with the focus ring when the
+    /// remote is on it.
+    public struct TVRowButtonStyle: ButtonStyle {
+        public init() {}
+
+        public func makeBody(configuration: Configuration) -> some View { Row(configuration: configuration) }
+
+        private struct Row: View {
+            @Environment(\.fanous) private var theme
+            @Environment(\.isFocused) private var focused
+            let configuration: ButtonStyleConfiguration
+
+            var body: some View {
+                let shape = FanousShape.rounded(theme.radius.md)
+                configuration.label
+                    .background { if focused { FanousSurfaceKind(kind: .hover, shape: shape) } }
+                    .overlay {
+                        if focused { shape.strokeBorder(Fanous.part(\.buttonSecondaryFocus), lineWidth: 4) }
+                    }
+                    .opacity(configuration.isPressed ? 0.8 : 1)
+                    .animation(.easeOut(duration: FanousScale.durationFast), value: focused)
+            }
+        }
+    }
+#endif
 
 /// A circular icon button (`.b` icon form): ghost at rest, the hover material when pressed.
 public struct FanousIconButtonStyle: ButtonStyle {

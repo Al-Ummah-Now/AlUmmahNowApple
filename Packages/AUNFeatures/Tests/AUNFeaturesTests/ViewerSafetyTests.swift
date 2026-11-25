@@ -186,20 +186,28 @@ struct ViewerSafetyTests {
         #expect(await live.beats == beatsAfterFirst)
         #expect(await live.leaves == 1)
 
-        // Unblock, hold a beat mid-flight, then block again before the beat answers:
-        // visit bump must ignore the stale beat's viewer count and still send leave.
+        // Unblock, hold a beat mid-flight, then block again before the beat answers: its answer is of a visit that is over.
         model.setBlocked(false)
+        #expect(model.viewers == 5)
         await live.set(holdsBeats: true)
         let beatPoll = Task { await model.poll() }
         try await until { await live.isBeatHeld }
+        await live.set(beatCount: 99)
         model.setBlocked(true)
+        // Back before the answer is there: counted in again at once, whatever the old answer says of the next beat
+        model.setBlocked(false)
         await live.set(holdsBeats: false)
         await live.releaseBeat()
         await beatPoll.value
         try await until { await live.leaves == 2 }
         await model.settled()
-        #expect(model.isBlocked)
-        #expect(model.player.item == nil)
+        #expect(model.viewers == 5)
+        await live.set(beatCount: 7)
+        let beatsBefore = await live.beats
+        await model.poll()
+        await model.settled()
+        #expect(await live.beats == beatsBefore + 1)
+        #expect(model.viewers == 7)
         model.close()
     }
 
@@ -247,36 +255,107 @@ struct ViewerSafetyTests {
         #expect(store.entries.first?.name == "")
     }
 
-    @Test @MainActor func pauseForReportPausesWatchAndLivePlaybackWithoutClearingItem() async {
+    /// A block that only `show` found, gone again before any page heard of it.
+    @Test @MainActor func liveWatchModelUnblocksItselfWhenTheBlockItFoundIsGone() async throws {
         let clock = TestClock()
         let url = URL(string: "https://x.test/live.m3u8")!
-        let live = StubLive(LiveState(status: .live, playbackURL: url))
-        let liveModel = LiveWatchModel(streamID: "s1", live: live, catalog: FixtureCatalogService(), now: { clock.now })
-        await liveModel.load(language: .en)
-        #expect(liveModel.player.item != nil)
-        #expect(liveModel.player.player.timeControlStatus != .paused)
-        liveModel.pauseForReport()
-        #expect(liveModel.player.player.timeControlStatus == .paused)
-        #expect(liveModel.player.item != nil)
-        liveModel.close()
+        let live = StubLive(LiveState(status: .live, playbackURL: url, chat: .init(enabled: true)))
+        let channelID = "ch-mirror-\(UUID().uuidString)"
+        await live.set(channelID: channelID, channelName: "Mirror Channel")
+        defer { ViewerBlockStore.shared.unblockChannel(id: channelID, name: "Mirror Channel") }
+        let model = LiveWatchModel(streamID: "s-mirror", live: live, catalog: FixtureCatalogService(), now: { clock.now })
+        ViewerBlockStore.shared.blockChannel(id: channelID, name: "Mirror Channel")
+        await model.load(language: .en)
+        #expect(model.isBlocked)
+        model.step()
+        #expect(model.isBlocked)
 
+        ViewerBlockStore.shared.unblockChannel(id: channelID, name: "Mirror Channel")
+        model.step()
+        #expect(!model.isBlocked)
+        try await until { model.player.item != nil }
+        await model.poll()
+        await model.settled()
+        #expect(await live.beats == 1)
+        model.close()
+    }
+
+    private static let web = URL(string: "https://videos.alummahnow.net")!
+
+    @Test @MainActor func reportingPausesTheVideoAndClosingGoesOnOnlyIfItWasPlaying() async {
         let catalog = HeldCatalog()
         await catalog.release()
-        let watchModel = WatchViewModel(videoID: "v1", catalog: catalog)
-        await watchModel.load(language: .en)
-        #expect(watchModel.player.item != nil)
-        #expect(watchModel.player.player.timeControlStatus != .paused)
-        watchModel.pauseForReport()
-        #expect(watchModel.player.player.timeControlStatus == .paused)
-        #expect(watchModel.player.item != nil)
-        watchModel.player.stop()
+        let model = WatchViewModel(videoID: "v1", catalog: catalog)
+        await model.load(language: .en)
+        let request = ViewerReportRequest.video(id: "v1", language: "en", webBaseURL: Self.web)
+        #expect(model.player.player.timeControlStatus != .paused)
+        model.report(request)
+        #expect(model.reportRequest == request)
+        #expect(model.player.player.timeControlStatus == .paused)
+        #expect(model.player.item != nil)
+        model.reportClosed()
+        #expect(model.reportRequest == nil)
+        #expect(model.player.player.timeControlStatus != .paused)
+        // Closed again by the cover's own binding: nothing more happens
+        model.player.pause()
+        model.reportClosed()
+        #expect(model.player.player.timeControlStatus == .paused)
+        // Paused by the viewer before: stays so
+        model.report(request)
+        model.reportClosed()
+        #expect(model.player.player.timeControlStatus == .paused)
+        model.player.stop()
+    }
+
+    @Test @MainActor func reportingAStreamOrMessagePausesItAndClosingGoesOnUnlessItIsBlockedOrGone() async {
+        let url = URL(string: "https://x.test/live.m3u8")!
+        func loaded() async -> LiveWatchModel {
+            let live = StubLive(LiveState(status: .live, playbackURL: url))
+            let model = LiveWatchModel(streamID: "s1", live: live, catalog: FixtureCatalogService(), now: { Date() })
+            await model.load(language: .en)
+            return model
+        }
+        let stream = ViewerReportRequest.liveStream(id: "s1", language: "ar", webBaseURL: Self.web)
+        let message = ViewerReportRequest.liveChat(streamID: "s1", messageID: "m9", language: "ar", webBaseURL: Self.web)
+        #expect(stream.titleKey == "safety.report.stream" && message.titleKey == "safety.report.message")
+        #expect(message.url.absoluteString == "https://videos.alummahnow.net/ar/report?type=live_chat&stream=s1&message=m9")
+
+        let model = await loaded()
+        for request in [stream, message] {
+            #expect(model.player.player.timeControlStatus != .paused)
+            model.report(request)
+            #expect(model.reportRequest == request)
+            #expect(model.player.player.timeControlStatus == .paused)
+            model.reportClosed()
+            #expect(model.reportRequest == nil)
+            #expect(model.player.player.timeControlStatus != .paused)
+        }
+        // Blocked, or the page gone, while the report was open
+        model.report(stream)
+        model.setBlocked(true)
+        model.reportClosed()
+        #expect(model.player.item == nil)
+        #expect(model.player.player.timeControlStatus == .paused)
+        model.close()
+        let gone = await loaded()
+        gone.report(stream)
+        gone.close()
+        gone.reportClosed()
+        #expect(gone.player.player.timeControlStatus == .paused)
+        // Paused by the viewer before: stays so
+        let paused = await loaded()
+        paused.player.pause()
+        paused.report(stream)
+        paused.reportClosed()
+        #expect(paused.player.player.timeControlStatus == .paused)
+        paused.close()
     }
 
     @Test func allSafetyKeysLocalizeInEnglishAndArabic() {
         let keys = [
             "safety.moreActions", "safety.moreActionsFor", "safety.report.video", "safety.report.channel",
             "safety.report.stream", "safety.report.message", "safety.report.tvBody", "safety.report.tvStreamBody",
-            "safety.report.tvMessageBody", "safety.report.qrLabel",
+            "safety.report.tvMessageBody", "safety.report.tvChatHint", "safety.report.qrLabel",
             "safety.block.channel", "safety.block.user", "safety.block.confirm", "safety.block.channelTitle",
             "safety.block.channelMessage", "safety.block.userTitle", "safety.block.userMessage",
             "safety.blocked.channelBanner", "safety.blocked.homeEmpty", "safety.blockedList.title",
