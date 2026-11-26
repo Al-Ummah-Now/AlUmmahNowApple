@@ -273,44 +273,54 @@ import SwiftUI
             ZStack {
                 Rectangle().fill(Fanous.background).ignoresSafeArea()
                 switch model.state {
-                case .loading: ProgressView(l10n("common.loading"))
-                case .failed: ErrorStateView { Task { await model.load(language: l10n.language) } }
+                case .loading:
+                    ProgressView {
+                        Text(l10n("common.loading")).fanousFont(.tvBody)
+                    }
+                case .failed:
+                    ErrorStateView(textRole: .tvBody, buttonTextRole: .tvBody) {
+                        Task { await model.load(language: l10n.language) }
+                    }
                 case .loaded(let content):
                     HStack(alignment: .top, spacing: 40) {
-                        VStack(alignment: .leading, spacing: 24) {
-                            if content.mode == .live || content.mode == .recording {
-                                PlayerSurface(
-                                    controller: model.player,
-                                    reportTitle: l10n("safety.report.stream"),
-                                    reportIdentifier: "tv-report-stream-transport"
-                                ) {
-                                    openStreamReport(content.stream)
-                                }
-                                .aspectRatio(16 / 9, contentMode: .fit)
-                                .accessibilityIdentifier("player")
-                            } else {
-                                LiveNotice(content: content, untilStart: model.untilStart)
-                            }
-                            HStack(spacing: 20) {
-                                if model.isBehind, content.mode == .live || content.mode == .recording {
-                                    Button {
-                                        model.returnToLive()
-                                    } label: {
-                                        Text(l10n("live.return")).font(.callout.weight(.semibold))
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 24) {
+                                if content.mode == .live || content.mode == .recording {
+                                    PlayerSurface(
+                                        controller: model.player,
+                                        reportTitle: l10n("safety.report.stream"),
+                                        reportIdentifier: "tv-report-stream-transport"
+                                    ) {
+                                        openStreamReport(content.stream)
                                     }
-                                    .buttonStyle(FanousButtonStyle(.secondary))
-                                    .accessibilityIdentifier("live-return")
+                                    .aspectRatio(16 / 9, contentMode: .fit)
+                                    .frame(height: 440, alignment: .leading)
+                                    .accessibilityIdentifier("player")
+                                } else {
+                                    LiveNotice(content: content, untilStart: model.untilStart)
                                 }
-                                Button {
-                                    openStreamReport(content.stream)
-                                } label: {
-                                    Label(l10n("safety.report.stream"), systemImage: "flag").font(.callout.weight(.semibold))
+                                HStack(spacing: 20) {
+                                    if model.isBehind, content.mode == .live || content.mode == .recording {
+                                        Button {
+                                            model.returnToLive()
+                                        } label: {
+                                            Text(l10n("live.return")).font(.callout.weight(.semibold))
+                                        }
+                                        .buttonStyle(FanousButtonStyle(.secondary, textRole: .tvBody))
+                                        .accessibilityIdentifier("live-return")
+                                    }
+                                    Button {
+                                        openStreamReport(content.stream)
+                                    } label: {
+                                        Label(l10n("safety.report.stream"), systemImage: "flag").font(.callout.weight(.semibold))
+                                    }
+                                    .buttonStyle(FanousButtonStyle(.secondary, textRole: .tvBody))
+                                    .accessibilityIdentifier("tv-report-stream")
                                 }
-                                .buttonStyle(FanousButtonStyle(.secondary))
-                                .accessibilityIdentifier("tv-report-stream")
+                                LiveDetails(content: content, viewers: model.viewers, webBaseURL: webBaseURL)
+                                    .focusable()
                             }
-                            LiveDetails(content: content, viewers: model.viewers, webBaseURL: webBaseURL)
-                            Spacer(minLength: 0)
+                            .padding(.vertical, 12)
                         }
                         if content.hasChat {
                             LiveChatView(
@@ -318,7 +328,7 @@ import SwiftUI
                                 pinned: model.pinned, isReplay: content.mode == .recording,
                                 onReportMessage: { openMessageReport(streamID: content.stream.id, message: $0) }
                             )
-                            .frame(width: 480)
+                            .frame(width: 520)
                         }
                     }
                     .padding(60)

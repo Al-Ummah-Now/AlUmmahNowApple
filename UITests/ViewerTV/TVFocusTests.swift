@@ -123,6 +123,64 @@ final class TVFocusTests: XCTestCase {
         return app
     }
 
+    @MainActor
+    private func checkLiveTypography(
+        language: String, title: String, chatTitle: String, description: String
+    ) {
+        let app = openLive(language, FixtureIDs.live)
+        let heading = app.staticTexts["live-title"]
+        let chatHeading = app.staticTexts["live-chat-title"]
+        let hint = app.staticTexts["tv-report-chat-hint"]
+        let metadata = app.staticTexts["live-metadata"]
+        let summary = app.staticTexts["live-description"]
+        let badge = app.staticTexts["live-tag-now"]
+        let report = app.buttons["tv-report-stream"]
+
+        XCTAssertTrue(hint.waitForExistence(timeout: 30))
+        XCTAssertEqual(heading.label, title)
+        XCTAssertEqual(chatHeading.label, chatTitle)
+        XCTAssertEqual(summary.label, description)
+
+        let screen = app.windows.firstMatch.frame
+        for element in [heading, chatHeading, hint, metadata, summary, badge, report] {
+            XCTAssertTrue(element.exists)
+            XCTAssertTrue(screen.contains(element.frame), "\(element.identifier) outside \(screen): \(element.frame)")
+        }
+        let bodyMinimum: CGFloat = language == "ar" ? 26 : 24
+        let heroMinimum: CGFloat = language == "ar" ? 50 : 48
+        XCTAssertGreaterThanOrEqual(heading.frame.height, heroMinimum)
+        for element in [chatHeading, hint, metadata, summary, badge] {
+            XCTAssertGreaterThanOrEqual(element.frame.height, bodyMinimum, element.identifier)
+        }
+        XCTAssertLessThanOrEqual(heading.frame.maxY, metadata.frame.minY)
+        XCTAssertLessThanOrEqual(metadata.frame.maxY, summary.frame.minY)
+        XCTAssertLessThanOrEqual(chatHeading.frame.maxY, hint.frame.minY)
+        if language == "ar" {
+            XCTAssertLessThan(hint.frame.midX, heading.frame.midX)
+        } else {
+            XCTAssertGreaterThan(hint.frame.midX, heading.frame.midX)
+        }
+
+        let frame = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        frame.name = "TV Live – \(language)"
+        frame.lifetime = .keepAlways
+        add(frame)
+    }
+
+    @MainActor
+    func testEnglishLiveTypography() {
+        checkLiveTypography(
+            language: "en", title: "Questions after Maghrib", chatTitle: "Live chat",
+            description: "Weekly. Questions are answered at the end.")
+    }
+
+    @MainActor
+    func testArabicLiveTypography() {
+        checkLiveTypography(
+            language: "ar", title: "أسئلة بعد المغرب", chatTitle: "محادثة البث المباشر",
+            description: "كل أسبوع. تُجاب الأسئلة في الآخر.")
+    }
+
     /// With the remote: the stream's button, then a message, each to its own page and back to where it was.
     @MainActor
     private func reportStreamAndMessage(
