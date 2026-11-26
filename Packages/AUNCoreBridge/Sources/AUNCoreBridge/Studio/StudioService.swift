@@ -50,6 +50,9 @@ public protocol StudioServicing: Sendable {
     // MARK: Comments
     /// The newest comments waiting for review and their total (needs `comment.moderate` on the channel).
     func heldComments(channelID: String, limit: Int) async throws -> HeldComments
+    func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String) async throws
+    func reportHeldComment(id: String, reason: CommentReportReason, description: String?) async throws
+    func hideCommentAuthor(userID: String, channelID: String) async throws
 }
 
 extension StudioServicing {
@@ -60,6 +63,13 @@ extension StudioServicing {
     public func features(channelID: String?) async throws -> UserFeatures { .none }
     /// Services without the comments routes answer "not found".
     public func heldComments(channelID: String, limit: Int) async throws -> HeldComments { throw CoreError.notFound }
+    public func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String) async throws {
+        throw CoreError.notFound
+    }
+    public func reportHeldComment(id: String, reason: CommentReportReason, description: String?) async throws {
+        throw CoreError.notFound
+    }
+    public func hideCommentAuthor(userID: String, channelID: String) async throws { throw CoreError.notFound }
 }
 
 /// api-videos over URLSession with the active account's bearer token.

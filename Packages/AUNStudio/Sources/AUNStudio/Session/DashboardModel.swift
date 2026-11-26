@@ -14,6 +14,10 @@ final class DashboardModel {
     private(set) var recentPhase: LoadPhase = .idle
     private(set) var held = HeldComments(items: [], total: 0)
     private(set) var heldPhase: LoadPhase
+    private(set) var isActingOnHeldComment = false
+    private(set) var hiddenAuthors: Set<String> = []
+    var heldMessage: (key: String, values: [String])?
+
     private(set) var drafts: [StudioVideo] = []
     private(set) var scheduled: [StudioVideo] = []
     private(set) var counts: ContentCounts = [:]
@@ -25,6 +29,12 @@ final class DashboardModel {
     @ObservationIgnored var onHollow: (() -> Void)?
     /// Told when a section's API answered that its feature is off, so Studio reads its features again.
     @ObservationIgnored var onFeatureOff: (() -> Void)?
+
+    enum CommentAction: Sendable {
+        case moderate(HeldCommentModeration)
+        case report(CommentReportReason, description: String?)
+        case hideAuthor
+    }
 
     init(channel: StudioChannel, services: StudioServices) {
         self.channel = channel
@@ -60,12 +70,64 @@ final class DashboardModel {
     }
 
     func loadHeld() async {
-        guard heldPhase != .hidden else { return }
+        guard heldPhase != .hidden, !heldPhase.isLoading, !isActingOnHeldComment else { return }
         await LoadPhase.run(from: heldPhase, set: { heldPhase = $0 }) {
             held = try await services.studio.heldComments(channelID: channel.id, limit: Self.rows)
             return held.total == 0 && held.items.isEmpty
         }
         reportOff(heldPhase)
+    }
+
+    func actOnHeldComment(_ comment: HeldComment, action: CommentAction) async {
+        guard heldPhase == .ready, !isActingOnHeldComment, held.items.contains(comment) else { return }
+        isActingOnHeldComment = true
+        heldMessage = nil
+        let previous = held
+        do {
+            let message: String
+            switch action {
+            case .moderate(let moderation):
+                if comment.isHeldByModeration { throw CoreError.conflict("held_by_moderation") }
+                guard comment.canModerate else { throw CoreError.notFound }
+                held.items.removeAll { $0.id == comment.id }
+                held.total = max(held.items.count, held.total - 1)
+                try await services.studio.moderateHeldComment(comment, action: moderation, channelID: channel.id)
+                heldPhase = .loaded(isEmpty: held.total == 0 && held.items.isEmpty)
+                message = moderation == .approve ? "studio.held.approved" : "studio.held.removed"
+            case .report(let reason, let description):
+                try await services.studio.reportHeldComment(id: comment.id, reason: reason, description: description)
+                message = "studio.held.reported"
+            case .hideAuthor:
+                guard let userID = comment.authorUserID else { throw CoreError.notFound }
+                try await services.studio.hideCommentAuthor(userID: userID, channelID: channel.id)
+                hiddenAuthors.insert(userID)
+                message = "studio.held.authorHidden"
+            }
+            heldMessage = (message, [])
+        } catch {
+            held = previous
+            heldMessage = (Self.heldErrorKey(error, action: action), [])
+            isActingOnHeldComment = false
+            return
+        }
+        isActingOnHeldComment = false
+        // Bring the next held comment into view when this page had more waiting behind it.
+        if case .moderate = action, held.total > held.items.count {
+            await loadHeld()
+        }
+    }
+
+    private static func heldErrorKey(_ error: any Error, action: CommentAction) -> String {
+        switch error as? CoreError {
+        case .conflict("held_by_moderation", _): return "studio.error.held.platformHold"
+        case .conflict:
+            if case .report = action { return "studio.error.held.duplicateReport" }
+        case .invalid("cannot_block_member"): return "studio.error.held.channelMember"
+        case .signInRequired: return "studio.error.held.signIn"
+        case .forbidden: return "studio.error.held.forbidden"
+        default: break
+        }
+        return "studio.error.held.action"
     }
 
     func loadQueue() async {
