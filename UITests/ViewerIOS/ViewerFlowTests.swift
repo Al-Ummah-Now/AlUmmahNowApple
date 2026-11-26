@@ -70,9 +70,9 @@ final class ViewerFlowTests: XCTestCase {
         XCTAssertEqual(credit.frame.maxX, cue.frame.maxX, accuracy: 2)
 
         credit.tap()
-        let done = app.buttons["Done"].firstMatch
-        XCTAssertTrue(done.waitForExistence(timeout: 10))
-        done.tap()
+        let close = app.buttons.matching(NSPredicate(format: "identifier IN %@", ["Close", "Done"])).firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 10))
+        close.tap()
         XCTAssertTrue(credit.waitForExistence(timeout: 5))
 
         menu.tap()

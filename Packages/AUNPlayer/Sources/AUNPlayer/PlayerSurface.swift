@@ -13,6 +13,7 @@ import SwiftUI
         let reportTitle: String?
         let reportIdentifier: String
         let onReport: (@MainActor () -> Void)?
+        @Environment(\.fanous) private var theme
         @Environment(\.l10n) private var l10n
 
         public init(
@@ -49,17 +50,22 @@ import SwiftUI
                     browser.modalPresentationStyle = .overFullScreen
                     view.present(browser, animated: true)
                 }
-                installOverlay(subtitles, in: container, on: view)
+                context.coordinator.subtitleOverlay = installOverlay(subtitles, in: container, on: view)
                 view.view.addSubview(container)
             #elseif os(tvOS)
                 if let content = view.contentOverlayView {
-                    installOverlay(SubtitleOverlay(controller: controller), in: content, on: view)
+                    context.coordinator.subtitleOverlay = installOverlay(
+                        SubtitleOverlay(controller: controller), in: content, on: view)
                 }
             #endif
             return view
         }
 
-        private func installOverlay(_ subtitles: SubtitleOverlay, in container: UIView, on playerView: AVPlayerViewController) {
+        private func installOverlay(
+            _ subtitles: SubtitleOverlay, in container: UIView, on playerView: AVPlayerViewController
+        ) -> UIHostingController<SubtitleOverlay> {
+            var subtitles = subtitles
+            subtitles.hostedTheme = theme
             let overlay = UIHostingController(rootView: subtitles)
             playerView.addChild(overlay)
             overlay.view.backgroundColor = .clear
@@ -70,6 +76,7 @@ import SwiftUI
             overlay.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             container.addSubview(overlay.view)
             overlay.didMove(toParent: playerView)
+            return overlay
         }
 
         public static func dismantleUIViewController(_ view: AVPlayerViewController, coordinator: Coordinator) {
@@ -79,6 +86,9 @@ import SwiftUI
         }
 
         public func updateUIViewController(_ view: AVPlayerViewController, context: Context) {
+            if let overlay = context.coordinator.subtitleOverlay, overlay.rootView.hostedTheme != theme {
+                overlay.rootView.hostedTheme = theme
+            }
             #if os(tvOS)
                 view.transportBarCustomMenuItems = TransportMenus.items(
                     controller: controller, l10n: l10n, reportTitle: reportTitle,
@@ -89,6 +99,7 @@ import SwiftUI
         @MainActor
         public final class Coordinator: NSObject {
             let controller: PlayerController
+            fileprivate weak var subtitleOverlay: UIHostingController<SubtitleOverlay>?
             #if os(iOS)
                 private weak var view: AVPlayerViewController?
                 private var isInPictureInPicture = false
