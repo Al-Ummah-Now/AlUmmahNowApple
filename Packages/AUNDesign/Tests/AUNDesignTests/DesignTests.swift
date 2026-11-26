@@ -35,6 +35,7 @@ import Testing
             #expect(text.contrast(with: c.background) >= 4.5, "\(label) \(name) on background")
             #expect(text.contrast(with: c.surface) >= 4.5, "\(label) \(name) on surface")
         }
+        #expect(c.textMuted.contrast(with: c.background) >= 4.5, "\(label) textMuted on background")
         #expect(c.onPrimary.contrast(with: c.primary) >= 4.5, "\(label) onPrimary")
     }
 

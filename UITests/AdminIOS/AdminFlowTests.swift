@@ -152,6 +152,50 @@ final class AdminFlowTests: XCTestCase {
     }
 
     @MainActor
+    func testDecisionSectionHeadersInEnglishLight() { verifyDecisionSectionHeaders("en", theme: "light") }
+
+    @MainActor
+    func testDecisionSectionHeadersInEnglishDark() { verifyDecisionSectionHeaders("en", theme: "dark") }
+
+    @MainActor
+    func testDecisionSectionHeadersInArabicLight() { verifyDecisionSectionHeaders("ar", theme: "light") }
+
+    @MainActor
+    func testDecisionSectionHeadersInArabicDark() { verifyDecisionSectionHeaders("ar", theme: "dark") }
+
+    @MainActor
+    private func verifyDecisionSectionHeaders(_ language: String, theme: String) {
+        let arabic = language == "ar"
+        let app = launch(language, theme: theme)
+        open(app, "fx-risk")
+        app.buttons["reject"].tap()
+        verifyHeader("decision-reason-header", label: arabic ? "السبب" : "Reason", in: app)
+        verifyHeader(
+            "decision-note-header", label: arabic ? "ملاحظة لصانع المحتوى (اختيارية)" : "Note to the creator (optional)",
+            in: app
+        )
+        app.buttons["sheet-cancel"].tap()
+        app.buttons["request-changes"].tap()
+        verifyHeader(
+            "decision-note-header", label: arabic ? "ما الذي يجب أن يعدّله صانع المحتوى؟" : "What should the creator change?",
+            in: app
+        )
+    }
+
+    @MainActor
+    private func verifyHeader(_ identifier: String, label: String, in app: XCUIApplication) {
+        let header = app.staticTexts[identifier]
+        scrollTo(header, in: app)
+        XCTAssertEqual(header.label, label)
+        XCTAssertFalse(header.frame.isEmpty)
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(header.frame))
+        let frame = XCTAttachment(screenshot: app.screenshot())
+        frame.name = label
+        frame.lifetime = .keepAlways
+        add(frame)
+    }
+
+    @MainActor
     func testRejectNeedsAReason() {
         let app = launch()
         open(app, "fx-risk")
