@@ -25,6 +25,8 @@
 "video.views.many" = "%@ مشاهدة";
 "video.views.other" = "%@ مشاهدة";
 "watch.notReady" = "ما زال هذا المرئي قيد المعالجة.";
+"watch.copyLink" = "نسخ الرابط";
+"watch.linkCopied" = "تم نسخ الرابط";
 "watch.chapters" = "الفصول";
 "watch.description" = "الوصف";
 "player.quality" = "الجودة";

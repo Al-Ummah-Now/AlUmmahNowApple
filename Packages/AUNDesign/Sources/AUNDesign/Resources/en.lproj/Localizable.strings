@@ -25,6 +25,8 @@
 "video.views.many" = "%@ views";
 "video.views.other" = "%@ views";
 "watch.notReady" = "This video is still being processed.";
+"watch.copyLink" = "Copy link";
+"watch.linkCopied" = "Link copied";
 "watch.chapters" = "Chapters";
 "watch.description" = "Description";
 "player.quality" = "Quality";
