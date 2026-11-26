@@ -80,11 +80,31 @@ public actor FixtureAccountService: AccountServicing {
     private var active: String?
     private var next = 1
     private var lastPrompt: SignInPrompt = .standard
+    private var signedInAt: Date
+    private var hasSession = true
+    private let stepUpAccount: StudioAccount?
+    private var signOutError: (any Error)?
+    private var switchError: (any Error)?
+    private var requests = 0
+    public private(set) var stepUpCount = 0
 
-    public init(signedIn: [StudioAccount] = []) {
+    /// `signedInAt`: the time of the last sign-in, as the token says it. `stepUpAccount`: who a fresh sign-in comes back as
+    /// (by default the same person).
+    public init(signedIn: [StudioAccount] = [], signedInAt: Date = Date(), stepUpAccount: StudioAccount? = nil) {
         stored = signedIn
         active = signedIn.first?.id
+        self.signedInAt = signedInAt
+        self.stepUpAccount = stepUpAccount
     }
+
+    /// Makes signing out, or switching accounts, fail as a locked Keychain does.
+    public func fail(signOut: (any Error)? = nil, switching: (any Error)? = nil) {
+        signOutError = signOut
+        switchError = switching
+    }
+
+    /// The refresh token is refused from now on, as a deleted account's is.
+    public func revoke() { hasSession = false }
 
     public static let creator = StudioAccount(
         id: "fixture-creator", email: "yusuf.rahman@example.org", displayName: "Yusuf Rahman")
@@ -94,12 +114,25 @@ public actor FixtureAccountService: AccountServicing {
 
     public func beginSignIn(_ prompt: SignInPrompt) -> SignInRequest {
         lastPrompt = prompt
-        return SignInRequest(url: URL(string: "https://auth.fixtures.invalid/authorize")!, callbackScheme: Self.callbackScheme)
+        if case .stepUp = prompt { stepUpCount += 1 }
+        requests += 1
+        return SignInRequest(
+            url: URL(string: "https://auth.fixtures.invalid/authorize?state=fixture-\(requests)")!,
+            callbackScheme: Self.callbackScheme)
     }
 
     public func completeSignIn(redirect: URL) throws -> StudioAccount {
-        // A step-up signs the same person in again.
-        if case .stepUp = lastPrompt, let current = activeAccount() { return current }
+        signedInAt = Date()
+        hasSession = true
+        // A step-up signs the same person in again, unless it came back as someone else.
+        if case .stepUp = lastPrompt {
+            if let other = stepUpAccount {
+                if !stored.contains(where: { $0.id == other.id }) { stored.append(other) }
+                active = other.id
+                return other
+            }
+            if let current = activeAccount() { return current }
+        }
         let account =
             stored.isEmpty
             ? Self.creator
@@ -111,12 +144,14 @@ public actor FixtureAccountService: AccountServicing {
     }
 
     public func switchAccount(to id: String) throws -> StudioAccount {
+        if let switchError { throw switchError }
         guard let account = stored.first(where: { $0.id == id }) else { throw CoreError.notFound }
         active = id
         return account
     }
 
-    public func signOut(_ id: String) {
+    public func signOut(_ id: String) throws {
+        if let signOutError { throw signOutError }
         stored.removeAll { $0.id == id }
         if active == id { active = stored.first?.id }
     }
@@ -126,5 +161,7 @@ public actor FixtureAccountService: AccountServicing {
         stored[index].activeChannelID = channelID
     }
 
-    public func accessToken() -> String? { active == nil ? nil : "fixture-token" }
+    public func accessToken() -> String? {
+        hasSession ? active.map { DeletionToken.fixture(accountID: $0, authTime: signedInAt) } : nil
+    }
 }

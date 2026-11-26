@@ -13,6 +13,8 @@ public struct PickedVideo: Identifiable, Hashable, Sendable {
     public var mimeType: String
     /// A title typed for this file only; otherwise the pattern decides.
     public var titleOverride: String?
+    /// The account it was picked under.
+    var accountID: String?
 
     public var fileName: String { file.lastPathComponent }
 
@@ -41,7 +43,25 @@ public final class UploadComposer {
     /// The server refuses a publish time less than 5 minutes ahead; the form asks for 10.
     public static let minimumLead: TimeInterval = 10 * 60
 
-    public init() {}
+    /// The account that is picking now.
+    var accountID: String?
+    /// Every form of this process, to tell a picked copy from one nobody has any more.
+    private static let forms = NSHashTable<UploadComposer>.weakObjects()
+    static var pickedFiles: [URL] { forms.allObjects.flatMap { $0.files.map(\.file) } }
+
+    public init() { Self.forms.add(self) }
+
+    /// Drops what an account that left this device had picked and not sent, with its copies.
+    func discard(of accountID: String) {
+        for file in files where file.accountID == accountID && file.ownsFile {
+            do {
+                try FileManager.default.removeItem(at: file.file)
+            } catch {
+                AUNLog.studio.error("Removing a picked copy failed: \(error)")
+            }
+        }
+        files.removeAll { $0.accountID == accountID }
+    }
 
     public static func earliestSchedule(from now: Date = Date()) -> Date {
         let start = now.addingTimeInterval(60 * 60)
@@ -51,7 +71,11 @@ public final class UploadComposer {
 
     public func add(_ picked: [PickedVideo]) {
         let known = Set(files.map(\.file))
-        files += picked.filter { !known.contains($0.file) }
+        files += picked.filter { !known.contains($0.file) }.map { file in
+            var file = file
+            file.accountID = accountID
+            return file
+        }
     }
 
     public func remove(_ id: UUID) {

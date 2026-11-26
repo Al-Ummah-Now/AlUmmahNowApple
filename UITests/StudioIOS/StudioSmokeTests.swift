@@ -5,12 +5,13 @@ final class StudioSignInTests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
     @MainActor
-    private func launch(_ language: String, signedIn: Bool = false) -> XCUIApplication {
+    private func launch(_ language: String, signedIn: Bool = false, _ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", signedIn ? "YES" : "NO", "-AUNLanguage", language,
             "-AUNTheme", "dark", "-ApplePersistenceIgnoreState", "YES",
         ]
+        app.launchArguments += extra
         app.launch()
         return app
     }
@@ -169,5 +170,106 @@ final class StudioSignInTests: XCTestCase {
             app.swipeUp()
         }
         XCTAssertTrue(clearDone.exists)
+    }
+
+    /// Opens the dialog that deletes the active account.
+    @MainActor
+    private func openDeletion(_ app: XCUIApplication) -> XCUIElement {
+        let account = identity(app)
+        XCTAssertTrue(account.waitForExistence(timeout: 30))
+        account.tap()
+        app.accountsMenuItem.tap()
+        let delete = app.buttons["account-delete"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 10))
+        delete.tap()
+        XCTAssertTrue(app.buttons["delete-account-cancel"].waitForExistence(timeout: 10))
+        return delete
+    }
+
+    @MainActor
+    private func enter(_ word: String, _ app: XCUIApplication) {
+        let input = app.textFields["delete-account-confirm-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        input.tap()
+        input.typeText(word)
+    }
+
+    @MainActor
+    func testDeleteAccountRequiresTypedConfirmation() {
+        let app = launch("en", signedIn: true)
+        let delete = openDeletion(app)
+        let confirm = app.buttons["delete-account-confirm"]
+        XCTAssertFalse(confirm.isEnabled)
+        // Focus is on Cancel, never in the field.
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        app.buttons["delete-account-cancel"].tap()
+        XCTAssertTrue(delete.waitForExistence(timeout: 10))
+        delete.tap()
+        enter("DELETE", app)
+        XCTAssertTrue(confirm.isEnabled)
+        confirm.tap()
+        XCTAssertTrue(app.buttons["sign-in"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.descendants(matching: .any)["notice"].exists)
+    }
+
+    @MainActor
+    func testADialogClosedAfterWhatStaysBehindAsksForTheWordAgain() {
+        let app = launch("ar", signedIn: true, ["-AUNFixtureDeleteMode", "unreadable"])
+        let delete = openDeletion(app)
+        enter("DELETE", app)
+        let confirm = app.buttons["delete-account-confirm"]
+        confirm.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["delete-account-message"].waitForExistence(timeout: 10))
+        XCTAssertEqual(confirm.label, "احذفه على أي حال")
+        app.swipeDown(velocity: .fast)
+        if app.buttons["delete-account-cancel"].exists { app.buttons["delete-account-cancel"].tap() }
+        XCTAssertTrue(delete.waitForExistence(timeout: 10))
+        delete.tap()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10))
+        XCTAssertEqual(confirm.label, "حذف الحساب")
+        XCTAssertFalse(confirm.isEnabled)
+    }
+
+    @MainActor
+    func testALongDeletionCanBeStopped() {
+        let app = launch("en", signedIn: true, ["-AUNFixtureDeleteMode", "slow"])
+        _ = openDeletion(app)
+        enter("DELETE", app)
+        app.buttons["delete-account-confirm"].tap()
+        let cancel = app.buttons["delete-account-cancel"]
+        XCTAssertTrue(app.descendants(matching: .any)["delete-account-progress"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(cancel.label, "Stop")
+        XCTAssertTrue(cancel.isEnabled)
+        cancel.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["delete-account-message"].waitForExistence(timeout: 30))
+        XCTAssertEqual(cancel.label, "Cancel")
+        cancel.tap()
+        app.buttons["accounts-done"].tap()
+        // What started is shown on every screen until it is finished.
+        XCTAssertTrue(app.descendants(matching: .any)["deletion-banner"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["deletion-finish"].exists)
+    }
+
+    /// The notice about a deletion shows once on the Dashboard, whatever state the Dashboard is in.
+    @MainActor
+    func testADeletionNoticeShowsOnceInEveryStateOfTheDashboard() {
+        for channels in ["all", "none", "failing", "loading"] {
+            let app = launch(
+                "en", signedIn: true,
+                ["-AUNFixtureDeletionStage", "deleteSent", "-AUNFixtureDeleteMode", "lost", "-AUNFixtureChannels", channels])
+            let check = app.buttons["deletion-finish"].firstMatch
+            XCTAssertTrue(check.waitForExistence(timeout: 30), channels)
+            check.tap()
+            let notice = app.descendants(matching: .any).matching(identifier: "notice")
+            XCTAssertTrue(notice.firstMatch.waitForExistence(timeout: 15), channels)
+            XCTAssertEqual(notice.count, 1, channels)
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testARestartNeverShowsADeletedAccountSignedIn() {
+        let app = launch("en", signedIn: true, ["-AUNFixtureDeletionStage", "deleted", "-AUNFixtureDeleteMode", "lost"])
+        XCTAssertTrue(app.buttons["sign-in"].waitForExistence(timeout: 30))
     }
 }

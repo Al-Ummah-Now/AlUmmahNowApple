@@ -60,6 +60,15 @@ public final class SystemWebAuthenticator: NSObject, WebAuthenticating,
 @MainActor public struct FixtureWebAuthenticator: WebAuthenticating {
     public init() {}
     public func authenticate(_ request: SignInRequest) async throws -> URL {
-        URL(string: "\(request.callbackScheme)://auth/callback?code=fixture&state=fixture")!
+        let state = OAuthState.of(request.url) ?? "fixture"
+        return URL(string: "\(request.callbackScheme)://auth/callback?code=fixture&state=\(state)")!
+    }
+}
+
+/// The OAuth `state` of a sign-in's URL or of its redirect.
+enum OAuthState {
+    static func of(_ url: URL) -> String? {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "state" }?.value
+            .flatMap { $0.isEmpty ? nil : $0 }
     }
 }

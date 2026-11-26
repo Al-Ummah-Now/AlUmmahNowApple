@@ -18,14 +18,20 @@ space category (`E174.1`) in the same PR.
 
 ## Al Ummah Now (iPhone and iPad, Apple TV, Mac)
 
-**Data Not Collected.**
+**Data Not Linked to You**, used for **App Functionality** only, none for tracking:
+
+| App Store Connect data type | Why | Source |
+|---|---|---|
+| Identifiers → **Device ID** | While watching a live stream, the viewer sends a random per-view UUID (`viewerId`) in the live-viewer heartbeat (`POST /api/live-streams/:id/viewers`) so the server can deduplicate concurrent viewer counts; the server keeps it in memory for up to ~75 s across requests (longer than servicing a single request in real time) and does not link it to an account or device hardware. Sent by iPhone, iPad, Apple TV, and Mac. | `Live.swift`, `Packages/AUNFeatures/Sources/AUNFeatures/Live/LiveModels.swift`, `Packages/AUNFeatures/Sources/AUNFeatures/Live/LiveViews.swift` |
+
+Not collected:
 
 | Question | Answer | Source |
 |---|---|---|
 | Account, name, email, user ID | None: the viewer has no sign-in (`GuestAuthSession`) | `Packages/AUNCoreBridge/Sources/AUNCoreBridge/Services.swift` |
 | Watch history, views, usage | Not sent: catalog and subtitle reads are GETs without an account; playback is AVPlayer streaming | `NativeCatalogService.swift`, `Packages/AUNPlayer/Sources/AUNPlayer/PlayerController.swift` |
 | Site theme | Read from the public admin-api endpoint; nothing sent | `SiteTheme.swift` |
-| Device identifiers | None (no App Attest: the viewer makes no writes) | `Packages/AUNFeatures/Sources/AUNFeatures/ViewerBootstrap.swift` |
+| App Attest / hardware device IDs | None: the viewer uses no App Attest, IDFV, or IDFA | `Packages/AUNFeatures/Sources/AUNFeatures/ViewerBootstrap.swift` |
 | Crash and diagnostic data | Not sent: `AUNLog` writes to the device's own log only | `AppEnvironment.swift` |
 | Settings (language, theme) | Kept on the device | `Packages/AUNDesign/Sources/AUNDesign/AppSettings.swift` |
 | Where the last video stopped | Kept on the device, one entry, for coming back to it | `Packages/AUNPlayer/Sources/AUNPlayer/PlaybackPositionStore.swift` |

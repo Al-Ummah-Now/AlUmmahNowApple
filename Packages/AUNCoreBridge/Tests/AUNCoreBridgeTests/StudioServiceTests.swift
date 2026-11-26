@@ -25,7 +25,9 @@ struct StudioServiceTests {
             """
         let channels = try await service { request in
             #expect(request.url?.path() == "/api/channels/access")
-            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-token")
+            let bearer = request.value(forHTTPHeaderField: "Authorization")?.split(separator: " ")
+            #expect(bearer?.first == "Bearer")
+            #expect(DeletionToken.accountID(of: String(bearer?.last ?? "")) == FixtureAccountService.creator.id)
             #expect(request.value(forHTTPHeaderField: "channelId") == nil)
             return (200, [:], Data(body.utf8))
         }.channels()

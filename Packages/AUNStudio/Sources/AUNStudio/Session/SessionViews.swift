@@ -28,6 +28,7 @@ struct SignInView: View {
                     .accessibilityIdentifier("sign-in")
                 }
                 NoticeView(session: session)
+                SignedOutDeletions(session: session)
             }
             .multilineTextAlignment(.center)
             .padding(FanousScale.spacingXl)
@@ -38,34 +39,6 @@ struct SignInView: View {
         }
         .defaultScrollAnchor(.center)
         .fanousPage()
-    }
-}
-
-/// The current notice, if any, with a dismiss button.
-struct NoticeView: View {
-    @Environment(\.l10n) private var l10n
-    @Bindable var session: StudioSession
-
-    var body: some View {
-        if let notice = session.notice {
-            HStack(alignment: .firstTextBaseline, spacing: FanousScale.spacingSm) {
-                Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
-                Text(l10n(notice.key)).frame(maxWidth: .infinity, alignment: .leading)
-                Button(l10n("common.dismiss")) { session.notice = nil }.buttonStyle(.borderless)
-            }
-            .fanousFont(.label)
-            .foregroundStyle(Fanous.errorText)
-            .padding(FanousScale.spacingMd)
-            .fanousMaterial(.card) { .rounded($0.md) }
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("notice")
-            .onAppear {
-                AccessibilityNotification.Announcement(l10n(notice.key)).post()
-            }
-            .onChange(of: notice.id) { _, _ in
-                AccessibilityNotification.Announcement(l10n(notice.key)).post()
-            }
-        }
     }
 }
 
@@ -147,6 +120,7 @@ struct AccountsView: View {
     @Environment(\.dismiss) private var dismiss
     let session: StudioSession
     @State private var leaving: StudioAccount?
+    @State private var deleting: StudioAccount?
 
     var body: some View {
         NavigationStack {
@@ -164,7 +138,7 @@ struct AccountsView: View {
                     } label: {
                         Label(l10n("studio.account.add"), systemImage: "person.badge.plus")
                     }
-                    .disabled(session.isSigningIn)
+                    .disabled(session.isSigningIn || session.isDeletingAccount)
                     .accessibilityIdentifier("account-add")
                 }
                 .studioRows()
@@ -173,7 +147,23 @@ struct AccountsView: View {
                 }
                 .foregroundStyle(Fanous.accent)
                 .studioRows()
-                if session.notice != nil { Section { NoticeView(session: session) } }
+                if let active = session.account {
+                    Section {
+                        Button(role: .destructive) {
+                            deleting = active
+                        } label: {
+                            Label(l10n("studio.deleteAccount.button"), systemImage: "trash")
+                                .foregroundStyle(Fanous.errorText)
+                        }
+                        .disabled(session.isSigningIn || session.isDeletingAccount)
+                        .accessibilityIdentifier("account-delete")
+                    }
+                    .studioRows()
+                }
+                if session.notice != nil {
+                    Section { NoticeView(session: session) }
+                        .listRowBackground(Color.clear)
+                }
             }
             .scrollContentBackground(.hidden)
             .fanousPage()
@@ -204,6 +194,11 @@ struct AccountsView: View {
                 }
             }
         }
+        .sheet(item: $deleting) { account in
+            DeleteAccountSheet(account: account, session: session) {
+                if session.phase == .signedOut { dismiss() }
+            }
+        }
         #if os(macOS)
             .frame(minWidth: 420, minHeight: 360)
         #endif
@@ -226,13 +221,11 @@ struct AccountsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(account.label).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
                         if let email = account.email, email != account.label {
-                            Text(email)
-                                .fanousFont(.caption)
-                                .foregroundStyle(Fanous.textSecondary)
-                                .environment(\.layoutDirection, .leftToRight)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.75)
-                                .truncationMode(.tail)
+                            OneLineAddress(email).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
+                        }
+                        if session.openDeletion(of: account.id) != nil {
+                            Text(l10n("studio.deleteAccount.openAccount")).fanousFont(.caption)
+                                .foregroundStyle(Fanous.errorText)
                         }
                         if account.needsReauth {
                             Text(l10n("studio.account.reauth")).fanousFont(.caption).foregroundStyle(Fanous.errorText)
@@ -247,10 +240,12 @@ struct AccountsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(session.isDeletingAccount)
             .accessibilityHint(isActive ? "" : l10n("studio.account.switch", account.label))
             .accessibilityIdentifier("account-\(account.id)")
             Button(l10n("studio.account.signOut")) { leaving = account }
                 .buttonStyle(.borderless)
+                .disabled(session.isDeletingAccount)
                 .foregroundStyle(Fanous.errorText)
                 .accessibilityIdentifier("account-sign-out-\(account.id)")
         }
@@ -423,7 +418,7 @@ struct DashboardContent: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: FanousScale.spacingLg) {
-                NoticeView(session: session)
+                if session.notice?.isAboutDeletion != true { NoticeView(session: session) }
                 if !model.counts.isEmpty { kpis }
                 // The full width (no reading cap): one column on iPhone, two on iPad, three on Mac.
                 LazyVGrid(

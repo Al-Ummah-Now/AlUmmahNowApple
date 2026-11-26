@@ -6,8 +6,19 @@ import Observation
 public struct StudioNotice: Identifiable, Hashable, Sendable {
     public let id = UUID()
     public let key: String
+    /// Says what went wrong; otherwise it only tells.
+    public let isError: Bool
+    /// Adds when the sign-in record of a deleted account is purged.
+    public let purgeDays: Int?
 
-    public init(_ key: String) { self.key = key }
+    public init(_ key: String, isError: Bool = true, purgeDays: Int? = nil) {
+        self.key = key
+        self.isError = isError
+        self.purgeDays = purgeDays
+    }
+
+    /// `DeletionBanner` shows these, in every state of every tab; screens with notices of their own leave them out.
+    var isAboutDeletion: Bool { key.hasPrefix("studio.deleteAccount.") }
 
     static func from(_ error: any Error) -> StudioNotice? {
         if (error as? CoreError) == .cancelled { return nil }
@@ -22,13 +33,17 @@ public final class StudioSession {
     public enum ChannelsState: Equatable { case idle, loading, loaded, failed }
 
     public private(set) var phase: Phase = .loading
-    public private(set) var accounts: [StudioAccount] = []
+    public internal(set) var accounts: [StudioAccount] = []
     public private(set) var account: StudioAccount?
     /// Every channel the account can work in, owned first.
     public private(set) var allChannels: [StudioChannel] = []
     public private(set) var channelsState: ChannelsState = .idle
     public private(set) var channel: StudioChannel?
-    public private(set) var isSigningIn = false
+    public internal(set) var isSigningIn = false
+    /// A deletion is running: accounts can't be switched, added or signed out meanwhile.
+    public internal(set) var isDeletingAccount = false
+    /// The deletions that started on this device and are not finished, of signed-in and signed-out accounts.
+    public internal(set) var openDeletions: [DeletionRecord] = []
     public var notice: StudioNotice?
     /// What the account may do as a creator; nil until read (or when the server cannot say).
     public internal(set) var creator: CreatorAccess?
@@ -58,42 +73,51 @@ public final class StudioSession {
     public let services: StudioServices
     /// Uploads of every account on this device; only the active account's run.
     public let uploads: UploadQueue
-    private let authenticator: any WebAuthenticating
-    private let defaults: UserDefaults
+    /// What was picked and not sent yet, in this window.
+    let composer = UploadComposer()
+    var isCheckingDeletions = false
+    @ObservationIgnored var lastDeletionCheck: ContinuousClock.Instant?
+    let authenticator: any WebAuthenticating
+    let defaults: UserDefaults
+    @ObservationIgnored private(set) lazy var deletion = AccountDeletion(
+        records: services.deletionRecords, service: services.deletion, device: self)
+    /// Other windows of this process on the same uploads (Mac): told when an account is gone.
+    @ObservationIgnored private var removals: ObserverToken?
 
     public init(services: StudioServices, authenticator: any WebAuthenticating, defaults: UserDefaults = .standard) {
         self.services = services
-        uploads = UploadQueue(services: services)
+        uploads = UploadQueue(services: services, defaults: defaults)
         self.authenticator = authenticator
         self.defaults = defaults
         uploads.onAccountState = { [weak self] in self?.accountState = $0 }
         uploads.onFeatureOff = { [weak self] in Task { await self?.refreshFeatures() } }
         uploads.onTermsRequired = { [weak self] accountID in self?.requireCreatorTerms(for: accountID) }
+        removals = observeRemovedAccounts()
     }
 
     /// Channels the person may upload to: the picker's list.
     public var channels: [StudioChannel] { allChannels.filter(\.canUpload) }
 
     public func start() async {
-        do {
-            accounts = try await services.accounts.accounts()
-            account = try await services.accounts.activeAccount()
-        } catch {
-            AUNLog.studio.error("Reading accounts failed: \(error)")
-        }
+        // Before anyone is shown: what an earlier run of the app left of a deletion.
+        await settleDeletions()
+        await refreshAccounts()
+        account = await nextActiveAccount()
         phase = account == nil ? .signedOut : .signedIn
         uploads.accountID = account?.id
+        composer.accountID = account?.id
         if account != nil { await loadChannels() }
     }
 
     public func signIn(addingAccount: Bool = false) async {
-        guard !isSigningIn else { return }
+        guard !isSigningIn, !isDeletingAccount else { return }
         isSigningIn = true
         defer { isSigningIn = false }
         do {
             let request = try await services.accounts.beginSignIn(addingAccount ? .addAccount : .standard)
             let redirect = try await authenticator.authenticate(request)
             let signedIn = try await services.accounts.completeSignIn(redirect: redirect)
+            accountIsLive(signedIn.id)
             await adopt(signedIn)
         } catch {
             AUNLog.studio.error("Sign-in failed: \(error)")
@@ -102,7 +126,7 @@ public final class StudioSession {
     }
 
     public func switchAccount(to id: String) async {
-        guard id != account?.id else { return }
+        guard !isDeletingAccount, id != account?.id else { return }
         do {
             await adopt(try await services.accounts.switchAccount(to: id))
         } catch {
@@ -112,29 +136,41 @@ public final class StudioSession {
 
     /// Signs one account out of this device and revokes its refresh token. Other accounts stay signed in.
     public func signOut(_ id: String) async {
+        guard !isDeletingAccount else { return }
         uploads.discardJobs(of: id)
+        composer.discard(of: id)
         do {
             try await services.accounts.signOut(id)
         } catch {
             AUNLog.studio.error("Sign-out failed: \(error)")
         }
-        accounts = (try? await services.accounts.accounts()) ?? accounts.filter { $0.id != id }
-        let next = try? await services.accounts.activeAccount()
-        if let next {
+        await showRemaining(without: id)
+    }
+
+    /// After an account left this device: the next one, or signed out.
+    func showRemaining(without id: String) async {
+        accounts = accounts.filter { $0.id != id }
+        await refreshAccounts()
+        if let next = await nextActiveAccount() {
             if next.id != account?.id { await adopt(next) }
         } else {
-            account = nil
-            uploads.accountID = nil
-            creator = nil
-            forgetTerms()
-            features = nil
-            hiddenSections = []
-            accountState = nil
-            allChannels = []
-            channel = nil
-            channelsState = .idle
-            phase = .signedOut
+            resetSignedOut()
         }
+    }
+
+    func resetSignedOut() {
+        account = nil
+        uploads.accountID = nil
+        composer.accountID = nil
+        creator = nil
+        forgetTerms()
+        features = nil
+        hiddenSections = []
+        accountState = nil
+        allChannels = []
+        channel = nil
+        channelsState = .idle
+        phase = .signedOut
     }
 
     /// Opens a Studio address from a universal link (`/studio/<channel>/<section>`): its channel when the account can
@@ -239,10 +275,13 @@ public final class StudioSession {
         }
     }
 
-    private func adopt(_ next: StudioAccount) async {
+    func adopt(_ next: StudioAccount) async {
         account = next
+        uploads.clearPendingPurge(for: next.id)
         uploads.accountID = next.id
-        accounts = (try? await services.accounts.accounts()) ?? [next]
+        composer.accountID = next.id
+        await refreshAccounts()
+        if !accounts.contains(where: { $0.id == next.id }) { accounts.append(next) }
         phase = .signedIn
         allChannels = []
         channel = nil
