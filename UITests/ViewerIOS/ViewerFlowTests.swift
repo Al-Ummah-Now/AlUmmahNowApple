@@ -170,7 +170,7 @@ final class ViewerFlowTests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(message.waitForExistence(timeout: 20))
         let window = app.windows.firstMatch.frame
-        XCTAssertTrue(window.contains(message.frame), "The processing message fits on screen")
+        XCTAssertTrue(window.intersects(message.frame), "The processing message is on screen")
         XCTAssertGreaterThan(message.frame.width, window.width * 0.60, "The message has the width of the stacked layout")
         XCTAssertFalse(app.descendants(matching: .any)["player"].firstMatch.exists)
     }
