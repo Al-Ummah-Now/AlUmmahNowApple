@@ -16,26 +16,16 @@ final class StudioFieldAlignmentTests: XCTestCase {
         return app
     }
 
-    @MainActor
-    private func tab(_ app: XCUIApplication, _ name: String) {
-        let candidates = [
-            app.tabBars.buttons[name], app.buttons[name].firstMatch, app.cells[name].firstMatch,
-            app.cells.containing(.staticText, identifier: name).firstMatch,
-        ]
-        for _ in 0..<20 {
-            if let target = candidates.first(where: { $0.exists && $0.isHittable }) {
-                target.tap()
-                return
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-        }
-        XCTFail("Expected visible tab or sidebar item: \(name)")
-    }
-
     /// The share of the field's width left of its first drawn pixel and right of its last.
     @MainActor
-    private func gaps(_ element: XCUIElement) throws -> (left: Double, right: Double) {
-        let image = try XCTUnwrap(element.screenshot().image.cgImage)
+    private func gaps(_ element: XCUIElement, insideBorder: Bool) throws -> (left: Double, right: Double) {
+        let screenshot = try XCTUnwrap(element.screenshot().image.cgImage)
+        // Ignore the rounded border and focus ring when inspecting a bordered field.
+        let edge = CGRect(x: 0, y: 0, width: screenshot.width, height: screenshot.height)
+        let image =
+            insideBorder
+            ? try XCTUnwrap(screenshot.cropping(to: edge.insetBy(dx: edge.width * 0.015, dy: edge.height * 0.20)))
+            : screenshot
         let width = image.width
         let height = image.height
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
@@ -62,11 +52,13 @@ final class StudioFieldAlignmentTests: XCTestCase {
     }
 
     @MainActor
-    private func assertStarts(_ element: XCUIElement, rightToLeft: Bool, _ what: String) throws {
+    private func assertStarts(_ element: XCUIElement, rightToLeft: Bool, _ what: String, insideBorder: Bool = false) throws {
         XCTAssertTrue(element.waitForExistence(timeout: 20), what)
-        let gap = try gaps(element)
+        let gap = try gaps(element, insideBorder: insideBorder)
         if rightToLeft {
-            XCTAssertLessThan(gap.right, 0.05, "\(what) starts at the right (left \(gap.left), right \(gap.right))")
+            if insideBorder { XCTAssertGreaterThan(gap.left, 0.5, "the field chrome is excluded") }
+            XCTAssertLessThan(
+                gap.right, insideBorder ? 0.09 : 0.05, "\(what) starts at the right (left \(gap.left), right \(gap.right))")
         } else {
             XCTAssertLessThan(gap.left, 0.05, "\(what) starts at the left (left \(gap.left), right \(gap.right))")
         }
@@ -76,7 +68,7 @@ final class StudioFieldAlignmentTests: XCTestCase {
     func testUploadFieldsStartWhereTheLineStarts() throws {
         for (language, uploadTab, arabic) in [("en", "Upload", false), ("ar", "رفع", true)] {
             let app = launch(language)
-            tab(app, uploadTab)
+            app.openStudioTab(named: uploadTab)
             try assertStarts(app.textFields["upload-title-0"], rightToLeft: arabic, "\(language) video title placeholder")
             try assertStarts(app.textFields["upload-pattern"], rightToLeft: arabic, "\(language) title pattern {{filename}}")
             let description = app.descendants(matching: .any)["upload-description"].firstMatch
@@ -97,14 +89,37 @@ final class StudioFieldAlignmentTests: XCTestCase {
     func testEditSheetFieldsStartWhereTheLineStarts() throws {
         for (language, contentTab, arabic) in [("en", "Content", false), ("ar", "المحتوى", true)] {
             let app = launch(language)
-            tab(app, contentTab)
+            app.openStudioTab(named: contentTab)
             let first = app.descendants(matching: .any).matching(identifier: "video-fixture-content-1").firstMatch
             XCTAssertTrue(first.waitForExistence(timeout: 20))
             first.tap()
+            let heading = app.staticTexts["edit-heading"]
+            XCTAssertTrue(heading.waitForExistence(timeout: 15))
+            XCTAssertEqual(heading.label, arabic ? "تعديل المرئي" : "Edit video")
             try assertStarts(app.textFields["edit-title"], rightToLeft: arabic, "\(language) edit title")
             let description = app.descendants(matching: .any)["edit-description"].firstMatch
             try assertStarts(description, rightToLeft: arabic, "\(language) edit description")
             app.terminate()
         }
+    }
+    @MainActor
+    func testArabicDeletionPromptAndTypedWordStartAtTheRight() throws {
+        let app = launch("ar")
+        let identity = app.descendants(matching: .any)["account-button"].firstMatch
+        XCTAssertTrue(identity.waitForExistence(timeout: 20))
+        identity.tap()
+        app.accountsMenuItem.tap()
+        let delete = app.buttons["account-delete"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 10))
+        delete.tap()
+
+        let input = app.textFields["delete-account-confirm-input"]
+        let confirm = app.buttons["delete-account-confirm"]
+        try assertStarts(input, rightToLeft: true, "Arabic deletion prompt", insideBorder: true)
+        XCTAssertFalse(confirm.isEnabled)
+        input.tap()
+        input.typeText("حذف")
+        try assertStarts(input, rightToLeft: true, "typed Arabic deletion word", insideBorder: true)
+        XCTAssertTrue(confirm.isEnabled)
     }
 }

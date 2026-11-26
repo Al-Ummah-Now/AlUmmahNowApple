@@ -208,7 +208,9 @@ struct UploadView: View {
                     .accessibilityIdentifier("upload-problem")
             }
         } footer: {
-            Text(l10n("studio.upload.channelNote", channel.displayName(l10n.language))).fanousSectionText()
+            Text(l10n("studio.upload.channelNote", channel.displayName(l10n.language)))
+                .fanousSectionText()
+                .accessibilityIdentifier("upload-channel-note")
         }
     }
 
