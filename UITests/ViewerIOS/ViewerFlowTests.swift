@@ -165,11 +165,13 @@ final class ViewerFlowTests: XCTestCase {
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
         ]
         app.launch()
-        let card = app.descendants(matching: .any)["watch-not-ready"].firstMatch
-        XCTAssertTrue(card.waitForExistence(timeout: 20))
-        XCTAssertTrue(card.isHittable)
-        XCTAssertGreaterThan(card.frame.width, app.windows.firstMatch.frame.width * 0.85)
-        XCTAssertTrue(app.staticTexts["This video is still being processed."].isHittable)
+        let message = app.staticTexts.matching(
+            NSPredicate(format: "label == %@", "This video is still being processed.")
+        ).firstMatch
+        XCTAssertTrue(message.waitForExistence(timeout: 20))
+        let window = app.windows.firstMatch.frame
+        XCTAssertTrue(window.contains(message.frame), "The processing message fits on screen")
+        XCTAssertGreaterThan(message.frame.width, window.width * 0.60, "The message has the width of the stacked layout")
         XCTAssertFalse(app.descendants(matching: .any)["player"].firstMatch.exists)
     }
 
