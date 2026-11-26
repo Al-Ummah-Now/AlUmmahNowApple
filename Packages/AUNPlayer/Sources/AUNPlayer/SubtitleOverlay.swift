@@ -7,6 +7,8 @@ public struct SubtitleOverlay: View {
     let controller: PlayerController
     var openCredit: (@MainActor (URL) -> Void)?
     var creditFrameChanged: (@MainActor (CGRect) -> Void)?
+    var hostedTheme: FanousTheme?
+    @Environment(\.fanous) private var theme
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.openURL) private var openURL
     @ScaledMetric(relativeTo: .callout) private var creditSize = 12
@@ -25,7 +27,13 @@ public struct SubtitleOverlay: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
-                            .background(.black.opacity(0.74), in: RoundedRectangle(cornerRadius: 6))
+                            .background {
+                                if caption.credited {
+                                    cueScrim
+                                } else {
+                                    RoundedRectangle(cornerRadius: 6).fill(.black.opacity(0.7))
+                                }
+                            }
                             .accessibilityIdentifier("subtitle-cue")
                             .allowsHitTesting(false)
                     }
@@ -44,6 +52,10 @@ public struct SubtitleOverlay: View {
         .coordinateSpace(name: "subtitle-overlay")
     }
 
+    private var cueScrim: some View {
+        FanousSurface(fills: (hostedTheme ?? theme).player.cue, shape: .rounded(6))
+    }
+
     private var isInteractive: Bool {
         #if os(tvOS)
             false
@@ -60,7 +72,7 @@ public struct SubtitleOverlay: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(.black.opacity(0.74), in: RoundedRectangle(cornerRadius: 6))
+            .background { cueScrim }
 
         #if os(tvOS)
             label.allowsHitTesting(false)
