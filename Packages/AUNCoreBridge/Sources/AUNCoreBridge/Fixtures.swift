@@ -50,6 +50,13 @@ public struct FixtureCatalogService: CatalogServicing {
     }
 
     public func video(id: String) async throws -> Video {
+        if id == "fixture-not-ready" {
+            var video = Self.videos[0]
+            video.id = id
+            video.playURL = nil
+            video.uploadStatus = "processing"
+            return video
+        }
         if id == Self.longID {
             var video = Self.videos[0]
             video.id = id
