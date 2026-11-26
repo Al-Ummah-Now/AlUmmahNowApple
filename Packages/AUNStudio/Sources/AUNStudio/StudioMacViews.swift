@@ -2,7 +2,6 @@
     import AUNCoreBridge
     import AUNDesign
     import SwiftUI
-    import UniformTypeIdentifiers
 
     enum StudioSection: String, CaseIterable, Identifiable {
         case home, content, deleted, upload, analytics, encode, editor
@@ -52,7 +51,9 @@
                 }
             }
             .padding()
-            .fileImporter(isPresented: $importing, allowedContentTypes: [.movie], allowsMultipleSelection: true) { result in
+            .fileImporter(
+                isPresented: $importing, allowedContentTypes: StudioVideoFileTypes.allowed, allowsMultipleSelection: true
+            ) { result in
                 if case .success(let urls) = result { queue.add(urls) }
             }
         }

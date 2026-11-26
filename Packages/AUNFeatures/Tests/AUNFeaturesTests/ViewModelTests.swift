@@ -93,12 +93,9 @@ private struct LiveCatalog: CatalogServicing {
 }
 
 #if os(macOS)
-    import SwiftUI
-
-    @Test func arrowKeysFollowReadingDirection() {
-        #expect(SkipKey.delta(isRightArrow: true, direction: .leftToRight) == 10)
-        #expect(SkipKey.delta(isRightArrow: true, direction: .rightToLeft) == -10)
-        #expect(SkipKey.delta(isRightArrow: false, direction: .rightToLeft) == 10)
+    @Test func arrowKeysFollowTheMediaTimeline() {
+        #expect(SkipKey.delta(isRightArrow: false) == -10)
+        #expect(SkipKey.delta(isRightArrow: true) == 10)
     }
 #endif
 

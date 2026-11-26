@@ -3,6 +3,15 @@ import Foundation
 import Observation
 import UniformTypeIdentifiers
 
+enum StudioVideoFileTypes {
+    static let matroskaExtension = "mkv"
+    static let matroskaMIMEType = "video/x-matroska"
+    static let allowed: [UTType] = [
+        .movie,
+        UTType(filenameExtension: matroskaExtension) ?? UTType(importedAs: "org.matroska.mkv", conformingTo: .movie),
+    ]
+}
+
 /// A video picked for upload, before it joins the queue.
 public struct PickedVideo: Identifiable, Hashable, Sendable {
     public let id = UUID()
@@ -21,9 +30,17 @@ public struct PickedVideo: Identifiable, Hashable, Sendable {
     /// Reads size and type; nil when the file is not a video.
     public static func make(file: URL, ownsFile: Bool, bookmark: Data? = nil) -> PickedVideo? {
         let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-        let type = UTType(filenameExtension: file.pathExtension)
-        guard size > 0, let type, type.conforms(to: .movie) || type.conforms(to: .video) else { return nil }
-        let mime = type.preferredMIMEType.flatMap { $0.hasPrefix("video/") ? $0 : nil } ?? "video/mp4"
+        guard size > 0 else { return nil }
+        let ext = file.pathExtension.lowercased()
+        let mime: String
+        if ext == StudioVideoFileTypes.matroskaExtension {
+            mime = StudioVideoFileTypes.matroskaMIMEType
+        } else {
+            guard let type = UTType(filenameExtension: ext), type.conforms(to: .movie) || type.conforms(to: .video) else {
+                return nil
+            }
+            mime = type.preferredMIMEType.flatMap { $0.hasPrefix("video/") ? $0 : nil } ?? "video/mp4"
+        }
         return PickedVideo(file: file, bookmark: bookmark, ownsFile: ownsFile, fileSize: size, mimeType: mime)
     }
 }

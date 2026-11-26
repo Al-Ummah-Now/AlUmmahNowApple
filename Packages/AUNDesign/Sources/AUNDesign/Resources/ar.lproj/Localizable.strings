@@ -415,6 +415,7 @@
 "admin.source.metadata" = "العنوان أو الوصف أو الوسوم";
 "admin.review.pick" = "اختر عنصرًا";
 "admin.review.pickMessage" = "افتح عنصرًا من القائمة لمراجعته.";
+"admin.review.unavailable" = "لم تعد هذه المراجعة في قائمة الانتظار.";
 "admin.review.noStream" = "لا يوجد بث لهذا العنصر بعد.";
 "admin.review.frames" = "الإطارات، المُعلَّمة أولًا";
 "admin.review.flaggedFrame" = "إطار مُعلَّم عند %@: %@";

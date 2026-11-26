@@ -143,7 +143,10 @@ struct QueueModelTests {
 struct ReviewModelTests {
     let clock = TestClock()
 
-    func make(_ id: String, offline: Bool = false, role: FixtureReviewService.Role = .reviewer)
+    func make(
+        _ id: String, offline: Bool = false, role: FixtureReviewService.Role = .reviewer,
+        onUnavailable: @escaping (String) -> Void = { _ in }
+    )
         -> (ReviewModel, ToastCenter, FixtureReviewService, Box)
     {
         let review = FixtureReviewService(role: role)
@@ -156,7 +159,8 @@ struct ReviewModelTests {
         let box = Box()
         let clock = clock
         let model = ReviewModel(
-            id: id, service: review, session: session, toasts: toasts, l10n: L10n(.en), now: { clock.now }
+            id: id, service: review, session: session, toasts: toasts, l10n: L10n(.en), now: { clock.now },
+            onUnavailable: onUnavailable
         ) { box.changed.append($0) }
         return (model, toasts, review, box)
     }
@@ -205,6 +209,41 @@ struct ReviewModelTests {
         #expect(model.isBlurred)
         model.close()
         #expect(model.isBlurred)
+    }
+
+    @Test func missingReviewIsUnavailableAndRemovedFromTheQueue() async {
+        let queue = QueueModel(service: FixtureReviewService(), senior: false)
+        await queue.load()
+        let otherIDs = queue.items.map(\.id)
+        let stale = ReviewItem(id: "stale", subjectID: "v-stale", title: "Removed review")
+        queue.apply(stale)
+        #expect(queue.items.contains { $0.id == stale.id })
+        #expect(queue.suggestions(for: "removed") == ["Removed review"])
+        let (model, _, review, box) = make(stale.id) { queue.remove($0) }
+
+        await model.open()
+
+        #expect(model.state == .unavailable)
+        #expect(model.detail == nil)
+        #expect(box.changed.isEmpty)
+        #expect(await review.claims.isEmpty)
+        #expect(queue.items.map(\.id) == otherIDs)
+        #expect(queue.suggestions(for: "removed").isEmpty)
+    }
+
+    @Test func aTemporaryLoadFailureCanBeRetried() async {
+        let (model, _, review, _) = make("fx-risk") { id in
+            Issue.record("Unexpected unavailable review: \(id)")
+        }
+        await review.setOffline(true)
+        await model.open()
+        #expect(model.state == .failed)
+
+        await review.setOffline(false)
+        await model.open()
+        #expect(model.state == .loaded)
+        #expect(model.item?.id == "fx-risk")
+        model.close()
     }
 
     @Test func openingClaimsTheItem() async throws {

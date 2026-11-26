@@ -19,6 +19,7 @@ public final class QueueModel {
     let senior: Bool
     private var searchTask: Task<Void, Never>?
     private var loaded: [ReviewTab: [ReviewItem]] = [:]
+    private var removalRevision = 0
 
     public init(service: any ReviewServicing, senior: Bool) {
         self.service = service
@@ -47,11 +48,12 @@ public final class QueueModel {
         defer { isLoading = false }
         let tab = tab
         let query = query
+        let revision = removalRevision
         LaunchClock.mark("queue load started")
         do {
             let page = try await service.queue(tab, query: query.isEmpty ? nil : query, cursor: nil)
             LaunchClock.mark("queue loaded \(page.items.count)")
-            guard tab == self.tab, query == self.query else { return }
+            guard tab == self.tab, query == self.query, revision == removalRevision else { return }
             items = Self.sorted(page.items, tab: tab, senior: senior)
             if query.isEmpty { loaded[tab] = items }
             isOffline = false
@@ -100,6 +102,14 @@ public final class QueueModel {
         let belongs = tab == .actionNeeded ? item.isOpen : item.decidedAt != nil
         if belongs { items = Self.sorted(items + [item], tab: tab, senior: senior) }
         loaded[tab] = items
+    }
+
+    /// Drop an unavailable item from the visible queue and its offline cache.
+    func remove(_ id: String) {
+        // Responses from loads already in flight can still contain the removed row.
+        removalRevision += 1
+        items.removeAll { $0.id == id }
+        for tab in loaded.keys { loaded[tab]?.removeAll { $0.id == id } }
     }
 
     public func item(after id: String?, step: Int) -> ReviewItem? {
