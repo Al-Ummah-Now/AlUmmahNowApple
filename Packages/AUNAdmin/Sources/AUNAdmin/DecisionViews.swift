@@ -93,7 +93,7 @@ struct DecisionSheet: View {
         NavigationStack {
             Form {
                 if kind == .reject {
-                    Section(l10n("admin.sheet.reason")) {
+                    Section {
                         ForEach(ReviewReason.allCases) { option in
                             Button {
                                 reason = option
@@ -110,12 +110,19 @@ struct DecisionSheet: View {
                             .accessibilityAddTraits(reason == option ? [.isSelected] : [])
                             .accessibilityIdentifier("reason-\(option.rawValue)")
                         }
+                    } header: {
+                        Text(l10n("admin.sheet.reason")).fanousSectionText()
+                            .accessibilityIdentifier("decision-reason-header")
                     }
                 }
-                Section(l10n(kind == .reject ? "admin.sheet.noteOptional" : "admin.sheet.changes")) {
+                Section {
                     TextField(l10n("admin.sheet.notePlaceholder"), text: $note, axis: .vertical)
                         .lineLimit(3...8)
                         .accessibilityIdentifier("decision-note")
+                } header: {
+                    Text(l10n(kind == .reject ? "admin.sheet.noteOptional" : "admin.sheet.changes"))
+                        .fanousSectionText()
+                        .accessibilityIdentifier("decision-note-header")
                 }
                 Section {
                     Text(l10n("admin.sheet.creatorSees")).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
