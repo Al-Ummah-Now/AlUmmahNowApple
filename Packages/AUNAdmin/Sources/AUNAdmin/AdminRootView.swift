@@ -224,9 +224,10 @@ struct AdminShell: View {
     }
 
     private func reviewModel(_ id: String) -> ReviewModel {
-        ReviewModel(id: id, service: session.services.review, session: session, toasts: toasts, l10n: l10n) {
-            [queue] item in queue.apply(item)
-        }
+        ReviewModel(
+            id: id, service: session.services.review, session: session, toasts: toasts, l10n: l10n,
+            onUnavailable: { [queue] in queue.remove($0) },
+            onChange: { [queue] in queue.apply($0) })
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {

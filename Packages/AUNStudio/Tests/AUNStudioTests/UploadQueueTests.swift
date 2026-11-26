@@ -1,6 +1,7 @@
 import AUNCoreBridge
 import Foundation
 import Testing
+import UniformTypeIdentifiers
 
 @testable import AUNStudio
 
@@ -475,6 +476,25 @@ struct UploadQueueTests {
 
 @MainActor
 struct UploadComposerTests {
+    @Test func pickerAllowsMoviesAndMatroska() throws {
+        let mkv = try #require(UTType(filenameExtension: "mkv"))
+        let text = try #require(UTType(filenameExtension: "txt"))
+        let allowed = StudioVideoFileTypes.allowed
+        #expect(allowed.contains(.movie))
+        #expect(allowed.contains(mkv))
+        #expect(!allowed.contains { text.conforms(to: $0) })
+    }
+
+    @Test(arguments: ["mkv", "MKV"])
+    func pickedMatroskaHasTheUploadMIMEType(ext: String) throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "\(UUID()).\(ext)")
+        try Data([1]).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let picked = try #require(PickedVideo.make(file: url, ownsFile: false))
+        #expect(picked.mimeType == "video/x-matroska")
+        #expect(picked.fileSize == 1)
+    }
+
     @Test func makesOneJobPerFileWithTokensAndClears() throws {
         let composer = UploadComposer()
         let directory = FileManager.default.temporaryDirectory

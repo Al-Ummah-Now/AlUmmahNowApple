@@ -54,6 +54,7 @@ struct AdminMacApp: App {
     @State private var session: AdminSession
 
     init() {
+        AppKitLayoutDirection.match(AppSettings().language)
         MainActor.assumeIsolated { LaunchClock.appStarted() }
         let fixtures = AdminBootstrap.usesFixtures()
         let defaults = UserDefaults.standard

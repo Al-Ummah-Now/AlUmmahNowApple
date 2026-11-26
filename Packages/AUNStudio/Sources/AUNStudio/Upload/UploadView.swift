@@ -1,7 +1,6 @@
 import AUNCoreBridge
 import AUNDesign
 import SwiftUI
-import UniformTypeIdentifiers
 
 #if os(iOS)
     import PhotosUI
@@ -88,7 +87,9 @@ struct UploadView: View {
                 await composer.loadPlaylists(channelID: channel.id, studio: session.services.studio)
             }
         }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.movie], allowsMultipleSelection: true) { result in
+        .fileImporter(
+            isPresented: $importing, allowedContentTypes: StudioVideoFileTypes.allowed, allowsMultipleSelection: true
+        ) { result in
             if case .success(let urls) = result { composer.add(urls.compactMap(Self.importFile)) }
         }
         #if os(macOS)

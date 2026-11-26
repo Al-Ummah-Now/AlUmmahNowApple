@@ -181,6 +181,13 @@ targets:
       path: Apps/StudioIOS/Info.plist
       properties:
         ITSAppUsesNonExemptEncryption: false
+        UTImportedTypeDeclarations: &matroskaTypes
+          - UTTypeIdentifier: org.matroska.mkv
+            UTTypeDescription: Matroska Video
+            UTTypeConformsTo: [public.movie]
+            UTTypeTagSpecification:
+              public.filename-extension: [mkv]
+              public.mime-type: [video/x-matroska]
     dependencies:
       - package: AUNStudio
       - package: AUNDesign
@@ -211,6 +218,7 @@ targets:
       properties:
         LSApplicationCategoryType: public.app-category.video
         ITSAppUsesNonExemptEncryption: false
+        UTImportedTypeDeclarations: *matroskaTypes
     dependencies:
       - package: AUNStudio
       - package: AUNDesign

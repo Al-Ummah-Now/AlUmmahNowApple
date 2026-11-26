@@ -91,10 +91,9 @@
     }
 
     enum SkipKey {
-        /// Seconds to skip for a horizontal arrow key. Right moves forward in LTR and backward in RTL.
-        static func delta(isRightArrow: Bool, direction: LayoutDirection) -> Double {
-            let forward = isRightArrow == (direction == .leftToRight)
-            return forward ? PlayerController.skipInterval : -PlayerController.skipInterval
+        /// The media timeline runs left to right in every language.
+        static func delta(isRightArrow: Bool) -> Double {
+            isRightArrow ? PlayerController.skipInterval : -PlayerController.skipInterval
         }
     }
 #endif

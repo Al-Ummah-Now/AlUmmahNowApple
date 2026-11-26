@@ -24,6 +24,9 @@ struct ReviewScreen: View {
         Group {
             switch model.state {
             case .loading: ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .unavailable:
+                EmptyStateView(title: l10n("admin.review.unavailable"))
+                    .accessibilityIdentifier("review-unavailable")
             case .failed:
                 ErrorStateView { Task { await model.open() } }
             case .loaded:

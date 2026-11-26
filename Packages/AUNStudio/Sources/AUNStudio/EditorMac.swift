@@ -223,7 +223,9 @@
                 .frame(height: 96)
             }
             .padding()
-            .fileImporter(isPresented: $importing, allowedContentTypes: [.movie], allowsMultipleSelection: true) { result in
+            .fileImporter(
+                isPresented: $importing, allowedContentTypes: StudioVideoFileTypes.allowed, allowsMultipleSelection: true
+            ) { result in
                 if case .success(let urls) = result { Task { await importClips(urls) } }
             }
         }

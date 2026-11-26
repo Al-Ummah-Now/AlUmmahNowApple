@@ -415,6 +415,7 @@
 "admin.source.metadata" = "Title, description or tags";
 "admin.review.pick" = "Pick an item";
 "admin.review.pickMessage" = "Open an item from the queue to review it.";
+"admin.review.unavailable" = "This review is no longer in the queue.";
 "admin.review.noStream" = "No stream for this item yet.";
 "admin.review.frames" = "Frames, flagged first";
 "admin.review.flaggedFrame" = "Flagged frame at %@: %@";

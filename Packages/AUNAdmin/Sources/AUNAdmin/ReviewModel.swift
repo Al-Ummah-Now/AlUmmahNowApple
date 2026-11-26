@@ -6,7 +6,7 @@ import Observation
 /// One open review: claim and renew, reveal and re-blur, decide and undo (wiki AUN-ADMIN-NATIVE, phase 1).
 @MainActor @Observable
 public final class ReviewModel {
-    public enum State: Equatable { case loading, loaded, failed }
+    public enum State: Equatable { case loading, loaded, unavailable, failed }
 
     public let id: String
     public private(set) var state: State = .loading
@@ -23,6 +23,7 @@ public final class ReviewModel {
     let toasts: ToastCenter
     let l10n: L10n
     let onChange: (ReviewItem) -> Void
+    private let onUnavailable: (String) -> Void
     private let now: () -> Date
     private var claimTask: Task<Void, Never>?
     private var idleTask: Task<Void, Never>?
@@ -35,7 +36,8 @@ public final class ReviewModel {
 
     public init(
         id: String, service: any ReviewServicing, session: AdminSession, toasts: ToastCenter, l10n: L10n,
-        now: @escaping () -> Date = Date.init, onChange: @escaping (ReviewItem) -> Void
+        now: @escaping () -> Date = Date.init, onUnavailable: @escaping (String) -> Void = { _ in },
+        onChange: @escaping (ReviewItem) -> Void
     ) {
         self.id = id
         self.service = service
@@ -43,6 +45,7 @@ public final class ReviewModel {
         self.toasts = toasts
         self.l10n = l10n
         self.now = now
+        self.onUnavailable = onUnavailable
         self.onChange = onChange
     }
 
@@ -57,6 +60,11 @@ public final class ReviewModel {
             detail = try await service.detail(id)
             state = .loaded
             startClaim()
+        } catch CoreError.notFound {
+            close()
+            detail = nil
+            state = .unavailable
+            onUnavailable(id)
         } catch {
             AUNLog.admin.error("Review failed to load: \(error)")
             state = .failed
