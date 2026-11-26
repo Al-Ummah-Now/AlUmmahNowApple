@@ -97,7 +97,12 @@ struct VideoEditView: View {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
             .fanousPage()
-            .navigationTitle(l10n("studio.edit.heading"))
+            #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                .safeAreaInset(edge: .top, spacing: 0) { heading }
+            #else
+                .navigationTitle(l10n("studio.edit.heading"))
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(l10n("common.cancel")) { dismiss() }.accessibilityIdentifier("edit-cancel")
@@ -115,10 +120,26 @@ struct VideoEditView: View {
                 }
             }
         }
+        .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
         #if os(macOS)
             .frame(minWidth: 520, minHeight: 600)
         #endif
     }
+
+    #if os(iOS)
+        private var heading: some View {
+            Text(l10n("studio.edit.heading"))
+                .font(.title2.bold())
+                .foregroundStyle(Fanous.textPrimary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(FanousScale.spacingLg)
+                .background(Fanous.background)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("edit-heading")
+        }
+    #endif
 }
 
 /// Visibility, category and tags for every selected video (`bulk-update`). Untouched fields stay as they are.

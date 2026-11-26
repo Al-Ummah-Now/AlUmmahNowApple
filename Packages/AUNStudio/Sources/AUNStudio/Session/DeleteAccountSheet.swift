@@ -136,9 +136,10 @@ struct DeleteAccountSheet: View {
                 .accessibilityHidden(true)
             TextField(
                 "", text: $typed,
-                prompt: Text(l10n("studio.deleteAccount.confirmWord")).foregroundStyle(Fanous.part(\.formPlaceholder))
+                prompt: fanousPrompt(l10n("studio.deleteAccount.confirmWord"))
             )
             .textFieldStyle(.roundedBorder)
+            .fanousFieldAlignment()
             .autocorrectionDisabled()
             #if os(iOS)
                 .textInputAutocapitalization(.characters)

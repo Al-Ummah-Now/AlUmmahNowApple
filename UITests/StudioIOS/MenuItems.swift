@@ -7,4 +7,20 @@ extension XCUIApplication {
         buttons.matching(NSPredicate(format: "identifier == 'accounts-manage' OR label IN {'Accounts', 'الحسابات'}"))
             .firstMatch
     }
+
+    @MainActor
+    func openStudioTab(named name: String) {
+        let candidates = [
+            tabBars.buttons[name], buttons[name].firstMatch, cells[name].firstMatch,
+            cells.containing(.staticText, identifier: name).firstMatch,
+        ]
+        for _ in 0..<20 {
+            if let target = candidates.first(where: { $0.exists && $0.isHittable }) {
+                target.tap()
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        XCTFail("Expected visible tab or sidebar item: \(name)")
+    }
 }

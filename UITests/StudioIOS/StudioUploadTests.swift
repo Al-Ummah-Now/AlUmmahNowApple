@@ -17,18 +17,9 @@ final class StudioUploadTests: XCTestCase {
     }
 
     @MainActor
-    private func openUpload(_ app: XCUIApplication, tab: String) {
-        // iPhone has a bottom tab bar; iPadOS draws the tabs at the top, outside `tabBars`.
-        let bar = app.tabBars.buttons[tab]
-        let button = bar.waitForExistence(timeout: 15) ? bar : app.buttons[tab].firstMatch
-        XCTAssertTrue(button.waitForExistence(timeout: 15))
-        button.tap()
-    }
-
-    @MainActor
     func testBatchUploadWithValuesForAll() {
         let app = launch("en")
-        openUpload(app, tab: "Upload")
+        app.openStudioTab(named: "Upload")
         let pattern = app.textFields["upload-pattern"]
         XCTAssertTrue(pattern.waitForExistence(timeout: 30))
         // The pattern starts as {{filename}}: replace it.
@@ -70,7 +61,7 @@ final class StudioUploadTests: XCTestCase {
             for theme in ["dark", "light"] {
                 let app = launch(
                     language, theme: theme, extra: ["-AUNFixtureStalledUploads", "YES", "-AUNUploadStallSeconds", "3"])
-                openUpload(app, tab: tab)
+                app.openStudioTab(named: tab)
                 let send = app.buttons["upload-send"]
                 while !send.waitForExistence(timeout: 2) || !send.isHittable { app.swipeUp() }
                 send.tap()
@@ -92,11 +83,17 @@ final class StudioUploadTests: XCTestCase {
         for (language, tab) in [("en", "Upload"), ("ar", "رفع")] {
             for theme in ["dark", "light"] {
                 let app = launch(language, theme: theme)
-                openUpload(app, tab: tab)
+                app.openStudioTab(named: tab)
                 let send = app.buttons["upload-send"]
                 XCTAssertTrue(app.textFields["upload-pattern"].waitForExistence(timeout: 30))
                 keep("studio-upload-top-\(language)-\(theme)")
-                while !send.waitForExistence(timeout: 2) || !send.isHittable { app.swipeUp() }
+                let footer = app.staticTexts["upload-channel-note"]
+                let bottom = app.frame.maxY - 12
+                for _ in 0..<8 where !(footer.exists && footer.frame.maxY < bottom && send.isHittable) {
+                    app.swipeUp()
+                }
+                XCTAssertTrue(footer.exists && send.isHittable)
+                XCTAssertLessThan(footer.frame.maxY, bottom, "the channel footer is fully above the bottom edge")
                 keep("studio-upload-bottom-\(language)-\(theme)")
                 send.tap()
                 let done = app.staticTexts.matching(
@@ -116,7 +113,7 @@ final class StudioUploadTests: XCTestCase {
         for (language, tab) in [("en", "Upload"), ("ar", "رفع")] {
             for theme in ["dark", "light"] {
                 let app = launch(language, theme: theme)
-                openUpload(app, tab: tab)
+                app.openStudioTab(named: tab)
                 XCTAssertTrue(app.textFields["upload-pattern"].waitForExistence(timeout: 30))
                 keep("studio-upload-\(language)-\(theme)")
                 app.terminate()
@@ -127,7 +124,7 @@ final class StudioUploadTests: XCTestCase {
     @MainActor
     func testArabicUploadFormIsRightToLeft() {
         let app = launch("ar")
-        openUpload(app, tab: "رفع")
+        app.openStudioTab(named: "رفع")
         let send = app.buttons["upload-send"]
         while !send.waitForExistence(timeout: 2) || !send.isHittable { app.swipeUp() }
         XCTAssertTrue(send.label.hasPrefix("بدء الرفع ("), send.label)
