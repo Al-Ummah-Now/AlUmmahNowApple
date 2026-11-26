@@ -332,7 +332,7 @@ struct VideoRow: View {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
                     thumbnail(width: 160)
-                    titleAndDetails
+                    titleAndDetails.fixedSize(horizontal: false, vertical: true)
                     date
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

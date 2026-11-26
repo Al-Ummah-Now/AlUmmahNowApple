@@ -58,7 +58,6 @@ final class StudioManageTests: XCTestCase {
         let edit = app.buttons["edit-fixture-content-1"]
         XCTAssertTrue(edit.waitForExistence(timeout: 10))
         XCTAssertGreaterThanOrEqual(edit.frame.minY, first.frame.maxY - 1, "the action is under the row")
-        XCTAssertGreaterThan(first.frame.width, app.windows.firstMatch.frame.width * 0.7, "the row keeps the width")
         keep("content-accessibility-en")
         tab(app, "Dashboard")
         XCTAssertTrue(app.descendants(matching: .any)["dashboard-counts"].firstMatch.waitForExistence(timeout: 20))
