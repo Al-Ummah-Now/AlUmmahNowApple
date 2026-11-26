@@ -389,8 +389,8 @@ struct StudioHomeView: View {
             case .failed:
                 ErrorStateView { Task { await session.loadChannels() } }
             case .loaded:
-                if let channel = session.channel {
-                    DashboardContent(session: session, channel: channel).id(channel.id)
+                if let channel = session.channel, let accountID = session.account?.id {
+                    DashboardContent(session: session, channel: channel, accountID: accountID).id("\(accountID):\(channel.id)")
                 } else {
                     EmptyStateView(title: l10n("studio.channel.none"), message: l10n("studio.channel.noneMessage"))
                         .accessibilityIdentifier("no-channels")
@@ -401,7 +401,7 @@ struct StudioHomeView: View {
     }
 }
 
-/// One channel's Dashboard; rebuilt when the channel changes.
+/// One channel’s Dashboard for the signed-in account.
 struct DashboardContent: View {
     @Environment(\.l10n) private var l10n
     let session: StudioSession
@@ -409,12 +409,24 @@ struct DashboardContent: View {
     @State private var model: DashboardModel
     @ScaledMetric(relativeTo: .caption) private var kpiWidth: CGFloat = 120
 
-    init(session: StudioSession, channel: StudioChannel) {
+    init(session: StudioSession, channel: StudioChannel, accountID: String) {
         self.session = session
         self.channel = channel
-        let model = DashboardModel(channel: channel, services: session.services)
-        model.onHollow = { [weak session] in session?.featureOff(.home) }
-        model.onFeatureOff = { [weak session] in Task { await session?.refreshFeatures() } }
+        let model = DashboardModel(accountID: accountID, channel: channel, services: session.services)
+        model.onHollow = { [weak session] in
+            guard let session, session.account?.id == accountID, session.channel?.id == channel.id else { return }
+            session.featureOff(.home)
+        }
+        model.onFeatureOff = { [weak session] in
+            Task {
+                guard let session, session.account?.id == accountID, session.channel?.id == channel.id else { return }
+                await session.refreshFeatures()
+            }
+        }
+        model.onAccountError = { [weak session] error in
+            guard let session, session.account?.id == accountID else { return }
+            session.note(error, forAccount: accountID)
+        }
         _model = State(initialValue: model)
     }
 

@@ -49,10 +49,11 @@ public protocol StudioServicing: Sendable {
 
     // MARK: Comments
     /// The newest comments waiting for review and their total (needs `comment.moderate` on the channel).
-    func heldComments(channelID: String, limit: Int) async throws -> HeldComments
-    func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String) async throws
-    func reportHeldComment(id: String, reason: CommentReportReason, description: String?) async throws
-    func hideCommentAuthor(userID: String, channelID: String) async throws
+    func heldComments(channelID: String, limit: Int, accountID: String) async throws -> HeldComments
+    func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String, accountID: String)
+        async throws
+    func reportHeldComment(id: String, reason: CommentReportReason, description: String?, accountID: String) async throws
+    func hideCommentAuthor(userID: String, channelID: String, accountID: String) async throws
 }
 
 extension StudioServicing {
@@ -62,14 +63,18 @@ extension StudioServicing {
     /// Services that cannot tell show nothing gated (fail closed).
     public func features(channelID: String?) async throws -> UserFeatures { .none }
     /// Services without the comments routes answer "not found".
-    public func heldComments(channelID: String, limit: Int) async throws -> HeldComments { throw CoreError.notFound }
-    public func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String) async throws {
+    public func heldComments(channelID: String, limit: Int, accountID: String) async throws -> HeldComments {
         throw CoreError.notFound
     }
-    public func reportHeldComment(id: String, reason: CommentReportReason, description: String?) async throws {
+    public func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String, accountID: String)
+        async throws
+    {
         throw CoreError.notFound
     }
-    public func hideCommentAuthor(userID: String, channelID: String) async throws { throw CoreError.notFound }
+    public func reportHeldComment(id: String, reason: CommentReportReason, description: String?, accountID: String) async throws {
+        throw CoreError.notFound
+    }
+    public func hideCommentAuthor(userID: String, channelID: String, accountID: String) async throws { throw CoreError.notFound }
 }
 
 /// api-videos over URLSession with the active account's bearer token.
@@ -133,10 +138,11 @@ public struct NativeStudioService: StudioServicing {
         let total: Int?
     }
 
-    public func heldComments(channelID: String, limit: Int) async throws -> HeldComments {
+    public func heldComments(channelID: String, limit: Int, accountID: String) async throws -> HeldComments {
         let query = [URLQueryItem(name: "tab", value: "held"), URLQueryItem(name: "limit", value: String(limit))]
         let page = try await client.send(
-            .get, "/api/channels/\(channelID)/comments", query: query, channelID: channelID, as: HeldPage.self)
+            .get, "/api/channels/\(channelID)/comments", query: query, channelID: channelID, accountID: accountID,
+            as: HeldPage.self)
         return HeldComments(items: page.items, total: page.total ?? page.items.count)
     }
 
@@ -390,7 +396,7 @@ struct StudioHTTPClient: Sendable {
 
     func request(
         _ method: Method, _ path: String, query: [URLQueryItem] = [], channelID: String? = nil, body: Data? = nil,
-        contentType: String = "application/json"
+        contentType: String = "application/json", accountID: String? = nil
     ) async throws -> URLRequest {
         var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)
         if !query.isEmpty { components?.queryItems = query }
@@ -400,6 +406,8 @@ struct StudioHTTPClient: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setAUNClient()
         guard let token = try await accounts.accessToken() else { throw CoreError.signInRequired }
+        // Match the token itself because the active account can change while the token is being acquired.
+        if let accountID, DeletionToken.accountID(of: token) != accountID { throw CoreError.cancelled }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let channelID { request.setValue(channelID, forHTTPHeaderField: "channelId") }
         if let body {
@@ -412,9 +420,9 @@ struct StudioHTTPClient: Sendable {
 
     func send<T: Decodable>(
         _ method: Method, _ path: String, query: [URLQueryItem] = [], channelID: String? = nil, body: (any Encodable)? = nil,
-        as type: T.Type
+        accountID: String? = nil, as type: T.Type
     ) async throws -> T {
-        let data = try await sendRaw(method, path, query: query, channelID: channelID, body: body)
+        let data = try await sendRaw(method, path, query: query, channelID: channelID, body: body, accountID: accountID)
         do {
             return try Self.decoder.decode(type, from: data)
         } catch {
@@ -425,10 +433,12 @@ struct StudioHTTPClient: Sendable {
 
     @discardableResult
     func sendRaw(
-        _ method: Method, _ path: String, query: [URLQueryItem] = [], channelID: String? = nil, body: (any Encodable)? = nil
+        _ method: Method, _ path: String, query: [URLQueryItem] = [], channelID: String? = nil, body: (any Encodable)? = nil,
+        accountID: String? = nil
     ) async throws -> Data {
         let encoded = try body.map { try Self.encoder.encode($0) }
-        return try await perform(request(method, path, query: query, channelID: channelID, body: encoded), method, path)
+        let request = try await request(method, path, query: query, channelID: channelID, body: encoded, accountID: accountID)
+        return try await perform(request, method, path, accountID: accountID)
     }
 
     /// A raw body (a file's bytes), sent with its exact `Content-Length`.
@@ -441,13 +451,17 @@ struct StudioHTTPClient: Sendable {
             request(method, path, query: query, channelID: channelID, body: bytes, contentType: contentType), method, path)
     }
 
-    private func perform(_ request: URLRequest, _ method: Method, _ path: String) async throws -> Data {
+    private func perform(_ request: URLRequest, _ method: Method, _ path: String, accountID: String? = nil) async throws -> Data {
         // Proofs are per account: the server binds a proof to the first account that sends it.
-        let account = method != .get && proofs != nil ? try? await accounts.activeAccount()?.id : nil
-        var (data, response) = try await exchange(request, account: account, fresh: false)
+        var account: String?
+        if method != .get && proofs != nil {
+            account = accountID
+            if account == nil { account = try? await accounts.activeAccount()?.id }
+        }
+        var (data, response) = try await exchange(request, account: account, fresh: false, accountID: accountID)
         if let account, (response as? HTTPURLResponse)?.statusCode == 403, Self.needsProof(data) {
             AUNLog.network.info("\(method.rawValue, privacy: .public) \(path, privacy: .public): new native proof, retrying once")
-            (data, response) = try await exchange(request, account: account, fresh: true)
+            (data, response) = try await exchange(request, account: account, fresh: true, accountID: accountID)
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
@@ -469,11 +483,14 @@ struct StudioHTTPClient: Sendable {
         return data
     }
 
-    private func exchange(_ base: URLRequest, account: String?, fresh: Bool) async throws -> (Data, URLResponse) {
+    private func exchange(
+        _ base: URLRequest, account: String?, fresh: Bool, accountID: String?
+    ) async throws -> (Data, URLResponse) {
         var request = base
         if let account, let proofs, let proof = await proofs.proof(account: account, fresh: fresh) {
             request.setValue(proof, forHTTPHeaderField: Self.proofHeader)
         }
+        if let accountID, try await accounts.activeAccount()?.id != accountID { throw CoreError.cancelled }
         do {
             return try await session.data(for: request)
         } catch let error as URLError where [.notConnectedToInternet, .networkConnectionLost].contains(error.code) {

@@ -96,7 +96,7 @@ actor FixtureTermsState {
 
 private actor FixtureHeldCommentStore {
     private var moderated: [String: Set<String>] = [:]
-    private var reports: [String: Set<CommentReportReason>] = [:]
+    private var reports: [String: [String: Set<CommentReportReason>]] = [:]
 
     func held(in channelID: String) -> [HeldComment] {
         FixtureStudioService.heldComments.filter { moderated[channelID]?.contains($0.id) != true }
@@ -106,12 +106,12 @@ private actor FixtureHeldCommentStore {
         moderated[channelID, default: []].insert(comment.id)
     }
 
-    func report(_ id: String, reason: CommentReportReason) throws {
-        let previous = reports[id, default: []]
+    func report(_ id: String, reason: CommentReportReason, accountID: String) throws {
+        let previous = reports[accountID]?[id] ?? []
         if previous.contains(.childSafety) || (!previous.isEmpty && reason != .childSafety) {
             throw CoreError.conflict("You have already reported this content")
         }
-        reports[id, default: []].insert(reason)
+        reports[accountID, default: [:]][id, default: []].insert(reason)
     }
 }
 
@@ -188,22 +188,24 @@ public struct FixtureStudioService: StudioServicing {
     }
 
     /// Two held comments; `-AUNFixtureFeaturesOff comments` makes the route answer `feature_off`.
-    public func heldComments(channelID: String, limit: Int) async throws -> HeldComments {
+    public func heldComments(channelID: String, limit: Int, accountID: String) async throws -> HeldComments {
         try refuseIfOff("comments")
         let items = await heldStore.held(in: channelID)
         return HeldComments(items: Array(items.prefix(limit)), total: items.count)
     }
 
-    public func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String) async throws {
+    public func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String, accountID: String)
+        async throws
+    {
         try refuseIfOff("comments")
         await heldStore.moderate(comment, in: channelID)
     }
 
-    public func reportHeldComment(id: String, reason: CommentReportReason, description: String?) async throws {
-        try await heldStore.report(id, reason: reason)
+    public func reportHeldComment(id: String, reason: CommentReportReason, description: String?, accountID: String) async throws {
+        try await heldStore.report(id, reason: reason, accountID: accountID)
     }
 
-    public func hideCommentAuthor(userID: String, channelID: String) async throws {
+    public func hideCommentAuthor(userID: String, channelID: String, accountID: String) async throws {
         try refuseIfOff("comments")
         guard Self.heldComments.contains(where: { $0.authorUserID == userID }) else { throw CoreError.notFound }
         // Blocks apply to future comments, and fixtures don't receive new comments.

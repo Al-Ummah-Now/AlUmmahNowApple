@@ -23,11 +23,14 @@ extension NativeStudioService {
         let results: [Result]
     }
 
-    public func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String) async throws {
+    public func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String, accountID: String)
+        async throws
+    {
         guard let kind = comment.kind, let targetID = comment.targetID else { throw CoreError.notFound }
         let body = ModerationBody(action: action, items: [.init(kind: kind, targetId: targetID, commentId: comment.id)])
         let response = try await client.send(
-            .post, "/api/channels/\(channelID)/comments/bulk", channelID: channelID, body: body, as: ModerationResponse.self)
+            .post, "/api/channels/\(channelID)/comments/bulk", channelID: channelID, body: body, accountID: accountID,
+            as: ModerationResponse.self)
         guard response.success, let result = response.results.first, result.commentId == comment.id else {
             throw CoreError.decoding
         }
@@ -57,16 +60,18 @@ extension NativeStudioService {
         let success: Bool
     }
 
-    public func reportHeldComment(id: String, reason: CommentReportReason, description: String?) async throws {
+    public func reportHeldComment(id: String, reason: CommentReportReason, description: String?, accountID: String) async throws {
         let body = ReportBody(entityId: id, reason: reason, description: description)
         // Reporting belongs to the signed-in person. The Studio channel may belong to someone else.
-        let response = try await client.send(.post, "/api/moderation/reports", body: body, as: ActionResponse.self)
+        let response = try await client.send(
+            .post, "/api/moderation/reports", body: body, accountID: accountID, as: ActionResponse.self)
         guard response.success else { throw CoreError.decoding }
     }
 
-    public func hideCommentAuthor(userID: String, channelID: String) async throws {
+    public func hideCommentAuthor(userID: String, channelID: String, accountID: String) async throws {
         let response = try await client.send(
             .post, "/api/channels/\(channelID)/blocks", channelID: channelID, body: BlockBody(userId: userID),
+            accountID: accountID,
             as: ActionResponse.self)
         guard response.success else { throw CoreError.decoding }
     }

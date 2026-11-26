@@ -23,12 +23,15 @@ final class DashboardModel {
     private(set) var counts: ContentCounts = [:]
     private(set) var queuePhase: LoadPhase = .idle
 
+    let accountID: String
     let channel: StudioChannel
     let services: StudioServices
     /// Told when every section turned out hidden.
     @ObservationIgnored var onHollow: (() -> Void)?
     /// Told when a section's API answered that its feature is off, so Studio reads its features again.
     @ObservationIgnored var onFeatureOff: (() -> Void)?
+    /// Account-wide refusals appear in the session banner.
+    @ObservationIgnored var onAccountError: ((any Error) -> Void)?
 
     enum CommentAction: Sendable {
         case moderate(HeldCommentModeration)
@@ -36,7 +39,8 @@ final class DashboardModel {
         case hideAuthor
     }
 
-    init(channel: StudioChannel, services: StudioServices) {
+    init(accountID: String, channel: StudioChannel, services: StudioServices) {
+        self.accountID = accountID
         self.channel = channel
         self.services = services
         // Comments are reviewed by the channel's owner, admins and moderators only.
@@ -51,7 +55,7 @@ final class DashboardModel {
         async let held: Void = loadHeld()
         async let queue: Void = loadQueue()
         _ = await (recent, held, queue)
-        if isHollow { onHollow?() }
+        if isHollow, await isActiveAccount() { onHollow?() }
     }
 
     /// The newest uploads still processing, failed or published, newest first.
@@ -70,43 +74,56 @@ final class DashboardModel {
     }
 
     func loadHeld() async {
-        guard heldPhase != .hidden, !heldPhase.isLoading, !isActingOnHeldComment else { return }
+        guard await isActiveAccount(), heldPhase != .hidden, !heldPhase.isLoading, !isActingOnHeldComment else { return }
         await LoadPhase.run(from: heldPhase, set: { heldPhase = $0 }) {
-            held = try await services.studio.heldComments(channelID: channel.id, limit: Self.rows)
+            let page: HeldComments
+            do {
+                page = try await services.studio.heldComments(channelID: channel.id, limit: Self.rows, accountID: accountID)
+            } catch {
+                guard await isActiveAccount() else { throw CancellationError() }
+                throw error
+            }
+            guard await isActiveAccount() else { throw CancellationError() }
+            held = page
             return held.total == 0 && held.items.isEmpty
         }
         reportOff(heldPhase)
     }
 
     func actOnHeldComment(_ comment: HeldComment, action: CommentAction) async {
-        guard heldPhase == .ready, !isActingOnHeldComment, held.items.contains(comment) else { return }
+        guard await isActiveAccount(), heldPhase == .ready, !isActingOnHeldComment, held.items.contains(comment) else { return }
         isActingOnHeldComment = true
         heldMessage = nil
         let previous = held
         do {
             let message: String
+            var authorToHide: String?
             switch action {
             case .moderate(let moderation):
                 if comment.isHeldByModeration { throw CoreError.conflict("held_by_moderation") }
                 guard comment.canModerate else { throw CoreError.notFound }
                 held.items.removeAll { $0.id == comment.id }
                 held.total = max(held.items.count, held.total - 1)
-                try await services.studio.moderateHeldComment(comment, action: moderation, channelID: channel.id)
-                heldPhase = .loaded(isEmpty: held.total == 0 && held.items.isEmpty)
+                try await services.studio.moderateHeldComment(
+                    comment, action: moderation, channelID: channel.id, accountID: accountID)
                 message = moderation == .approve ? "studio.held.approved" : "studio.held.removed"
             case .report(let reason, let description):
-                try await services.studio.reportHeldComment(id: comment.id, reason: reason, description: description)
+                try await services.studio.reportHeldComment(
+                    id: comment.id, reason: reason, description: description, accountID: accountID)
                 message = "studio.held.reported"
             case .hideAuthor:
                 guard let userID = comment.authorUserID else { throw CoreError.notFound }
-                try await services.studio.hideCommentAuthor(userID: userID, channelID: channel.id)
-                hiddenAuthors.insert(userID)
+                try await services.studio.hideCommentAuthor(userID: userID, channelID: channel.id, accountID: accountID)
+                authorToHide = userID
                 message = "studio.held.authorHidden"
             }
+            guard await isActiveAccount() else { throw CancellationError() }
+            if let authorToHide { hiddenAuthors.insert(authorToHide) }
+            heldPhase = .loaded(isEmpty: held.total == 0 && held.items.isEmpty)
             heldMessage = (message, [])
         } catch {
             held = previous
-            heldMessage = (Self.heldErrorKey(error, action: action), [])
+            await handleHeldWriteError(error, action: action)
             isActingOnHeldComment = false
             return
         }
@@ -114,6 +131,24 @@ final class DashboardModel {
         // Bring the next held comment into view when this page had more waiting behind it.
         if case .moderate = action, held.total > held.items.count {
             await loadHeld()
+        }
+    }
+
+    private func isActiveAccount() async -> Bool {
+        (try? await services.accounts.activeAccount())?.id == accountID
+    }
+
+    private func handleHeldWriteError(_ error: any Error, action: CommentAction) async {
+        let core = error as? CoreError
+        guard !(error is CancellationError), core != .cancelled, await isActiveAccount() else { return }
+        if core?.hidesEntryPoint == true {
+            heldPhase = .hidden
+            onFeatureOff?()
+            if isHollow { onHollow?() }
+        } else if StudioFailure.accountState(error) != nil {
+            onAccountError?(error)
+        } else {
+            heldMessage = (Self.heldErrorKey(error, action: action), [])
         }
     }
 
@@ -125,6 +160,7 @@ final class DashboardModel {
         case .invalid("cannot_block_member"): return "studio.error.held.channelMember"
         case .signInRequired: return "studio.error.held.signIn"
         case .forbidden: return "studio.error.held.forbidden"
+        case .offline: return "studio.error.offline"
         default: break
         }
         return "studio.error.held.action"
