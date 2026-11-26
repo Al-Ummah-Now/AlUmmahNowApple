@@ -53,11 +53,15 @@ public struct DurationBadge: View {
 public struct FanousButtonStyle: ButtonStyle {
     public enum Kind: Sendable { case primary, secondary, ghost }
     private let kind: Kind
+    private let textRole: FanousTextRole
 
-    public init(_ kind: Kind) { self.kind = kind }
+    public init(_ kind: Kind, textRole: FanousTextRole = .label) {
+        self.kind = kind
+        self.textRole = textRole
+    }
 
     public func makeBody(configuration: Configuration) -> some View {
-        FanousButtonBody(kind: kind, configuration: configuration)
+        FanousButtonBody(kind: kind, textRole: textRole, configuration: configuration)
     }
 }
 
@@ -68,6 +72,7 @@ private struct FanousButtonBody: View {
         @Environment(\.isFocused) private var focused
     #endif
     let kind: FanousButtonStyle.Kind
+    let textRole: FanousTextRole
     let configuration: ButtonStyleConfiguration
 
     var body: some View {
@@ -75,7 +80,7 @@ private struct FanousButtonBody: View {
         let shape = FanousShape.rounded(theme.radius.pill)
         let parts = theme.parts
         configuration.label
-            .fanousFont(.label)
+            .fanousFont(textRole)
             .fontWeight(.semibold)
             .labelStyle(.titleAndIcon)
             .foregroundStyle(Color(text(parts)))
@@ -300,9 +305,17 @@ public struct EmptyStateView: View {
 public struct ErrorStateView: View {
     @Environment(\.l10n) private var l10n
     @Environment(\.fanous) private var theme
+    private let textRole: FanousTextRole
+    private let buttonTextRole: FanousTextRole
     private let retry: () -> Void
 
-    public init(retry: @escaping () -> Void) { self.retry = retry }
+    public init(
+        textRole: FanousTextRole = .body, buttonTextRole: FanousTextRole = .label, retry: @escaping () -> Void
+    ) {
+        self.textRole = textRole
+        self.buttonTextRole = buttonTextRole
+        self.retry = retry
+    }
 
     public var body: some View {
         VStack(spacing: 16) {
@@ -310,9 +323,9 @@ public struct ErrorStateView: View {
                 .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(Fanous.errorText)
                 .accessibilityHidden(true)
-            Text(l10n("common.error.load")).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
+            Text(l10n("common.error.load")).fanousFont(textRole).foregroundStyle(Fanous.textPrimary)
                 .multilineTextAlignment(.center)
-            Button(l10n("common.retry"), action: retry).buttonStyle(FanousButtonStyle(.primary))
+            Button(l10n("common.retry"), action: retry).buttonStyle(FanousButtonStyle(.primary, textRole: buttonTextRole))
                 .accessibilityIdentifier("retry")
         }
         .padding(FanousScale.spacingXl)

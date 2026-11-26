@@ -2,6 +2,16 @@ import AUNCoreBridge
 import AUNDesign
 import SwiftUI
 
+private extension View {
+    func liveFont(_ role: FanousTextRole, tvRole: FanousTextRole = .tvBody) -> some View {
+        #if os(tvOS)
+            fanousFont(tvRole)
+        #else
+            fanousFont(role)
+        #endif
+    }
+}
+
 /// A small label beside a title or on a card: Live, Premiere, an event tag.
 struct LiveTag: View {
     let text: String
@@ -9,7 +19,7 @@ struct LiveTag: View {
 
     var body: some View {
         Text(text)
-            .fanousFont(.caption)
+            .liveFont(.caption)
             .fontWeight(.semibold)
             .foregroundStyle(isLive ? Fanous.part(\.badgeLiveText) : Fanous.part(\.buttonSecondaryText))
             .padding(.horizontal, 10)
@@ -54,15 +64,19 @@ struct LiveCardContent: View {
             ThumbnailImage(url: stream.thumbnailURL)
             VStack(alignment: .leading, spacing: 5) {
                 Text(stream.title)
-                    .fanousFont(.label).fontWeight(.semibold)
+                    .liveFont(.label).fontWeight(.semibold)
                     .foregroundStyle(Fanous.part(\.cardVideoTitle))
-                    .lineLimit(2)
+                    #if !os(tvOS)
+                        .lineLimit(2)
+                    #endif
                     .multilineTextAlignment(.leading)
                 if hasTags { LiveTags(kind: stream.kind, event: stream.eventType, isLive: stream.status == .live) }
                 Text(DisplayFormat.meta([stream.channelName, when], l10n.language))
-                    .fanousFont(.caption)
+                    .liveFont(.caption)
                     .foregroundStyle(Fanous.part(\.cardVideoMeta))
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    #if !os(tvOS)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    #endif
             }
             .padding(.horizontal, 2)
         }
@@ -161,13 +175,15 @@ struct LiveChatView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(l10n(isReplay ? "live.chat.replay" : "live.chat")).fanousFont(.label).fontWeight(.bold)
+            Text(l10n(isReplay ? "live.chat.replay" : "live.chat")).liveFont(.label).fontWeight(.bold)
                 .foregroundStyle(Fanous.textPrimary)
                 .padding(FanousScale.spacingMd)
                 .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("live-chat-title")
             #if os(tvOS)
                 if onReportMessage != nil, !visibleMessages.isEmpty || visiblePinned != nil {
-                    Text(l10n("safety.report.tvChatHint")).font(.caption2)
+                    Text(l10n("safety.report.tvChatHint")).fanousFont(.tvBody)
+                        .fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(Fanous.textSecondary)
                         .padding([.horizontal, .bottom], FanousScale.spacingMd)
                         .accessibilityIdentifier("tv-report-chat-hint")
@@ -186,7 +202,7 @@ struct LiveChatView: View {
                 .accessibilityIdentifier("live-chat-pinned")
             }
             if visibleMessages.isEmpty {
-                Text(l10n(isReplay ? "live.chat.replayEmpty" : "live.chat.empty")).fanousFont(.body)
+                Text(l10n(isReplay ? "live.chat.replayEmpty" : "live.chat.empty")).liveFont(.body)
                     .foregroundStyle(Fanous.textSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -291,9 +307,20 @@ struct LiveChatView: View {
         .accessibilityIdentifier("live-chat-message-\(message.id)")
     }
 
+    @ViewBuilder private func messageMetadata<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        #if os(tvOS)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6, content: content)
+                VStack(alignment: .leading, spacing: 4, content: content)
+            }
+        #else
+            HStack(spacing: 6, content: content)
+        #endif
+    }
+
     private func messageBody(_ message: LiveChatMessage) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
+            messageMetadata {
                 if isReplay {
                     Text(DisplayFormat.duration(Double(message.offsetMs) / 1000, l10n.language)).monospacedDigit()
                         .foregroundStyle(Fanous.textSecondary)
@@ -301,8 +328,8 @@ struct LiveChatView: View {
                 Text(message.authorName).fontWeight(.semibold).foregroundStyle(Fanous.textSecondary)
                 if let role = message.authorRole { LiveTag(text: l10n("live.chat.role.\(role.rawValue)")) }
             }
-            .fanousFont(.caption)
-            Text(message.text).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
+            .liveFont(.caption)
+            Text(message.text).liveFont(.body).foregroundStyle(Fanous.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
@@ -323,16 +350,16 @@ struct LiveNotice: View {
             switch content.mode {
             case .soon:
                 countdown
-                Text(l10n(isPremiere ? "live.premiere.together" : "live.soon.body")).fanousFont(.body)
+                Text(l10n(isPremiere ? "live.premiere.together" : "live.soon.body")).liveFont(.body)
                     .foregroundStyle(Fanous.textSecondary)
                 if let start {
-                    Text(l10n("live.scheduledFor", DisplayFormat.dateTime(start, l10n.language))).fanousFont(.body)
+                    Text(l10n("live.scheduledFor", DisplayFormat.dateTime(start, l10n.language))).liveFont(.body)
                         .foregroundStyle(Fanous.textSecondary)
                 }
             case .cancelled: headline(l10n(isPremiere ? "live.premiere.cancelled" : "live.cancelled"))
             default:
                 headline(l10n(isPremiere ? "live.premiere.ended" : "live.ended"))
-                if !isPremiere { Text(l10n("live.recordingPreparing")).fanousFont(.body).foregroundStyle(Fanous.textSecondary) }
+                if !isPremiere { Text(l10n("live.recordingPreparing")).liveFont(.body).foregroundStyle(Fanous.textSecondary) }
             }
         }
         .multilineTextAlignment(.center)
@@ -354,9 +381,9 @@ struct LiveNotice: View {
                         "live.premiere.inDays.\(DisplayFormat.pluralCategory(days, l10n.language))",
                         DisplayFormat.number(days, l10n.language)))
             } else {
-                Text(l10n("live.premiere.in")).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
+                Text(l10n("live.premiere.in")).liveFont(.body).foregroundStyle(Fanous.textSecondary)
                 Text(DisplayFormat.duration(untilStart.rounded(.up), l10n.language))
-                    .fanousFont(.title).fontWeight(.bold).monospacedDigit()
+                    .liveFont(.title, tvRole: .tvHero).fontWeight(.bold).monospacedDigit()
                     .foregroundStyle(Fanous.textPrimary)
                     .environment(\.layoutDirection, .leftToRight)
                     .accessibilityIdentifier("live-countdown")
@@ -367,7 +394,7 @@ struct LiveNotice: View {
     }
 
     private func headline(_ text: String) -> some View {
-        Text(text).fanousFont(.headline).foregroundStyle(Fanous.textPrimary)
+        Text(text).liveFont(.headline, tvRole: .tvHero).foregroundStyle(Fanous.textPrimary)
     }
 }
 
@@ -401,10 +428,15 @@ struct LiveDetails: View {
             }
             HStack(alignment: .top, spacing: FanousScale.spacingSm) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(content.stream.title).fanousFont(.title).fontWeight(.bold).foregroundStyle(Fanous.textPrimary)
-                        .accessibilityIdentifier("live-title")
+                    Text(content.stream.title).liveFont(.title, tvRole: .tvHero).fontWeight(.bold).foregroundStyle(
+                        Fanous.textPrimary
+                    )
+                    .accessibilityIdentifier("live-title")
                     let meta = DisplayFormat.meta([content.stream.channelName, watching], l10n.language)
-                    if !meta.isEmpty { Text(meta).fanousFont(.caption).foregroundStyle(Fanous.textSecondary) }
+                    if !meta.isEmpty {
+                        Text(meta).liveFont(.caption).foregroundStyle(Fanous.textSecondary)
+                            .accessibilityIdentifier("live-metadata")
+                    }
                 }
                 Spacer(minLength: 0)
                 #if os(iOS) || os(macOS)
@@ -447,7 +479,8 @@ struct LiveDetails: View {
                 #endif
             }
             if let description = content.stream.description, !description.isEmpty {
-                Text(description).fanousFont(.body).foregroundStyle(Fanous.textPrimary)
+                Text(description).liveFont(.body).foregroundStyle(Fanous.textPrimary)
+                    .accessibilityIdentifier("live-description")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

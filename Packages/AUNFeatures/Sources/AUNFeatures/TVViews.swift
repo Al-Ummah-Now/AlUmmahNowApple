@@ -95,7 +95,7 @@
 
         private var liveRail: some View {
             VStack(alignment: .leading, spacing: 20) {
-                Text(l10n("live.title")).fanousFont(.title).fontWeight(.bold).foregroundStyle(Fanous.textPrimary)
+                Text(l10n("live.title")).fanousFont(.tvHero).foregroundStyle(Fanous.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 40) {
@@ -103,7 +103,7 @@
                             Button {
                                 open(.live(stream.id))
                             } label: {
-                                LiveCardContent(stream: stream).frame(width: 420).padding(12)
+                                LiveCardContent(stream: stream).frame(width: 500).padding(12)
                             }
                             .buttonStyle(.card)
                             .accessibilityIdentifier("live-card-\(stream.id)")
@@ -255,7 +255,7 @@
                         .environment(\.layoutDirection, .leftToRight)
                         .accessibilityIdentifier("tv-report-address")
                     Button(action: dismiss) { Text(l10n("common.dismiss")).font(.callout.weight(.semibold)) }
-                        .buttonStyle(FanousButtonStyle(.primary))
+                        .buttonStyle(FanousButtonStyle(.primary, textRole: .tvBody))
                         .accessibilityIdentifier("tv-report-dismiss")
                 }
                 .frame(maxWidth: 1000, alignment: .leading)
