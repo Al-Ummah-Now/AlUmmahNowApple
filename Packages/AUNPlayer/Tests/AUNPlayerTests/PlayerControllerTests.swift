@@ -89,6 +89,37 @@ private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         sut.stop()
     }
 
+    @Test func quranCreditFollowsActiveCueAndSubtitleSelection() async throws {
+        let sut = PlayerController { _ in
+            """
+            WEBVTT
+
+            00:00.000 --> 00:01.000
+            Verse
+            Source: Quran Foundation
+
+            00:01.000 --> 00:02.000
+            Commentary
+            """
+        }
+        sut.load(PlaybackItem(url: try await makeVideo(), title: "T", subtitles: [track()]), autoplay: false)
+        sut.selectSubtitle(id: "ar")
+        try await waitUntil { sut.currentCue?.quranCaption.credited == true }
+        #expect(sut.currentCue?.quranCaption.text == "Verse")
+        #expect(sut.currentCue?.quranCaption.language == .en)
+
+        try await waitUntil { sut.duration > 1.5 }
+        sut.seek(to: 1.5)
+        try await waitUntil { sut.currentCue?.text == "Commentary" }
+        #expect(sut.currentCue?.quranCaption.credited == false)
+
+        sut.seek(to: 0)
+        try await waitUntil { sut.currentCue?.quranCaption.credited == true }
+        sut.selectSubtitle(id: nil)
+        #expect(sut.currentCue?.quranCaption == nil)
+        sut.stop()
+    }
+
     @Test func currentChapterFollowsTime() async throws {
         let sut = controller()
         let chapters = [Chapter(id: "a", startTime: 0, title: "A"), Chapter(id: "b", startTime: 1, title: "B")]

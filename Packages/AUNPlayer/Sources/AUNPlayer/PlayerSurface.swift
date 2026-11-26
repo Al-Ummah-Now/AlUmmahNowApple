@@ -2,6 +2,10 @@ import AUNDesign
 import AVKit
 import SwiftUI
 
+#if os(iOS)
+    import SafariServices
+#endif
+
 #if os(iOS) || os(tvOS)
     /// AVKit's player view: gives PiP, AirPlay, fullscreen and system transport controls.
     public struct PlayerSurface: UIViewControllerRepresentable {
@@ -34,17 +38,38 @@ import SwiftUI
                 view.delegate = context.coordinator
                 context.coordinator.attach(view)
             #endif
-            let overlay = UIHostingController(rootView: SubtitleOverlay(controller: controller))
-            overlay.view.backgroundColor = .clear
-            overlay.view.isUserInteractionEnabled = false
-            if let content = view.contentOverlayView {
-                overlay.view.frame = content.bounds
-                overlay.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                content.addSubview(overlay.view)
-            }
-            view.addChild(overlay)
-            overlay.didMove(toParent: view)
+            #if os(iOS)
+                let container = SubtitleTouchView(frame: view.view.bounds)
+                container.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                var subtitles = SubtitleOverlay(controller: controller)
+                subtitles.creditFrameChanged = { [weak container] in container?.creditFrame = $0 }
+                subtitles.openCredit = { [weak view] url in
+                    guard let view, view.presentedViewController == nil else { return }
+                    let browser = SFSafariViewController(url: url)
+                    browser.modalPresentationStyle = .overFullScreen
+                    view.present(browser, animated: true)
+                }
+                installOverlay(subtitles, in: container, on: view)
+                view.view.addSubview(container)
+            #elseif os(tvOS)
+                if let content = view.contentOverlayView {
+                    installOverlay(SubtitleOverlay(controller: controller), in: content, on: view)
+                }
+            #endif
             return view
+        }
+
+        private func installOverlay(_ subtitles: SubtitleOverlay, in container: UIView, on playerView: AVPlayerViewController) {
+            let overlay = UIHostingController(rootView: subtitles)
+            playerView.addChild(overlay)
+            overlay.view.backgroundColor = .clear
+            #if os(tvOS)
+                overlay.view.isUserInteractionEnabled = false
+            #endif
+            overlay.view.frame = container.bounds
+            overlay.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            container.addSubview(overlay.view)
+            overlay.didMove(toParent: playerView)
         }
 
         public static func dismantleUIViewController(_ view: AVPlayerViewController, coordinator: Coordinator) {
@@ -104,6 +129,15 @@ import SwiftUI
     }
 
     #if os(iOS)
+        /// Keeps AVKit's native hit testing outside the credit button.
+        private final class SubtitleTouchView: UIView {
+            var creditFrame: CGRect = .null
+
+            override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+                creditFrame.contains(point)
+            }
+        }
+
         extension PlayerSurface.Coordinator: AVPlayerViewControllerDelegate {
             nonisolated public func playerViewControllerWillStartPictureInPicture(_ view: AVPlayerViewController) {
                 MainActor.assumeIsolated { setPictureInPicture(true) }

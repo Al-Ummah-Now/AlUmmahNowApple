@@ -51,6 +51,36 @@ final class ViewerFlowTests: XCTestCase {
     }
 
     @MainActor
+    func testQuranCreditFollowsCaptionSelection() {
+        let app = launch("en")
+        card(app).tap()
+        let menu = app.buttons["subtitles-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 20))
+        let credit = app.descendants(matching: .any)["quran-caption-credit"].firstMatch
+        XCTAssertFalse(credit.exists)
+
+        menu.tap()
+        app.buttons["English"].tap()
+        XCTAssertTrue(credit.waitForExistence(timeout: 5))
+        XCTAssertEqual(credit.label, "Source: Quran Foundation, opens in browser")
+        XCTAssertGreaterThanOrEqual(credit.frame.height, 44)
+        let cue = app.staticTexts["subtitle-cue"]
+        XCTAssertEqual(cue.label, "Fixture cue")
+        XCTAssertGreaterThanOrEqual(credit.frame.minY, cue.frame.maxY)
+        XCTAssertEqual(credit.frame.maxX, cue.frame.maxX, accuracy: 2)
+
+        credit.tap()
+        let done = app.buttons["Done"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 10))
+        done.tap()
+        XCTAssertTrue(credit.waitForExistence(timeout: 5))
+
+        menu.tap()
+        app.buttons["Off"].tap()
+        XCTAssertFalse(credit.exists)
+    }
+
+    @MainActor
     func testQualityMenuListsRenditionsAndSkipControlsMirror() {
         let app = launch("ar")
         card(app).tap()
