@@ -144,6 +144,8 @@ struct ChannelGate<Content: View>: View {
         enum Tab: Hashable { case home, content, upload, analytics, editor }
 
         @Environment(\.l10n) private var l10n
+        @Environment(\.fanous) private var theme
+        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
         let session: StudioSession
         @State private var showingAccounts = false
         @State private var tab: Tab = .home
@@ -242,18 +244,27 @@ struct ChannelGate<Content: View>: View {
             }
         }
 
+        private var tabTint: Color {
+            // The regular-width iPad tab bar floats over the dark header in both app appearances.
+            let overHeader = UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
+            return Color(overHeader ? theme.parts.navActiveText : theme.colors.link)
+        }
+
         /// iOS 18+: the adaptable tab view, so iPad gets the sidebar and iPhone the (Liquid Glass) tab bar, which
         /// shrinks while scrolling down on iOS 26. iOS 17 keeps the classic tab bar.
         @ViewBuilder private var tabs: some View {
             if #available(iOS 18, *) {
                 let adaptable = TabView(selection: $tab) {
                     ForEach(ordered, id: \.self) { item in
-                        SwiftUI.Tab(title(item), systemImage: icon(item), value: item) { page(item) }
-                            .badge(item == .upload ? activeUploads : 0)
-                            .accessibilityIdentifier("tab-\(item)")
+                        SwiftUI.Tab(title(item), systemImage: icon(item), value: item) {
+                            page(item).tint(Fanous.link)
+                        }
+                        .badge(item == .upload ? activeUploads : 0)
+                        .accessibilityIdentifier("tab-\(item)")
                     }
                 }
                 .tabViewStyle(.sidebarAdaptable)
+                .tint(tabTint)
                 // iPad opens on the sidebar (the approved layout); iPhone keeps the tab bar.
                 .defaultAdaptableTabBarPlacement(.sidebar)
                 if #available(iOS 26, *) {
