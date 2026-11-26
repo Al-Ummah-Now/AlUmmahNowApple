@@ -6,13 +6,14 @@ final class StudioSmokeTests: XCTestCase {
 
     @MainActor
     private func launch(
-        _ language: String, signedIn: Bool = false, state: String = "creator", featuresOff: String = ""
+        _ language: String, signedIn: Bool = false, state: String = "creator", featuresOff: String = "", sampleVideos: Int = 0
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", signedIn ? "YES" : "NO", "-AUNLanguage", language,
             "-AUNFixtureAccountState", state, "-AUNFixtureFeaturesOff", featuresOff, "-ApplePersistenceIgnoreState", "YES",
         ]
+        app.launchArguments += ["-AUNSampleVideos", String(sampleVideos)]
         app.launch()
         return app
     }
@@ -21,6 +22,32 @@ final class StudioSmokeTests: XCTestCase {
     @MainActor
     private func identity(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: "account-button").firstMatch
+    }
+
+    @MainActor
+    func testTagsLabelsInUploadAndEdit() {
+        for (language, label) in [("en", "Tags"), ("ar", "الوسوم")] {
+            let app = launch(language, signedIn: true, sampleVideos: 1)
+            let upload = app.descendants(matching: .any)["section-upload"]
+            XCTAssertTrue(upload.waitForExistence(timeout: 30))
+            upload.click()
+            assertTagsLabel(app, identifier: "upload-tags", label: label)
+
+            app.descendants(matching: .any)["section-content"].click()
+            let row = app.descendants(matching: .any).matching(identifier: "video-fixture-content-1").firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 20))
+            row.doubleClick()
+            assertTagsLabel(app, identifier: "edit-tags", label: label)
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    private func assertTagsLabel(_ app: XCUIApplication, identifier: String, label: String) {
+        let field = app.textFields[identifier]
+        XCTAssertTrue(field.waitForExistence(timeout: 20))
+        XCTAssertEqual(field.label, label)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label == %@", label)).firstMatch.exists)
     }
 
     @MainActor
