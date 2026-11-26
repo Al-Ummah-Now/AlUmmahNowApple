@@ -6,6 +6,8 @@ import Testing
 /// The Dashboard's comments awaiting review, and the names shown for people: display name, else first + last, else
 /// email; never an @handle.
 struct HeldCommentsTests {
+    private let accountID = FixtureAccountService.creator.id
+
     private func service(_ handler: @escaping StubURLProtocol.Handler) -> NativeStudioService {
         NativeStudioService(
             baseURL: URL(string: "https://videos.api.qa.alummahnow.net")!,
@@ -28,7 +30,7 @@ struct HeldCommentsTests {
             #expect(items.contains(URLQueryItem(name: "limit", value: "4")))
             #expect(request.value(forHTTPHeaderField: "channelId") == "c1")
             return (200, [:], Data(body.utf8))
-        }.heldComments(channelID: "c1", limit: 4)
+        }.heldComments(channelID: "c1", limit: 4, accountID: accountID)
         #expect(held.total == 7)
         #expect(held.items.map(\.id) == ["m1", "m2"])
         #expect(held.items.map(\.authorName) == ["Maryam Haddad", "Omar Saleh"])
@@ -54,7 +56,7 @@ struct HeldCommentsTests {
                     ["kind": kind.rawValue, "targetId": "target", "commentId": "comment"]
                 ])
             return (200, [:], Data(#"{"success":true,"results":[{"commentId":"comment","ok":true}]}"#.utf8))
-        }.moderateHeldComment(comment, action: action, channelID: "c1")
+        }.moderateHeldComment(comment, action: action, channelID: "c1", accountID: accountID)
     }
 
     @Test(arguments: [
@@ -68,7 +70,7 @@ struct HeldCommentsTests {
             """
         await #expect(throws: error) {
             try await service { _ in (200, [:], Data(json.utf8)) }
-                .moderateHeldComment(actionableComment(), action: .approve, channelID: "c1")
+                .moderateHeldComment(actionableComment(), action: .approve, channelID: "c1", accountID: accountID)
         }
     }
 
@@ -84,14 +86,27 @@ struct HeldCommentsTests {
                     "entityType": "comment", "entityId": "comment", "reason": "child_safety", "description": "Details",
                 ])
             return (200, [:], Data(#"{"success":true,"result":{"report":{"id":"r1"}}}"#.utf8))
-        }.reportHeldComment(id: "comment", reason: .childSafety, description: "Details")
+        }.reportHeldComment(id: "comment", reason: .childSafety, description: "Details", accountID: accountID)
     }
 
     @Test func passesThroughDuplicateReportConflict() async {
         await #expect(throws: CoreError.conflict("You have already reported this content")) {
             try await service { _ in
                 (409, [:], Data(#"{"success":false,"error":"You have already reported this content"}"#.utf8))
-            }.reportHeldComment(id: "comment", reason: .spam, description: nil)
+            }.reportHeldComment(id: "comment", reason: .spam, description: nil, accountID: accountID)
+        }
+    }
+
+    @Test func rejectsARequestWhenTheBearerBelongsToAnotherAccount() async {
+        let studio = service { _ in
+            Issue.record("A request with a different account's token reached the network")
+            return (200, [:], Data(#"{"success":true}"#.utf8))
+        }
+        await #expect(throws: CoreError.cancelled) {
+            try await studio.reportHeldComment(id: "comment", reason: .spam, description: nil, accountID: "stale-account")
+        }
+        await #expect(throws: CoreError.cancelled) {
+            try await studio.heldComments(channelID: "c1", limit: 4, accountID: "stale-account")
         }
     }
 
@@ -103,7 +118,7 @@ struct HeldCommentsTests {
             let body = try JSONSerialization.jsonObject(with: StubURLProtocol.body(of: request))
             #expect(body as? [String: String] == ["userId": "person"])
             return (200, [:], Data(#"{"success":true}"#.utf8))
-        }.hideCommentAuthor(userID: "person", channelID: "c1")
+        }.hideCommentAuthor(userID: "person", channelID: "c1", accountID: accountID)
     }
 
     @Test(arguments: [
@@ -115,7 +130,7 @@ struct HeldCommentsTests {
         await #expect(throws: error) {
             try await service { _ in
                 (status, [:], Data("{\"success\":false,\"error\":\"\(code)\"}".utf8))
-            }.hideCommentAuthor(userID: "person", channelID: "c1")
+            }.hideCommentAuthor(userID: "person", channelID: "c1", accountID: accountID)
         }
     }
 
@@ -145,7 +160,7 @@ struct HeldCommentsTests {
         await #expect(throws: CoreError.featureOff) {
             try await service { _ in
                 (404, [:], Data(#"{"success":false,"code":"feature_off","error":"Not found"}"#.utf8))
-            }.heldComments(channelID: "c1", limit: 4)
+            }.heldComments(channelID: "c1", limit: 4, accountID: accountID)
         }
     }
 

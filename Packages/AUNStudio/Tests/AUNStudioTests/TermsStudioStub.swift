@@ -113,8 +113,8 @@ actor TermsStudioStub: StudioServicing {
         try await base.videoStats(videoID: videoID, period: period)
     }
     func features(channelID: String?) async throws -> UserFeatures { try await base.features(channelID: channelID) }
-    func heldComments(channelID: String, limit: Int) async throws -> HeldComments {
-        try await base.heldComments(channelID: channelID, limit: limit)
+    func heldComments(channelID: String, limit: Int, accountID: String) async throws -> HeldComments {
+        try await base.heldComments(channelID: channelID, limit: limit, accountID: accountID)
     }
 }
 

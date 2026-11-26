@@ -155,8 +155,12 @@ struct HeldCommentReportSheet: View {
                             Text(l10n("studio.held.reason.\(reason.rawValue)")).tag(Optional(reason))
                         }
                     }
-                    TextField(l10n("studio.held.reportDetails"), text: $details, axis: .vertical)
-                        .lineLimit(3...6)
+                    TextField(
+                        l10n("studio.held.reportDetails"), text: $details,
+                        prompt: fanousPrompt(l10n("studio.held.reportDetails")), axis: .vertical
+                    )
+                    .lineLimit(3...6)
+                    .fanousFieldAlignment()
                 } footer: {
                     if detailsTooLong {
                         Text(l10n("studio.error.held.detailsLength", DisplayFormat.number(Self.detailsLimit, l10n.language)))
