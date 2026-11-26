@@ -590,3 +590,5 @@
 "studio.terms.saving" = "Saving…";
 "studio.terms.versionChanged" = "The Terms of Service were updated. Please review the latest version and agree again.";
 "studio.terms.versionLoaded" = "The latest Terms are loaded. Please review them and agree again.";
+
+"player.quranCredit.accessibility" = "Source: Quran Foundation, opens in browser";

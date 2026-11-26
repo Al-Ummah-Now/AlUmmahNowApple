@@ -1,9 +1,12 @@
+import AUNCoreBridge
 import Foundation
 
 public struct SubtitleCue: Hashable, Sendable {
     public var start: Double
     public var end: Double
     public var text: String
+
+    var quranCaption: QuranCaptionCredit { QuranCaptionCredit.splitQuranCredit(text) }
 
     public init(start: Double, end: Double, text: String) {
         self.start = start

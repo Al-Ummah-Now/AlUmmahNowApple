@@ -83,7 +83,7 @@ public struct FixtureCatalogService: CatalogServicing {
     }
 
     public func subtitleText(url: URL) async throws -> String {
-        "WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nFixture cue\n"
+        "WEBVTT\n\n00:00:00.000 --> 00:02:00.000\nFixture cue\nSource: Quran Foundation\n"
     }
 
     private static let subtitleURL = URL(string: "https://fixtures.invalid/subtitles.vtt")!
