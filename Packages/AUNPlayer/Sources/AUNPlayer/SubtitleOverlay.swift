@@ -11,7 +11,9 @@ public struct SubtitleOverlay: View {
     @Environment(\.fanous) private var theme
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.openURL) private var openURL
-    @ScaledMetric(relativeTo: .callout) private var creditSize = 12
+    #if !os(tvOS)
+        @ScaledMetric(relativeTo: .callout) private var creditSize = 12
+    #endif
 
     public init(controller: PlayerController) { self.controller = controller }
 
@@ -56,19 +58,17 @@ public struct SubtitleOverlay: View {
         FanousSurface(fills: (hostedTheme ?? theme).player.cue, shape: .rounded(6))
     }
 
-    private var isInteractive: Bool {
-        #if os(tvOS)
-            false
-        #else
-            true
-        #endif
-    }
-
     @ViewBuilder
     private func credit(_ language: QuranCaptionCredit.Language) -> some View {
-        let label = Text(language.label)
-            .font(.system(size: creditSize, weight: .semibold))
-            .underline(isInteractive)
+        #if os(tvOS)
+            let text = Text(language.label).fanousFont(.tvBody)
+        #else
+            let text = Text(language.label)
+                .font(.system(size: creditSize, weight: .semibold))
+                .underline()
+        #endif
+        let label =
+            text
             .foregroundStyle(.white)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)

@@ -21,7 +21,8 @@ public struct QuranCaptionCredit: Equatable, Sendable {
     public static func splitQuranCredit(_ cueText: String) -> Self {
         let lines = cueText.components(separatedBy: "\n")
         guard lines.count > 1, let last = lines.last else { return Self(text: cueText, language: nil) }
-        let lastLine = last.drop(while: { $0 == "\u{200E}" || $0 == "\u{200F}" })
+        let lastLine = last.trimmingCharacters(in: .whitespacesAndNewlines)
+            .drop(while: { $0 == "\u{200E}" || $0 == "\u{200F}" })
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let credit =
             lastLine
