@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Studio's window content on iPhone, iPad and Mac: sign-in until an account is active, then the Studio shell.
 public struct StudioRootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var session: StudioSession
 
     /// `preferences` holds per-device choices such as the last channel per account.
@@ -21,6 +22,11 @@ public struct StudioRootView: View {
             }
         }
         .task { await session.start() }
+        // Back in the foreground: what became of a deletion whose answer was lost may be known now.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, session.openDeletions.contains(where: { $0.stage == .deleteSent }) else { return }
+            Task { await session.checkDeletions() }
+        }
         // Universal links on the videos host (`/studio/…`, `/app/studio/…`); the viewer's links are not Studio's.
         .onOpenURL { url in
             guard case .studio(let link) = AppLink.parse(url) else { return }
@@ -183,7 +189,9 @@ struct ChannelGate<Content: View>: View {
 
         private func screen(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
             NavigationStack {
+                // Below the header, so the identity menu stays in reach.
                 content()
+                    .safeAreaInset(edge: .top, spacing: 0) { DeletionBanner(session: session) }
                     .navigationTitle(title)
                     .toolbarTitleDisplayMode(.inlineLarge)
                     .toolbar { StudioToolbar(title: title, session: session, showingAccounts: $showingAccounts) }
@@ -336,7 +344,12 @@ struct ChannelGate<Content: View>: View {
                             title: l10n((section ?? .home).titleKey), session: session, showingAccounts: $showingAccounts)
                     }
                     .modifier(HidesWindowTitle())
-                    .safeAreaInset(edge: .top, spacing: 0) { AccountStateBanner(session: session) }
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        VStack(spacing: 0) {
+                            DeletionBanner(session: session)
+                            AccountStateBanner(session: session)
+                        }
+                    }
                     // The web header as an opaque title bar: scrolled content never shows through the traffic lights.
                     // It resolves concrete colours here, because the window toolbar does not see the theme environment.
                     .fanousHeaderBar()

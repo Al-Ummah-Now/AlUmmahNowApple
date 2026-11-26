@@ -115,4 +115,40 @@ final class StudioSmokeTests: XCTestCase {
             app.descendants(matching: .any).matching(identifier: "deleted-fixture-content-1").firstMatch
                 .waitForExistence(timeout: 20))
     }
+
+    @MainActor
+    func testDeleteAccountRequiresTypedConfirmation() {
+        let app = launch("en", signedIn: true)
+        let account = identity(app)
+        XCTAssertTrue(account.waitForExistence(timeout: 30))
+        account.click()
+        let manage = app.descendants(matching: .any)["accounts-manage"].firstMatch
+        if manage.waitForExistence(timeout: 2) {
+            manage.click()
+        } else {
+            app.typeKey(.upArrow, modifierFlags: [])
+            app.typeKey(.return, modifierFlags: [])
+        }
+        let deleteButton = app.buttons["account-delete"]
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 10))
+        deleteButton.click()
+        let cancel = app.buttons["delete-account-cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10))
+        let confirm = app.buttons["delete-account-confirm"]
+        XCTAssertTrue(confirm.exists)
+        XCTAssertFalse(confirm.isEnabled)
+        // Escape is a way out; what was typed is not kept.
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(cancel.waitForNonExistence(timeout: 10))
+        deleteButton.click()
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10))
+        XCTAssertFalse(confirm.isEnabled)
+        let input = app.textFields["delete-account-confirm-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        input.click()
+        input.typeText("DELETE")
+        XCTAssertTrue(confirm.isEnabled)
+        confirm.click()
+        XCTAssertTrue(app.buttons["sign-in"].waitForExistence(timeout: 20))
+    }
 }

@@ -104,6 +104,9 @@ public struct FixtureStudioService: StudioServicing {
     }
     public static let defaultTermsVersion = "2026-11-24"
 
+    /// What `channels()` does for UI tests (`-AUNFixtureChannels`): the fixture channels, none, an error, or no answer.
+    public enum Channels: String, Sendable { case all, none, failing, loading }
+
     let store = FixtureContentStore()
     let media = FixtureMediaStore()
     let termsState = FixtureTermsState()
@@ -114,9 +117,13 @@ public struct FixtureStudioService: StudioServicing {
     /// `analytics`, whose routes then answer 404 `feature_off`.
     let featuresOff: Set<String>
 
+    let channelsMode: Channels
+
     public init(
-        accountState: AccountState = .creator, featuresOff: Set<String> = [], termsMode: TermsMode = .accepted
+        accountState: AccountState = .creator, featuresOff: Set<String> = [], termsMode: TermsMode = .accepted,
+        channels: Channels = .all
     ) {
+        channelsMode = channels
         self.accountState = accountState
         self.featuresOff = featuresOff
         self.termsMode = termsMode
@@ -135,17 +142,26 @@ public struct FixtureStudioService: StudioServicing {
         return features
     }
 
-    public static let heldComments = [
-        HeldComment(
-            id: "fixture-held-1", text: "Jazakum Allah khayran, is there a part 3?",
-            targetTitle: "Tafsir of Surah Al-Kahf, part 2",
-            targetTitleLocalized: LocalizedText(en: "Tafsir of Surah Al-Kahf, part 2", ar: "تفسير سورة الكهف، الجزء الثاني"),
-            authorName: "Maryam Haddad", createdAt: Date(timeIntervalSince1970: 1_794_010_000)),
-        HeldComment(
-            id: "fixture-held-2", text: "ما المرجع المذكور في الدقيقة العاشرة؟", targetTitle: "Friday khutbah: patience",
-            targetTitleLocalized: LocalizedText(en: "Friday khutbah: patience", ar: "خطبة الجمعة: الصبر"),
-            authorName: "Omar Saleh", createdAt: Date(timeIntervalSince1970: 1_794_000_000)),
-    ]
+    /// Comments have one text, in the language they were written in: an Arabic app shows an Arabic channel's.
+    public static var heldComments: [HeldComment] {
+        let arabic = UserDefaults.standard.string(forKey: "AUNLanguage") == AppLanguage.ar.rawValue
+        return [
+            HeldComment(
+                id: "fixture-held-1",
+                text: arabic ? "جزاكم الله خيرًا، هل يوجد جزء ثالث؟" : "Jazakum Allah khayran, is there a part 3?",
+                targetTitle: "Tafsir of Surah Al-Kahf, part 2",
+                targetTitleLocalized: LocalizedText(
+                    en: "Tafsir of Surah Al-Kahf, part 2", ar: "تفسير سورة الكهف، الجزء الثاني"),
+                authorName: arabic ? "مريم حداد" : "Maryam Haddad", createdAt: Date(timeIntervalSince1970: 1_794_010_000)),
+            HeldComment(
+                id: "fixture-held-2",
+                text: arabic
+                    ? "ما المرجع المذكور في الدقيقة العاشرة؟" : "Which reference is mentioned at minute ten?",
+                targetTitle: "Friday khutbah: patience",
+                targetTitleLocalized: LocalizedText(en: "Friday khutbah: patience", ar: "خطبة الجمعة: الصبر"),
+                authorName: arabic ? "عمر صالح" : "Omar Saleh", createdAt: Date(timeIntervalSince1970: 1_794_000_000)),
+        ]
+    }
 
     /// Two held comments; `-AUNFixtureFeaturesOff comments` makes the route answer `feature_off`.
     public func heldComments(channelID: String, limit: Int) async throws -> HeldComments {
@@ -215,7 +231,16 @@ public struct FixtureStudioService: StudioServicing {
             role: .moderator, capabilities: ["comment.moderate"]),
     ]
 
-    public func channels() async throws -> [StudioChannel] { Self.channels }
+    public func channels() async throws -> [StudioChannel] {
+        switch channelsMode {
+        case .all: return Self.channels
+        case .none: return []
+        case .failing: throw CoreError.http(status: 500)
+        case .loading:
+            try await Task.sleep(for: .seconds(3600))
+            return []
+        }
+    }
 
     public static let playlists = [
         StudioPlaylist(

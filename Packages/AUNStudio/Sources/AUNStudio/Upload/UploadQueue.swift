@@ -16,21 +16,33 @@ import Observation
 /// upload carries on and the server encodes as usual.
 @MainActor @Observable
 public final class UploadQueue {
-    public private(set) var jobs: [UploadJob]
+    public internal(set) var jobs: [UploadJob]
     public private(set) var isRunning = false
 
     private let studio: any StudioServicing
     private let transfer: any TUSTransferring
-    private let store: UploadStore
+    let store: UploadStore
+    let defaults: UserDefaults
     private let maxParallel: Int
     /// A byte transfer step (token, offset, create, one chunk) with no sign of life this long has stalled (Apple #105).
     private let stallLimit: Duration
     /// A stalled chunk is asked for again once; a second stall stops the job.
     private static let stallRetries = 1
-    private var tasks: [UUID: Task<Void, Never>] = [:]
+    var tasks: [UUID: Task<Void, Never>] = [:]
     private let preEncoder: PreEncoder?
     private let encoderName: String
-    private var preEncodeTasks: [UUID: Task<Void, Never>] = [:]
+    var preEncodeTasks: [UUID: Task<Void, Never>] = [:]
+    /// The account each running task belongs to, also once its job is off the list.
+    var taskAccounts: [UUID: String] = [:]
+    /// Accounts whose uploads stand still while they are being deleted, or while another account signs in for that.
+    var heldAccounts: Set<String> = []
+    /// Accounts whose uploads were dropped: none of theirs is taken or written back.
+    var purgedAccounts: Set<String> = []
+    static let pendingPurgesKey = "AUNStudioPendingUploadPurges"
+    /// Every queue of this process: on the Mac each window has its own, on one saved file.
+    static let queues = NSHashTable<UploadQueue>.weakObjects()
+    /// When this process started, near enough: touched by the first queue.
+    static let started = Date()
     /// Only jobs of this account run; the token belongs to the active account.
     public var accountID: String? {
         didSet {
@@ -54,32 +66,32 @@ public final class UploadQueue {
     private(set) var isBlocked = false
     private var blockedByTerms = false
     /// How often each upload was resumed by itself after `403 terms_required`, while the server called the Terms accepted.
-    private var termsResumes: [UUID: Int] = [:]
+    var termsResumes: [UUID: Int] = [:]
     private static let maxTermsResumes = 2
 
     init(
         studio: any StudioServicing, transfer: any TUSTransferring, store: UploadStore, maxParallel: Int = 2,
-        preEncoder: PreEncoder? = nil, encoderName: String = PreEncoder.encoderName(), stallLimit: Duration = .seconds(60)
+        preEncoder: PreEncoder? = nil, encoderName: String = PreEncoder.encoderName(),
+        stallLimit: Duration = .seconds(60), defaults: UserDefaults = .standard
     ) {
         self.stallLimit = stallLimit
         self.studio = studio
         self.transfer = transfer
         self.store = store
+        self.defaults = defaults
         self.maxParallel = maxParallel
         self.preEncoder = preEncoder
         self.encoderName = encoderName
-        jobs = store.load().map { job in
-            var job = job
-            if job.isActive { job.state = .waiting }
-            job.inFlight = 0
-            // A pre-encode cut short by a relaunch is not resumed: the server encodes that file.
-            if job.preEncode == .running { job.preEncode = .skipped }
-            return job
-        }
+        purgedAccounts = Set(defaults.stringArray(forKey: Self.pendingPurgesKey) ?? [])
+        jobs = store.load().map(Self.restarted)
+        // Finish what an app that was killed, or a file that could not be removed, left of a purge.
+        for id in purgedAccounts { removeJobs(of: id) }
+        Self.queues.add(self)
+        _ = Self.started
         transfer.onOrphanCompletion = { [weak self] in Task { @MainActor in self?.kick() } }
     }
 
-    convenience init(services: StudioServices) {
+    convenience init(services: StudioServices, defaults: UserDefaults = .standard) {
         let store =
             services.persistsUploads
             ? UploadStore.live()
@@ -89,7 +101,7 @@ public final class UploadQueue {
         }
         self.init(
             studio: services.studio, transfer: services.transfer, store: store, preEncoder: preEncoder,
-            stallLimit: Self.fixtureStallLimit(services) ?? .seconds(60))
+            stallLimit: Self.fixtureStallLimit(services) ?? .seconds(60), defaults: defaults)
     }
 
     /// UI tests shorten the stall limit (`-AUNUploadStallSeconds 3`) to show a stalled upload without a minute's wait. Only
@@ -110,7 +122,17 @@ public final class UploadQueue {
     // MARK: Queue changes
 
     public func enqueue(_ new: [UploadJob]) {
-        jobs += new
+        var accepted: [UploadJob] = []
+        for job in new {
+            if purgedAccounts.contains(job.accountID) {
+                // The account is gone from this device: its staged copy must not stay on disk.
+                if job.ownsFile { try? FileManager.default.removeItem(at: job.file) }
+                continue
+            }
+            accepted.append(job)
+        }
+        guard !accepted.isEmpty else { return }
+        jobs += accepted
         save()
         kick()
     }
@@ -140,24 +162,6 @@ public final class UploadQueue {
         save()
     }
 
-    /// Drops the uploads of an account that signed out of this device; they cannot continue without it.
-    public func discardJobs(of accountID: String) {
-        for job in jobs where job.accountID == accountID {
-            tasks[job.id]?.cancel()
-            preEncodeTasks[job.id]?.cancel()
-            if job.ownsFile { try? FileManager.default.removeItem(at: job.file) }
-        }
-        jobs.removeAll { $0.accountID == accountID }
-        termsResumes = termsResumes.filter { id, _ in jobs.contains { $0.id == id } }
-        save()
-    }
-
-    public func clearFinished() {
-        for job in jobs where job.state == .done && job.ownsFile { try? FileManager.default.removeItem(at: job.file) }
-        jobs.removeAll { $0.state == .done }
-        save()
-    }
-
     /// The account may write again (an admin restored it): resume the jobs the refusal paused.
     func unblock() {
         guard isBlocked else { return }
@@ -177,14 +181,16 @@ public final class UploadQueue {
 
     /// Starts as many waiting jobs of the active account as the parallel limit allows.
     public func kick() {
-        guard let accountID, !isBlocked else { return }
+        guard let accountID, !isBlocked, !heldAccounts.contains(accountID) else { return }
         let running = jobs.filter { tasks[$0.id] != nil }.count
         let ready = jobs.filter { $0.state == .waiting && $0.accountID == accountID && tasks[$0.id] == nil }
         for job in ready.prefix(max(0, maxParallel - running)) {
             let id = job.id
+            taskAccounts[id] = job.accountID
             tasks[id] = Task { [weak self] in
                 await self?.run(id)
                 self?.tasks[id] = nil
+                self?.taskAccounts[id] = nil
                 self?.kick()
             }
         }
@@ -208,7 +214,7 @@ public final class UploadQueue {
             let background = UIApplication.shared.beginBackgroundTask(withName: "studio-upload")
             defer { UIApplication.shared.endBackgroundTask(background) }
         #endif
-        guard let job = job(id) else { return }
+        guard let job = job(id), !heldAccounts.contains(job.accountID) else { return }
         let scoped = job.bookmark.flatMap(Self.resolve) ?? job.file
         let accessing = scoped.startAccessingSecurityScopedResource()
         defer { if accessing { scoped.stopAccessingSecurityScopedResource() } }
@@ -230,6 +236,19 @@ public final class UploadQueue {
         }
     }
 
+    private func putBack(_ id: UUID) {
+        update(id) {
+            $0.inFlight = 0
+            if $0.state != .paused { $0.state = .waiting }
+        }
+    }
+
+    /// Between two requests of a job: goes no further once its account is held.
+    private func checkHeld(_ id: UUID) throws {
+        try Task.checkCancellation()
+        if let account = taskAccounts[id], heldAccounts.contains(account) { throw CancellationError() }
+    }
+
     /// Initiate (once), then the language and playlists that initiate does not take.
     private func prepare(_ id: UUID) async throws -> UploadTicket {
         update(id) { $0.state = .preparing }
@@ -239,16 +258,19 @@ public final class UploadQueue {
             update(id) { $0.ticket = ticket }
             job.ticket = ticket
         }
+        try checkHeld(id)
         guard let ticket = job.ticket else { throw CancellationError() }
         if let language = job.settings.language, !job.languageSet {
             try await studio.setLanguage(language, videoID: ticket.videoID, channelID: job.channelID)
             update(id) { $0.languageSet = true }
         }
+        try checkHeld(id)
         if !job.settings.playlistIDs.isEmpty, !job.playlistsQueued {
             try await studio.addToPlaylists(
                 job.settings.playlistIDs, videoID: ticket.videoID, orderKey: job.orderKey, channelID: job.channelID)
             update(id) { $0.playlistsQueued = true }
         }
+        try checkHeld(id)
         return ticket
     }
 
@@ -260,7 +282,7 @@ public final class UploadQueue {
         update(id) { $0.state = .finishing }
         // The renditions must be complete before the original is, or the server has already encoded.
         await waitForPreEncode(id)
-        try Task.checkCancellation()
+        try checkHeld(id)
         try await studio.completeUpload(videoID: ticket.videoID, fileSize: job.fileSize, channelID: job.channelID)
         update(id) { $0.completed = true }
     }
@@ -328,6 +350,7 @@ public final class UploadQueue {
     /// The publish time, when the batch is scheduled (once).
     private func publish(_ id: UUID, ticket: UploadTicket) async throws {
         guard let job = job(id), let date = job.scheduleDate, !job.scheduled else { return }
+        try checkHeld(id)
         try await studio.schedule(videoID: ticket.videoID, at: date, timeZone: .current, channelID: job.channelID)
         update(id) { $0.scheduled = true }
     }
@@ -446,6 +469,18 @@ public final class UploadQueue {
             }
         }
     }
+}
+
+extension UploadQueue {
+    /// A saved job as a new start finds it.
+    static func restarted(_ saved: UploadJob) -> UploadJob {
+        var job = saved
+        if job.isActive { job.state = .waiting }
+        job.inFlight = 0
+        // A pre-encode cut short by a relaunch is not resumed: the server encodes that file.
+        if job.preEncode == .running { job.preEncode = .skipped }
+        return job
+    }
 
     private static func resolve(_ bookmark: Data) -> URL? {
         var stale = false
@@ -469,6 +504,12 @@ public final class UploadQueue {
         case .invalid: "studio.upload.error.invalid"
         default: "studio.upload.error.generic"
         }
+    }
+
+    public func clearFinished() {
+        for job in jobs where job.state == .done && job.ownsFile { try? FileManager.default.removeItem(at: job.file) }
+        jobs.removeAll { $0.state == .done }
+        save()
     }
 }
 
@@ -505,10 +546,8 @@ extension UploadQueue {
 
     func handleRunFailure(_ error: Error, for job: UploadJob) {
         let id = job.id
-        if error is CancellationError {
-            update(id) { if $0.state != .paused { $0.state = .waiting } }
-            return
-        }
+        // A request that was cancelled under it says so in its own words.
+        if error is CancellationError || Task.isCancelled { return putBack(id) }
         if let coreError = error as? CoreError, coreError.refusal?.code == Refusal.termsRequired {
             // Pause the job cleanly and reopen the Creator Terms gate for its account; accepting resumes it via `unblockTerms()`.
             if job.accountID == accountID {

@@ -21,7 +21,9 @@ public enum StudioBootstrap {
     /// The Studio services for this build. `-AUNUseFixtures YES` selects hermetic data for UI tests,
     /// `-AUNFixtureSignedIn YES` starts them signed in, and `-AUNFixtureAccountState invitation|pendingDeletion` starts
     /// the account without a creator tier or with its videos data pending deletion. `-AUNFixtureFeaturesOff upload,analytics`
-    /// switches features off.
+    /// switches features off. `-AUNFixtureDeleteMode` says how deleting the account goes (also `stepUp` and `wrongAccount`:
+    /// a fresh sign-in is asked for first, and comes back as someone else), and `-AUNFixtureDeletionStage erasing` starts
+    /// with a deletion that got that far (`unsettled`: with nothing left to ask with).
     public static func services(
         defaults: UserDefaults = .standard, bundle: Bundle = .main
     ) -> StudioServices {
@@ -31,20 +33,24 @@ public enum StudioBootstrap {
             let termsMode =
                 defaults.string(forKey: "AUNFixtureTermsMode").flatMap(FixtureStudioService.TermsMode.init) ?? .accepted
             return .fixtures(
-                signedIn: defaults.bool(forKey: "AUNFixtureSignedIn"), accountState: state ?? .creator,
-                featuresOff: Set(off), termsMode: termsMode)
+                accountState: state ?? .creator, featuresOff: Set(off), termsMode: termsMode,
+                deletion: deletionMode(defaults), deletionRecord: deletionRecord(defaults), accounts: fixtureAccounts(defaults),
+                channels: defaults.string(forKey: "AUNFixtureChannels").flatMap(FixtureStudioService.Channels.init) ?? .all)
         }
         let environment = AppEnvironment.fromInfoDictionary(bundle.infoDictionary)
         do {
-            let accounts = try CoreAccountService.live(
-                environment: environment, bundleID: bundle.bundleIdentifier ?? "net.alummahnow.studio")
-            return withMediaEngines(
-                StudioServices(
-                    environment: environment, accounts: accounts,
-                    studio: NativeStudioService(
-                        baseURL: environment.apiBaseURL, accounts: accounts, proofs: nativeProofs(environment, bundle)),
-                    transfer: liveTransfer,
-                    search: CoreSearchService(accounts: accounts, baseURL: environment.apiBaseURL)))
+            let bundleID = bundle.bundleIdentifier ?? "net.alummahnow.studio"
+            let accounts = try CoreAccountService.live(environment: environment, bundleID: bundleID)
+            let proofs = nativeProofs(environment, bundle)
+            var services = StudioServices(
+                environment: environment, accounts: accounts,
+                studio: NativeStudioService(baseURL: environment.apiBaseURL, accounts: accounts, proofs: proofs),
+                transfer: liveTransfer,
+                search: CoreSearchService(accounts: accounts, baseURL: environment.apiBaseURL))
+            services.deletion = NativeDeletionService(
+                apiBaseURL: environment.apiBaseURL, authIssuer: environment.authIssuer, proofs: proofs)
+            services.deletionRecords = KeychainDeletionRecords(service: "\(bundleID).deletions")
+            return withMediaEngines(services)
         } catch {
             AUNLog.studio.fault("Studio services could not start: \(error)")
             return StudioServices(
@@ -77,5 +83,29 @@ public enum StudioBootstrap {
             services.transcription = transcriber.isAvailable ? transcriber : nil
         #endif
         return services
+    }
+
+    // MARK: Fixtures of account deletion
+
+    private static func deletionMode(_ defaults: UserDefaults) -> FixtureDeletionService.Mode {
+        defaults.string(forKey: "AUNFixtureDeleteMode").flatMap(FixtureDeletionService.Mode.init) ?? .succeed
+    }
+
+    private static func fixtureAccounts(_ defaults: UserDefaults) -> FixtureAccountService {
+        let mode = defaults.string(forKey: "AUNFixtureDeleteMode")
+        let asksForSignIn = mode == "stepUp" || mode == "wrongAccount"
+        return FixtureAccountService(
+            signedIn: defaults.bool(forKey: "AUNFixtureSignedIn") ? [FixtureAccountService.creator] : [],
+            signedInAt: asksForSignIn ? Date(timeIntervalSinceNow: -3600) : Date(),
+            stepUpAccount: mode == "wrongAccount"
+                ? StudioAccount(id: "fixture-other", email: "amina.yusuf@example.org", displayName: "Amina Yusuf") : nil)
+    }
+
+    private static func deletionRecord(_ defaults: UserDefaults) -> DeletionRecord? {
+        guard let stage = defaults.string(forKey: "AUNFixtureDeletionStage").flatMap(DeletionStage.init) else { return nil }
+        let account = FixtureAccountService.creator
+        return DeletionRecord(
+            accountID: account.id, label: account.email ?? account.label, stage: stage,
+            receipt: defaults.string(forKey: "AUNFixtureDeleteMode") == "unsettled" ? nil : "fixture-receipt")
     }
 }

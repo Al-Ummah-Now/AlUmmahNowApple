@@ -32,7 +32,7 @@ extension View {
 struct UploadView: View {
     @Environment(\.l10n) private var l10n
     let session: StudioSession
-    @State private var composer = UploadComposer()
+    private var composer: UploadComposer { session.composer }
     @State private var importing = false
     #if os(iOS)
         @State private var photoPicks: [PhotosPickerItem] = []
@@ -241,11 +241,17 @@ struct UploadView: View {
                 loadingPhotos = false
                 photoPicks = []
             }
+            let account = session.account?.id
             for item in items {
                 guard let movie = try? await item.loadTransferable(type: PickedMovie.self) else { continue }
                 let moved = try? Self.copyIntoContainer(movie.url)
                 try? FileManager.default.removeItem(at: movie.url)
-                if let moved, let picked = PickedVideo.make(file: moved, ownsFile: true) { composer.add([picked]) }
+                // Copying took a while: the account it was picked under may be gone.
+                if let moved, let picked = PickedVideo.make(file: moved, ownsFile: true), session.account?.id == account {
+                    composer.add([picked])
+                } else if let moved {
+                    try? FileManager.default.removeItem(at: moved)
+                }
             }
         }
     #endif

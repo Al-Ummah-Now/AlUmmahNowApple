@@ -112,7 +112,9 @@ struct SupportLinksAndTermsTests {
         try await service.acceptCreatorTerms(version: "2026-11-24")
         #expect(recorder.method == "POST")
         #expect(recorder.path == "/api/me/creator/terms")
-        #expect(recorder.auth == "Bearer fixture-token")
+        let token = recorder.auth?.split(separator: " ")
+        #expect(token?.first == "Bearer")
+        #expect(DeletionToken.accountID(of: String(token?.last ?? "")) == FixtureAccountService.creator.id)
         let sentJSON = try #require(
             recorder.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: String] })
         #expect(sentJSON["version"] == "2026-11-24")

@@ -19,6 +19,9 @@ public struct StudioServices: Sendable {
     public var renditionPackaging: (any RenditionPackaging)?
     public var edl: (any EDLEditing)?
     public var transcription: (any OnDeviceTranscribing)?
+    /// Account deletion, and how far each one that started here got. Without them nothing is ever deleted.
+    public var deletion: any DeletionServicing = UnavailableDeletionService()
+    public var deletionRecords: any DeletionRecordStoring = MemoryDeletionRecords()
     /// False for fixtures: their upload queue lives in a temporary file.
     public var persistsUploads = true
 
@@ -40,18 +43,23 @@ public struct StudioServices: Sendable {
     }
 
     /// Hermetic services. `signedIn` starts with the fixture creator already signed in, in `accountState`, with
-    /// `featuresOff` switched off.
+    /// `featuresOff` switched off. `deletion`: how deleting the account goes; `deletionRecord`: one that started earlier.
     public static func fixtures(
         signedIn: Bool = false, accountState: FixtureStudioService.AccountState = .creator, featuresOff: Set<String> = [],
-        termsMode: FixtureStudioService.TermsMode = .accepted
+        termsMode: FixtureStudioService.TermsMode = .accepted, deletion: FixtureDeletionService.Mode = .succeed,
+        deletionRecord: DeletionRecord? = nil, accounts: FixtureAccountService? = nil,
+        channels: FixtureStudioService.Channels = .all
     ) -> StudioServices {
         var services = StudioServices(
             environment: .qa,
-            accounts: FixtureAccountService(signedIn: signedIn ? [FixtureAccountService.creator] : []),
-            studio: FixtureStudioService(accountState: accountState, featuresOff: featuresOff, termsMode: termsMode),
+            accounts: accounts ?? FixtureAccountService(signedIn: signedIn ? [FixtureAccountService.creator] : []),
+            studio: FixtureStudioService(
+                accountState: accountState, featuresOff: featuresOff, termsMode: termsMode, channels: channels),
             transfer: FixtureTUSTransfer(stalls: UserDefaults.standard.bool(forKey: "AUNFixtureStalledUploads")),
             search: FixtureSearchService())
         services.persistsUploads = false
+        services.deletion = FixtureDeletionService(mode: deletion)
+        services.deletionRecords = MemoryDeletionRecords(deletionRecord.map { [$0] } ?? [])
         services.transcription = FixtureTranscriber()
         return services
     }

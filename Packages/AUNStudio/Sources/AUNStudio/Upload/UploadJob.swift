@@ -110,18 +110,28 @@ struct UploadStore: Sendable {
         URL.applicationSupportDirectory.appending(path: "Studio/Uploads", directoryHint: .isDirectory)
     }
 
-    func load() -> [UploadJob] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
-        return (try? JSONDecoder().decode([UploadJob].self, from: data)) ?? []
+    func load() -> [UploadJob] { (try? read()) ?? [] }
+
+    /// Throws when there is a saved queue that can't be read: it must not be taken for an empty one.
+    func read() throws -> [UploadJob] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        return try JSONDecoder().decode([UploadJob].self, from: Data(contentsOf: url))
     }
 
-    func save(_ jobs: [UploadJob]) {
+    /// Where the copies of picked videos are, beside the saved queue.
+    var copies: URL { url.deletingLastPathComponent().appending(path: "Uploads", directoryHint: .isDirectory) }
+
+    /// False when the queue could not be written.
+    @discardableResult
+    func save(_ jobs: [UploadJob]) -> Bool {
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(jobs).write(
                 to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            return true
         } catch {
             AUNLog.studio.error("Saving the upload queue failed: \(error)")
+            return false
         }
     }
 }

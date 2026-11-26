@@ -429,6 +429,48 @@ struct UploadQueueTests {
             #expect(line.hasSuffix(";"))
         }
     }
+
+    @Test func persistedPurgeTombstoneRetriesOnRelaunchAndDeletesNewlyStagedCopies() async throws {
+        let sharedStore = store()
+        let suite = UserDefaults(suiteName: "purge-\(UUID().uuidString)")!
+        let f1 = try file(bytes: 32)
+        let f2 = try file(bytes: 32)
+        sharedStore.save([job(f1, title: "Pending", account: "deleted-user")])
+        suite.set(["deleted-user"], forKey: UploadQueue.pendingPurgesKey)
+
+        // Relaunching with a persisted purge tombstone retries and deletes the leftover job and owned file.
+        let relaunched = UploadQueue(
+            studio: RecordingStudio(), transfer: FixtureTUSTransfer(delay: .zero), store: sharedStore, defaults: suite)
+        #expect(relaunched.jobs.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: f1.path()))
+        // The mark stays until the account signs in again: an upload that was still running can't write back.
+        #expect(suite.stringArray(forKey: UploadQueue.pendingPurgesKey) == ["deleted-user"])
+        relaunched.clearPendingPurge(for: "deleted-user")
+        #expect((suite.stringArray(forKey: UploadQueue.pendingPurgesKey) ?? []).isEmpty)
+
+        // While a purge tombstone is active (e.g., failed file removal), enqueueing immediately cleans up staged copies.
+        suite.set(["purging-user"], forKey: UploadQueue.pendingPurgesKey)
+        let blockedFile = FileManager.default.temporaryDirectory.appending(path: "blocked-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: blockedFile, withIntermediateDirectories: true)
+        let child = blockedFile.appending(path: "keep")
+        try Data([1]).write(to: child)
+        // Lock directory permissions so removal of `child` fails cleanly, keeping tombstone active.
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: blockedFile.path())
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: blockedFile.path())
+            try? FileManager.default.removeItem(at: blockedFile)
+        }
+        sharedStore.save([job(child, title: "Locked", account: "purging-user")])
+        let queueWithFailure = UploadQueue(
+            studio: RecordingStudio(), transfer: FixtureTUSTransfer(delay: .zero), store: sharedStore, defaults: suite)
+        #expect((suite.stringArray(forKey: UploadQueue.pendingPurgesKey) ?? []).contains("purging-user"))
+
+        // Enqueueing a staged copy for the purging account drops it and removes its owned file immediately.
+        queueWithFailure.enqueue([job(f2, title: "LateStage", account: "purging-user")])
+        #expect(!FileManager.default.fileExists(atPath: f2.path()))
+        #expect(!queueWithFailure.jobs.contains { $0.title == "LateStage" })
+        #expect(throws: CoreError.self) { try queueWithFailure.purgeJobs(of: "purging-user") }
+    }
 }
 
 @MainActor

@@ -3,9 +3,25 @@
   "apps": {
     "viewer-ios": {
       "tracking": false,
-      "dataCollected": false,
-      "summary": "Data Not Collected. The viewer has no sign-in (GuestAuthSession) and only reads the public catalog, the site theme and video streams; it sends no identifiers, history or usage events.",
-      "collected": [],
+      "dataCollected": true,
+      "summary": "Data Not Linked to You, used for App Functionality only; no tracking, no third-party sharing for advertising. While watching a live stream, the viewer sends a random per-view UUID in the live-viewer heartbeat held in server memory up to ~75 s to deduplicate concurrent viewer counts.",
+      "collected": [
+        {
+          "category": "Identifiers",
+          "dataType": "Device ID",
+          "linkedToUser": false,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "While watching a live stream, the viewer sends a random per-view UUID in the live-viewer heartbeat so the server can deduplicate concurrent viewer counts (held in memory up to ~75 s across requests; not linked to an account or device hardware)",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Live.swift",
+            "Packages/AUNFeatures/Sources/AUNFeatures/Live/LiveModels.swift",
+            "Packages/AUNFeatures/Sources/AUNFeatures/Live/LiveViews.swift"
+          ]
+        }
+      ],
       "notCollected": [
         {
           "what": "Account data",
@@ -30,8 +46,8 @@
           ]
         },
         {
-          "what": "Device identifiers",
-          "answer": "none: no App Attest in the viewer (it makes no writes)",
+          "what": "App Attest / hardware device identifiers",
+          "answer": "none: no App Attest, IDFV, or IDFA in the viewer",
           "sources": [
             "Packages/AUNFeatures/Sources/AUNFeatures/ViewerBootstrap.swift"
           ]
@@ -76,9 +92,25 @@
     },
     "viewer-tv": {
       "tracking": false,
-      "dataCollected": false,
-      "summary": "Data Not Collected. The viewer has no sign-in (GuestAuthSession) and only reads the public catalog, the site theme and video streams; it sends no identifiers, history or usage events.",
-      "collected": [],
+      "dataCollected": true,
+      "summary": "Data Not Linked to You, used for App Functionality only; no tracking, no third-party sharing for advertising. While watching a live stream, the viewer sends a random per-view UUID in the live-viewer heartbeat held in server memory up to ~75 s to deduplicate concurrent viewer counts.",
+      "collected": [
+        {
+          "category": "Identifiers",
+          "dataType": "Device ID",
+          "linkedToUser": false,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "While watching a live stream, the viewer sends a random per-view UUID in the live-viewer heartbeat so the server can deduplicate concurrent viewer counts (held in memory up to ~75 s across requests; not linked to an account or device hardware)",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Live.swift",
+            "Packages/AUNFeatures/Sources/AUNFeatures/Live/LiveModels.swift",
+            "Packages/AUNFeatures/Sources/AUNFeatures/Live/LiveViews.swift"
+          ]
+        }
+      ],
       "notCollected": [
         {
           "what": "Account data",
@@ -103,8 +135,8 @@
           ]
         },
         {
-          "what": "Device identifiers",
-          "answer": "none: no App Attest in the viewer (it makes no writes)",
+          "what": "App Attest / hardware device identifiers",
+          "answer": "none: no App Attest, IDFV, or IDFA in the viewer",
           "sources": [
             "Packages/AUNFeatures/Sources/AUNFeatures/ViewerBootstrap.swift"
           ]
@@ -149,9 +181,25 @@
     },
     "viewer-mac": {
       "tracking": false,
-      "dataCollected": false,
-      "summary": "Data Not Collected. The viewer has no sign-in (GuestAuthSession) and only reads the public catalog, the site theme and video streams; it sends no identifiers, history or usage events.",
-      "collected": [],
+      "dataCollected": true,
+      "summary": "Data Not Linked to You, used for App Functionality only; no tracking, no third-party sharing for advertising. While watching a live stream, the viewer sends a random per-view UUID in the live-viewer heartbeat held in server memory up to ~75 s to deduplicate concurrent viewer counts.",
+      "collected": [
+        {
+          "category": "Identifiers",
+          "dataType": "Device ID",
+          "linkedToUser": false,
+          "usedForTracking": false,
+          "purposes": [
+            "App Functionality"
+          ],
+          "why": "While watching a live stream, the viewer sends a random per-view UUID in the live-viewer heartbeat so the server can deduplicate concurrent viewer counts (held in memory up to ~75 s across requests; not linked to an account or device hardware)",
+          "sources": [
+            "Packages/AUNCoreBridge/Sources/AUNCoreBridge/Live.swift",
+            "Packages/AUNFeatures/Sources/AUNFeatures/Live/LiveModels.swift",
+            "Packages/AUNFeatures/Sources/AUNFeatures/Live/LiveViews.swift"
+          ]
+        }
+      ],
       "notCollected": [
         {
           "what": "Account data",
@@ -176,8 +224,8 @@
           ]
         },
         {
-          "what": "Device identifiers",
-          "answer": "none: no App Attest in the viewer (it makes no writes)",
+          "what": "App Attest / hardware device identifiers",
+          "answer": "none: no App Attest, IDFV, or IDFA in the viewer",
           "sources": [
             "Packages/AUNFeatures/Sources/AUNFeatures/ViewerBootstrap.swift"
           ]

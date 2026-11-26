@@ -25,7 +25,9 @@ struct ReviewServiceTests {
         ]
         let payload = json(["success": true, "result": ["items": [row], "nextCursor": NSNull()]])
         let service = service { request in
-            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-token")
+            let bearer = request.value(forHTTPHeaderField: "Authorization")?.split(separator: " ")
+            #expect(bearer?.first == "Bearer")
+            #expect(DeletionToken.accountID(of: String(bearer?.last ?? "")) != nil)
             #expect(request.url?.path == "/api/review/queue")
             #expect(request.url?.query?.contains("tab=action_needed") == true)
             #expect(request.cachePolicy == .reloadIgnoringLocalAndRemoteCacheData)
