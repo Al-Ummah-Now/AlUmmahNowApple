@@ -95,6 +95,13 @@ import Testing
         #expect(ratio >= 4.5, "\(theme.id) dark=\(theme.isDark): \(ratio)")
     }
 
+    @Test(arguments: everyTheme)
+    func selectedHeaderNavigationTextMeetsWCAGAA(_ theme: FanousTheme) {
+        let parts = theme.parts
+        #expect(parts.navActiveText.contrast(with: parts.navBg) >= 4.5)
+        #expect(parts.navActiveText.contrast(with: parts.navActiveBg.over(parts.navBg)) >= 4.5)
+    }
+
     @Test func bundledFontsRegister() throws {
         FanousTypeface.register()
         let urls = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
