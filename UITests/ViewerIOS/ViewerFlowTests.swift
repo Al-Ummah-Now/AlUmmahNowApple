@@ -205,6 +205,13 @@ final class ViewerFlowTests: XCTestCase {
                     headings[size] = title.frame.height
                     cards[size] = card.frame.height
                     if size == large {
+                        let channel = card.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Al Ummah Now"))
+                            .firstMatch
+                        let views = card.staticTexts.containing(
+                            NSPredicate(format: "label CONTAINS %@", language == "ar" ? "مشاهدة" : "1.2K views")
+                        ).firstMatch
+                        XCTAssertTrue(channel.exists && views.exists, "The channel and views each have their own text")
+                        XCTAssertGreaterThanOrEqual(views.frame.minY, channel.frame.maxY - 1)
                         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                         shot.name = "viewer-dynamictype-\(language)-\(theme)"
                         shot.lifetime = .keepAlways

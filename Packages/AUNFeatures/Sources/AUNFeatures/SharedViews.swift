@@ -24,19 +24,31 @@ struct VideoCardContent: View {
                     .foregroundStyle(Fanous.part(\.cardVideoTitle))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                Text(metadata)
-                    .fanousFont(.caption)
-                    .foregroundStyle(Fanous.part(\.cardVideoMeta))
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                metadata
             }
             .padding(.horizontal, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var metadata: String {
+    private var metadata: some View {
         let views = DisplayFormat.views(video.views, l10n)
-        return DisplayFormat.meta([video.channelName, views], l10n.language)
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 0) {
+                    if let channel = video.channelName, !channel.isEmpty {
+                        Text(DisplayFormat.meta([channel], l10n.language))
+                    }
+                    Text(DisplayFormat.meta([views], l10n.language))
+                }
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(DisplayFormat.meta([video.channelName, views], l10n.language)).lineLimit(1)
+            }
+        }
+        .fanousFont(.caption)
+        .foregroundStyle(Fanous.part(\.cardVideoMeta))
     }
 }
 

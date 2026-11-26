@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var sheet: BulkSheet?
     @State private var confirmingDelete: [String]?
     #if os(iOS)
+        @Environment(\.dynamicTypeSize) private var dynamicTypeSize
         @State private var editMode: EditMode = .inactive
     #endif
 
@@ -127,42 +128,79 @@ struct ContentView: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel(l10n("studio.content.status"))
             .accessibilityIdentifier("content-status")
-            HStack {
-                Menu {
-                    Picker(l10n("studio.content.sort"), selection: $model.sort) {
-                        ForEach(ContentSort.allCases, id: \.self) { Text(l10n("studio.sort.\($0.rawValue)")).tag($0) }
-                    }
-                } label: {
-                    Label(l10n("studio.sort.\(model.sort.rawValue)"), systemImage: "arrow.up.arrow.down")
-                }
-                .accessibilityLabel(l10n("studio.content.sort"))
-                .accessibilityValue(l10n("studio.sort.\(model.sort.rawValue)"))
-                .accessibilityIdentifier("content-sort")
-                Spacer()
-                #if os(iOS)
-                    // The Mac has Recently deleted in its sidebar.
-                    NavigationLink {
-                        RecentlyDeletedView(services: model.services, channelID: model.channelID).studioNavigationBar()
-                    } label: {
-                        Label(l10n("studio.deleted.title"), systemImage: "trash").labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel(l10n("studio.deleted.title"))
-                    .accessibilityIdentifier("open-deleted")
-                    .padding(.trailing, FanousScale.spacingMd)
-                    Button(l10n(editMode.isEditing ? "common.done" : "studio.content.select")) {
-                        withAnimation {
-                            editMode = editMode.isEditing ? .inactive : .active
-                            if !editMode.isEditing { model.selection = [] }
-                        }
-                    }
-                    .accessibilityIdentifier("content-select")
-                #endif
-            }
-            .fanousFont(.label)
-            .padding(.horizontal, FanousScale.spacingLg)
+            statusActions
+                .fanousFont(.label)
+                .padding(.horizontal, FanousScale.spacingLg)
         }
         .padding(.vertical, FanousScale.spacingSm)
     }
+
+    @ViewBuilder private var statusActions: some View {
+        #if os(iOS)
+            if dynamicTypeSize.isAccessibilitySize {
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        sortPicker.fixedSize()
+                        Spacer()
+                        contentActions.fixedSize()
+                    }
+                    VStack(alignment: .leading, spacing: FanousScale.spacingSm) {
+                        sortPicker.fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Spacer()
+                            contentActions
+                        }
+                    }
+                }
+            } else {
+                HStack {
+                    sortPicker
+                    Spacer()
+                    contentActions
+                }
+            }
+        #else
+            HStack {
+                sortPicker
+                Spacer()
+            }
+        #endif
+    }
+
+    private var sortPicker: some View {
+        Menu {
+            Picker(l10n("studio.content.sort"), selection: $model.sort) {
+                ForEach(ContentSort.allCases, id: \.self) { Text(l10n("studio.sort.\($0.rawValue)")).tag($0) }
+            }
+        } label: {
+            Label(l10n("studio.sort.\(model.sort.rawValue)"), systemImage: "arrow.up.arrow.down")
+        }
+        .accessibilityLabel(l10n("studio.content.sort"))
+        .accessibilityValue(l10n("studio.sort.\(model.sort.rawValue)"))
+        .accessibilityIdentifier("content-sort")
+    }
+
+    #if os(iOS)
+        private var contentActions: some View {
+            HStack {
+                NavigationLink {
+                    RecentlyDeletedView(services: model.services, channelID: model.channelID).studioNavigationBar()
+                } label: {
+                    Label(l10n("studio.deleted.title"), systemImage: "trash").labelStyle(.iconOnly)
+                }
+                .accessibilityLabel(l10n("studio.deleted.title"))
+                .accessibilityIdentifier("open-deleted")
+                .padding(.trailing, FanousScale.spacingMd)
+                Button(l10n(editMode.isEditing ? "common.done" : "studio.content.select")) {
+                    withAnimation {
+                        editMode = editMode.isEditing ? .inactive : .active
+                        if !editMode.isEditing { model.selection = [] }
+                    }
+                }
+                .accessibilityIdentifier("content-select")
+            }
+        }
+    #endif
 
     private func label(for status: StudioStatus) -> String {
         let name = l10n("studio.tab.\(status.rawValue)")
