@@ -429,7 +429,7 @@ struct DashboardContent: View {
                     alignment: .leading, spacing: FanousScale.spacingLg
                 ) {
                     recentSection
-                    heldSection
+                    HeldCommentsSection(model: model)
                     queueSection
                 }
             }
@@ -437,6 +437,10 @@ struct DashboardContent: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .refreshable { await model.load() }
+        .overlay(alignment: .bottom) {
+            @Bindable var model = model
+            MessageBanner(message: $model.heldMessage)
+        }
         .task { if model.recentPhase == .idle { await model.load() } }
     }
 
@@ -446,17 +450,6 @@ struct DashboardContent: View {
             identifier: "dashboard-recent", seeAll: openContent, retry: { Task { await model.loadRecent() } }
         ) {
             ForEach(model.recent) { VideoRow(video: $0, showsStatus: true) }
-        }
-    }
-
-    @ViewBuilder private var heldSection: some View {
-        DashboardSection(
-            title: l10n("studio.home.held"), phase: model.heldPhase, empty: l10n("studio.home.heldEmpty"),
-            identifier: "dashboard-held", retry: { Task { await model.loadHeld() } }
-        ) {
-            Text(l10n("studio.home.heldCount", DisplayFormat.count(model.held.total, l10n.language)))
-                .fanousFont(.label).foregroundStyle(Fanous.accent)
-            ForEach(model.held.items) { HeldCommentRow(comment: $0) }
         }
     }
 
@@ -577,24 +570,5 @@ struct KPITile: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .fanousMaterial(.card) { .rounded($0.lg) }
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// A held comment: who wrote it, where, and its text.
-struct HeldCommentRow: View {
-    @Environment(\.l10n) private var l10n
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    let comment: HeldComment
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
-            Text(comment.authorName).fanousFont(.label).foregroundStyle(Fanous.textPrimary)
-            Text(comment.text).fanousFont(.body).foregroundStyle(Fanous.textPrimary).lineLimit(3)
-            Text(comment.displayTargetTitle(l10n.language)).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("held-\(comment.id)")
     }
 }

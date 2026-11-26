@@ -8,12 +8,23 @@ import Testing
 /// Content and comments answer with whatever error the test sets; everything else as the fixtures.
 private struct FailingStudio: StudioServicing {
     let content: CoreError
-    let comments: CoreError
+    let comments: CoreError?
+    var commentWrite: @Sendable () async throws -> Void = {}
     private let fixtures = FixtureStudioService()
 
     func content(channelID: String, query: ContentQuery, cursor: String?) async throws -> ContentPage { throw content }
     func contentCounts(channelID: String) async throws -> ContentCounts { throw content }
-    func heldComments(channelID: String, limit: Int) async throws -> HeldComments { throw comments }
+    func heldComments(channelID: String, limit: Int) async throws -> HeldComments {
+        if let comments { throw comments }
+        return try await fixtures.heldComments(channelID: channelID, limit: limit)
+    }
+    func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String) async throws {
+        try await commentWrite()
+    }
+    func hideCommentAuthor(userID: String, channelID: String) async throws { try await commentWrite() }
+    func reportHeldComment(id: String, reason: CommentReportReason, description: String?) async throws {
+        try await commentWrite()
+    }
 
     func channels() async throws -> [StudioChannel] { FixtureStudioService.channels }
     func playlists(channelID: String) async throws -> [StudioPlaylist] { [] }
@@ -59,10 +70,13 @@ struct DashboardTests {
         .fixtures(signedIn: true, accountState: .creator, featuresOff: off)
     }
 
-    private func failing(content: CoreError, comments: CoreError) -> StudioServices {
+    private func failing(
+        content: CoreError, comments: CoreError?, commentWrite: @escaping @Sendable () async throws -> Void = {}
+    ) -> StudioServices {
         StudioServices(
             environment: .qa, accounts: FixtureAccountService(signedIn: [FixtureAccountService.creator]),
-            studio: FailingStudio(content: content, comments: comments), transfer: FixtureTUSTransfer(),
+            studio: FailingStudio(content: content, comments: comments, commentWrite: commentWrite),
+            transfer: FixtureTUSTransfer(),
             search: FixtureSearchService())
     }
 
@@ -83,6 +97,103 @@ struct DashboardTests {
         #expect(model.drafts.map(\.title) == ["Fiqh of fasting (draft)"])
         #expect(model.scheduled.map(\.title) == ["Seerah, part 4"])
         #expect(!model.isHollow && !hollow)
+    }
+
+    @Test func approvingAndRemovingUpdateTheQueueAndPersistAcrossRefresh() async throws {
+        let model = DashboardModel(channel: owner, services: services())
+        await model.loadHeld()
+        let initial = model.held.items
+        let first = try #require(initial.first)
+        let last = try #require(initial.last)
+
+        await model.actOnHeldComment(first, action: .moderate(.approve))
+        #expect(model.held == HeldComments(items: [last], total: 1))
+        #expect(model.heldMessage?.key == "studio.held.approved")
+        await model.loadHeld()
+        #expect(model.held == HeldComments(items: [last], total: 1))
+
+        await model.actOnHeldComment(last, action: .moderate(.remove))
+        #expect(model.held == HeldComments(items: [], total: 0))
+        #expect(model.heldPhase == .empty)
+        #expect(model.heldMessage?.key == "studio.held.removed")
+        await model.loadHeld()
+        #expect(model.heldPhase == .empty)
+    }
+
+    @Test func reportingLeavesTheCommentHeldAndAllowsChildSafetyEscalation() async throws {
+        let model = DashboardModel(channel: owner, services: services())
+        await model.loadHeld()
+        let initial = model.held
+        let comment = try #require(initial.items.first)
+
+        await model.actOnHeldComment(comment, action: .report(.spam, description: nil))
+        #expect(model.heldMessage?.key == "studio.held.reported")
+        await model.actOnHeldComment(comment, action: .report(.spam, description: nil))
+        #expect(model.heldMessage?.key == "studio.error.held.duplicateReport")
+        await model.actOnHeldComment(comment, action: .report(.childSafety, description: nil))
+        #expect(model.heldMessage?.key == "studio.held.reported")
+        #expect(model.held == initial)
+    }
+
+    @Test func hidingTheAuthorLeavesExistingHeldCommentsAvailable() async throws {
+        let model = DashboardModel(channel: owner, services: services())
+        await model.loadHeld()
+        let initial = model.held
+        let comment = try #require(initial.items.first)
+        let userID = try #require(comment.authorUserID)
+
+        await model.actOnHeldComment(comment, action: .hideAuthor)
+        #expect(model.hiddenAuthors == [userID])
+        #expect(model.heldMessage?.key == "studio.held.authorHidden")
+        await model.loadHeld()
+        #expect(model.held == initial)
+        #expect(model.hiddenAuthors == [userID])
+    }
+
+    @Test(arguments: [HeldCommentModeration.approve, .remove])
+    func failedModerationRestoresTheOptimisticallyRemovedComment(action: HeldCommentModeration) async throws {
+        let (started, start) = AsyncStream<Void>.makeStream()
+        let (finish, resume) = AsyncStream<Void>.makeStream()
+        let services = failing(content: .offline, comments: nil) {
+            start.yield(())
+            for await _ in finish { break }
+            throw CoreError.conflict("held_by_moderation")
+        }
+        let model = DashboardModel(channel: owner, services: services)
+        await model.loadHeld()
+        let initial = model.held
+        let comment = try #require(initial.items.first)
+        let mutation = Task { await model.actOnHeldComment(comment, action: .moderate(action)) }
+
+        for await _ in started { break }
+        #expect(model.isActingOnHeldComment)
+        #expect(model.held.items == Array(initial.items.dropFirst()))
+        #expect(model.held.total == initial.total - 1)
+        await model.loadHeld()
+        #expect(model.held.total == initial.total - 1)
+
+        resume.yield(())
+        await mutation.value
+        #expect(model.held == initial)
+        #expect(model.heldPhase == .ready)
+        #expect(model.heldMessage?.key == "studio.error.held.platformHold")
+        #expect(!model.isActingOnHeldComment)
+    }
+
+    @Test func rejectedBlockAndReportLeaveCommentsAvailableForRetry() async throws {
+        let services = failing(content: .offline, comments: nil) { throw CoreError.forbidden }
+        let model = DashboardModel(channel: owner, services: services)
+        await model.loadHeld()
+        let initial = model.held
+        let comment = try #require(initial.items.first)
+
+        for action in [DashboardModel.CommentAction.hideAuthor, .report(.spam, description: nil)] {
+            await model.actOnHeldComment(comment, action: action)
+            #expect(model.held == initial)
+            #expect(model.hiddenAuthors.isEmpty)
+            #expect(model.heldMessage?.key == "studio.error.held.forbidden")
+            #expect(!model.isActingOnHeldComment)
+        }
     }
 
     @Test func noLoadEndsLoading() async {

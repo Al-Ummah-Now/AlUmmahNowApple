@@ -94,6 +94,27 @@ actor FixtureTermsState {
     func markAccepted() { acceptedAfterRefusal = true }
 }
 
+private actor FixtureHeldCommentStore {
+    private var moderated: [String: Set<String>] = [:]
+    private var reports: [String: Set<CommentReportReason>] = [:]
+
+    func held(in channelID: String) -> [HeldComment] {
+        FixtureStudioService.heldComments.filter { moderated[channelID]?.contains($0.id) != true }
+    }
+
+    func moderate(_ comment: HeldComment, in channelID: String) {
+        moderated[channelID, default: []].insert(comment.id)
+    }
+
+    func report(_ id: String, reason: CommentReportReason) throws {
+        let previous = reports[id, default: []]
+        if previous.contains(.childSafety) || (!previous.isEmpty && reason != .childSafety) {
+            throw CoreError.conflict("You have already reported this content")
+        }
+        reports[id, default: []].insert(reason)
+    }
+}
+
 /// Bilingual channels and videos for UI tests, snapshots and previews.
 public struct FixtureStudioService: StudioServicing {
     /// The account states UI tests can start in (`-AUNFixtureAccountState`).
@@ -110,6 +131,7 @@ public struct FixtureStudioService: StudioServicing {
     let store = FixtureContentStore()
     let media = FixtureMediaStore()
     let termsState = FixtureTermsState()
+    private let heldStore = FixtureHeldCommentStore()
     private let original = FixtureContentStore()
     let accountState: AccountState
     let termsMode: TermsMode
@@ -152,21 +174,39 @@ public struct FixtureStudioService: StudioServicing {
                 targetTitle: "Tafsir of Surah Al-Kahf, part 2",
                 targetTitleLocalized: LocalizedText(
                     en: "Tafsir of Surah Al-Kahf, part 2", ar: "تفسير سورة الكهف، الجزء الثاني"),
-                authorName: arabic ? "مريم حداد" : "Maryam Haddad", createdAt: Date(timeIntervalSince1970: 1_794_010_000)),
+                authorName: arabic ? "مريم حداد" : "Maryam Haddad", createdAt: Date(timeIntervalSince1970: 1_794_010_000),
+                kind: .video, targetID: "fixture-content-2", authorUserID: "fixture-commenter-maryam"),
             HeldComment(
                 id: "fixture-held-2",
                 text: arabic
                     ? "ما المرجع المذكور في الدقيقة العاشرة؟" : "Which reference is mentioned at minute ten?",
                 targetTitle: "Friday khutbah: patience",
                 targetTitleLocalized: LocalizedText(en: "Friday khutbah: patience", ar: "خطبة الجمعة: الصبر"),
-                authorName: arabic ? "عمر صالح" : "Omar Saleh", createdAt: Date(timeIntervalSince1970: 1_794_000_000)),
+                authorName: arabic ? "عمر صالح" : "Omar Saleh", createdAt: Date(timeIntervalSince1970: 1_794_000_000),
+                kind: .video, targetID: "fixture-content-3", authorUserID: "fixture-commenter-omar"),
         ]
     }
 
     /// Two held comments; `-AUNFixtureFeaturesOff comments` makes the route answer `feature_off`.
     public func heldComments(channelID: String, limit: Int) async throws -> HeldComments {
         try refuseIfOff("comments")
-        return HeldComments(items: Array(Self.heldComments.prefix(limit)), total: Self.heldComments.count)
+        let items = await heldStore.held(in: channelID)
+        return HeldComments(items: Array(items.prefix(limit)), total: items.count)
+    }
+
+    public func moderateHeldComment(_ comment: HeldComment, action: HeldCommentModeration, channelID: String) async throws {
+        try refuseIfOff("comments")
+        await heldStore.moderate(comment, in: channelID)
+    }
+
+    public func reportHeldComment(id: String, reason: CommentReportReason, description: String?) async throws {
+        try await heldStore.report(id, reason: reason)
+    }
+
+    public func hideCommentAuthor(userID: String, channelID: String) async throws {
+        try refuseIfOff("comments")
+        guard Self.heldComments.contains(where: { $0.authorUserID == userID }) else { throw CoreError.notFound }
+        // Blocks apply to future comments, and fixtures don't receive new comments.
     }
 
     private func refuseIfOff(_ key: String) throws {
