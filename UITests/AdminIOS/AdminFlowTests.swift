@@ -123,7 +123,7 @@ final class AdminFlowTests: XCTestCase {
         item.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.1)).tap()
         let approve = app.buttons["approve"]
         let reject = app.buttons["reject"]
-        XCTAssertTrue(approve.waitForExistence(timeout: 5) || app.navigationBars.count > 0, "the review page opens")
+        XCTAssertTrue(approve.waitForExistence(timeout: 5) || app.navigationBars.firstMatch.exists, "the review page opens")
         scrollTo(reject, in: app)
         reject.tap()
         let send = app.buttons["sheet-send"]

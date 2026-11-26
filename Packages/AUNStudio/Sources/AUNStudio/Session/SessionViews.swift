@@ -263,7 +263,6 @@ struct AvatarView: View {
     var body: some View {
         ZStack {
             Circle().fill(Fanous.surfaceRaised)
-            // The initial is part of the avatar's drawing: it keeps the circle's size, whatever the text size
             Text(Self.initial(of: name)).fanousFont(.label).foregroundStyle(Fanous.accent)
                 .dynamicTypeSize(...DynamicTypeSize.large)
             if let url {
@@ -408,6 +407,7 @@ struct DashboardContent: View {
     let session: StudioSession
     let channel: StudioChannel
     @State private var model: DashboardModel
+    @ScaledMetric(relativeTo: .caption) private var kpiWidth: CGFloat = 120
 
     init(session: StudioSession, channel: StudioChannel) {
         self.session = session
@@ -470,10 +470,6 @@ struct DashboardContent: View {
         }
     }
 
-    /// A tile in the scrolling row is 120 pt wide at the default text size and grows with it.
-    @ScaledMetric(relativeTo: .caption) private var kpiWidth: CGFloat = 120
-
-    /// The channel's videos by status, as tiles; Failed turns red when there are any.
     private var kpis: some View {
         let tiles = ForEach(StudioStatus.allCases, id: \.self) { status in
             KPITile(label: l10n("studio.tab.\(status.rawValue)"), value: model.counts[status] ?? 0, alert: status == .failed)
@@ -563,7 +559,6 @@ struct DashboardSection<Rows: View>: View {
 struct KPITile: View {
     @Environment(\.l10n) private var l10n
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    /// The count's size: 26 pt at the default text size.
     @ScaledMetric(relativeTo: .title) private var countSize: CGFloat = 26
     let label: String
     let value: Int
