@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// Upload on fixtures: two generated clips, values set for all, the queue to the end.
@@ -79,7 +80,7 @@ final class StudioUploadTests: XCTestCase {
     /// Section titles and footers use the theme's muted text token (#107): the Upload tab in both languages and themes,
     /// the form's top and bottom and the finished queue.
     @MainActor
-    func testUploadTabSectionTitlesAndFootersUseTheMutedToken() {
+    func testUploadTabSectionTitlesAndFootersUseTheMutedToken() throws {
         for (language, tab) in [("en", "Upload"), ("ar", "رفع")] {
             for theme in ["dark", "light"] {
                 let app = launch(language, theme: theme)
@@ -88,12 +89,12 @@ final class StudioUploadTests: XCTestCase {
                 XCTAssertTrue(app.textFields["upload-pattern"].waitForExistence(timeout: 30))
                 keep("studio-upload-top-\(language)-\(theme)")
                 let footer = app.staticTexts["upload-channel-note"]
-                let bottom = app.frame.maxY - 12
-                for _ in 0..<8 where !(footer.exists && footer.frame.maxY < bottom && send.isHittable) {
+                for _ in 0..<8 where !(footer.exists && send.isHittable && footerFits(footer, in: app)) {
                     app.swipeUp()
                 }
                 XCTAssertTrue(footer.exists && send.isHittable)
-                XCTAssertLessThan(footer.frame.maxY, bottom, "the channel footer is fully above the bottom edge")
+                let bottom = try XCTUnwrap(footerBoundary(in: app), "the iPhone bottom tab bar must be visible")
+                XCTAssertLessThanOrEqual(footer.frame.maxY + 12, bottom, "the whole channel footer clears the tab bar")
                 keep("studio-upload-bottom-\(language)-\(theme)")
                 send.tap()
                 let done = app.staticTexts.matching(
@@ -105,6 +106,23 @@ final class StudioUploadTests: XCTestCase {
                 app.terminate()
             }
         }
+    }
+
+    @MainActor
+    private func footerBoundary(in app: XCUIApplication) -> CGFloat? {
+        let viewport = app.frame
+        let bottomBar = app.tabBars.allElementsBoundByIndex.map(\.frame)
+            .first { $0.minY >= viewport.midY && viewport.intersects($0) }
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            return bottomBar?.minY
+        }
+        return bottomBar?.minY ?? viewport.maxY
+    }
+
+    @MainActor
+    private func footerFits(_ footer: XCUIElement, in app: XCUIApplication) -> Bool {
+        guard let bottom = footerBoundary(in: app) else { return false }
+        return footer.frame.maxY + 12 <= bottom
     }
 
     /// The status bar is light over the navy header in light mode too (#87): the Upload tab in both languages and themes.
