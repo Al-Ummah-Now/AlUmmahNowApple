@@ -123,17 +123,7 @@ struct DecisionSheet: View {
             }
             #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    Text(title)
-                    .fanousFont(.title)
-                    .foregroundStyle(Fanous.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(FanousScale.spacingLg)
-                    .background(Fanous.surface)
-                    .accessibilityAddTraits(.isHeader)
-                    .accessibilityIdentifier("decision-title")
-                }
+                .safeAreaInset(edge: .top, spacing: 0) { heading }
             #else
                 .navigationTitle(title)
             #endif
@@ -157,6 +147,22 @@ struct DecisionSheet: View {
     private var title: String {
         l10n(kind == .reject ? "admin.action.reject" : "admin.action.requestChanges")
     }
+
+    #if os(iOS)
+        private var heading: some View {
+            Text(title)
+                .fanousFont(.title)
+                .foregroundStyle(Fanous.textPrimary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(FanousScale.spacingLg)
+                .background(Fanous.surface)
+                .environment(\.layoutDirection, l10n.language.isRTL ? .rightToLeft : .leftToRight)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("decision-title")
+        }
+    #endif
 
     private var canSend: Bool {
         switch kind {
