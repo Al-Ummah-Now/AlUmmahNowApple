@@ -52,6 +52,13 @@ struct ContentView: View {
                 suggestionRow(suggestion)
             }
         }
+        #if os(iOS)
+            .task(id: l10n.language) {
+                // SwiftUI installs the navigation search bar as this tab appears.
+                await Task.yield()
+                UIKitLayoutDirection.match(l10n.language)
+            }
+        #endif
         .onSubmit(of: .search) { model.reload() }
         .task { if model.state == .idle { model.reload() } }
         // Back from Recently deleted (or another tab), the list may have changed.

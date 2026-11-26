@@ -23,6 +23,50 @@ final class StudioSignInTests: XCTestCase {
     }
 
     @MainActor
+    func testContentSearchInBothLanguages() throws {
+        for (language, tab, prompt) in [
+            ("en", "Content", "Search this channel's videos"),
+            ("ar", "المحتوى", "ابحث في مرئيات هذه القناة"),
+        ] {
+            let app = launch(language, signedIn: true)
+            app.openStudioTab(named: tab)
+            let search = app.searchFields.matching(NSPredicate(format: "placeholderValue == %@", prompt)).firstMatch
+            XCTAssertTrue(search.waitForExistence(timeout: 20))
+            let screenshot = search.screenshot()
+            let attachment = XCTAttachment(screenshot: screenshot)
+            attachment.name = "content-search-\(language)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            try assertSearchMagnifier(screenshot, rightToLeft: language == "ar")
+            search.tap()
+            search.typeText("Quran")
+            XCTAssertEqual(search.value as? String, "Quran")
+            app.terminate()
+        }
+    }
+
+    private func assertSearchMagnifier(_ screenshot: XCUIScreenshot, rightToLeft: Bool) throws {
+        let image = try XCTUnwrap(screenshot.image.cgImage)
+        let edgeWidth = image.width / 10
+        let edge = CGRect(
+            x: rightToLeft ? image.width - edgeWidth : 0,
+            y: image.height / 4, width: edgeWidth, height: image.height / 2)
+        let crop = try XCTUnwrap(image.cropping(to: edge))
+        let context = try XCTUnwrap(
+            CGContext(
+                data: nil, width: crop.width, height: crop.height, bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        // In the dark fixture theme, the magnifier is bright and the placeholder is muted.
+        let brightPixels = (0..<(crop.width * crop.height)).filter { index in
+            let offset = index * 4
+            return pixels[offset] > 215 && pixels[offset + 1] > 215 && pixels[offset + 2] > 215
+        }
+        XCTAssertGreaterThan(brightPixels.count, crop.height, "Missing magnifier at the leading edge")
+    }
+
+    @MainActor
     func testSignInShowsTheMainChannel() {
         let app = launch("en")
         let signIn = app.buttons["sign-in"]

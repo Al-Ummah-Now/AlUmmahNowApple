@@ -13,10 +13,23 @@ struct LabeledField: View {
     let prompt: String
     var identifier = ""
 
+    private var fieldTitle: String {
+        #if os(macOS)
+            // AppKit combines a TextField's title with its explicit accessibility label.
+            ""
+        #else
+            label
+        #endif
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
             Text(label).fanousFont(.caption).foregroundStyle(Fanous.textSecondary).accessibilityHidden(true)
-            TextField(label, text: $text, prompt: fanousPrompt(prompt)).autocorrectionDisabled().fanousFieldAlignment()
+            TextField(fieldTitle, text: $text, prompt: fanousPrompt(prompt)).autocorrectionDisabled().fanousFieldAlignment()
+                #if os(macOS)
+                    .labelsHidden()
+                    .accessibilityLabel(Text(label))
+                #endif
                 .accessibilityIdentifier(identifier)
         }
     }

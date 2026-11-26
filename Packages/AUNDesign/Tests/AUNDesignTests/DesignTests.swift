@@ -5,6 +5,10 @@ import Testing
 
 @testable import AUNDesign
 
+#if os(iOS)
+    import UIKit
+#endif
+
 @Suite struct DesignTests {
     @Test func enAndArHaveIdenticalKeys() {
         let en = L10n(.en).allKeys
@@ -21,6 +25,25 @@ import Testing
     @Test func missingKeysAreVisible() {
         #expect(L10n(.en)("nope") == "⟦nope⟧")
     }
+
+    #if os(iOS)
+        @MainActor @Test func anExistingSearchBarFollowsLanguageChanges() {
+            let window = UIWindow()
+            let container = UIView()
+            let searchBar = UISearchBar()
+            window.addSubview(container)
+            container.addSubview(searchBar)
+            defer { UIKitLayoutDirection.match(.en, in: [window]) }
+
+            UIKitLayoutDirection.match(.ar, in: [window])
+            #expect(searchBar.effectiveUserInterfaceLayoutDirection == .rightToLeft)
+            #expect(searchBar.searchTextField.effectiveUserInterfaceLayoutDirection == .rightToLeft)
+
+            UIKitLayoutDirection.match(.en, in: [window])
+            #expect(searchBar.effectiveUserInterfaceLayoutDirection == .leftToRight)
+            #expect(searchBar.searchTextField.effectiveUserInterfaceLayoutDirection == .leftToRight)
+        }
+    #endif
 
     static let everyTheme = FanousThemeID.allCases.flatMap { [FanousTheme($0, dark: false), FanousTheme($0, dark: true)] }
 
