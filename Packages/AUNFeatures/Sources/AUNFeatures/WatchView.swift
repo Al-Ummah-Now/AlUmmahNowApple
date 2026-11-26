@@ -107,7 +107,9 @@
                 if !content.chapters.isEmpty { chapters }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .alert(l10n("watch.linkCopied"), isPresented: $linkCopied) {}
+            .alert(l10n("watch.linkCopied"), isPresented: $linkCopied) {
+                Button(l10n("common.dismiss"), role: .cancel) {}
+            }
             .sheet(isPresented: $confirmBlockChannel) {
                 if let label = blockLabel {
                     ViewerBlockConfirmSheet(
