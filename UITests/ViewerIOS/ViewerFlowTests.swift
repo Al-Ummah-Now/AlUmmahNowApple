@@ -157,6 +157,22 @@ final class ViewerFlowTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["blocked-list-empty"].firstMatch.waitForExistence(timeout: 10))
     }
 
+    @MainActor
+    func testNotReadyCardIsVisibleAtTheLargestTextSize() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-AUNUseFixtures", "YES", "-AUNOpenVideo", "fixture-not-ready", "-AUNLanguage", "en",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+        ]
+        app.launch()
+        let card = app.descendants(matching: .any)["watch-not-ready"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 20))
+        XCTAssertTrue(card.isHittable)
+        XCTAssertGreaterThan(card.frame.width, app.windows.firstMatch.frame.width * 0.85)
+        XCTAssertTrue(app.staticTexts["This video is still being processed."].isHittable)
+        XCTAssertFalse(app.descendants(matching: .any)["player"].firstMatch.exists)
+    }
+
     /// Text in the Fanous type roles grows with Dynamic Type, in the system face too (#107): the "Trending" heading and
     /// the first trending card (its title and details) are taller at an accessibility size than at the default, in
     /// English and Arabic, light and dark.

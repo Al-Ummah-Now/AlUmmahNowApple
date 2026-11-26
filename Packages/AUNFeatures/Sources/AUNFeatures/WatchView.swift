@@ -167,7 +167,7 @@
 
         private var usesTwoPanes: Bool {
             #if os(iOS)
-                sizeClass == .regular
+                sizeClass == .regular && !dynamicTypeSize.isAccessibilitySize
             #else
                 true
             #endif
@@ -288,20 +288,29 @@
                     }
                     PlayerControlsBar(controller: model.player).padding(.horizontal)
                 } else {
-                    VStack(spacing: 12) {
-                        FanousMotif(.loader).frame(width: 44, height: 44)
-                        Text(l10n("watch.notReady")).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
-                            .multilineTextAlignment(.center)
+                    Group {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            notReadyContent
+                        } else {
+                            notReadyContent.aspectRatio(16 / 9, contentMode: .fit)
+                        }
                     }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    // A 16:9 card at ordinary text sizes; at accessibility sizes it takes the height its words need
-                    .aspectRatio(dynamicTypeSize.isAccessibilitySize ? nil : 16 / 9, contentMode: .fit)
                     .fanousMaterial(.hero) { .rounded($0.lg) }
                     .padding(.horizontal)
                     .accessibilityIdentifier("watch-not-ready")
                 }
             }
+        }
+
+        private var notReadyContent: some View {
+            VStack(spacing: 12) {
+                FanousMotif(.loader).frame(width: 44, height: 44)
+                Text(l10n("watch.notReady")).fanousFont(.body).foregroundStyle(Fanous.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
+            }
+            .padding()
+            .frame(maxWidth: .infinity)
         }
 
         private func details(_ content: WatchContent) -> some View {
