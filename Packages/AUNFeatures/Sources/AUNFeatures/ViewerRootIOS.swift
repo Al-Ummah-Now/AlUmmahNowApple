@@ -42,7 +42,9 @@
         @ViewBuilder private func screen(_ destination: ViewerDestination) -> some View {
             switch destination {
             case .video(let id):
-                WatchView(videoID: id, catalog: core.catalog, webBaseURL: core.environment.webBaseURL)
+                WatchView(
+                    videoID: id, catalog: core.catalog, webBaseURL: core.environment.webBaseURL,
+                    siteOrigin: core.environment.apiBaseURL)
             case .live(let id): LiveWatchView(streamID: id, core: core)
             case .liveList: LiveListView(live: core.live) { path.append(.live($0.id)) }
             }

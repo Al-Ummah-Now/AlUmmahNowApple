@@ -3,14 +3,21 @@
     import AUNDesign
     import AUNPlayer
     import SwiftUI
+    #if os(iOS)
+        import UIKit
+    #else
+        import AppKit
+    #endif
 
     /// Title, description and chapters. Separate from the player so it can be snapshot-tested.
     struct WatchDetails: View {
         @Environment(\.l10n) private var l10n
         @Environment(\.fanous) private var theme
         @State private var confirmBlockChannel = false
+        @State private var linkCopied = false
         let content: WatchContent
         let webBaseURL: URL
+        var share: (() -> URL?)?
         let seek: (Chapter) -> Void
 
         private var blockStore: ViewerBlockStore { .shared }
@@ -38,6 +45,21 @@
                     }
                     Spacer(minLength: 0)
                     Menu {
+                        if let share {
+                            Button {
+                                guard let url = share() else { return }
+                                #if os(iOS)
+                                    UIPasteboard.general.string = url.absoluteString
+                                #else
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                                #endif
+                                linkCopied = true
+                            } label: {
+                                Label(l10n("watch.copyLink"), systemImage: "link")
+                            }
+                            .accessibilityIdentifier("watch-copy-link")
+                        }
                         Link(
                             destination: ViewerReportURL.video(
                                 id: content.video.id, language: l10n.language.rawValue, webBaseURL: webBaseURL)
@@ -85,6 +107,7 @@
                 if !content.chapters.isEmpty { chapters }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .alert(l10n("watch.linkCopied"), isPresented: $linkCopied) {}
             .sheet(isPresented: $confirmBlockChannel) {
                 if let label = blockLabel {
                     ViewerBlockConfirmSheet(
@@ -153,10 +176,12 @@
         #endif
         @State private var model: WatchViewModel
         private let webBaseURL: URL
+        private let siteOrigin: URL
 
-        public init(videoID: String, catalog: any CatalogServicing, webBaseURL: URL) {
+        public init(videoID: String, catalog: any CatalogServicing, webBaseURL: URL, siteOrigin: URL? = nil) {
             _model = State(initialValue: WatchViewModel(videoID: videoID, catalog: catalog))
             self.webBaseURL = webBaseURL
+            self.siteOrigin = siteOrigin ?? webBaseURL
         }
 
         private var blockStore: ViewerBlockStore { .shared }
@@ -312,7 +337,23 @@
         }
 
         private func details(_ content: WatchContent) -> some View {
-            WatchDetails(content: content, webBaseURL: webBaseURL) { model.player.seek(to: $0.startTime) }
+            let video = content.video
+            let share: (() -> URL?)? = video.isPlayable && !video.isPrivate ? { shareURL(for: video) } : nil
+            return WatchDetails(content: content, webBaseURL: webBaseURL, share: share) { model.player.seek(to: $0.startTime) }
+        }
+
+        private func shareURL(for video: Video) -> URL? {
+            let route = video.isShort ? "shorts" : "video"
+            let target: ShortLinks.Target = video.isShort ? .short(video.id) : .video(video.id)
+            let page = webBaseURL.appending(path: "/\(l10n.language.rawValue)/\(route)").appending(component: video.id)
+            let time = Int(exactly: model.player.currentTime.rounded(.down))
+            var fallback = URLComponents(url: page, resolvingAgainstBaseURL: false)
+            if !video.isShort, let time, time > 0 {
+                fallback?.queryItems = [URLQueryItem(name: "t", value: String(time))]
+            }
+            return ShortLinks.shareURL(
+                for: target, siteOrigin: siteOrigin, fallback: fallback?.url ?? page, language: l10n.language,
+                isPrivate: video.isPrivate, startSeconds: time)
         }
 
         private func singleColumn(_ content: WatchContent) -> some View {

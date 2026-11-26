@@ -44,10 +44,12 @@ public struct Video: Identifiable, Hashable, Sendable, Decodable {
     public var availableResolutions: [String]
     public var uploadStatus: String?
     public var isLive: Bool
+    public var isShort: Bool = false
+    public private(set) var isPrivate: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id, title, titleLocalized, description, descriptionLocalized, channelName, views, category
-        case dateCreated, availableResolutions, uploadStatus, isLive
+        case dateCreated, availableResolutions, uploadStatus, isLive, isShort, isPublic, isUnlisted
         case thumbnailURL = "thumbnailUrl"
         case playURL = "playUrl"
         case channelID = "channelId"
@@ -97,6 +99,10 @@ public struct Video: Identifiable, Hashable, Sendable, Decodable {
         availableResolutions = try c.decodeIfPresent([String].self, forKey: .availableResolutions) ?? []
         uploadStatus = try c.decodeIfPresent(String.self, forKey: .uploadStatus)
         isLive = try c.decodeIfPresent(Bool.self, forKey: .isLive) ?? false
+        isShort = try c.decodeIfPresent(Bool.self, forKey: .isShort) ?? false
+        let isPublic = try c.decodeIfPresent(Bool.self, forKey: .isPublic)
+        let isUnlisted = try c.decodeIfPresent(Bool.self, forKey: .isUnlisted)
+        isPrivate = isPublic == false && isUnlisted != true
     }
 
     public var isPlayable: Bool { uploadStatus == "ready" && playURL != nil }
