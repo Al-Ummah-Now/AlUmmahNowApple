@@ -18,10 +18,18 @@ final class StudioFieldAlignmentTests: XCTestCase {
 
     @MainActor
     private func tab(_ app: XCUIApplication, _ name: String) {
-        let bar = app.tabBars.buttons[name]
-        let button = bar.waitForExistence(timeout: 15) ? bar : app.buttons[name].firstMatch
-        XCTAssertTrue(button.waitForExistence(timeout: 15))
-        button.tap()
+        let candidates = [
+            app.tabBars.buttons[name], app.buttons[name].firstMatch, app.cells[name].firstMatch,
+            app.cells.containing(.staticText, identifier: name).firstMatch,
+        ]
+        for _ in 0..<20 {
+            if let target = candidates.first(where: { $0.exists && $0.isHittable }) {
+                target.tap()
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        XCTFail("Expected visible tab or sidebar item: \(name)")
     }
 
     /// The share of the field's width left of its first drawn pixel and right of its last.
