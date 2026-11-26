@@ -19,13 +19,14 @@ final class AdminFlowTests: XCTestCase {
 
     @MainActor
     private func launch(
-        _ language: String = "en", signedIn: Bool = true, role: String = "reviewer", extra: [String] = []
+        _ language: String = "en", signedIn: Bool = true, role: String = "reviewer", theme: String = "dark",
+        extra: [String] = []
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments =
             [
                 "-AUNUseFixtures", "YES", "-AUNFixtureSignedIn", signedIn ? "YES" : "NO", "-AUNFixtureRole", role,
-                "-AUNLanguage", language, "-AUNTheme", "dark", "-ApplePersistenceIgnoreState", "YES",
+                "-AUNLanguage", language, "-AUNTheme", theme, "-ApplePersistenceIgnoreState", "YES",
                 // Toasts stay up while XCUITest waits for the app to go idle (24 s on a busy runner).
                 "-AUNFixtureUndoSeconds", "60",
             ] + extra
@@ -114,7 +115,8 @@ final class AdminFlowTests: XCTestCase {
     /// The decision sheet at the largest accessibility size: the reasons scroll into reach and Send works (#107).
     @MainActor
     func testRejectSheetAtTheLargestTextSize() {
-        let app = launch(extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        let app = launch(
+            theme: "light", extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
         // At this size the review page's decision buttons are below the fold (its list is lazy), so scroll to them
         let item = row(app, "fx-risk")
         XCTAssertTrue(item.waitForExistence(timeout: 30))
@@ -126,6 +128,9 @@ final class AdminFlowTests: XCTestCase {
         XCTAssertTrue(approve.waitForExistence(timeout: 5) || app.navigationBars.firstMatch.exists, "the review page opens")
         scrollTo(reject, in: app)
         reject.tap()
+        let title = app.staticTexts["decision-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        XCTAssertEqual(title.label, "Reject")
         let send = app.buttons["sheet-send"]
         XCTAssertTrue(send.waitForExistence(timeout: 10))
         let reason = app.buttons["reason-spam_scam"]
@@ -134,6 +139,16 @@ final class AdminFlowTests: XCTestCase {
         XCTAssertTrue(send.isEnabled && send.isHittable)
         send.tap()
         XCTAssertTrue(app.staticTexts["Rejected “Charity drive update”"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
+    func testArabicRejectSheetUsesItsOwnHeading() {
+        let app = launch("ar", theme: "light")
+        open(app, "fx-risk")
+        app.buttons["reject"].tap()
+        let title = app.staticTexts["decision-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        XCTAssertEqual(title.label, "رفض")
     }
 
     @MainActor

@@ -121,7 +121,22 @@ struct DecisionSheet: View {
                     Text(l10n("admin.sheet.creatorSees")).fanousFont(.caption).foregroundStyle(Fanous.textSecondary)
                 }
             }
-            .navigationTitle(l10n(kind == .reject ? "admin.action.reject" : "admin.action.requestChanges"))
+            #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Text(title)
+                    .fanousFont(.title)
+                    .foregroundStyle(Fanous.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(FanousScale.spacingLg)
+                    .background(Fanous.surface)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("decision-title")
+                }
+            #else
+                .navigationTitle(title)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(l10n("common.cancel")) { dismiss() }.accessibilityIdentifier("sheet-cancel")
@@ -137,6 +152,10 @@ struct DecisionSheet: View {
             }
         }
         .frame(minWidth: 360, minHeight: 420)
+    }
+
+    private var title: String {
+        l10n(kind == .reject ? "admin.action.reject" : "admin.action.requestChanges")
     }
 
     private var canSend: Bool {

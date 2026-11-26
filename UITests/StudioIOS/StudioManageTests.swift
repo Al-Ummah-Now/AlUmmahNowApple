@@ -65,6 +65,22 @@ final class StudioManageTests: XCTestCase {
     }
 
     @MainActor
+    func testContentSortStaysOnOneLineAtTheLargestTextSize() {
+        for (language, content, newest) in [("en", "Content", "Newest"), ("ar", "المحتوى", "الأحدث")] {
+            let app = launch(
+                language, extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+            tab(app, content)
+            let sort = app.descendants(matching: .any)["content-sort"].firstMatch
+            let select = app.buttons["content-select"]
+            XCTAssertTrue(sort.waitForExistence(timeout: 15))
+            XCTAssertTrue(select.exists)
+            XCTAssertEqual(sort.value as? String, newest)
+            XCTAssertLessThan(sort.frame.height, select.frame.height * 1.5, "\(language) sort stays on one line")
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testEditOneVideo() {
         let app = launch("en")
         tab(app, "Content")
