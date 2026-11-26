@@ -105,10 +105,13 @@ final class StudioFieldAlignmentTests: XCTestCase {
     @MainActor
     func testArabicDeletionPromptAndTypedWordStartAtTheRight() throws {
         let app = launch("ar")
+        app.openStudioTab(named: "لوحة التحكم")
         let identity = app.descendants(matching: .any)["account-button"].firstMatch
         XCTAssertTrue(identity.waitForExistence(timeout: 20))
         identity.tap()
-        app.accountsMenuItem.tap()
+        let accounts = app.accountsMenuItem
+        XCTAssertTrue(accounts.waitForExistence(timeout: 10))
+        accounts.tap()
         let delete = app.buttons["account-delete"]
         XCTAssertTrue(delete.waitForExistence(timeout: 10))
         delete.tap()
