@@ -62,6 +62,9 @@ struct UploadView: View {
                     }
                     .formStyle(.grouped)
                     .scrollContentBackground(.hidden)
+                    #if os(iOS)
+                        .contentMargins(.bottom, footerScrollMargin, for: .scrollContent)
+                    #endif
                     .onChange(of: session.needsCreatorTerms) { _, needed in
                         if needed { scroll.scrollTo(Self.gateRow, anchor: .top) }
                     }
@@ -99,6 +102,16 @@ struct UploadView: View {
             .onChange(of: photoPicks) { _, items in Task { await loadPhotos(items) } }
         #endif
     }
+
+    #if os(iOS)
+        /// Extra scroll room for the channel note to clear the floating iPhone tab bar and its scroll-edge fade.
+        private var footerScrollMargin: CGFloat? {
+            if #available(iOS 26, *), UIDevice.current.userInterfaceIdiom == .phone, setForAllShown {
+                return 80
+            }
+            return nil
+        }
+    #endif
 
     private static let gateRow = "creator-terms-row"
 
