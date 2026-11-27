@@ -56,16 +56,16 @@ private struct SignedOutDiagnosticsControl: View {
             set: { enabled in
                 let telemetry = session.services.telemetry
                 if enabled {
+                    settings.telemetryEnabled = true
                     if telemetry.setConsent(.full) {
-                        settings.telemetryEnabled = true
                         diagnosticsMessage = nil
                     } else {
-                        if settings.telemetryEnabled { settings.telemetryEnabled = false }
+                        settings.telemetryEnabled = false
                         diagnosticsMessage = l10n("diagnostics.enableError")
                     }
                 } else {
-                    let purged = telemetry.setConsent(.off)
                     if settings.telemetryEnabled { settings.telemetryEnabled = false }
+                    let purged = telemetry.setConsent(.off)
                     diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
                 }
             }

@@ -89,15 +89,13 @@ struct SettingsMenu: View {
             get: { settings.telemetryEnabled },
             set: { enabled in
                 if enabled {
-                    if telemetry.setConsent(.full) {
-                        settings.telemetryEnabled = true
-                    } else if settings.telemetryEnabled {
+                    settings.telemetryEnabled = true
+                    if !telemetry.setConsent(.full) {
                         settings.telemetryEnabled = false
                     }
                 } else {
-                    let purged = telemetry.setConsent(.off)
                     if settings.telemetryEnabled { settings.telemetryEnabled = false }
-                    if !purged { showingPurgeWarning = true }
+                    if !telemetry.setConsent(.off) { showingPurgeWarning = true }
                 }
             }
         )

@@ -78,9 +78,7 @@ extension CoreTelemetryService {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
             scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
         }
-        for (idx, original) in vaultedURLs.enumerated() {
-            scrubbed = scrubbed.replacingOccurrences(of: "\(prefix)\(idx)\u{001F}", with: original)
-        }
+        scrubbed = Self.restoreVaultedURLs(in: scrubbed, prefix: prefix, vaultedURLs: vaultedURLs)
         for rule in Self.postRestoreRedactionRules {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
             scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
@@ -88,16 +86,79 @@ extension CoreTelemetryService {
         return scrubbed
     }
 
+    private struct VaultLineTracker {
+        private var cursor = 0
+        private var hasFileURIOnLine = false
+        private var lastNonWSChar: unichar = 0
+        private var lastNonWrapperChar: unichar = 0
+
+        mutating func isEmbeddedInPath(_ nsText: NSString, matchStart: Int) -> Bool {
+            advance(nsText, to: matchStart)
+            let precededByWS = matchStart > 0 && Self.isWhitespace(nsText.character(at: matchStart - 1))
+            let insideFileURI = hasFileURIOnLine && (!precededByWS || Self.isPathSep(lastNonWSChar))
+            return insideFileURI || Self.isPathSep(lastNonWrapperChar)
+        }
+
+        private mutating func advance(_ nsText: NSString, to target: Int) {
+            while cursor < target {
+                let ch = nsText.character(at: cursor)
+                if ch == 0x0A || ch == 0x0D {
+                    hasFileURIOnLine = false
+                    lastNonWSChar = 0
+                    lastNonWrapperChar = 0
+                } else {
+                    if !hasFileURIOnLine && Self.isFileScheme(nsText, at: cursor) {
+                        hasFileURIOnLine = true
+                    }
+                    if !Self.isWhitespace(ch) { lastNonWSChar = ch }
+                    if !Self.isOpeningWrapper(ch) { lastNonWrapperChar = ch }
+                }
+                cursor += 1
+            }
+        }
+
+        private static func isFileScheme(_ nsText: NSString, at pos: Int) -> Bool {
+            guard pos + 7 <= nsText.length else { return false }
+            if pos > 0 && isURLSchemeChar(nsText.character(at: pos - 1)) { return false }
+            let target: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F, 0x2F]  // "file://"
+            for offset in 0..<7 {
+                let raw = nsText.character(at: pos + offset)
+                let folded = (raw >= 0x41 && raw <= 0x5A) ? (raw + 0x20) : raw
+                if folded != target[offset] { return false }
+            }
+            return true
+        }
+
+        private static func isURLSchemeChar(_ ch: unichar) -> Bool {
+            (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A)
+                || (ch >= 0x30 && ch <= 0x39) || ch == 0x2B || ch == 0x2E || ch == 0x2D
+        }
+
+        private static func isWhitespace(_ ch: unichar) -> Bool {
+            ch == 0x20 || ch == 0x09 || ch == 0x0A || ch == 0x0D || ch == 0x0B || ch == 0x0C || ch == 0xA0
+        }
+
+        private static func isOpeningWrapper(_ ch: unichar) -> Bool {
+            ch == 0x28 || ch == 0x5B || ch == 0x7B || ch == 0x22 || ch == 0x27
+        }
+
+        private static func isPathSep(_ ch: unichar) -> Bool {
+            ch == 0x2F || ch == 0x5C
+        }
+    }
+
     private static func vaultNonFileURLs(in text: String, prefix: String) -> (String, [String]) {
         guard let urlRegex = Self.urlVaultRegex else { return (text, []) }
         let nsText = text as NSString
         let matches = urlRegex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
         var vaultedURLs: [String] = []
+        var tracker = VaultLineTracker()
         var rebuilt = ""
         var cursor = 0
         for match in matches {
             let raw = nsText.substring(with: match.range)
-            if raw.lowercased().hasPrefix("file://") || Self.isInsideFileURIToken(nsText, matchStart: match.range.location) {
+            let embedded = tracker.isEmbeddedInPath(nsText, matchStart: match.range.location)
+            if raw.lowercased().hasPrefix("file://") || embedded {
                 continue
             }
             let ipv6Range = match.range(at: 2)
@@ -128,6 +189,37 @@ extension CoreTelemetryService {
         return (rebuilt, vaultedURLs)
     }
 
+    private static func restoreVaultedURLs(in text: String, prefix: String, vaultedURLs: [String]) -> String {
+        guard !vaultedURLs.isEmpty else { return text }
+        let nsText = text as NSString
+        let totalLength = nsText.length
+        var result = ""
+        result.reserveCapacity(text.count)
+        var pos = 0
+        while pos < totalLength {
+            let found = nsText.range(of: prefix, options: [], range: NSRange(location: pos, length: totalLength - pos))
+            if found.location == NSNotFound {
+                result += nsText.substring(from: pos)
+                break
+            }
+            result += nsText.substring(with: NSRange(location: pos, length: found.location - pos))
+            let numStart = found.location + found.length
+            let endFound = nsText.range(
+                of: "\u{001F}", options: [], range: NSRange(location: numStart, length: totalLength - numStart))
+            if endFound.location != NSNotFound && endFound.location > numStart,
+                let idx = Int(nsText.substring(with: NSRange(location: numStart, length: endFound.location - numStart))),
+                idx >= 0 && idx < vaultedURLs.count
+            {
+                result += vaultedURLs[idx]
+                pos = endFound.location + endFound.length
+            } else {
+                result += prefix
+                pos = numStart
+            }
+        }
+        return result
+    }
+
     private static func trimTrailingURLDelimiters(_ raw: String, nsText: NSString, matchStart: Int) -> (String, String) {
         var url = raw
         var tail = ""
@@ -140,18 +232,6 @@ extension CoreTelemetryService {
             tail = "'" + tail
         }
         return (url, tail)
-    }
-
-    private static func isInsideFileURIToken(_ nsText: NSString, matchStart: Int) -> Bool {
-        var tokenStart = matchStart
-        while tokenStart > 0 {
-            let scalar = nsText.character(at: tokenStart - 1)
-            if scalar == 0x20 || scalar == 0x09 || scalar == 0x0A || scalar == 0x0D { break }
-            tokenStart -= 1
-        }
-        guard tokenStart < matchStart else { return false }
-        let prefix = nsText.substring(with: NSRange(location: tokenStart, length: matchStart - tokenStart))
-        return prefix.range(of: "file://", options: [.caseInsensitive]) != nil
     }
 
     private static func trimQueryOrFragmentDelimiters(_ qf: String, nsText: NSString, matchStart: Int) -> (String, String) {
@@ -194,7 +274,7 @@ extension CoreTelemetryService {
             excess[slot] -= 1
             return true
         }
-        return ch == ";" || ch == "," || (ch == "'" && precededByQuote)
+        return ch == "." || ch == ";" || ch == "," || (ch == "'" && precededByQuote)
     }
 
     private static func isValidIPv6(_ host: String) -> Bool {
@@ -270,7 +350,7 @@ extension CoreTelemetryService {
 
     private static let postRestoreRedactionRules: [(regex: NSRegularExpression, template: String)] = {
         let specs: [(String, String)] = [
-            (#"(?:[A-Za-z0-9._+-]|%(?!40)[0-9A-Fa-f]{2})+(?:@|%40)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#, "[redacted-email]"),
+            (#"(?:[A-Za-z0-9._+-]|%(?!40))+(?:@|%40)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#, "[redacted-email]"),
             (#"\bBearer\s+\S+"#, "Bearer [redacted]"),
         ]
         return specs.compactMap { pattern, template in

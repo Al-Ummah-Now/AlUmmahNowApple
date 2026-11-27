@@ -167,11 +167,13 @@
                     "\(l10n("diagnostics.toggle")): \(l10n(settings.telemetryEnabled ? "diagnostics.on" : "diagnostics.off"))"
                 ) {
                     if settings.telemetryEnabled {
-                        let purged = telemetry.setConsent(.off)
                         settings.telemetryEnabled = false
-                        if !purged { showingPurgeWarning = true }
-                    } else if telemetry.setConsent(.full) {
+                        if !telemetry.setConsent(.off) { showingPurgeWarning = true }
+                    } else {
                         settings.telemetryEnabled = true
+                        if !telemetry.setConsent(.full) {
+                            settings.telemetryEnabled = false
+                        }
                     }
                 }
                 .accessibilityIdentifier("diagnostics-toggle")

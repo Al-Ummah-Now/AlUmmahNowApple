@@ -1,6 +1,7 @@
 import AUNCoreBridge
 import AunCore
 import Foundation
+import Observation
 
 /// Wraps `aun-core`'s `TelemetryClient` behind ``TelemetryServicing``.
 ///
@@ -10,11 +11,12 @@ import Foundation
 ///   revokes native consent (even after `close()`), and purges memory + disk buffer + sibling `.tmp` files.
 /// - Failed consent transitions fail closed in BOTH wrapper and native state.
 /// - Ordinary `close()` preserves retryable persisted buffers; only explicit revocation removes remnants.
-public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable {
+public final class CoreTelemetryService: TelemetryServicing, Observable, @unchecked Sendable {
     private let client: TelemetryClient
     private let bufferPath: String?
     private let isExternallyEnabled: (@Sendable () -> Bool)?
     private let lock = NSLock()
+    private let observationRegistrar = ObservationRegistrar()
 
     private var _consent: TelemetryConsent = .off
     private var _revoked = false
@@ -70,7 +72,8 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
     }
 
     public var lastPurgeFailed: Bool {
-        lock.withLock { _lastPurgeFailed }
+        observationRegistrar.access(self, keyPath: \.lastPurgeFailed)
+        return lock.withLock { _lastPurgeFailed }
     }
 
     var nativeConsentForTesting: TelemetryConsentState {
@@ -86,38 +89,35 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
             case .off: .denied
             }
 
-        let (result, waitersToCancel): (Bool, [Task<Void, Never>]) = lock.withLock {
+        let (result, waitersToCancel, purgeChanged): (Bool, [Task<Void, Never>], Bool) = lock.withLock {
+            let priorPurgeFailed = _lastPurgeFailed
+            let outcome: (Bool, [Task<Void, Never>])
             if _closed {
-                if consent == .off {
-                    return revokeLocked()
-                }
-                return (false, [])
-            }
-            if consent == .off {
-                return revokeLocked()
-            }
-            if _revokedFlushesRemaining > 0 {
-                return (false, [])
-            }
-            if _lastPurgeFailed {
-                guard Self.removeBufferAndTempFiles(at: bufferPath) else {
-                    return (false, [])
-                }
+                outcome = consent == .off ? revokeLocked() : (false, [])
+            } else if consent == .off {
+                outcome = revokeLocked()
+            } else if _revokedFlushesRemaining > 0 {
+                outcome = (false, [])
+            } else if _lastPurgeFailed && !Self.removeBufferAndTempFiles(at: bufferPath) {
+                outcome = (false, [])
+            } else {
                 _lastPurgeFailed = false
+                do {
+                    try client.setConsent(consent: mapped)
+                    _consent = consent
+                    _revoked = false
+                    _lastPurgeFailed = false
+                    outcome = (true, [])
+                } catch {
+                    // Fail closed in BOTH wrapper and native state.
+                    let (_, waiters) = revokeLocked()
+                    AUNLog.network.warning("Failed to update telemetry consent; failing closed to off: \(error)")
+                    outcome = (false, waiters)
+                }
             }
-            do {
-                try client.setConsent(consent: mapped)
-                _consent = consent
-                _revoked = false
-                _lastPurgeFailed = false
-                return (true, [])
-            } catch {
-                // Fail closed in BOTH wrapper and native state.
-                let (_, waiters) = revokeLocked()
-                AUNLog.network.warning("Failed to update telemetry consent; failing closed to off: \(error)")
-                return (false, waiters)
-            }
+            return (outcome.0, outcome.1, _lastPurgeFailed != priorPurgeFailed)
         }
+        notifyPurgeFailureIfChanged(purgeChanged)
         for waiter in waitersToCancel { waiter.cancel() }
         return result
     }
@@ -194,19 +194,24 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
 
         // Create AND register the flush task while holding `lock` so close() / setConsent(.off)
         // can never miss an unregistered task.
-        let (nativeTask, cancelledWaiters): (Task<Void, Never>?, [Task<Void, Never>]) = lock.withLock {
+        let (nativeTask, cancelledWaiters, purgeChanged): (Task<Void, Never>?, [Task<Void, Never>], Bool) = lock.withLock {
+            let priorPurgeFailed = _lastPurgeFailed
             let cancelled = ensureExternalConsentLocked()
-            guard !_closed, _consent != .off else { return (nil, cancelled) }
+            guard !_closed, _consent != .off else {
+                return (nil, cancelled, _lastPurgeFailed != priorPurgeFailed)
+            }
             _inFlightFlushes += 1
             let flushEpoch = _consentEpoch
             let task = Task<Void, Never> { [self] in
                 defer { self.releaseInFlightFlush(id: flushID, epoch: flushEpoch) }
                 beforeExecute?()
-                let (stillAllowed, lateCancelled): (Bool, [Task<Void, Never>]) = self.lock.withLock {
+                let (stillAllowed, lateCancelled, latePurgeChanged): (Bool, [Task<Void, Never>], Bool) = self.lock.withLock {
+                    let prior = self._lastPurgeFailed
                     let cancelledNow = self.ensureExternalConsentLocked()
                     let allowed = !self._closed && !self._revoked && self._consent != .off
-                    return (allowed, cancelledNow)
+                    return (allowed, cancelledNow, self._lastPurgeFailed != prior)
                 }
+                self.notifyPurgeFailureIfChanged(latePurgeChanged)
                 for waiter in lateCancelled { waiter.cancel() }
                 guard stillAllowed && !Task.isCancelled else { return }
                 do {
@@ -223,8 +228,9 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
                 }
             }
             _flushWaiters[flushID] = task
-            return (task, cancelled)
+            return (task, cancelled, _lastPurgeFailed != priorPurgeFailed)
         }
+        notifyPurgeFailureIfChanged(purgeChanged)
         for waiter in cancelledWaiters { waiter.cancel() }
         guard let nativeTask else { return }
 
@@ -259,33 +265,46 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
             try client.setConsent(consent: .denied)
             _lastPurgeFailed = !Self.removeSiblingTempFiles(for: bufferPath)
         } catch {
-            _lastPurgeFailed = !Self.removeBufferAndTempFiles(at: bufferPath)
+            _ = Self.removeBufferAndTempFiles(at: bufferPath)
+            _lastPurgeFailed = true
             AUNLog.network.error("Telemetry disk purge failed on opt-out: \(error)")
         }
         return (!_lastPurgeFailed, waiters)
     }
 
     private func withActiveConsent(requiresFull: Bool, _ work: () -> Void) {
-        let waiters = lock.withLock { () -> [Task<Void, Never>] in
+        let (waiters, purgeChanged): ([Task<Void, Never>], Bool) = lock.withLock {
+            let priorPurgeFailed = _lastPurgeFailed
             let cancelled = ensureExternalConsentLocked()
             let allowed = requiresFull ? (_consent == .full) : (_consent != .off)
             if !_closed && allowed { work() }
-            return cancelled
+            return (cancelled, _lastPurgeFailed != priorPurgeFailed)
         }
+        notifyPurgeFailureIfChanged(purgeChanged)
         for waiter in waiters { waiter.cancel() }
     }
 
     private func releaseInFlightFlush(id: UUID, epoch: UInt64) {
-        lock.withLock {
+        let purgeChanged: Bool = lock.withLock {
+            let priorPurgeFailed = _lastPurgeFailed
             _flushWaiters.removeValue(forKey: id)
             _inFlightFlushes = max(0, _inFlightFlushes - 1)
             if epoch != _consentEpoch {
                 _revokedFlushesRemaining = max(0, _revokedFlushesRemaining - 1)
                 if bufferPath != nil {
-                    _lastPurgeFailed = !Self.removeBufferAndTempFiles(at: bufferPath)
+                    let removed = Self.removeBufferAndTempFiles(at: bufferPath)
+                    _lastPurgeFailed = _lastPurgeFailed || !removed
                 }
             }
+            return _lastPurgeFailed != priorPurgeFailed
         }
+        notifyPurgeFailureIfChanged(purgeChanged)
+    }
+
+    private func notifyPurgeFailureIfChanged(_ changed: Bool) {
+        guard changed else { return }
+        observationRegistrar.willSet(self, keyPath: \.lastPurgeFailed)
+        observationRegistrar.didSet(self, keyPath: \.lastPurgeFailed)
     }
 
     private func ensureExternalConsentLocked() -> [Task<Void, Never>] {

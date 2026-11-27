@@ -1,5 +1,6 @@
 import AUNCoreBridge
 import Foundation
+import Observation
 import Testing
 
 @testable import AUNCoreKit
@@ -46,8 +47,13 @@ struct CoreTelemetryExternalConsentTests {
             ("https://example.com/api#first,PrivateProject", "https://example.com/api#[redacted]"),
             ("https://example.com/users/alice@example.com", "https://example.com/users/[redacted-email]"),
             ("https://example.com/users/alice%40example.com", "https://example.com/users/[redacted-email]"),
+            ("https://example.com/users/alice%team@example.com", "https://example.com/users/[redacted-email]"),
+            ("alice%notes@example.com", "[redacted-email]"),
             ("https://example.com/?token=abc{Secret}xyz", "https://example.com/?[redacted]"),
+            ("(https://example.com/?q=secret).", "(https://example.com/?[redacted])."),
             ("file:///private/(https://Secret/Acquisition.mov)", "[redacted-path]"),
+            ("file:///private/Project Folder/(https://Secret/Acquisition.mov)", "[redacted-path]"),
+            ("/private/Project Folder/(https://Secret/Acquisition.mov)", "[redacted-path]"),
             ("(relative/Secret.mov and https://example.com/api)", "([redacted-path] https://example.com/api)"),
             ("Bearer abcdefg", "Bearer [redacted]"),
             ("file:///storage/emulated/0/https://Secret/Acquisition.mov", "[redacted-path]"),
@@ -109,5 +115,53 @@ struct CoreTelemetryExternalConsentTests {
         #expect(!flagLock.withLock { flushEntered })
         #expect(service.consent == .off)
         #expect(service.pendingCount == 0)
+    }
+
+    @Test("Late revoked flush purge failure notifies Observation subscribers for lastPurgeFailed")
+    func lateRevokedFlushPurgeFailureNotifiesObservation() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aun-tel-obs-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bufferPath = dir.appendingPathComponent("telemetry-buffer.json").path
+        let gate = TelemetryFlushSlotGate()
+
+        let service = try CoreTelemetryService(
+            platform: "macos",
+            appVersion: "1.0.0",
+            osVersion: "macOS 15.0",
+            deviceClass: "desktop",
+            locale: "en",
+            videosAPIBaseURL: nil,
+            userAgent: "AlUmmahNowMac/1.0.0",
+            bufferPath: bufferPath,
+            initialEnabled: true
+        )
+        service.flushOverrideForTesting = { await gate.enter() }
+
+        let flushTask = Task { await service.flush() }
+        await gate.waitForSlot(0)
+
+        #expect(service.setConsent(.off))
+        #expect(!service.lastPurgeFailed)
+
+        let observedLock = NSLock()
+        nonisolated(unsafe) var notified = false
+        withObservationTracking {
+            _ = service.lastPurgeFailed
+        } onChange: {
+            observedLock.withLock { notified = true }
+        }
+
+        // Make parent dir read-only after planting a late buffer so releaseInFlightFlush fails cleanup.
+        try Data("{\"late\":true}".utf8).write(to: URL(fileURLWithPath: bufferPath))
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path) }
+
+        gate.releaseSlot(0)
+        await flushTask.value
+
+        #expect(service.lastPurgeFailed)
+        #expect(observedLock.withLock { notified })
     }
 }

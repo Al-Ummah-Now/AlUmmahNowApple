@@ -4,7 +4,7 @@ import Testing
 
 @testable import AUNCoreKit
 
-private final class TelemetryFlushSlotGate: @unchecked Sendable {
+final class TelemetryFlushSlotGate: @unchecked Sendable {
     private let lock = NSLock()
     private var nextIndex = 0
     private var slots: [Int: CheckedContinuation<Void, Never>] = [:]
