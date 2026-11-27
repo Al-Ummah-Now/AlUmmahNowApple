@@ -81,6 +81,9 @@ extension CoreTelemetryService {
         let (escaped, hadSentinels) = Self.escapeSentinels(text)
         var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: escaped, prefix: Self.vaultPrefix)
         scrubbed = Self.redactFileURIs(in: scrubbed, vaultPrefix: Self.vaultPrefix)
+        for regex in Self.parenPathRegexes {
+            scrubbed = Self.replaceUnquotedParenPaths(in: scrubbed, using: regex)
+        }
         for rule in Self.preKeywordPathRules {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
             scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
@@ -115,13 +118,13 @@ extension CoreTelemetryService {
         var copied = 0
         var idx = 0
         while idx < len {
-            let atLen = Self.emailAtLength(nsText, at: idx, len: len)
+            let atLen = VaultLineTracker.emailAtLength(nsText, at: idx, len: len)
             if atLen == 0 {
                 idx += 1
                 continue
             }
             var localStart = idx
-            while localStart > copied && Self.isEmailLocalChar(nsText, at: localStart - 1, len: len) {
+            while localStart > copied && VaultLineTracker.isEmailLocalChar(nsText, at: localStart - 1, len: len) {
                 localStart -= 1
             }
             let domEnd = localStart < idx ? Self.findEmailDomainEnd(nsText, domStart: idx + atLen, len: len) : -1
@@ -140,44 +143,37 @@ extension CoreTelemetryService {
         return result
     }
 
-    private static func emailAtLength(_ nsText: NSString, at pos: Int, len: Int) -> Int {
-        let ch = nsText.character(at: pos)
-        if ch == 0x40 { return 1 }  // '@'
-        if ch == 0x25 && pos + 2 < len && nsText.character(at: pos + 1) == 0x34 && nsText.character(at: pos + 2) == 0x30 {
-            return 3  // "%40"
-        }
-        return 0
-    }
-
-    private static func isEmailLocalChar(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
-        let ch = nsText.character(at: pos)
-        if (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) || (ch >= 0x30 && ch <= 0x39)
-            || ch == 0x2E || ch == 0x5F || ch == 0x2B || ch == 0x2D
-        {
-            return true
-        }
-        return ch == 0x25 && !(pos + 2 < len && nsText.character(at: pos + 1) == 0x34 && nsText.character(at: pos + 2) == 0x30)
-    }
-
     private static func findEmailDomainEnd(_ nsText: NSString, domStart: Int, len: Int) -> Int {
         var idx = domStart
         var lastDot = -1
         var lettersSinceDot = 0
+        var tldAllASCII = true
         var bestEnd = -1
         while idx < len {
             let ch = nsText.character(at: idx)
-            if (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) {
-                lettersSinceDot = lastDot >= 0 ? lettersSinceDot + 1 : 0
+            if VaultLineTracker.isEmailLetter(ch) {
+                if ch >= 0x80 { tldAllASCII = false }
+                if lastDot >= 0 && lettersSinceDot >= 0
+                    && !VaultLineTracker.isUnicodeCombiningMark(ch) && !VaultLineTracker.isLowSurrogate(ch)
+                {
+                    lettersSinceDot += 1
+                }
             } else if ch == 0x2E {
                 lastDot = idx > domStart ? idx : -1
                 lettersSinceDot = 0
-            } else if (ch >= 0x30 && ch <= 0x39) || ch == 0x2D {
+                tldAllASCII = true
+            } else if VaultLineTracker.isEmailDigit(ch) || ch == 0x2D {
+                if ch >= 0x80 { tldAllASCII = false }
                 lettersSinceDot = -1
             } else {
                 break
             }
             idx += 1
-            if lastDot > domStart && lettersSinceDot >= 2 && (idx == len || !Self.isASCIIWordChar(nsText.character(at: idx))) {
+            let validTLD =
+                lastDot > domStart
+                && (lettersSinceDot >= 2
+                    || VaultLineTracker.isPunycodeTLD(nsText, start: lastDot + 1, end: idx, allASCII: tldAllASCII))
+            if validTLD && (idx == len || !VaultLineTracker.isEmailBoundaryBlocked(nsText.character(at: idx))) {
                 bestEnd = idx
             }
         }
@@ -422,16 +418,16 @@ extension CoreTelemetryService {
         options: [.caseInsensitive]
     )
 
+    private static let parenPathRegexes: [NSRegularExpression] = [
+        #"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n\u001E]+(\))"#,
+        #"(\()(?![ \t]*(?:HTTP|TLS|SSL)/\d)(?![ \t]*\d+/\d+[.,;:!?\s]*\))"#
+            + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/[^()\r\n\u001E]+(\))"#,
+    ].compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
+
     private static let preKeywordPathRules: [(regex: NSRegularExpression, template: String)] = {
         let absTail = #"[^\r\n\u001E\s](?:[^\r\n\u001E]*[^\r\n\u001E\s])?"#
         let relTail = #"[^\r\n\u001E\u001F\s](?:[^\r\n\u001E\u001F]*[^\r\n\u001E\u001F\s])?"#
         let specs: [(String, String)] = [
-            (#"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n\u001E]+(\))"#, "$1[redacted-path]$2"),
-            (
-                #"(\()(?![ \t]*(?:HTTP|TLS|SSL)/\d)(?![ \t]*\d+/\d+[.,;:!?\s]*\))"#
-                    + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/[^()\r\n\u001E]+(\))"#,
-                "$1[redacted-path]$2"
-            ),
             (#"(?:[A-Za-z]:[\\/]|\\\\)[^\S\r\n]*"# + absTail, "[redacted-path]"),
             (#"(^|[\s(\[{"'=,:;\u001F])[^\s\\/"'<>()\[{:,;=\u001E\u001F]+\\"# + relTail, "$1[redacted-path]"),
             (#"["']/[ \t]+[^\r\n\u001E]+"#, "[redacted-path]"),

@@ -164,6 +164,15 @@ struct CoreTelemetryExternalConsentTests {
             ("'file:///tmp/O' Connor Private (https://private.example/Acquisition.mov)", "'[redacted-path]"),
             ("input'file:///tmp/O' Connor Private https://private.example/Acquisition.mov", "input'[redacted-path]"),
             ("input'/tmp/O' Connor Private https://private.example/Acquisition.mov", "input'[redacted-path]"),
+            ("'(/tmp/Client) Acquisition Plan'", "'([redacted-path]"),
+            ("' (/tmp/Client) Acquisition Plan'", "' ([redacted-path]"),
+            ("\" (/tmp/Client) Acquisition Plan\"", "\" ([redacted-path]"),
+            ("\"My (/tmp/Client) Acquisition Plan\"", "\"My ([redacted-path]"),
+            ("\"(relative/Client) Acquisition Plan\"", "\"([redacted-path]"),
+            (
+                "Failed for 李@example.com, محمد@مثال.مصر, user@bücher.example, 「李@例え.jp」, 李@例え.xn--p1ai, 李!明@example.com",
+                "Failed for [redacted-email], [redacted-email], [redacted-email], 「[redacted-email]」, [redacted-email], [redacted-email]"
+            ),
             ("status 'ready' (https://example.com/api)", "status 'ready' (https://example.com/api)"),
             ("/tmp/Private\u{2028}Acquisition Plan", "[redacted-path]"),
             ("'Private.qzx'2 Acquisition.qzx'", "[redacted-path]"),
@@ -210,6 +219,7 @@ struct CoreTelemetryExternalConsentTests {
             "opening /tmp/Project 'draft' (https://private.example/Acquisition.mov)",
             "opening \"relative/My's (https://private.example/Acquisition.mov)\"",
             "opening relative/My(1) (https://private.example/Acquisition.mov)",
+            "'relative/Artists' Private (https://private.example/Acquisition.mov)'",
         ]
         for input in privateCases {
             #expect(!CoreTelemetryService.sanitizeLocalPaths(input).contains("private.example"))

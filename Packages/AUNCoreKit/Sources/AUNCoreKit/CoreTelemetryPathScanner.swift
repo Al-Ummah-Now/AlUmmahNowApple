@@ -115,6 +115,7 @@ extension CoreTelemetryService {
         private mutating func handleClosingQuote(_ nsText: NSString, ch: unichar) -> Bool {
             guard !escapedBackslash && openQuote != 0 && ch == openQuote else { return false }
             if Self.isInnerApostrophe(nsText, at: cursor, ch: ch) { return false }
+            promoteTokenPath(nsText)
             if ch == 0x27 && hasPathOnLine {
                 // Single-quoted paths may contain unescaped apostrophes; fail closed on this line.
                 escapedBackslash = false
@@ -205,19 +206,83 @@ extension CoreTelemetryService {
                 return false
             }
             if len == 4 {
-                return matchesASCIIUpper(nsText, at: start, target: [0x48, 0x54, 0x54, 0x50])
+                return matchesASCIIUpper3(nsText, at: start, c0: 0x48, c1: 0x54, c2: 0x54)
+                    && foldASCIIUpper(nsText.character(at: start + 3)) == 0x50
             }
-            return matchesASCIIUpper(nsText, at: start, target: [0x54, 0x4C, 0x53])
-                || matchesASCIIUpper(nsText, at: start, target: [0x53, 0x53, 0x4C])
+            return matchesASCIIUpper3(nsText, at: start, c0: 0x54, c1: 0x4C, c2: 0x53)
+                || matchesASCIIUpper3(nsText, at: start, c0: 0x53, c1: 0x53, c2: 0x4C)
         }
 
-        private static func matchesASCIIUpper(_ nsText: NSString, at start: Int, target: [unichar]) -> Bool {
-            for offset in 0..<target.count {
-                let raw = nsText.character(at: start + offset)
-                let upper = (raw >= 0x61 && raw <= 0x7A) ? (raw - 0x20) : raw
-                if upper != target[offset] { return false }
+        private static func foldASCIIUpper(_ ch: unichar) -> unichar {
+            (ch >= 0x61 && ch <= 0x7A) ? (ch - 0x20) : ch
+        }
+
+        private static func matchesASCIIUpper3(
+            _ nsText: NSString, at start: Int, c0: unichar, c1: unichar, c2: unichar
+        ) -> Bool {
+            foldASCIIUpper(nsText.character(at: start)) == c0
+                && foldASCIIUpper(nsText.character(at: start + 1)) == c1
+                && foldASCIIUpper(nsText.character(at: start + 2)) == c2
+        }
+
+        static func emailAtLength(_ nsText: NSString, at pos: Int, len: Int) -> Int {
+            let ch = nsText.character(at: pos)
+            if ch == 0x40 { return 1 }  // '@'
+            if ch == 0x25 && pos + 2 < len
+                && nsText.character(at: pos + 1) == 0x34 && nsText.character(at: pos + 2) == 0x30
+            {
+                return 3  // "%40"
             }
-            return true
+            return 0
+        }
+
+        static func isEmailLocalChar(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+            let ch = nsText.character(at: pos)
+            if isLetterOrDigit(ch) || isUnicodeCombiningMark(ch) || isSurrogate(ch) || isEmailLocalPunct(ch) {
+                return true
+            }
+            return ch == 0x25
+                && !(pos + 2 < len && nsText.character(at: pos + 1) == 0x34 && nsText.character(at: pos + 2) == 0x30)
+        }
+
+        private static func isEmailLocalPunct(_ ch: unichar) -> Bool {
+            switch ch {
+            case 0x2E, 0x5F, 0x2B, 0x2D, 0x21, 0x23, 0x24, 0x26, 0x2A, 0x5E, 0x60, 0x7C, 0x7E:
+                return true
+            default:
+                return false
+            }
+        }
+
+        static func isPunycodeTLD(_ nsText: NSString, start: Int, end: Int, allASCII: Bool) -> Bool {
+            guard allASCII && end - start >= 6 else { return false }
+            let last = nsText.character(at: end - 1)
+            guard CoreTelemetryService.isASCIILetter(last) || CoreTelemetryService.isASCIIDigit(last) else {
+                return false
+            }
+            return matchesASCIIUpper3(nsText, at: start, c0: 0x58, c1: 0x4E, c2: 0x2D)
+                && nsText.character(at: start + 3) == 0x2D
+        }
+
+        static func isUnicodeCombiningMark(_ ch: unichar) -> Bool {
+            ch >= 0x80 && (UnicodeScalar(ch).map { CharacterSet.nonBaseCharacters.contains($0) } ?? false)
+        }
+
+        static func isSurrogate(_ ch: unichar) -> Bool { ch >= 0xD800 && ch <= 0xDFFF }
+
+        static func isLowSurrogate(_ ch: unichar) -> Bool { ch >= 0xDC00 && ch <= 0xDFFF }
+
+        static func isEmailDigit(_ ch: unichar) -> Bool {
+            if ch < 0x80 { return ch >= 0x30 && ch <= 0x39 }
+            return UnicodeScalar(ch).map { CharacterSet.decimalDigits.contains($0) } ?? false
+        }
+
+        static func isEmailLetter(_ ch: unichar) -> Bool {
+            isLetter(ch) || isUnicodeCombiningMark(ch) || isSurrogate(ch)
+        }
+
+        static func isEmailBoundaryBlocked(_ ch: unichar) -> Bool {
+            isLetterOrDigit(ch) || ch == 0x5F || isUnicodeCombiningMark(ch)
         }
 
         private static func canOpenQuote(_ nsText: NSString, at pos: Int, ch: unichar) -> Bool {
@@ -438,6 +503,59 @@ extension CoreTelemetryService {
             }
         }
         return (rawEnd, trimmedEnd)
+    }
+
+    static func replaceUnquotedParenPaths(in text: String, using regex: NSRegularExpression) -> String {
+        guard text.contains("(") else { return text }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+        var result = ""
+        var copied = 0
+        var cursor = 0
+        var openQuote: unichar = 0
+        var escapedBackslash = false
+        for match in matches {
+            advanceQuoteCursor(
+                nsText, to: match.range.location, cursor: &cursor,
+                openQuote: &openQuote, escapedBackslash: &escapedBackslash
+            )
+            if openQuote == 0 {
+                if result.isEmpty { result.reserveCapacity(text.count) }
+                result += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
+                result += "([redacted-path])"
+                copied = match.range.location + match.range.length
+            }
+        }
+        guard copied > 0 else { return text }
+        result += nsText.substring(from: copied)
+        return result
+    }
+
+    private static func advanceQuoteCursor(
+        _ nsText: NSString, to target: Int, cursor: inout Int,
+        openQuote: inout unichar, escapedBackslash: inout Bool
+    ) {
+        while cursor < target {
+            let ch = nsText.character(at: cursor)
+            if ch == 0x0A || ch == 0x0D {
+                openQuote = 0
+                escapedBackslash = false
+            } else if !escapedBackslash && openQuote != 0 && ch == openQuote
+                && !VaultLineTracker.isInnerApostrophe(nsText, at: cursor, ch: ch)
+            {
+                openQuote = 0
+            } else if !escapedBackslash && openQuote == 0 && canOpenSimpleQuote(nsText, at: cursor, ch: ch) {
+                openQuote = ch
+            }
+            escapedBackslash = (ch == 0x5C) && !escapedBackslash
+            cursor += 1
+        }
+    }
+
+    private static func canOpenSimpleQuote(_ nsText: NSString, at pos: Int, ch: unichar) -> Bool {
+        if ch == 0x22 { return true }
+        return ch == 0x27 && (pos == 0 || !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos - 1)))
     }
 
     static func redactFileURIs(in text: String, vaultPrefix: String) -> String {
