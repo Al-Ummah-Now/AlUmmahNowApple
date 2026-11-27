@@ -74,6 +74,7 @@ extension CoreTelemetryService {
             prefix += "X"
         }
         var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: text, prefix: prefix)
+        scrubbed = Self.redactFileURIs(in: scrubbed)
         for rule in Self.pathRedactionRules {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
             scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
@@ -140,7 +141,7 @@ extension CoreTelemetryService {
             }
         }
 
-        private static func isFileScheme(_ nsText: NSString, at pos: Int) -> Bool {
+        static func isFileScheme(_ nsText: NSString, at pos: Int) -> Bool {
             guard pos + 7 <= nsText.length else { return false }
             if pos > 0 && isURLSchemeChar(nsText.character(at: pos - 1)) { return false }
             let target: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F, 0x2F]  // "file://"
@@ -152,25 +153,75 @@ extension CoreTelemetryService {
             return true
         }
 
-        private static func isURLSchemeChar(_ ch: unichar) -> Bool {
+        static func isURLSchemeChar(_ ch: unichar) -> Bool {
             (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A)
                 || (ch >= 0x30 && ch <= 0x39) || ch == 0x2B || ch == 0x2E || ch == 0x2D
         }
 
-        private static func isWhitespace(_ ch: unichar) -> Bool {
+        static func isWhitespace(_ ch: unichar) -> Bool {
             if ch < 0x80 {
                 return ch == 0x20 || ch == 0x09 || ch == 0x0A || ch == 0x0D || ch == 0x0B || ch == 0x0C
             }
             return UnicodeScalar(ch).map { CharacterSet.whitespacesAndNewlines.contains($0) } ?? false
         }
 
-        private static func isOpeningWrapper(_ ch: unichar) -> Bool {
+        static func isOpeningWrapper(_ ch: unichar) -> Bool {
             ch == 0x28 || ch == 0x5B || ch == 0x7B || ch == 0x22 || ch == 0x27
         }
 
-        private static func isPathSep(_ ch: unichar) -> Bool {
+        static func isPathSep(_ ch: unichar) -> Bool {
             ch == 0x2F || ch == 0x5C
         }
+    }
+
+    private static func fileURISpanEnd(_ nsText: NSString, after schemeEnd: Int) -> (rawEnd: Int, trimmedEnd: Int) {
+        let totalLength = nsText.length
+        var rawEnd = schemeEnd
+        while rawEnd < totalLength {
+            let ch = nsText.character(at: rawEnd)
+            if ch == 0x0A || ch == 0x0D || ch == 0x1E { break }
+            rawEnd += 1
+        }
+        guard rawEnd < totalLength && nsText.character(at: rawEnd) == 0x1E else {
+            return (rawEnd, rawEnd)
+        }
+        var trimmedEnd = rawEnd
+        while trimmedEnd > schemeEnd {
+            let prev = nsText.character(at: trimmedEnd - 1)
+            if VaultLineTracker.isOpeningWrapper(prev) || VaultLineTracker.isWhitespace(prev) {
+                trimmedEnd -= 1
+            } else {
+                break
+            }
+        }
+        return (rawEnd, trimmedEnd)
+    }
+
+    private static func redactFileURIs(in text: String) -> String {
+        let nsText = text as NSString
+        let totalLength = nsText.length
+        guard totalLength > 7 else { return text }
+        var result = ""
+        var copyStart = 0
+        var pos = 0
+        while pos < totalLength {
+            if VaultLineTracker.isFileScheme(nsText, at: pos) {
+                let (rawEnd, trimmedEnd) = fileURISpanEnd(nsText, after: pos + 7)
+                if trimmedEnd > pos + 7 {
+                    if result.isEmpty { result.reserveCapacity(text.count) }
+                    result += nsText.substring(with: NSRange(location: copyStart, length: pos - copyStart))
+                    result += "[redacted-path]"
+                    result += nsText.substring(with: NSRange(location: trimmedEnd, length: rawEnd - trimmedEnd))
+                    copyStart = rawEnd
+                    pos = rawEnd
+                    continue
+                }
+            }
+            pos += 1
+        }
+        guard copyStart > 0 else { return text }
+        result += nsText.substring(from: copyStart)
+        return result
     }
 
     private static func vaultNonFileURLs(in text: String, prefix: String) -> (String, [String]) {
@@ -334,11 +385,6 @@ extension CoreTelemetryService {
 
     private static let pathRedactionRules: [(regex: NSRegularExpression, template: String)] = {
         let specs: [(String, String)] = [
-            (
-                #"(?<![A-Za-z0-9+.-])file://(?>[^\s\r\n\u001E]+)"#
-                    + #"(?:(?>[^\S\r\n]+)(?!(?:[\(\[\{"'](?>[^\S\r\n]*)){0,2}\u001E)(?>[^\s\r\n\u001E]+))*"#,
-                "[redacted-path]"
-            ),
             (#"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n\u001E]+(\))"#, "$1[redacted-path]$2"),
             (
                 #"(\()(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/[^()\r\n\u001E]+(\))"#,
