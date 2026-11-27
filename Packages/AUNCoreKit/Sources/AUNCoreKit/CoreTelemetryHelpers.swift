@@ -81,6 +81,10 @@ extension CoreTelemetryService {
         for (idx, original) in vaultedURLs.enumerated() {
             scrubbed = scrubbed.replacingOccurrences(of: "\(prefix)\(idx)\u{001F}", with: original)
         }
+        for rule in Self.postRestoreRedactionRules {
+            let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
+            scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
+        }
         return scrubbed
     }
 
@@ -103,7 +107,7 @@ extension CoreTelemetryService {
             let (url, tail): (String, String)
             if qfRange.location != NSNotFound && qfRange.length > 0 {
                 let qf = nsText.substring(with: qfRange)
-                let (cleanQF, trimmedTail) = Self.trimTrailingURLDelimiters(
+                let (cleanQF, trimmedTail) = Self.trimQueryOrFragmentDelimiters(
                     qf, nsText: nsText, matchStart: match.range.location)
                 let marker = cleanQF.first.map(String.init) ?? "?"
                 url = "\(baseURL)\(marker)[redacted]"
@@ -136,6 +140,29 @@ extension CoreTelemetryService {
         return (url, tail)
     }
 
+    private static func trimQueryOrFragmentDelimiters(_ qf: String, nsText: NSString, matchStart: Int) -> (String, String) {
+        var value = qf
+        var tail = ""
+        while value.count > 1, let last = value.last {
+            if last == ";" || last == "," {
+                value.removeLast()
+                tail = "\(last)\(tail)"
+            } else if last == "'" && matchStart > 0 && nsText.character(at: matchStart - 1) == 0x27 {
+                value.removeLast()
+                tail = "'\(tail)"
+            } else if last == ")" && value.filter({ $0 == ")" }).count > value.filter({ $0 == "(" }).count {
+                value.removeLast()
+                tail = ")\(tail)"
+            } else if last == "]" && value.filter({ $0 == "]" }).count > value.filter({ $0 == "[" }).count {
+                value.removeLast()
+                tail = "]\(tail)"
+            } else {
+                break
+            }
+        }
+        return (value, tail)
+    }
+
     private static func isValidIPv6(_ host: String) -> Bool {
         var addr = in6_addr()
         return host.withCString { inet_pton(AF_INET6, $0, &addr) == 1 }
@@ -147,7 +174,7 @@ extension CoreTelemetryService {
             + #"(?:[A-Za-z0-9._~!$&'*+;=-]|%[0-9A-Fa-f]{2})+)(?::\d+)?"#
             + #"(?:/(?:(?!(?:file://|[A-Za-z]:[\\/]))(?:[^\s"<>\\{},()\[\]?#\r\n]|"#
             + #"\([^\s"<>\\{},()\[\]/:\\?#]+\)|\[[^\s"<>\\{},()\[\]/:\\?#]+\]))*)?)"#
-            + #"([?#][^\s"<>\\{},()\[\]\r\n]*)?(?=$|[\s"'<>\\{},;()\[\]]|file://|[A-Za-z]:[\\/])"#,
+            + #"([?#][^\s"<>\\{}\r\n]*)?(?=$|[\s"'<>\\{},;()\[\]]|file://|[A-Za-z]:[\\/])"#,
         options: [.caseInsensitive]
     )
 
@@ -174,14 +201,17 @@ extension CoreTelemetryService {
                 "$1[redacted-path]$2"
             ),
             (#"(?:[A-Za-z]:[\\/]|\\\\)(?:(?!\s+\u001E)[^\r\n\u001E])+"#, "[redacted-path]"),
-            (#"(^|[\s(\[{"'=,:;\u001F])[^\s\\/"'<>(),;\u001E\u001F]+\\[^\r\n\u001E\u001F]+"#, "$1[redacted-path]"),
+            (
+                #"(^|[\s(\[{"'=,:;\u001F])[^\s\\/"'<>(),;\u001E\u001F]+\\(?:(?!\s+\u001E)[^\r\n\u001E\u001F])+"#,
+                "$1[redacted-path]"
+            ),
             (#"["']/[ \t]+[^\r\n\u001E]+"#, "[redacted-path]"),
             (
                 #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|//+(?=[ \t]*[^\s/])|/(?=[ \t]*[^\s/]))(?:(?!\s+\u001E)[^\r\n\u001E])+"#,
                 "[redacted-path]"
             ),
             (
-                #"(^|[\s(\[{"'=,:;\u001F])(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/[^\r\n\u001E\u001F]+"#,
+                #"(^|[\s(\[{"'=,:;\u001F])(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/(?:(?!\s+\u001E)[^\r\n\u001E\u001F])+"#,
                 "$1[redacted-path]"
             ),
             (#""[^"\r\n/\\]*\.[A-Za-z0-9]{1,16}""#, "[redacted-path]"),
@@ -197,8 +227,17 @@ extension CoreTelemetryService {
                 #"(^|[\r\n:=;\u001F])([ \t]*)[^\r\n:=;\u001E\u001F]*\.(?!ts:\d+)(?:"# + bareFilenameExtensions + #")\b(?!\()"#,
                 "$1$2[redacted-path]"
             ),
+        ]
+        return specs.compactMap { pattern, template in
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+            return (regex, template)
+        }
+    }()
+
+    private static let postRestoreRedactionRules: [(regex: NSRegularExpression, template: String)] = {
+        let specs: [(String, String)] = [
             (#"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#, "[redacted-email]"),
-            (#"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"#, "Bearer [redacted]"),
+            (#"\bBearer\s+\S+"#, "Bearer [redacted]"),
         ]
         return specs.compactMap { pattern, template in
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
