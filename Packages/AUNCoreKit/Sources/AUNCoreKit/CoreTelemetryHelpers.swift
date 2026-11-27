@@ -92,6 +92,7 @@ extension CoreTelemetryService {
         private var hasFileURIOnLine = false
         private var fileURIQuote: unichar = 0
         private var lastNonWSOrWrapperChar: unichar = 0
+        private var tokenHasPathSep = false
         private var inWrapperRun = false
         private var wsBeforeRun = false
 
@@ -99,12 +100,19 @@ extension CoreTelemetryService {
             advance(nsText, to: matchStart)
             let afterPathSep = Self.isPathSep(lastNonWSOrWrapperChar)
             return fileURIQuote != 0
-                || (!wsBeforeRun && (hasFileURIOnLine || afterPathSep))
+                || tokenHasPathSep
+                || (!wsBeforeRun && hasFileURIOnLine)
                 || (hasFileURIOnLine && inWrapperRun && afterPathSep)
         }
 
-        mutating func onVaultedURL() {
+        mutating func onVaultedURL(matchEnd: Int) {
+            cursor = matchEnd
             hasFileURIOnLine = false
+            fileURIQuote = 0
+            lastNonWSOrWrapperChar = 0
+            tokenHasPathSep = false
+            inWrapperRun = false
+            wsBeforeRun = false
         }
 
         private mutating func advance(_ nsText: NSString, to target: Int) {
@@ -114,34 +122,43 @@ extension CoreTelemetryService {
                     hasFileURIOnLine = false
                     fileURIQuote = 0
                     lastNonWSOrWrapperChar = 0
+                    tokenHasPathSep = false
                     inWrapperRun = false
                     wsBeforeRun = false
                 } else {
-                    let closedFileQuote = fileURIQuote != 0 && ch == fileURIQuote
-                    if closedFileQuote {
-                        fileURIQuote = 0
-                    } else if Self.isFileScheme(nsText, at: cursor) {
-                        hasFileURIOnLine = true
-                        if cursor > 0 {
-                            let prev = nsText.character(at: cursor - 1)
-                            if prev == 0x22 || prev == 0x27 { fileURIQuote = prev }
-                        }
-                    }
-                    if closedFileQuote {
-                        lastNonWSOrWrapperChar = ch
-                        inWrapperRun = false
-                        wsBeforeRun = false
-                    } else if Self.isWhitespace(ch) {
-                        if !inWrapperRun { wsBeforeRun = true }
-                    } else if Self.isOpeningWrapper(ch) {
-                        inWrapperRun = true
-                    } else {
-                        lastNonWSOrWrapperChar = ch
-                        inWrapperRun = false
-                        wsBeforeRun = false
-                    }
+                    processLineChar(nsText, ch: ch)
                 }
                 cursor += 1
+            }
+        }
+
+        private mutating func processLineChar(_ nsText: NSString, ch: unichar) {
+            let closedFileQuote = fileURIQuote != 0 && ch == fileURIQuote
+            if closedFileQuote {
+                fileURIQuote = 0
+            } else if Self.isFileScheme(nsText, at: cursor) {
+                hasFileURIOnLine = true
+                if cursor > 0 {
+                    let prev = nsText.character(at: cursor - 1)
+                    if prev == 0x22 || prev == 0x27 { fileURIQuote = prev }
+                }
+            }
+            if closedFileQuote {
+                lastNonWSOrWrapperChar = ch
+                inWrapperRun = false
+                wsBeforeRun = false
+            } else if Self.isWhitespace(ch) {
+                if !inWrapperRun {
+                    wsBeforeRun = true
+                    tokenHasPathSep = false
+                }
+            } else if Self.isOpeningWrapper(ch) {
+                inWrapperRun = true
+            } else {
+                lastNonWSOrWrapperChar = ch
+                if Self.isPathSep(ch) { tokenHasPathSep = true }
+                inWrapperRun = false
+                wsBeforeRun = false
             }
         }
 
@@ -275,7 +292,7 @@ extension CoreTelemetryService {
             rebuilt += nsText.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
             let idx = vaultedURLs.count
             vaultedURLs.append(url)
-            tracker.onVaultedURL()
+            tracker.onVaultedURL(matchEnd: match.range.location + match.range.length)
             rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
             cursor = match.range.location + match.range.length
         }
