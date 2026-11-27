@@ -82,4 +82,57 @@ struct CoreTelemetryAuthSanitizerTests {
                 == "https://api.telegram.org/bot123456:[redacted]/getMe"
         )
     }
+
+    @Test("Rejects invalid JSON escapes/mismatched containers and scrubs comma/percent-encoded webhook URLs")
+    func rejectsMalformedJsonAndScrubsEncodedWebhookURLs() {
+        let badEscapeScrubbed = CoreTelemetryService.sanitizeLocalPaths(
+            "{\"bad\\qkey\":\"hi\",\"Authorization\":\"firstValue\" } opaqueSecret123"
+        )
+        #expect(!badEscapeScrubbed.contains("firstValue"))
+        #expect(!badEscapeScrubbed.contains("opaqueSecret123"))
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"\\q\":\"hi\",\"Authorization\":\"firstValue\" } opaqueSecret123")
+                == "{\"\\q\":\"hi\",\"Authorization\":\"[redacted]\" [redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"a\":[{],\"Authorization\":\"firstValue\" } opaqueSecret123")
+                == "{\"a\":[{],\"Authorization\":\"[redacted]\" [redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"Authorization\":\"bad\\qval\" } opaqueSecret123")
+                == "{\"Authorization\":\"[redacted]\" [redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"\\Authorization\":\"firstValue\" } opaqueSecret123")
+                == "{\"Authorization\":\"[redacted]\" [redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"Authorization\":\"firstValue\" } opaqueSecret123")
+                == "{\"Authorization\":\"[redacted]\" [redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"Authorization\":\"firstValue\",\"a\":[{]} opaqueSecret123")
+                == "{\"Authorization\":\"[redacted]\"[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[{\"Authorization\":\"opaqueSecret123\"},{\"status\":\"safe\"}]")
+                == "[{\"Authorization\":\"[redacted]\"},{\"status\":\"safe\"}]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken,remainingSecret123")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/,remainingSecret123")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/%77ebhook/fakeToken")
+                == "https://example.test/%77ebhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken, next")
+                == "https://example.test/webhook/[redacted], next"
+        )
+    }
 }

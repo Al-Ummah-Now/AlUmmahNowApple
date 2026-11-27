@@ -281,13 +281,23 @@ extension CoreTelemetryService {
             } else {
                 (url, tail) = Self.trimTrailingURLDelimiters(baseURL, nsText: nsText, matchStart: span.start)
             }
+            var redactedURL = Self.redactURLPathSecrets(url)
+            var endPos = span.totalEnd
+            var finalTail = tail
+            if let probe = Self.probeWebhookCommaExtension(
+                span: span, tail: tail, url: url, nsText: nsText
+            ) {
+                (redactedURL, endPos, finalTail) = Self.extendRedactedWebhookComma(
+                    nsText, redactedURL: probe, urlStart: span.start, totalEnd: endPos, len: totalLen
+                )
+            }
             rebuilt += nsText.substring(with: NSRange(location: copied, length: span.start - copied))
             let idx = vaultedURLs.count
-            vaultedURLs.append(Self.redactURLPathSecrets(url))
-            tracker.onVaultedURL(matchEnd: span.totalEnd)
-            rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
-            copied = span.totalEnd
-            searchFrom = span.totalEnd
+            vaultedURLs.append(redactedURL)
+            tracker.onVaultedURL(matchEnd: endPos)
+            rebuilt += "\(prefix)\(idx)\u{001F}\(finalTail)"
+            copied = endPos
+            searchFrom = endPos
         }
         guard !vaultedURLs.isEmpty else { return (text, []) }
         rebuilt += nsText.substring(from: copied)
@@ -339,7 +349,7 @@ extension CoreTelemetryService {
         return (url, tail)
     }
 
-    private static func trimQueryOrFragmentDelimiters(_ qf: String, nsText: NSString, matchStart: Int) -> (String, String) {
+    static func trimQueryOrFragmentDelimiters(_ qf: String, nsText: NSString, matchStart: Int) -> (String, String) {
         let chars = Array(qf)
         var excess = Self.countExcessClosers(chars)
         var end = chars.count

@@ -92,32 +92,126 @@ extension CoreTelemetryAuthScanner {
     static func isNewline(_ ch: unichar) -> Bool { ch == 0x0A || ch == 0x0D }
     static func isJsonDelimiter(_ ch: unichar) -> Bool { ch == 0x2C || ch == 0x7D || ch == 0x5D }
 
-    static func isPrecededByJsonMemberDelimiter(
+    static func findEnclosingJsonObjectStart(
         _ nsText: NSString, before pos: Int, state: inout AuthScanState
-    ) -> Bool {
-        var idx = skipJsonWhitespaceBackward(nsText, from: pos - 1)
-        guard idx >= 0 else { return false }
-        if nsText.character(at: idx) == 0x7B { return true }
-        guard nsText.character(at: idx) == 0x2C else { return false }
-        if let cached = state.memberCommaValid[idx] { return cached }
+    ) -> Int {
+        let idx = skipJsonWhitespaceBackward(nsText, from: pos - 1)
+        guard idx >= 0 else { return -1 }
+        if nsText.character(at: idx) == 0x7B { return idx }
+        guard nsText.character(at: idx) == 0x2C else { return -1 }
+        return findEnclosingJsonObjectStartFromComma(nsText, commaPos: idx, state: &state)
+    }
+
+    private static func findEnclosingJsonObjectStartFromComma(
+        _ nsText: NSString, commaPos: Int, state: inout AuthScanState
+    ) -> Int {
+        if let cached = state.memberCommaOpen[commaPos] { return cached }
         var visited: [Int] = []
-        var result = false
+        var idx = commaPos
+        var openBrace = -1
         while idx >= 0 && nsText.character(at: idx) == 0x2C {
-            if let known = state.memberCommaValid[idx] {
-                result = known
+            if let known = state.memberCommaOpen[idx] {
+                openBrace = known
                 break
             }
             visited.append(idx)
             let beforeKey = stepBackOverJsonMember(nsText, beforeComma: idx, state: &state)
             guard beforeKey >= 0 else { break }
             if nsText.character(at: beforeKey) == 0x7B {
-                result = true
+                openBrace = beforeKey
                 break
             }
             idx = beforeKey
         }
-        for commaPos in visited { state.memberCommaValid[commaPos] = result }
-        return result
+        for pos in visited { state.memberCommaOpen[pos] = openBrace }
+        return openBrace
+    }
+
+    private static func findEnclosingJsonArrayStartFromComma(
+        _ nsText: NSString, commaPos: Int, state: inout AuthScanState
+    ) -> Int {
+        if let cached = state.arrayCommaOpen[commaPos] { return cached }
+        var visited: [Int] = []
+        var idx = commaPos
+        var openBracket = -1
+        while idx >= 0 && nsText.character(at: idx) == 0x2C {
+            if let known = state.arrayCommaOpen[idx] {
+                openBracket = known
+                break
+            }
+            visited.append(idx)
+            let beforeVal = stepBackOverJsonArrayElement(nsText, beforeComma: idx, state: &state)
+            guard beforeVal >= 0 else { break }
+            if nsText.character(at: beforeVal) == 0x5B {
+                openBracket = beforeVal
+                break
+            }
+            idx = beforeVal
+        }
+        for pos in visited { state.arrayCommaOpen[pos] = openBracket }
+        return openBracket
+    }
+
+    private static func stepBackOverJsonArrayElement(
+        _ nsText: NSString, beforeComma commaPos: Int, state: inout AuthScanState
+    ) -> Int {
+        let prev = skipJsonWhitespaceBackward(nsText, from: commaPos - 1)
+        guard prev >= 0 else { return -1 }
+        let valStart = findJsonValueStartBackward(nsText, end: prev, state: &state)
+        guard valStart > 0 else { return -1 }
+        let beforeVal = skipJsonWhitespaceBackward(nsText, from: valStart - 1)
+        guard beforeVal >= 0 else { return -1 }
+        let ch = nsText.character(at: beforeVal)
+        return (ch == 0x5B || ch == 0x2C) ? beforeVal : -1
+    }
+
+    static func isInsideValidTopLevelJsonContainer(
+        _ nsText: NSString, openPos: Int, state: inout AuthScanState
+    ) -> Bool {
+        if let cached = state.containerValidForAuth[openPos] { return cached }
+        var visited: [Int] = []
+        var curOpen = openPos
+        var valid = false
+        while curOpen >= 0 {
+            if let known = state.containerValidForAuth[curOpen] {
+                valid = known
+                break
+            }
+            visited.append(curOpen)
+            let endPos = tryParseJsonValue(nsText, from: curOpen, state: &state)
+            guard endPos > curOpen else { break }
+            if reachesLineOrTextEnd(nsText, from: endPos) {
+                valid = true
+                break
+            }
+            curOpen = findParentJsonContainerOpen(nsText, before: curOpen, state: &state)
+        }
+        for pos in visited { state.containerValidForAuth[pos] = valid }
+        return valid
+    }
+
+    private static func reachesLineOrTextEnd(_ nsText: NSString, from start: Int) -> Bool {
+        let len = nsText.length
+        var idx = start
+        while idx < len && isHorizSpace(nsText.character(at: idx)) { idx += 1 }
+        return idx >= len || isNewline(nsText.character(at: idx))
+    }
+
+    private static func findParentJsonContainerOpen(
+        _ nsText: NSString, before valueStart: Int, state: inout AuthScanState
+    ) -> Int {
+        let prev = skipJsonWhitespaceBackward(nsText, from: valueStart - 1)
+        guard prev >= 0 else { return -1 }
+        let ch = nsText.character(at: prev)
+        if ch == 0x3A {
+            let beforeKey = findDelimiterBeforeJsonMemberKeyColon(nsText, before: valueStart)
+            guard beforeKey >= 0 else { return -1 }
+            return nsText.character(at: beforeKey) == 0x7B
+                ? beforeKey : findEnclosingJsonObjectStartFromComma(nsText, commaPos: beforeKey, state: &state)
+        }
+        if ch == 0x5B { return prev }
+        if ch == 0x2C { return findEnclosingJsonArrayStartFromComma(nsText, commaPos: prev, state: &state) }
+        return -1
     }
 
     private static func stepBackOverJsonMember(
@@ -135,8 +229,9 @@ extension CoreTelemetryAuthScanner {
     ) -> Int {
         let ch = nsText.character(at: prev)
         if ch == 0x22 { return scanJsonStringStartBackward(nsText, from: prev) }
-        if ch == 0x7D { return scanContainerStartBackward(nsText, closePos: prev, isBrace: true, state: &state) }
-        if ch == 0x5D { return scanContainerStartBackward(nsText, closePos: prev, isBrace: false, state: &state) }
+        if ch == 0x7D || ch == 0x5D {
+            return scanContainerStartBackward(nsText, closePos: prev, state: &state)
+        }
         if ch >= 0x30 && ch <= 0x39 {
             var start = prev
             while start >= 0 && !isJsonValuePrefixStop(nsText.character(at: start)) { start -= 1 }
@@ -187,64 +282,85 @@ extension CoreTelemetryAuthScanner {
     }
 
     private static func scanJsonStringStartBackward(_ nsText: NSString, from closeQuotePos: Int) -> Int {
+        var open = -1
         var idx = closeQuotePos - 1
         while idx >= 0 {
             let ch = nsText.character(at: idx)
             if ch < 0x20 { return -1 }
-            if ch == 0x22 && !isEscapedQuote(nsText, at: idx) { return idx }
+            if ch == 0x22 && !isEscapedQuote(nsText, at: idx) {
+                open = idx
+                break
+            }
             idx -= 1
         }
-        return -1
+        guard open >= 0 else { return -1 }
+        return scanJsonStringEnd(nsText, from: open + 1, len: nsText.length) == closeQuotePos + 1 ? open : -1
     }
 
     private static func scanContainerStartBackward(
-        _ nsText: NSString, closePos: Int, isBrace: Bool, state: inout AuthScanState
+        _ nsText: NSString, closePos: Int, state: inout AuthScanState
     ) -> Int {
         if let cached = state.closeToOpenMap[closePos] { return cached }
-        let floor = isBrace ? state.failedBraceBack : state.failedBracketBack
-        let matched = walkContainerBackward(
-            nsText, closePos: closePos, isBrace: isBrace, floor: floor, map: &state.closeToOpenMap
-        )
+        guard closePos > state.failedContainerBack else { return -1 }
+        let matched = walkContainerBackward(nsText, closePos: closePos, state: &state)
         if matched < 0 {
-            if isBrace {
-                state.failedBraceBack = max(state.failedBraceBack, closePos)
-            } else {
-                state.failedBracketBack = max(state.failedBracketBack, closePos)
-            }
+            state.closeToOpenMap[closePos] = -1
+            state.failedContainerBack = max(state.failedContainerBack, closePos)
         }
         return matched
     }
 
     private static func walkContainerBackward(
-        _ nsText: NSString, closePos: Int, isBrace: Bool, floor: Int, map: inout [Int: Int]
+        _ nsText: NSString, closePos: Int, state: inout AuthScanState
     ) -> Int {
-        let open: unichar = isBrace ? 0x7B : 0x5B
-        let close: unichar = isBrace ? 0x7D : 0x5D
-        var stack: [Int] = []
+        var stack: [(closeIdx: Int, expectedOpen: unichar)] = []
         var idx = closePos
-        while idx > floor {
-            let ch = nsText.character(at: idx)
-            if ch == 0x22 && !isEscapedQuote(nsText, at: idx) {
-                let strStart = scanJsonStringStartBackward(nsText, from: idx)
-                if strStart < 0 { break }
-                idx = strStart - 1
-                continue
-            }
-            if ch == close {
-                if let innerOpen = map[idx] {
-                    if innerOpen < 0 { break }
-                    idx = innerOpen - 1
-                    continue
-                }
-                stack.append(idx)
-            } else if ch == open, let matchedClose = stack.popLast() {
-                map[matchedClose] = idx
-                if stack.isEmpty { return idx }
-            }
-            idx -= 1
+        while idx > state.failedContainerBack {
+            let nextIdx = stepContainerBackward(nsText, at: idx, stack: &stack, state: &state)
+            if nextIdx == Int.min { break }
+            if nextIdx >= 0 && stack.isEmpty { return nextIdx }
+            idx = nextIdx < 0 ? (-nextIdx - 2) : (nextIdx - 1)
         }
-        for unmatched in stack { map[unmatched] = -1 }
+        for unmatched in stack { state.closeToOpenMap[unmatched.closeIdx] = -1 }
         return -1
+    }
+
+    /// Returns `Int.min` on failure, `>= 0` when an opener matched (the opener index),
+    /// or `-(nextIdx + 2)` to continue scanning at `nextIdx`.
+    private static func stepContainerBackward(
+        _ nsText: NSString, at idx: Int, stack: inout [(closeIdx: Int, expectedOpen: unichar)],
+        state: inout AuthScanState
+    ) -> Int {
+        let ch = nsText.character(at: idx)
+        if ch == 0x22 {
+            guard !isEscapedQuote(nsText, at: idx) else { return Int.min }
+            let strStart = scanJsonStringStartBackward(nsText, from: idx)
+            return strStart >= 0 ? -((strStart - 1) + 2) : Int.min
+        }
+        if ch == 0x7D || ch == 0x5D {
+            if let innerOpen = state.closeToOpenMap[idx] {
+                return innerOpen >= 0 ? -((innerOpen - 1) + 2) : Int.min
+            }
+            stack.append((idx, ch == 0x7D ? 0x7B : 0x5B))
+            return -((idx - 1) + 2)
+        }
+        if ch == 0x7B || ch == 0x5B {
+            return matchContainerOpener(nsText, at: idx, openChar: ch, stack: &stack, state: &state)
+        }
+        return -((idx - 1) + 2)
+    }
+
+    private static func matchContainerOpener(
+        _ nsText: NSString, at idx: Int, openChar: unichar,
+        stack: inout [(closeIdx: Int, expectedOpen: unichar)], state: inout AuthScanState
+    ) -> Int {
+        guard let top = stack.popLast(), top.expectedOpen == openChar else { return Int.min }
+        guard tryParseJsonValue(nsText, from: idx, state: &state) == top.closeIdx + 1 else {
+            state.closeToOpenMap[top.closeIdx] = -1
+            return Int.min
+        }
+        state.closeToOpenMap[top.closeIdx] = idx
+        return idx
     }
 
     private static func isJsonValuePrefixStop(_ ch: unichar) -> Bool {
@@ -268,69 +384,18 @@ extension CoreTelemetryAuthScanner {
     }
 
     static func redactJsonObject(
-        _ nsText: NSString, from bracePos: Int, isJsonMember: Bool, state: inout AuthScanState
+        _ nsText: NSString, from bracePos: Int, isJsonMember: Bool, allowTruncatedObj: Bool, state: inout AuthScanState
     ) -> Int? {
-        if let objEnd = scanBalancedJsonObjectEnd(nsText, from: bracePos, state: &state) {
+        let objEnd = tryParseJsonValue(nsText, from: bracePos, state: &state)
+        if objEnd > bracePos {
             state.appendRedacted(
                 nsText, start: bracePos, end: objEnd, replacement: isJsonMember ? "\"[redacted]\"" : "[redacted]"
             )
             return objEnd
         }
-        guard isJsonMember else { return nil }
+        guard isJsonMember || allowTruncatedObj else { return nil }
         state.appendRedacted(nsText, start: bracePos, end: nsText.length, replacement: "\"[redacted]\"")
         return nsText.length
-    }
-
-    private static func scanBalancedJsonObjectEnd(
-        _ nsText: NSString, from bracePos: Int, state: inout AuthScanState
-    ) -> Int? {
-        guard bracePos < nsText.length && nsText.character(at: bracePos) == 0x7B else { return nil }
-        if let cached = state.braceMap[bracePos] { return cached > 0 ? cached : nil }
-        let endPos = scanAndMemoizeBracesFrom(nsText, bracePos: bracePos, map: &state.braceMap)
-        return endPos > 0 ? endPos : nil
-    }
-
-    private static func scanAndMemoizeBracesFrom(
-        _ nsText: NSString, bracePos: Int, map: inout [Int: Int]
-    ) -> Int {
-        let len = nsText.length
-        var stack: [Int] = []
-        var noCloseQuoteBefore = -1
-        var idx = bracePos
-        while idx < len {
-            let ch = nsText.character(at: idx)
-            if ch == 0x22 && idx >= noCloseQuoteBefore {
-                let strEnd = scanJsonStringEnd(nsText, from: idx + 1, len: len)
-                if strEnd > 0 { idx = strEnd; continue }
-                noCloseQuoteBefore = -strEnd - 1
-            } else if ch == 0x7B {
-                if let known = map[idx] {
-                    if known > idx { idx = known; continue }
-                    for open in stack { map[open] = -1 }
-                    return -1
-                }
-                stack.append(idx)
-            } else if ch == 0x7D, let open = stack.popLast() {
-                map[open] = idx + 1
-                if stack.isEmpty { return idx + 1 }
-            }
-            idx += 1
-        }
-        for open in stack { map[open] = -1 }
-        return -1
-    }
-
-    private static func scanJsonStringEnd(_ nsText: NSString, from start: Int, len: Int) -> Int {
-        var idx = start
-        var escaped = false
-        while idx < len {
-            let ch = nsText.character(at: idx)
-            if ch < 0x20 { return -(idx + 1) }
-            if ch == 0x22 && !escaped { return idx + 1 }
-            escaped = ch == 0x5C && !escaped
-            idx += 1
-        }
-        return -(len + 1)
     }
 
     static func isJsonPrimitiveStop(_ ch: unichar) -> Bool {

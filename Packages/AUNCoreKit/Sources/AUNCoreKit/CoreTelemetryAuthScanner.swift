@@ -29,11 +29,12 @@ enum CoreTelemetryAuthScanner {
     struct AuthScanState {
         var result = ""
         var copied = 0
-        var braceMap: [Int: Int] = [:]
+        var validJsonValueEnd: [Int: Int] = [:]
         var closeToOpenMap: [Int: Int] = [:]
-        var memberCommaValid: [Int: Bool] = [:]
-        var failedBraceBack = -1
-        var failedBracketBack = -1
+        var memberCommaOpen: [Int: Int] = [:]
+        var arrayCommaOpen: [Int: Int] = [:]
+        var containerValidForAuth: [Int: Bool] = [:]
+        var failedContainerBack = -1
 
         mutating func appendRedacted(_ nsText: NSString, start: Int, end: Int, replacement: String) {
             if result.isEmpty { result.reserveCapacity(nsText.length) }
@@ -47,6 +48,7 @@ enum CoreTelemetryAuthScanner {
         let keyStart: Int
         let keyEnd: Int
         let isJsonCandidate: Bool
+        let hasJsonPrefix: Bool
         let normalizedKey: String?
     }
 
@@ -61,13 +63,15 @@ enum CoreTelemetryAuthScanner {
                 idx += 1
                 continue
             }
-            let sep = skipAuthWhitespace(nsText, from: keyMatch.keyEnd, len: len, allowNewlines: keyMatch.isJsonCandidate)
+            let allowNl = keyMatch.isJsonCandidate || keyMatch.hasJsonPrefix
+            let sep = skipAuthWhitespace(nsText, from: keyMatch.keyEnd, len: len, allowNewlines: allowNl)
             guard sep < len && (nsText.character(at: sep) == 0x3A || nsText.character(at: sep) == 0x3D) else {
                 idx = keyMatch.keyEnd
                 continue
             }
             let isJsonMember = keyMatch.isJsonCandidate && nsText.character(at: sep) == 0x3A
-            let valStart = skipAuthWhitespace(nsText, from: sep + 1, len: len, allowNewlines: isJsonMember)
+            let allowTruncatedObj = keyMatch.hasJsonPrefix && nsText.character(at: sep) == 0x3A
+            let valStart = skipAuthWhitespace(nsText, from: sep + 1, len: len, allowNewlines: isJsonMember || allowTruncatedObj)
             guard valStart < len && !isNewline(nsText.character(at: valStart)) else {
                 idx = sep + 1
                 continue
@@ -77,7 +81,10 @@ enum CoreTelemetryAuthScanner {
                 state.appendRedacted(
                     nsText, start: keyMatch.keyStart, end: keyMatch.keyEnd, replacement: "\(quote)\(normalized)\(quote)")
             }
-            idx = redactAuthHeaderValue(nsText, valStart: valStart, isJsonMember: isJsonMember, state: &state)
+            idx = redactAuthHeaderValue(
+                nsText, valStart: valStart, isJsonMember: isJsonMember,
+                allowTruncatedObj: allowTruncatedObj, state: &state
+            )
         }
         guard state.copied > 0 else { return text }
         state.result += nsText.substring(from: state.copied)
@@ -95,12 +102,12 @@ enum CoreTelemetryAuthScanner {
         if matchesASCII(nsText, at: pos, literal: "proxy-authorization", len: len),
             pos + 19 == len || !isAuthKeyWordChar(nsText.character(at: pos + 19))
         {
-            return AuthKeyMatch(keyStart: pos, keyEnd: pos + 19, isJsonCandidate: false, normalizedKey: nil)
+            return AuthKeyMatch(keyStart: pos, keyEnd: pos + 19, isJsonCandidate: false, hasJsonPrefix: false, normalizedKey: nil)
         }
         if matchesASCII(nsText, at: pos, literal: "authorization", len: len),
             pos + 13 == len || !isAuthKeyWordChar(nsText.character(at: pos + 13))
         {
-            return AuthKeyMatch(keyStart: pos, keyEnd: pos + 13, isJsonCandidate: false, normalizedKey: nil)
+            return AuthKeyMatch(keyStart: pos, keyEnd: pos + 13, isJsonCandidate: false, hasJsonPrefix: false, normalizedKey: nil)
         }
         return nil
     }
@@ -113,31 +120,35 @@ enum CoreTelemetryAuthScanner {
         var decoded: [unichar] = []
         decoded.reserveCapacity(20)
         var sawEscape = false
+        var hasInvalidJsonEscape = false
         var idx = pos + 1
         while idx < limit {
             let ch = nsText.character(at: idx)
             if ch < 0x20 { return nil }
             if ch == quote {
                 let key = String(utf16CodeUnits: decoded, count: decoded.count).lowercased()
-                let isJson = quote == 0x22 && isPrecededByJsonMemberDelimiter(nsText, before: pos, state: &state)
-                if key == "authorization" {
-                    return AuthKeyMatch(
-                        keyStart: pos, keyEnd: idx + 1, isJsonCandidate: isJson,
-                        normalizedKey: sawEscape ? "Authorization" : nil
-                    )
+                let canonical: String? =
+                    key == "authorization"
+                    ? "Authorization"
+                    : (key == "proxy-authorization" ? "Proxy-Authorization" : nil)
+                guard let canonical else { return nil }
+                var hasPrefix = false
+                var isJson = false
+                if quote == 0x22 && !hasInvalidJsonEscape {
+                    let openBrace = findEnclosingJsonObjectStart(nsText, before: pos, state: &state)
+                    hasPrefix = openBrace >= 0
+                    isJson = openBrace >= 0 && isInsideValidTopLevelJsonContainer(nsText, openPos: openBrace, state: &state)
                 }
-                if key == "proxy-authorization" {
-                    return AuthKeyMatch(
-                        keyStart: pos, keyEnd: idx + 1, isJsonCandidate: isJson,
-                        normalizedKey: sawEscape ? "Proxy-Authorization" : nil
-                    )
-                }
-                return nil
+                return AuthKeyMatch(
+                    keyStart: pos, keyEnd: idx + 1, isJsonCandidate: isJson,
+                    hasJsonPrefix: hasPrefix, normalizedKey: sawEscape ? canonical : nil
+                )
             }
             guard decoded.count < 19 else { return nil }
             if ch == 0x5C {
                 sawEscape = true
-                guard let (unit, step) = decodeKeyEscape(nsText, at: idx, len: len) else { return nil }
+                guard let (unit, step, validJson) = decodeKeyEscape(nsText, at: idx, len: len) else { return nil }
+                if !validJson { hasInvalidJsonEscape = true }
                 decoded.append(unit)
                 idx += step
             } else {
@@ -148,13 +159,13 @@ enum CoreTelemetryAuthScanner {
         return nil
     }
 
-    private static func decodeKeyEscape(_ nsText: NSString, at pos: Int, len: Int) -> (unichar, Int)? {
+    private static func decodeKeyEscape(_ nsText: NSString, at pos: Int, len: Int) -> (unichar, Int, Bool)? {
         guard pos + 1 < len else { return nil }
         let next = nsText.character(at: pos + 1)
         if next == 0x75 && pos + 5 < len, let hex = parseHex4(nsText, at: pos + 2) {
-            return (hex, 6)
+            return (hex, 6, true)
         }
-        return (next, 2)
+        return (next, 2, false)
     }
 
     private static func parseHex4(_ nsText: NSString, at pos: Int) -> unichar? {
@@ -177,18 +188,34 @@ enum CoreTelemetryAuthScanner {
     }
 
     private static func redactAuthHeaderValue(
-        _ nsText: NSString, valStart: Int, isJsonMember: Bool, state: inout AuthScanState
+        _ nsText: NSString, valStart: Int, isJsonMember: Bool, allowTruncatedObj: Bool, state: inout AuthScanState
     ) -> Int {
         let ch = nsText.character(at: valStart)
         if ch == 0x22 || ch == 0x27 {
             let afterQuote = redactQuotedAuthString(nsText, quotePos: valStart, quote: ch, state: &state)
-            return redactTrailingPlainAuthContinuation(nsText, afterPos: afterQuote, isJsonMember: isJsonMember, state: &state)
+            let validJsonStr =
+                isJsonMember && ch == 0x22
+                && scanJsonStringEnd(nsText, from: valStart + 1, len: nsText.length) == afterQuote
+            return redactTrailingPlainAuthContinuation(
+                nsText, afterPos: afterQuote, isJsonMember: validJsonStr, state: &state
+            )
         }
         if ch == 0x5B {
-            let afterArray = redactAuthArrayValue(nsText, start: valStart + 1, isJsonMember: isJsonMember, state: &state)
-            return redactTrailingPlainAuthContinuation(nsText, afterPos: afterArray, isJsonMember: isJsonMember, state: &state)
+            let afterArray = redactAuthArrayValue(
+                nsText, start: valStart + 1, isJsonMember: isJsonMember,
+                allowTruncatedObj: allowTruncatedObj, state: &state
+            )
+            let validJsonArr = isJsonMember && tryParseJsonValue(nsText, from: valStart, state: &state) == afterArray
+            return redactTrailingPlainAuthContinuation(
+                nsText, afterPos: afterArray, isJsonMember: validJsonArr, state: &state
+            )
         }
-        if ch == 0x7B, let next = redactJsonObject(nsText, from: valStart, isJsonMember: isJsonMember, state: &state) {
+        if ch == 0x7B,
+            let next = redactJsonObject(
+                nsText, from: valStart, isJsonMember: isJsonMember,
+                allowTruncatedObj: allowTruncatedObj, state: &state
+            )
+        {
             return next < nsText.length
                 ? redactTrailingPlainAuthContinuation(nsText, afterPos: next, isJsonMember: isJsonMember, state: &state)
                 : next
@@ -268,7 +295,7 @@ enum CoreTelemetryAuthScanner {
     }
 
     private static func redactAuthArrayValue(
-        _ nsText: NSString, start: Int, isJsonMember: Bool, state: inout AuthScanState
+        _ nsText: NSString, start: Int, isJsonMember: Bool, allowTruncatedObj: Bool, state: inout AuthScanState
     ) -> Int {
         let len = nsText.length
         var depth = 1
@@ -284,7 +311,10 @@ enum CoreTelemetryAuthScanner {
             } else if ch == 0x22 || ch == 0x27 {
                 idx = redactQuotedAuthString(nsText, quotePos: idx, quote: ch, state: &state)
             } else if ch == 0x7B,
-                let next = redactJsonObject(nsText, from: idx, isJsonMember: isJsonMember, state: &state)
+                let next = redactJsonObject(
+                    nsText, from: idx, isJsonMember: isJsonMember,
+                    allowTruncatedObj: allowTruncatedObj, state: &state
+                )
             {
                 idx = next
             } else if isHorizSpace(ch) || ch == 0x2C {

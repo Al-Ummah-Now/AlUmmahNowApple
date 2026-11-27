@@ -71,31 +71,6 @@ extension CoreTelemetryService {
         return pos > hostStart ? pos : nil
     }
 
-    private static let urlPathSecretRules: [(NSRegularExpression?, String)] = [
-        (
-            try? NSRegularExpression(pattern: #"((?:^|/)webhooks?/)[^\s?#]+"#, options: [.caseInsensitive]),
-            "$1[redacted]"
-        ),
-        (
-            try? NSRegularExpression(
-                pattern: #"(https?://hooks\.slack(?:-gov)?\.com\.?(?::\d+)?/(?:services|workflows|triggers)/)[^\s?#]+"#,
-                options: [.caseInsensitive]
-            ),
-            "$1[redacted]"
-        ),
-        (try? NSRegularExpression(pattern: #"(/bot\d+:)[^/\s?#]+"#, options: [.caseInsensitive]), "$1[redacted]"),
-    ]
-
-    static func redactURLPathSecrets(_ url: String) -> String {
-        var result = url
-        for (regex, template) in urlPathSecretRules {
-            guard let regex else { continue }
-            let range = NSRange(result.startIndex..<result.endIndex, in: result)
-            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: template)
-        }
-        return result
-    }
-
     private static func scanIPv6Host(_ nsText: NSString, hostStart: Int, len: Int) -> Int? {
         var close = hostStart + 1
         while close < len {
@@ -118,39 +93,49 @@ extension CoreTelemetryService {
         return idx > pos + 1 ? idx : nil
     }
 
-    private static func scanURLPath(_ nsText: NSString, start: Int, len: Int) -> (Int, Bool) {
-        var openPositions: [Int] = []
-        var openChars: [unichar] = []
+    static func scanURLPath(
+        _ nsText: NSString, start: Int, len: Int, allowCommas: Bool = false
+    ) -> (Int, Bool) {
+        var openGroups: [(pos: Int, ch: unichar)] = []
         var pos = start
         while pos < len {
-            let next = stepURLPathChar(nsText, pos: pos, len: len, openPositions: &openPositions, openChars: &openChars)
+            let next = stepURLPathChar(nsText, pos: pos, len: len, allowCommas: allowCommas, openGroups: &openGroups)
             if next < 0 { break }
             pos = next
         }
-        if let firstUnclosed = openPositions.first { return (firstUnclosed, true) }
+        if let firstUnclosed = openGroups.first?.pos { return (firstUnclosed, true) }
         return (pos, false)
     }
 
     private static func stepURLPathChar(
-        _ nsText: NSString, pos: Int, len: Int, openPositions: inout [Int], openChars: inout [unichar]
+        _ nsText: NSString, pos: Int, len: Int, allowCommas: Bool, openGroups: inout [(pos: Int, ch: unichar)]
     ) -> Int {
         if VaultLineTracker.isFileScheme(nsText, at: pos) || isWindowsDriveAt(nsText, at: pos, len: len) { return -1 }
         let ch = nsText.character(at: pos)
         if VaultLineTracker.isWhitespace(ch) || isURLPathStopChar(ch) { return -1 }
+        if ch == 0x2C && (!allowCommas || shouldStopAtURLComma(nsText, at: pos, len: len)) { return -1 }
         if ch == 0x28 || ch == 0x5B {
             if startsEmbeddedPathInsideGroup(nsText, nextPos: pos + 1, len: len) { return -1 }
-            openPositions.append(pos)
-            openChars.append(ch)
+            openGroups.append((pos, ch))
             return pos + 1
         }
         if ch == 0x29 || ch == 0x5D {
             let expected: unichar = ch == 0x29 ? 0x28 : 0x5B
-            guard openChars.last == expected else { return -1 }
-            openPositions.removeLast()
-            openChars.removeLast()
+            guard openGroups.last?.ch == expected else { return -1 }
+            openGroups.removeLast()
             return pos + 1
         }
-        return (!openChars.isEmpty && ch == 0x3A) ? -1 : pos + 1
+        return (!openGroups.isEmpty && ch == 0x3A) ? -1 : pos + 1
+    }
+
+    static func shouldStopAtURLComma(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+        let nextPos = pos + 1
+        guard nextPos < len else { return true }
+        let next = nsText.character(at: nextPos)
+        if VaultLineTracker.isWhitespace(next) || isURLPathStopChar(next) || isURLEndBoundaryChar(next) {
+            return next != 0x2C
+        }
+        return startsEmbeddedPathInsideGroup(nsText, nextPos: nextPos, len: len)
     }
 
     private static func startsEmbeddedPathInsideGroup(_ nsText: NSString, nextPos: Int, len: Int) -> Bool {
@@ -161,7 +146,7 @@ extension CoreTelemetryService {
         return VaultLineTracker.isFileScheme(nsText, at: nextPos) || isWindowsDriveAt(nsText, at: nextPos, len: len)
     }
 
-    private static func scanQueryOrFragment(_ nsText: NSString, start: Int, len: Int) -> Int {
+    static func scanQueryOrFragment(_ nsText: NSString, start: Int, len: Int) -> Int {
         var pos = start + 1
         while pos < len {
             let ch = nsText.character(at: pos)
@@ -206,7 +191,7 @@ extension CoreTelemetryService {
 
     private static func isURLPathStopChar(_ ch: unichar) -> Bool {
         ch == 0x22 || ch == 0x3C || ch == 0x3E || ch == 0x5C || ch == 0x7B || ch == 0x7D
-            || ch == 0x2C || ch == 0x3F || ch == 0x23 || ch == 0x0A || ch == 0x0D
+            || ch == 0x3F || ch == 0x23 || ch == 0x0A || ch == 0x0D
     }
 
     private static func isURLEndBoundaryChar(_ ch: unichar) -> Bool {
