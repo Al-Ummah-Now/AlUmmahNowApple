@@ -174,7 +174,7 @@ extension CoreTelemetryAuthScanner {
             let ch = nsText.character(at: idx)
             if ch == 0x22 && !isEscapedQuote(nsText, at: idx) {
                 let strStart = scanJsonStringStartBackward(nsText, from: idx)
-                if strStart < 0 { return -1 }
+                if strStart < 0 { break }
                 idx = strStart - 1
                 continue
             }
@@ -236,11 +236,8 @@ extension CoreTelemetryAuthScanner {
         _ nsText: NSString, from bracePos: Int, state: inout AuthScanState
     ) -> Int? {
         guard bracePos < nsText.length && nsText.character(at: bracePos) == 0x7B else { return nil }
-        if state.braceMap == nil { state.braceMap = [:] }
-        if let cached = state.braceMap?[bracePos] { return cached > 0 ? cached : nil }
-        var map = state.braceMap ?? [:]
-        let endPos = scanAndMemoizeBracesFrom(nsText, bracePos: bracePos, map: &map)
-        state.braceMap = map
+        if let cached = state.braceMap[bracePos] { return cached > 0 ? cached : nil }
+        let endPos = scanAndMemoizeBracesFrom(nsText, bracePos: bracePos, map: &state.braceMap)
         return endPos > 0 ? endPos : nil
     }
 

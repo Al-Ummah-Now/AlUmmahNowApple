@@ -403,6 +403,8 @@ struct CoreTelemetryExternalConsentTests {
             CoreTelemetryService.sanitizeLocalPaths("{\"a\":{\"b\":1},\"Authorization\":\"opaqueSecret123\"}")
                 == "{\"a\":{\"b\":1},\"Authorization\":\"[redacted]\"}"
         )
+        let repeatedMalformedBack = "\"\n" + String(repeating: "}, \"Authorization\": ", count: 2_000)
+        #expect(!CoreTelemetryService.sanitizeLocalPaths(repeatedMalformedBack).isEmpty)
     }
 }
 
