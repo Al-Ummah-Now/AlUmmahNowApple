@@ -95,9 +95,10 @@ extension CoreTelemetryService {
 
     static func scanURLPath(_ nsText: NSString, start: Int, len: Int) -> (Int, Bool) {
         var openGroups: [(pos: Int, ch: unichar)] = []
+        var openBraces = 0
         var pos = start
         while pos < len {
-            let next = stepURLPathChar(nsText, pos: pos, len: len, openGroups: &openGroups)
+            let next = stepURLPathChar(nsText, pos: pos, len: len, openGroups: &openGroups, openBraces: &openBraces)
             if next < 0 { break }
             pos = next
         }
@@ -106,16 +107,26 @@ extension CoreTelemetryService {
     }
 
     private static func stepURLPathChar(
-        _ nsText: NSString, pos: Int, len: Int, openGroups: inout [(pos: Int, ch: unichar)]
+        _ nsText: NSString, pos: Int, len: Int, openGroups: inout [(pos: Int, ch: unichar)], openBraces: inout Int
     ) -> Int {
         if isURLPathTerminator(nsText, pos: pos, len: len) { return -1 }
         let ch = nsText.character(at: pos)
         if isURLGroupOpener(ch) {
-            return pushURLPathGroup(nsText, pos: pos, len: len, ch: ch, openGroups: &openGroups)
+            if openBraces > 0 || startsEmbeddedPathInsideGroup(nsText, nextPos: pos + 1, len: len) { return -1 }
+            openGroups.append((pos, ch))
+            if ch == 0x7B { openBraces += 1 }
+            return pos + 1
         }
-        if isURLGroupCloser(ch) { return popURLPathGroup(ch, openGroups: &openGroups) ? pos + 1 : -1 }
-        if !openGroups.isEmpty && (ch == 0x3A || (ch == 0x2F && openGroups.contains { $0.ch == 0x7B })) { return -1 }
+        if isURLGroupCloser(ch) {
+            return popURLPathGroup(ch, openGroups: &openGroups, openBraces: &openBraces) ? pos + 1 : -1
+        }
+        if openBraces > 0 && !isURLBraceTemplateChar(ch) { return -1 }
+        if !openGroups.isEmpty && ch == 0x3A { return -1 }
         return pos + 1
+    }
+
+    private static func isURLBraceTemplateChar(_ ch: unichar) -> Bool {
+        isASCIIAlphaNum(ch) || ch == 0x5F || ch == 0x2D
     }
 
     private static func isURLGroupOpener(_ ch: unichar) -> Bool {
@@ -132,18 +143,13 @@ extension CoreTelemetryService {
         return ch == 0x2C || VaultLineTracker.isWhitespace(ch) || isURLPathStopChar(ch)
     }
 
-    private static func pushURLPathGroup(
-        _ nsText: NSString, pos: Int, len: Int, ch: unichar, openGroups: inout [(pos: Int, ch: unichar)]
-    ) -> Int {
-        if startsEmbeddedPathInsideGroup(nsText, nextPos: pos + 1, len: len) { return -1 }
-        openGroups.append((pos, ch))
-        return pos + 1
-    }
-
-    private static func popURLPathGroup(_ ch: unichar, openGroups: inout [(pos: Int, ch: unichar)]) -> Bool {
+    private static func popURLPathGroup(
+        _ ch: unichar, openGroups: inout [(pos: Int, ch: unichar)], openBraces: inout Int
+    ) -> Bool {
         let expected: unichar = ch == 0x29 ? 0x28 : (ch == 0x5D ? 0x5B : 0x7B)
         guard openGroups.last?.ch == expected else { return false }
         openGroups.removeLast()
+        if ch == 0x7D { openBraces -= 1 }
         return true
     }
 

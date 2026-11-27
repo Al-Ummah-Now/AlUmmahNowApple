@@ -168,7 +168,7 @@ extension CoreTelemetryService {
         (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) || (ch >= 0x30 && ch <= 0x39) || ch == 0x5F
     }
 
-    private static func isASCIIAlphaNum(_ ch: unichar) -> Bool {
+    static func isASCIIAlphaNum(_ ch: unichar) -> Bool {
         (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) || (ch >= 0x30 && ch <= 0x39)
     }
 
@@ -243,16 +243,22 @@ extension CoreTelemetryService {
         return Self.sourceLineExtSet.contains(ext)
     }
 
-    private static func vaultNonFileURLs(in text: String, prefix: String) -> (String, [String]) {
-        guard text.contains("://") else { return (text, []) }
+    static func vaultNonFileURLs(in text: String, prefix: String) -> (String, [String]) {
+        var vaultedURLs: [String] = []
+        let scrubbed = Self.vaultNonFileURLsInto(text, prefix: prefix, vaultedURLs: &vaultedURLs)
+        return (scrubbed, vaultedURLs)
+    }
+
+    static func vaultNonFileURLsInto(_ text: String, prefix: String, vaultedURLs: inout [String]) -> String {
+        guard text.contains("://") else { return text }
         let nsText = text as NSString
         let totalLen = nsText.length
-        var vaultedURLs: [String] = []
+        let startCount = vaultedURLs.count
         var tracker = VaultLineTracker()
         var rebuilt = ""
         var copied = 0
         var searchFrom = 0
-        var failedContMax = 0
+        var contLimits = ContinuationLimits()
         while searchFrom < totalLen {
             let found = nsText.range(
                 of: "://", options: [], range: NSRange(location: searchFrom, length: totalLen - searchFrom)
@@ -286,7 +292,7 @@ extension CoreTelemetryService {
             var endPos = span.totalEnd
             rebuilt += nsText.substring(with: NSRange(location: copied, length: span.start - copied))
             if let ext = Self.extendURLContinuation(
-                nsText, span: span, rawURL: baseURL, baseTail: tail, failedContMax: &failedContMax
+                nsText, span: span, rawURL: baseURL, baseTail: tail, limits: &contLimits
             ) {
                 endPos = ext.endPos
                 rebuilt += Self.formatURLContinuation(
@@ -301,9 +307,9 @@ extension CoreTelemetryService {
             copied = endPos
             searchFrom = endPos
         }
-        guard !vaultedURLs.isEmpty else { return (text, []) }
+        guard vaultedURLs.count > startCount else { return text }
         rebuilt += nsText.substring(from: copied)
-        return (rebuilt, vaultedURLs)
+        return rebuilt
     }
 
     private static func restoreVaultedURLs(in text: String, prefix: String, vaultedURLs: [String]) -> String {

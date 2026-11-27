@@ -98,6 +98,12 @@ extension CoreTelemetryService {
         let endPos: Int
     }
 
+    struct ContinuationLimits {
+        var failedContMax = 0
+        var unclosedDoubleQuoteEnd = 0
+        var unclosedSingleQuoteEnd = 0
+    }
+
     static func formatURLContinuation(
         _ ext: URLContinuationResult, prefix: String, baseRedacted: String, baseTail: String, vaultedURLs: inout [String]
     ) -> String {
@@ -110,7 +116,10 @@ extension CoreTelemetryService {
         vaultedURLs.append(baseRedacted)
         var piece = "\(prefix)\(baseIdx)\u{001F}"
         if ext.keepBaseTail { piece += baseTail }
-        piece += ext.middle
+        piece +=
+            ext.middle.contains("://")
+            ? Self.vaultNonFileURLsInto(ext.middle, prefix: prefix, vaultedURLs: &vaultedURLs)
+            : ext.middle
         if !ext.qfToken.isEmpty {
             let qfIdx = vaultedURLs.count
             vaultedURLs.append(ext.qfToken)
@@ -119,42 +128,75 @@ extension CoreTelemetryService {
         return piece + ext.tail
     }
 
+    private struct ContinuationContext {
+        let span: URLScanMatch
+        let rawURL: String
+        let baseTail: String
+        let webhookProbe: String?
+        let allowDoubleQuotes: Bool
+        let allowSingleQuotes: Bool
+        let pathEnd: Int
+    }
+
     static func extendURLContinuation(
-        _ nsText: NSString, span: URLScanMatch, rawURL: String, baseTail: String, failedContMax: inout Int
+        _ nsText: NSString, span: URLScanMatch, rawURL: String, baseTail: String, limits: inout ContinuationLimits
     ) -> URLContinuationResult? {
         let len = nsText.length
-        guard !span.hasQueryOrFragment && span.totalEnd >= failedContMax && span.totalEnd < len else { return nil }
+        guard !span.hasQueryOrFragment && span.totalEnd >= limits.failedContMax && span.totalEnd < len else { return nil }
         guard isURLContinuationStarter(nsText.character(at: span.totalEnd)) else { return nil }
-        let allowGroupQuotes = !(span.start > 0 && nsText.character(at: span.start - 1) == 0x22)
-        let pathEnd = scanURLContinuation(nsText, start: span.totalEnd, len: len, allowGroupQuotes: allowGroupQuotes)
-        if let qfResult = extendURLContinuationQuery(
-            nsText, span: span, rawURL: rawURL, baseTail: baseTail, pathEnd: pathEnd
-        ) {
-            return qfResult
-        }
-        if let secretResult = extendURLContinuationSecret(
-            nsText, span: span, rawURL: rawURL, baseTail: baseTail, pathEnd: pathEnd
-        ) {
-            return secretResult
-        }
-        if pathEnd > failedContMax { failedContMax = pathEnd }
+        let allowDoubleQuotes =
+            span.totalEnd >= limits.unclosedDoubleQuoteEnd && !(span.start > 0 && nsText.character(at: span.start - 1) == 0x22)
+        let allowSingleQuotes =
+            span.totalEnd >= limits.unclosedSingleQuoteEnd && !(span.start > 0 && nsText.character(at: span.start - 1) == 0x27)
+        let probeInput = rawURL + "x"
+        let probe = Self.redactURLPathSecrets(probeInput)
+        let webhookProbe = (probe != probeInput && probe.hasSuffix("[redacted]")) ? probe : nil
+        var scanState = ContinuationScanState(
+            allowDoubleQuotes: allowDoubleQuotes, allowSingleQuotes: allowSingleQuotes,
+            stopAtSchemes: webhookProbe == nil
+        )
+        let pathEnd = scanURLContinuation(nsText, start: span.totalEnd, state: &scanState)
+        let ctx = ContinuationContext(
+            span: span, rawURL: rawURL, baseTail: baseTail, webhookProbe: webhookProbe,
+            allowDoubleQuotes: allowDoubleQuotes, allowSingleQuotes: allowSingleQuotes, pathEnd: pathEnd
+        )
+        if let qfResult = extendURLContinuationQuery(nsText, ctx: ctx) { return qfResult }
+        if let secretResult = extendURLContinuationSecret(nsText, ctx: ctx) { return secretResult }
+        recordFailedContinuation(scanState, pathEnd: pathEnd, limits: &limits)
         return nil
     }
 
+    private static func recordFailedContinuation(
+        _ state: ContinuationScanState, pathEnd: Int, limits: inout ContinuationLimits
+    ) {
+        if state.quoteChar == 0x22 && pathEnd > limits.unclosedDoubleQuoteEnd {
+            limits.unclosedDoubleQuoteEnd = pathEnd
+        } else if state.quoteChar == 0x27 && pathEnd > limits.unclosedSingleQuoteEnd {
+            limits.unclosedSingleQuoteEnd = pathEnd
+        }
+        if !state.sawInnerScheme && pathEnd > limits.failedContMax { limits.failedContMax = pathEnd }
+    }
+
     private static func extendURLContinuationQuery(
-        _ nsText: NSString, span: URLScanMatch, rawURL: String, baseTail: String, pathEnd: Int
+        _ nsText: NSString, ctx: ContinuationContext
     ) -> URLContinuationResult? {
         let len = nsText.length
-        guard pathEnd > span.totalEnd && pathEnd < len else { return nil }
-        let nextCh = nsText.character(at: pathEnd)
+        guard ctx.pathEnd > ctx.span.totalEnd && ctx.pathEnd < len else { return nil }
+        let nextCh = nsText.character(at: ctx.pathEnd)
         guard nextCh == 0x3F || nextCh == 0x23 else { return nil }
-        let qfEnd = Self.scanQueryOrFragment(nsText, start: pathEnd, len: len)
-        let qf = nsText.substring(with: NSRange(location: pathEnd, length: qfEnd - pathEnd))
-        let (cleanQF, qfTail) = Self.trimQueryOrFragmentDelimiters(qf, nsText: nsText, matchStart: span.start)
+        let qfEnd = Self.scanQueryOrFragment(nsText, start: ctx.pathEnd, len: len)
+        let qf = nsText.substring(with: NSRange(location: ctx.pathEnd, length: qfEnd - ctx.pathEnd))
+        let (cleanQF, qfTail) = Self.trimQueryOrFragmentDelimiters(qf, nsText: nsText, matchStart: ctx.span.start)
         let qfToken = "\(cleanQF.first.map(String.init) ?? "?")[redacted]"
-        let baseRedacted = Self.redactURLPathSecrets(rawURL)
+        if let webhookProbe = ctx.webhookProbe {
+            return URLContinuationResult(
+                replaceBase: true, baseURL: "\(webhookProbe)\(qfToken)", keepBaseTail: false,
+                middle: "", qfToken: "", tail: qfTail, endPos: qfEnd
+            )
+        }
+        let baseRedacted = Self.redactURLPathSecrets(ctx.rawURL)
         let prefixRedacted = Self.redactURLPathSecrets(
-            nsText.substring(with: NSRange(location: span.start, length: pathEnd - span.start)))
+            nsText.substring(with: NSRange(location: ctx.span.start, length: ctx.pathEnd - ctx.span.start)))
         if prefixRedacted == baseRedacted || prefixRedacted == "\(baseRedacted)[redacted]" {
             return URLContinuationResult(
                 replaceBase: true, baseURL: "\(prefixRedacted)\(qfToken)", keepBaseTail: false,
@@ -162,9 +204,9 @@ extension CoreTelemetryService {
             )
         }
         let middle = continuationMiddle(
-            prefixRedacted, baseRedacted: baseRedacted, nsText: nsText, from: span.totalEnd, to: pathEnd
+            prefixRedacted, baseRedacted: baseRedacted, nsText: nsText, from: ctx.span.totalEnd, to: ctx.pathEnd
         )
-        let keepTail = !baseTail.isEmpty && baseRedacted.hasSuffix(baseTail)
+        let keepTail = !ctx.baseTail.isEmpty && baseRedacted.hasSuffix(ctx.baseTail)
         return URLContinuationResult(
             replaceBase: false, baseURL: "", keepBaseTail: keepTail,
             middle: middle, qfToken: qfToken, tail: qfTail, endPos: qfEnd
@@ -172,29 +214,35 @@ extension CoreTelemetryService {
     }
 
     private static func extendURLContinuationSecret(
-        _ nsText: NSString, span: URLScanMatch, rawURL: String, baseTail: String, pathEnd: Int
+        _ nsText: NSString, ctx: ContinuationContext
     ) -> URLContinuationResult? {
-        let end = trimWebhookContinuationEnd(nsText, urlStart: span.start, minEnd: span.totalEnd, scanEnd: pathEnd)
-        guard end > span.totalEnd else { return nil }
-        let baseRedacted = Self.redactURLPathSecrets(rawURL)
+        let end = trimWebhookContinuationEnd(nsText, ctx: ctx)
+        guard end > ctx.span.totalEnd else { return nil }
+        let extTail = nsText.substring(with: NSRange(location: end, length: ctx.pathEnd - end))
+        if let webhookProbe = ctx.webhookProbe {
+            return URLContinuationResult(
+                replaceBase: true, baseURL: webhookProbe, keepBaseTail: false,
+                middle: "", qfToken: "", tail: extTail, endPos: ctx.pathEnd
+            )
+        }
+        let baseRedacted = Self.redactURLPathSecrets(ctx.rawURL)
         let extRedacted = Self.redactURLPathSecrets(
-            nsText.substring(with: NSRange(location: span.start, length: end - span.start)))
-        let addedRaw = nsText.substring(with: NSRange(location: span.totalEnd, length: end - span.totalEnd))
+            nsText.substring(with: NSRange(location: ctx.span.start, length: end - ctx.span.start)))
+        let addedRaw = nsText.substring(with: NSRange(location: ctx.span.totalEnd, length: end - ctx.span.totalEnd))
         guard extRedacted != baseRedacted + addedRaw else { return nil }
-        let extTail = nsText.substring(with: NSRange(location: end, length: pathEnd - end))
         if extRedacted == baseRedacted || extRedacted == "\(baseRedacted)[redacted]" {
             return URLContinuationResult(
                 replaceBase: true, baseURL: extRedacted, keepBaseTail: false,
-                middle: "", qfToken: "", tail: extTail, endPos: pathEnd
+                middle: "", qfToken: "", tail: extTail, endPos: ctx.pathEnd
             )
         }
         let middle = continuationMiddle(
-            extRedacted, baseRedacted: baseRedacted, nsText: nsText, from: span.totalEnd, to: end
+            extRedacted, baseRedacted: baseRedacted, nsText: nsText, from: ctx.span.totalEnd, to: end
         )
-        let keepTail = !baseTail.isEmpty && baseRedacted.hasSuffix(baseTail)
+        let keepTail = !ctx.baseTail.isEmpty && baseRedacted.hasSuffix(ctx.baseTail)
         return URLContinuationResult(
             replaceBase: false, baseURL: "", keepBaseTail: keepTail,
-            middle: middle, qfToken: "", tail: extTail, endPos: pathEnd
+            middle: middle, qfToken: "", tail: extTail, endPos: ctx.pathEnd
         )
     }
 
@@ -216,9 +264,8 @@ extension CoreTelemetryService {
             || ch == 0x27
     }
 
-    private static func isURLContinuationStopChar(_ ch: unichar, allowQuote: Bool) -> Bool {
-        if ch == 0x22 { return !allowQuote }
-        return ch == 0x3C || ch == 0x3E || ch == 0x5C || ch == 0x3F || ch == 0x23 || ch == 0x0D || ch == 0x0A
+    private static func isURLContinuationStopChar(_ ch: unichar) -> Bool {
+        ch == 0x3C || ch == 0x3E || ch == 0x5C || ch == 0x3F || ch == 0x23 || ch == 0x0D || ch == 0x0A
     }
 
     private static func isURLScheme(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
@@ -231,53 +278,90 @@ extension CoreTelemetryService {
             && nsText.character(at: idx + 2) == 0x2F
     }
 
-    private static func scanURLContinuation(_ nsText: NSString, start: Int, len: Int, allowGroupQuotes: Bool) -> Int {
+    private struct ContinuationScanState {
+        let allowDoubleQuotes: Bool
+        let allowSingleQuotes: Bool
+        let stopAtSchemes: Bool
+        var groupStack: [unichar] = []
+        var quoteChar: unichar = 0
+        var sawInnerScheme = false
+    }
+
+    private static func scanURLContinuation(
+        _ nsText: NSString, start: Int, state: inout ContinuationScanState
+    ) -> Int {
+        let len = nsText.length
         var pos = start
-        var groupDepth = 0
         while pos < len {
-            let ch = nsText.character(at: pos)
-            if shouldBreakURLContinuation(
-                nsText, pos: pos, start: start, len: len, allowQuote: allowGroupQuotes && groupDepth > 0
-            ) {
-                break
-            }
-            updateURLContinuationGroupDepth(ch, depth: &groupDepth)
-            pos += 1
+            let next =
+                state.quoteChar != 0
+                ? stepQuotedContinuation(nsText, pos: pos, len: len, state: &state)
+                : stepUnquotedContinuation(nsText, pos: pos, start: start, state: &state)
+            if next < 0 { break }
+            pos = next
         }
         return pos
     }
 
-    private static func shouldBreakURLContinuation(
-        _ nsText: NSString, pos: Int, start: Int, len: Int, allowQuote: Bool
-    ) -> Bool {
-        if VaultLineTracker.isFileScheme(nsText, at: pos) || Self.isWindowsDriveAt(nsText, at: pos, len: len) {
-            return true
+    private static func stepQuotedContinuation(
+        _ nsText: NSString, pos: Int, len: Int, state: inout ContinuationScanState
+    ) -> Int {
+        let ch = nsText.character(at: pos)
+        if ch == 0x0D || ch == 0x0A { return -1 }
+        if ch == 0x3A && pos + 2 < len && nsText.character(at: pos + 1) == 0x2F && nsText.character(at: pos + 2) == 0x2F {
+            state.sawInnerScheme = true
         }
-        if pos > start && isURLContinuationSeparator(nsText.character(at: pos - 1))
+        if ch == 0x5C && pos + 1 < len {
+            let escaped = nsText.character(at: pos + 1)
+            if escaped != 0x0D && escaped != 0x0A { return pos + 2 }
+        }
+        if ch == state.quoteChar { state.quoteChar = 0 }
+        return pos + 1
+    }
+
+    private static func stepUnquotedContinuation(
+        _ nsText: NSString, pos: Int, start: Int, state: inout ContinuationScanState
+    ) -> Int {
+        let len = nsText.length
+        let isDrive =
+            (pos == 0 || !Self.isASCIIAlphaNum(nsText.character(at: pos - 1)))
+            && Self.isWindowsDriveAt(nsText, at: pos, len: len)
+        if VaultLineTracker.isFileScheme(nsText, at: pos) || isDrive { return -1 }
+        if state.stopAtSchemes && pos > start && isURLContinuationSeparator(nsText.character(at: pos - 1))
             && isURLScheme(nsText, at: pos, len: len)
         {
-            return true
+            return -1
         }
         let ch = nsText.character(at: pos)
-        return VaultLineTracker.isWhitespace(ch) || isURLContinuationStopChar(ch, allowQuote: allowQuote)
+        if VaultLineTracker.isWhitespace(ch) || isURLContinuationStopChar(ch) { return -1 }
+        if ch == 0x22 || ch == 0x27 {
+            let allowed = ch == 0x22 ? state.allowDoubleQuotes : state.allowSingleQuotes
+            if allowed && !state.groupStack.isEmpty {
+                state.quoteChar = ch
+                return pos + 1
+            }
+            return ch == 0x22 ? -1 : pos + 1
+        }
+        updateURLContinuationGroupStack(ch, stack: &state.groupStack)
+        return pos + 1
     }
 
-    private static func updateURLContinuationGroupDepth(_ ch: unichar, depth: inout Int) {
+    private static func updateURLContinuationGroupStack(_ ch: unichar, stack: inout [unichar]) {
         if ch == 0x28 || ch == 0x5B || ch == 0x7B {
-            depth += 1
-        } else if (ch == 0x29 || ch == 0x5D || ch == 0x7D) && depth > 0 {
-            depth -= 1
+            stack.append(ch)
+        } else if ch == 0x29 || ch == 0x5D || ch == 0x7D {
+            let expected: unichar = ch == 0x29 ? 0x28 : (ch == 0x5D ? 0x5B : 0x7B)
+            if stack.last == expected { stack.removeLast() }
         }
     }
 
-    private static func trimWebhookContinuationEnd(
-        _ nsText: NSString, urlStart: Int, minEnd: Int, scanEnd: Int
-    ) -> Int {
-        var excess = countExcessGroupClosers(nsText, from: urlStart, to: scanEnd)
-        let precededByQuote = urlStart > 0 && nsText.character(at: urlStart - 1) == 0x27
-        var end = scanEnd
-        while end > minEnd
-            && consumeTrailingContinuationCloser(nsText.character(at: end - 1), precededByQuote: precededByQuote, excess: &excess)
+    private static func trimWebhookContinuationEnd(_ nsText: NSString, ctx: ContinuationContext) -> Int {
+        var excess = countExcessGroupClosers(nsText, ctx: ctx)
+        let precededByQuote = ctx.span.start > 0 && nsText.character(at: ctx.span.start - 1) == 0x27
+        var end = ctx.pathEnd
+        while end > ctx.span.totalEnd
+            && consumeTrailingContinuationCloser(
+                nsText.character(at: end - 1), precededByQuote: precededByQuote, excess: &excess)
         {
             end -= 1
         }
@@ -294,21 +378,37 @@ extension CoreTelemetryService {
         return false
     }
 
-    private static func countExcessGroupClosers(_ nsText: NSString, from start: Int, to end: Int) -> (Int, Int, Int) {
-        var parens = 0
-        var brackets = 0
-        var braces = 0
-        for idx in start..<end {
-            switch nsText.character(at: idx) {
-            case 0x28: parens -= 1
-            case 0x29: parens += 1
-            case 0x5B: brackets -= 1
-            case 0x5D: brackets += 1
-            case 0x7B: braces -= 1
-            case 0x7D: braces += 1
-            default: break
+    private static func countExcessGroupClosers(_ nsText: NSString, ctx: ContinuationContext) -> (Int, Int, Int) {
+        var counts = (0, 0, 0)
+        var openGroups = 0
+        var quoteChar: unichar = 0
+        var idx = ctx.span.start
+        while idx < ctx.pathEnd {
+            let ch = nsText.character(at: idx)
+            if quoteChar != 0 {
+                if ch == 0x5C && idx + 1 < ctx.pathEnd { idx += 2; continue }
+                if ch == quoteChar { quoteChar = 0 }
+            } else if openGroups > 0
+                && ((ch == 0x22 && ctx.allowDoubleQuotes) || (ch == 0x27 && ctx.allowSingleQuotes))
+            {
+                quoteChar = ch
+            } else {
+                tallyGroupCloser(ch, counts: &counts, openGroups: &openGroups)
             }
+            idx += 1
         }
-        return (parens, brackets, braces)
+        return counts
+    }
+
+    private static func tallyGroupCloser(_ ch: unichar, counts: inout (Int, Int, Int), openGroups: inout Int) {
+        switch ch {
+        case 0x28: counts.0 -= 1; openGroups += 1
+        case 0x29: counts.0 += 1; if openGroups > 0 { openGroups -= 1 }
+        case 0x5B: counts.1 -= 1; openGroups += 1
+        case 0x5D: counts.1 += 1; if openGroups > 0 { openGroups -= 1 }
+        case 0x7B: counts.2 -= 1; openGroups += 1
+        case 0x7D: counts.2 += 1; if openGroups > 0 { openGroups -= 1 }
+        default: break
+        }
     }
 }

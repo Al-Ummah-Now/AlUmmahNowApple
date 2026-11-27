@@ -288,7 +288,7 @@ struct CoreTelemetryAuthSanitizerTests {
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
                 "https://api.telegram." + "org/bot123:opaqueSecret123,/Users/alice/Secret.mov")
-                == "https://api.telegram.org/bot123:[redacted][redacted-path]"
+                == "https://api.telegram.org/bot123:[redacted]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,https://other.com/x?token=opaqueSecret123")
@@ -346,6 +346,58 @@ struct CoreTelemetryAuthSanitizerTests {
             CoreTelemetryService.sanitizeLocalPaths("https://example.com/api{tag:\"value\"}?token=opaqueSecret123")
                 == "https://example.com/api{tag:\"value\"}?[redacted]"
         )
+    }
+
+    @Test("Handles quoted webhook groups, brace filenames, and linear nested parens")
+    func handlesQuotedWebhookGroupsBraceFilenamesAndLinearNestedParens() {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api{tag:\"value)\"}?token=opaqueSecret123")
+                == "https://example.com/api{tag:\"value)\"}?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken{tag:\"first opaqueSecret123\"}")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken{tag:'first opaqueSecret123'}")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api{tag:'value)'}?token=opaqueSecret123")
+                == "https://example.com/api{tag:'value)'}?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "https://example.com/api{url:\"see https://other.com/x?token=opaqueSecret123\"}?outer=value"
+            ) == "https://example.com/api{url:\"see https://other.com/x?[redacted]\"}?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "https://example.com/api{url:\"see https://other.com/x?token=opaqueSecret123\"}"
+            ) == "https://example.com/api{url:\"see https://other.com/x?[redacted]\"}"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "https://example.test/webhook/fakeToken{tag:\"a)opaqueSecret123\"}suffixSecret"
+            ) == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken{abc://opaqueSecret123}")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/users/{Secret.mov}?token=opaqueSecret123")
+                == "https://example.com/users/[redacted-path]}?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "https://example.com/api{url:\"https://other.com/x,public?token=opaqueSecret123\"}"
+            ) == "https://example.com/api{url:\"https://other.com/x,public?[redacted]\"}"
+        )
+        let nestedParens =
+            "https://example.com/a" + String(repeating: "(", count: 500) + String(repeating: "b/", count: 500)
+            + String(repeating: ")", count: 500)
+        #expect(CoreTelemetryService.sanitizeLocalPaths(nestedParens) == nestedParens)
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://api.telegram." + "org/bot123:%2FopaqueSecret123/sendMessage")
                 == "https://api.telegram.org/bot123:[redacted]/sendMessage"
