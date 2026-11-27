@@ -250,6 +250,20 @@ struct CoreTelemetryExternalConsentTests {
             ("'alice.txt'@example.com", "[redacted-path]"),
             ("alice@internal.pdf.example.org", "[redacted-email]"),
             ("alice.txt@example.zip.private", "[redacted-email]"),
+        ]
+        for (input, expected) in cases {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
+        }
+        let repeatedFilenameEmails = String(repeating: "alice.txt@example.org ", count: 5_000)
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(repeatedFilenameEmails)
+                == String(repeating: "[redacted-email] ", count: 5_000)
+        )
+    }
+
+    @Test("Scrubs structured, nested, folded, and standalone Authorization credentials")
+    func scrubsStructuredNestedFoldedAndStandaloneAuthCredentials() {
+        let cases: [(String, String)] = [
             ("Authorization: Basic YWxpY2U6c2VjcmV0", "Authorization: Basic [redacted]"),
             ("Proxy-Authorization: Basic YWxpY2U6c2VjcmV0", "Proxy-Authorization: Basic [redacted]"),
             ("Authorization: Digest username=\"alice\", response=\"deadbeef\"", "Authorization: Digest [redacted]"),
@@ -271,6 +285,14 @@ struct CoreTelemetryExternalConsentTests {
                 "{\"Authorization\":[\"Bearer testSecret\"],\"status\":401}",
                 "{\"Authorization\":[\"Bearer [redacted]\"],\"status\":401}"
             ),
+            (
+                "{\"Authorization\":[[\"firstValue\"],\"opaqueSecret123\"]}",
+                "{\"Authorization\":[[\"[redacted]\"],\"[redacted]\"]}"
+            ),
+            ("Authorization: [opaqueSecret123]", "Authorization: [[redacted]]"),
+            ("Authorization:\r\n\topaqueSecret123", "Authorization:\r\n\t[redacted]"),
+            ("Authorization: Digest username=\"alice\",\r\n response=\"deadbeef\"", "Authorization: Digest [redacted]"),
+            ("Authorization:\r\nNextHeader: safe", "Authorization:\r\nNextHeader: safe"),
             (
                 "{\"\\u0041uthorization\":\"opaqueSecret123\",\"status\":401}",
                 "{\"Authorization\":\"[redacted]\",\"status\":401}"
@@ -298,11 +320,6 @@ struct CoreTelemetryExternalConsentTests {
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
-        let repeatedFilenameEmails = String(repeating: "alice.txt@example.org ", count: 5_000)
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths(repeatedFilenameEmails)
-                == String(repeating: "[redacted-email] ", count: 5_000)
-        )
     }
 }
 
@@ -461,5 +478,33 @@ struct CoreTelemetryLifecycleTests {
 
         #expect(service.lastPurgeFailed)
         #expect(observedLock.withLock { notified })
+    }
+
+    @Test("addBreadcrumb category and reportCrash kind scrub PII before native persistence")
+    func breadcrumbCategoryAndCrashKindScrubPII() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aun-tel-cat-pii-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bufferPath = dir.appendingPathComponent("telemetry-buffer.json").path
+
+        let service = try CoreTelemetryService(
+            platform: "macos",
+            appVersion: "1.0.0",
+            osVersion: "macOS 15.0",
+            deviceClass: "desktop",
+            locale: "en",
+            videosAPIBaseURL: nil,
+            userAgent: "AlUmmahNowMac/1.0.0",
+            bufferPath: bufferPath,
+            initialEnabled: true
+        )
+        service.addBreadcrumb(category: "alice@example.com", message: "Opening /Users/alice/Private/video.mp4")
+        service.reportCrash(kind: "bob@example.com", message: "Failed to read /Users/alice/Secret.mov")
+        let bufText = try String(contentsOfFile: bufferPath, encoding: .utf8)
+        #expect(!bufText.contains("alice@example.com"))
+        #expect(!bufText.contains("bob@example.com"))
+        #expect(!bufText.contains("/Users/alice"))
+        #expect(bufText.contains("[redacted-email]"))
     }
 }

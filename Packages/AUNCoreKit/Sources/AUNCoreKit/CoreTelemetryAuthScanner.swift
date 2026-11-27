@@ -172,8 +172,7 @@ enum CoreTelemetryAuthScanner {
                 nsText, start: valStart + 1, allowNewlines: allowNewlines, result: &result, copied: &copied
             )
         }
-        var lineEnd = valStart
-        while lineEnd < len && !isNewline(nsText.character(at: lineEnd)) { lineEnd += 1 }
+        var lineEnd = scanPlainAuthValueEnd(nsText, from: valStart, len: len)
         if let redacted = redactAuthValueBody(nsText, start: valStart, end: lineEnd) {
             if result.isEmpty { result.reserveCapacity(len) }
             result += nsText.substring(with: NSRange(location: copied, length: valStart - copied))
@@ -183,22 +182,77 @@ enum CoreTelemetryAuthScanner {
         return lineEnd
     }
 
+    private static func scanPlainAuthValueEnd(_ nsText: NSString, from start: Int, len: Int) -> Int {
+        var end = start
+        while end < len {
+            let ch = nsText.character(at: end)
+            if isNewline(ch) {
+                let fold = advanceObsFold(nsText, at: end, len: len)
+                if fold > end {
+                    end = fold
+                    continue
+                }
+                break
+            }
+            end += 1
+        }
+        return end
+    }
+
     private static func redactAuthArrayValue(
         _ nsText: NSString, start: Int, allowNewlines: Bool, result: inout String, copied: inout Int
     ) -> Int {
         let len = nsText.length
+        var depth = 1
         var idx = start
-        while idx < len {
+        while idx < len && depth > 0 {
             let ch = nsText.character(at: idx)
-            if ch == 0x5D { return idx + 1 }
-            if !allowNewlines && isNewline(ch) { return idx }
-            if ch == 0x22 || ch == 0x27 {
-                idx = redactQuotedAuthString(nsText, quotePos: idx, quote: ch, result: &result, copied: &copied)
-            } else {
+            if ch == 0x5B {
+                depth += 1
                 idx += 1
+            } else if ch == 0x5D {
+                depth -= 1
+                idx += 1
+            } else if ch == 0x22 || ch == 0x27 {
+                idx = redactQuotedAuthString(nsText, quotePos: idx, quote: ch, result: &result, copied: &copied)
+            } else if isHorizSpace(ch) || ch == 0x2C {
+                idx += 1
+            } else if isNewline(ch) {
+                let next = nextAfterArrayNewline(nsText, at: idx, len: len, allowNewlines: allowNewlines)
+                if next < 0 { return idx }
+                idx = next
+            } else {
+                idx = redactUnquotedArrayElement(nsText, from: idx, len: len, result: &result, copied: &copied)
             }
         }
         return idx
+    }
+
+    private static func nextAfterArrayNewline(_ nsText: NSString, at pos: Int, len: Int, allowNewlines: Bool) -> Int {
+        if allowNewlines { return pos + 1 }
+        return advanceObsFold(nsText, at: pos, len: len)
+    }
+
+    private static func redactUnquotedArrayElement(
+        _ nsText: NSString, from start: Int, len: Int, result: inout String, copied: inout Int
+    ) -> Int {
+        var elemEnd = start
+        while elemEnd < len {
+            let ch = nsText.character(at: elemEnd)
+            if ch == 0x2C || ch == 0x5B || ch == 0x5D || isNewline(ch) { break }
+            elemEnd += 1
+        }
+        var trimEnd = elemEnd
+        while trimEnd > start && isHorizSpace(nsText.character(at: trimEnd - 1)) { trimEnd -= 1 }
+        let isNull = trimEnd - start == 4 && nsText.substring(with: NSRange(location: start, length: 4)) == "null"
+        if trimEnd > start && !isNull, let redacted = redactAuthValueBody(nsText, start: start, end: trimEnd) {
+            if result.isEmpty { result.reserveCapacity(len) }
+            result += nsText.substring(with: NSRange(location: copied, length: start - copied))
+            result += redacted
+            result += nsText.substring(with: NSRange(location: trimEnd, length: elemEnd - trimEnd))
+            copied = elemEnd
+        }
+        return elemEnd
     }
 
     private static func redactQuotedAuthString(
@@ -306,8 +360,25 @@ enum CoreTelemetryAuthScanner {
         var idx = pos
         while idx < len {
             let ch = nsText.character(at: idx)
-            if isHorizSpace(ch) || (allowNewlines && isNewline(ch)) { idx += 1 } else { break }
+            if isHorizSpace(ch) || (allowNewlines && isNewline(ch)) {
+                idx += 1
+            } else if !allowNewlines && isNewline(ch) {
+                let fold = advanceObsFold(nsText, at: idx, len: len)
+                if fold > idx { idx = fold } else { break }
+            } else {
+                break
+            }
         }
+        return idx
+    }
+
+    private static func advanceObsFold(_ nsText: NSString, at nlPos: Int, len: Int) -> Int {
+        let afterNl =
+            (nsText.character(at: nlPos) == 0x0D && nlPos + 1 < len && nsText.character(at: nlPos + 1) == 0x0A)
+            ? nlPos + 2 : nlPos + 1
+        guard afterNl < len && isHorizSpace(nsText.character(at: afterNl)) else { return -1 }
+        var idx = afterNl
+        while idx < len && isHorizSpace(nsText.character(at: idx)) { idx += 1 }
         return idx
     }
 

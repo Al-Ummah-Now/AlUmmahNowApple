@@ -154,15 +154,17 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             case .warning: .warning
             case .error: .error
             }
+        let safeCategory = Self.sanitizeLocalPaths(category)
         let safeMessage = Self.sanitizeLocalPaths(message)
         withActiveConsent(requiresFull: false) {
-            client.addBreadcrumb(category: category, message: safeMessage, level: mapped)
+            client.addBreadcrumb(category: safeCategory, message: safeMessage, level: mapped)
         }
     }
 
     public func reportCrash(kind: String, message: String, stack: String?, fromPreviousSession: Bool) {
         guard consent != .off else { return }
-        let safeKind = kind.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "UnhandledException" : kind
+        let trimmedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeKind = trimmedKind.isEmpty ? "UnhandledException" : Self.sanitizeLocalPaths(trimmedKind)
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeMessage = trimmed.isEmpty ? "Unhandled exception" : Self.sanitizeLocalPaths(trimmed)
         let report = TelemetryCrashReport(
