@@ -281,6 +281,9 @@ struct CoreTelemetryServiceTests {
             Failed to open "/ Secret/Acquisition.mov"
             Failed to open "/ SecretFile"
             / SecretFile.mov
+            / SecretFile
+            / SecretFile.abcdefghijkl
+            // SecretFile
             42:/ Secret/Acquisition.mov:77
             error 42://SecretHost/Acquisition.mov
             open(path\\\\unc\\Secret\\Acquisition.mov)
@@ -305,8 +308,12 @@ struct CoreTelemetryServiceTests {
         )
 
         let json = try String(contentsOfFile: bufferPath, encoding: .utf8)
-        for forbidden in ["alice", "smith", "lodie", "brien", "private", "acquisition", "project>.mov", "storage", "player.swift", "client).mov", "name.mov", "draft.mp4"] {
-            #expect(!json.localizedCaseInsensitiveContains(forbidden))
+        let forbidden = [
+            "alice", "smith", "lodie", "brien", "private", "secret", "abcdefghijkl",
+            "acquisition", "project>.mov", "storage", "player.swift", "client).mov", "name.mov", "draft.mp4"
+        ]
+        for token in forbidden {
+            #expect(!json.localizedCaseInsensitiveContains(token))
         }
         #expect(!json.contains(":99") && !json.contains(":66") && !json.contains(":55") && !json.contains("workspace"))
         #expect(json.contains("Player.open() + 42") && json.contains("App.run()") && json.contains("[redacted-path]"))

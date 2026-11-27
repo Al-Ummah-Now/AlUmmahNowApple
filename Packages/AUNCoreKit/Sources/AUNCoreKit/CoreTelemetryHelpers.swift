@@ -81,7 +81,7 @@ extension CoreTelemetryService {
             #"file://[^\r\n]+"#,
             #"(?:(?<![\p{L}\p{N}])[A-Za-z]:[\\/]|\\\\)[^\r\n]+"#,
             #"["']/[ \t]+[^\r\n]+"#,
-            #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|(?<![A-Za-z][A-Za-z0-9+.-]{0,20}:)//+(?=[^\s/])|/(?=[ \t]+(?:[^\r\n/]+/|[^\r\n]*\.[\p{L}\p{N}]{1,10}\b))|/(?=[^\s/]))[^\r\n]+"#,
+            #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|(?<![A-Za-z][A-Za-z0-9+.-]{0,31}:)//+(?=[ \t]*[^\s/])|/(?=[ \t]*[^\s/]))[^\r\n]+"#,
         ]
         return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
     }()
