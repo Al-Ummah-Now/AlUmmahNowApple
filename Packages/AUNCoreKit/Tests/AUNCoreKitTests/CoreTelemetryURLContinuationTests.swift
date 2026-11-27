@@ -386,10 +386,23 @@ struct CoreTelemetryURLContinuationTests {
             ("[\"\\u005C\\u005CServer\\u005CShare\",\"public\"]", "[\"[redacted-path]\",\"public\"]"),
             ("[\"hello\\nworld\",\"public\"]", "[\"hello\\nworld\",\"public\"]"),
             ("[\"path=secret\",\"public\"]", "[\"path=[redacted-path]\",\"public\"]"),
+            ("[\"path=alpha\",\"path=beta\"]", "[\"path=[redacted-path]\",\"path=[redacted-path]\"]"),
+            ("[\"hello\\nworld\"] relative\\secret", "[\"hello\\nworld\"] [redacted-path]"),
+            ("[\"hello\\nworld\",\"public\"] relative\\Secret", "[\"hello\\nworld\",\"public\"] [redacted-path]"),
+            ("[\"public\",\"report.pdf attached\"]", "[\"public\",\"[redacted-path] attached\"]"),
+            (
+                "{\"message\":\"see report.pdf now\",\"keep\":\"public\"}",
+                "{\"message\":\"[redacted-path] now\",\"keep\":\"public\"}"
+            ),
+            ("{\"status\":\"secret.mov pending\"}", "{\"status\":\"[redacted-path] pending\"}"),
             ("Failed reading /Users/alice/My \"Secret\" Folder/file.mov", "Failed reading [redacted-path]"),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
+        let manyPublic = "[\(Array(repeating: "\"public\"", count: 2000).joined(separator: ","))]"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(manyPublic) == manyPublic)
+        let manyNewlines = "[\(Array(repeating: "\"hello\\nworld\"", count: 2000).joined(separator: ","))]"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(manyNewlines) == manyNewlines)
     }
 }

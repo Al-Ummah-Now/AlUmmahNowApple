@@ -4,6 +4,7 @@ extension CoreTelemetryService {
     private struct QuotedPathSpan {
         let open: Int
         let close: Int
+        let hasVault: Bool
         let stopPos: Int
     }
 
@@ -34,7 +35,11 @@ extension CoreTelemetryService {
                 idx = span.stopPos + 1
                 continue
             }
-            redactQuotedNonVaultSegments(nsText, start: idx + 1, close: span.close, result: &result, copied: &copied)
+            if !span.hasVault {
+                redactPlainQuotedSpan(nsText, start: idx + 1, close: span.close, result: &result, copied: &copied)
+            } else {
+                redactQuotedNonVaultSegments(nsText, start: idx + 1, close: span.close, result: &result, copied: &copied)
+            }
             idx = span.close + 1
         }
         guard copied > 0 else { return text }
@@ -42,87 +47,133 @@ extension CoreTelemetryService {
         return result
     }
 
-    static func replaceOutsideBalancedDoubleQuotes(
-        in text: String, regex: NSRegularExpression, template: String
+    static func replacePreKeywordPathRules(
+        in text: String, rules: [(regex: NSRegularExpression, template: String)]
     ) -> String {
-        guard text.contains("\"") else {
-            let range = NSRange(text.startIndex..<text.endIndex, in: text)
-            return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: template)
+        var current = text
+        var masked: String?
+        var hasMask = false
+        for rule in rules {
+            if !current.contains("\"") {
+                let range = NSRange(current.startIndex..<current.endIndex, in: current)
+                current = rule.regex.stringByReplacingMatches(
+                    in: current, options: [], range: range, withTemplate: rule.template
+                )
+                continue
+            }
+            if !hasMask {
+                let nsCur = current as NSString
+                let spans = collectBalancedDoubleQuoteSpans(nsCur)
+                masked = spans.isEmpty ? nil : buildMaskedDoubleQuotes(nsCur, spans: spans)
+                hasMask = true
+            }
+            let hasPrefix = rule.template.hasPrefix("$1")
+            let next: String
+            if let mask = masked {
+                next = applyMaskedPathRegex(current, masked: mask, regex: rule.regex, hasPrefix: hasPrefix)
+            } else {
+                let range = NSRange(current.startIndex..<current.endIndex, in: current)
+                next = rule.regex.stringByReplacingMatches(
+                    in: current, options: [], range: range, withTemplate: rule.template
+                )
+            }
+            if next != current {
+                current = next
+                hasMask = false
+            }
         }
-        let nsText = text as NSString
-        let spans = collectBalancedDoubleQuoteSpans(nsText)
-        guard !spans.isEmpty else {
-            let range = NSRange(location: 0, length: nsText.length)
-            return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: template)
-        }
-        return applyRegexOutsideSpans(nsText, regex: regex, template: template, spans: spans)
+        return current
     }
 
     static func replaceKeywordAssignedPaths(in text: String, regex: NSRegularExpression) -> String {
         let nsText = text as NSString
-        let spans = text.contains("\"") ? collectBalancedDoubleQuoteSpans(nsText) : []
+        guard text.contains("\"") else {
+            let range = NSRange(location: 0, length: nsText.length)
+            return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "$1[redacted-path]")
+        }
+        var spans = collectBalancedDoubleQuoteSpans(nsText)
         if spans.isEmpty {
             let range = NSRange(location: 0, length: nsText.length)
             return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "$1[redacted-path]")
         }
-        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+        let masked = buildMaskedDoubleQuotes(nsText, spans: spans)
+        let afterUnquoted = applyMaskedPathRegex(text, masked: masked, regex: regex, hasPrefix: true)
+        let nsCur = afterUnquoted as NSString
+        if afterUnquoted != text {
+            guard afterUnquoted.contains("\"") else { return afterUnquoted }
+            spans = collectBalancedDoubleQuoteSpans(nsCur)
+        }
+        return replaceKeywordAssignedInSpans(nsCur, spans: spans, regex: regex)
+    }
+
+    private static func replaceKeywordAssignedInSpans(
+        _ nsCur: NSString, spans: [QuotedPathSpan], regex: NSRegularExpression
+    ) -> String {
+        var result = ""
+        var copied = 0
+        for span in spans {
+            let innerStart = span.open + 1
+            let innerLen = span.close - innerStart
+            guard innerLen > 0 && containsAssignDelimiter(nsCur, start: innerStart, end: span.close) else { continue }
+            let inner = nsCur.substring(with: NSRange(location: innerStart, length: innerLen))
+            let scrubbed = regex.stringByReplacingMatches(
+                in: inner, options: [], range: NSRange(location: 0, length: (inner as NSString).length),
+                withTemplate: "$1[redacted-path]"
+            )
+            guard scrubbed != inner else { continue }
+            if result.isEmpty { result.reserveCapacity(nsCur.length) }
+            result += nsCur.substring(with: NSRange(location: copied, length: innerStart - copied))
+            result += scrubbed
+            copied = span.close
+        }
+        guard copied > 0 else { return nsCur as String }
+        result += nsCur.substring(from: copied)
+        return result
+    }
+
+    private static func containsAssignDelimiter(_ nsText: NSString, start: Int, end: Int) -> Bool {
+        var idx = start
+        while idx < end {
+            let ch = nsText.character(at: idx)
+            if ch == 0x3A || ch == 0x3D { return true }
+            idx += 1
+        }
+        return false
+    }
+
+    private static func buildMaskedDoubleQuotes(_ nsText: NSString, spans: [QuotedPathSpan]) -> String {
+        let len = nsText.length
+        var units = [unichar](repeating: 0, count: len)
+        nsText.getCharacters(&units, range: NSRange(location: 0, length: len))
+        for span in spans {
+            var idx = span.open + 1
+            while idx < span.close {
+                if units[idx] != 0x1E && units[idx] != 0x1F { units[idx] = 0x61 }
+                idx += 1
+            }
+        }
+        return String(utf16CodeUnits: units, count: len)
+    }
+
+    private static func applyMaskedPathRegex(
+        _ text: String, masked: String, regex: NSRegularExpression, hasPrefix: Bool
+    ) -> String {
+        let nsText = text as NSString
+        let matches = regex.matches(in: masked, options: [], range: NSRange(location: 0, length: nsText.length))
         guard !matches.isEmpty else { return text }
         var result = ""
         result.reserveCapacity(text.count)
         var copied = 0
-        var spanIdx = 0
         for match in matches {
-            let pos = match.range.location
-            while spanIdx < spans.count && spans[spanIdx].close <= pos { spanIdx += 1 }
-            let end = match.range.location + match.range.length
-            let clampedEnd =
-                (spanIdx < spans.count && spans[spanIdx].open < pos && pos < spans[spanIdx].close
-                    && end > spans[spanIdx].close)
-                ? spans[spanIdx].close
-                : end
-            result += nsText.substring(with: NSRange(location: copied, length: pos - copied))
-            result += nsText.substring(with: match.range(at: 1))
-            result += "[redacted-path]"
-            copied = clampedEnd
-        }
-        result += nsText.substring(from: copied)
-        return result
-    }
-
-    private static func applyRegexOutsideSpans(
-        _ nsText: NSString, regex: NSRegularExpression, template: String, spans: [QuotedPathSpan]
-    ) -> String {
-        let matches = regex.matches(in: nsText as String, options: [], range: NSRange(location: 0, length: nsText.length))
-        guard !matches.isEmpty else { return nsText as String }
-        let hasPrefix = template.hasPrefix("$1")
-        var result = ""
-        result.reserveCapacity(nsText.length)
-        var copied = 0
-        var spanIdx = 0
-        for match in matches {
-            let checkPos = matchContentCheckPos(nsText, match: match, hasPrefix: hasPrefix)
-            while spanIdx < spans.count && spans[spanIdx].close <= checkPos { spanIdx += 1 }
-            if spanIdx < spans.count && spans[spanIdx].open < checkPos && checkPos < spans[spanIdx].close {
-                continue
-            }
-            result += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
+            let start = match.range.location
+            let end = start + match.range.length
+            result += nsText.substring(with: NSRange(location: copied, length: start - copied))
             if hasPrefix && match.numberOfRanges > 1 { result += nsText.substring(with: match.range(at: 1)) }
             result += "[redacted-path]"
-            copied = match.range.location + match.range.length
+            copied = end
         }
-        guard copied > 0 else { return nsText as String }
         result += nsText.substring(from: copied)
         return result
-    }
-
-    private static func matchContentCheckPos(_ nsText: NSString, match: NSTextCheckingResult, hasPrefix: Bool) -> Int {
-        if hasPrefix && match.numberOfRanges > 1 {
-            let g1 = match.range(at: 1)
-            return g1.location + g1.length
-        }
-        let loc = match.range.location
-        let ch = nsText.character(at: loc)
-        return (ch == 0x22 && loc + 1 < nsText.length) ? loc + 1 : loc
     }
 
     private static func collectBalancedDoubleQuoteSpans(_ nsText: NSString) -> [QuotedPathSpan] {
@@ -143,6 +194,19 @@ extension CoreTelemetryService {
             idx = span.close + 1
         }
         return spans
+    }
+
+    private static func redactPlainQuotedSpan(
+        _ nsText: NSString, start: Int, close: Int, result: inout String, copied: inout Int
+    ) {
+        guard start < close else { return }
+        var pathPos = findLocalPathStartInQuoted(nsText, start: start, end: close)
+        guard pathPos >= 0 else { return }
+        if pathPos > start && isOddBackslashesBefore(nsText, at: pathPos, minPos: start) { pathPos -= 1 }
+        if result.isEmpty { result.reserveCapacity(nsText.length) }
+        result += nsText.substring(with: NSRange(location: copied, length: pathPos - copied))
+        result += "[redacted-path]"
+        copied = close
     }
 
     private static func redactQuotedNonVaultSegments(
@@ -183,23 +247,25 @@ extension CoreTelemetryService {
     }
 
     private static func findDoubleQuotedPathEnd(_ nsText: NSString, open: Int, len: Int) -> QuotedPathSpan {
+        var hasVault = false
         var escaped = false
         var pos = open + 1
         while pos < len {
             let ch = nsText.character(at: pos)
             if ch == 0x0D || ch == 0x0A {
-                return QuotedPathSpan(open: open, close: -1, stopPos: pos)
+                return QuotedPathSpan(open: open, close: -1, hasVault: hasVault, stopPos: pos)
             }
+            if ch == 0x1E { hasVault = true }
             if ch == 0x1F {
                 escaped = false
             } else if ch == 0x22 && !escaped {
-                return QuotedPathSpan(open: open, close: pos, stopPos: pos)
+                return QuotedPathSpan(open: open, close: pos, hasVault: hasVault, stopPos: pos)
             } else {
                 escaped = ch == 0x5C && !escaped
             }
             pos += 1
         }
-        return QuotedPathSpan(open: open, close: -1, stopPos: len)
+        return QuotedPathSpan(open: open, close: -1, hasVault: hasVault, stopPos: len)
     }
 
     private static func decodeJsonCharAt(_ nsText: NSString, pos: Int, end: Int) -> DecodedJsonChar {

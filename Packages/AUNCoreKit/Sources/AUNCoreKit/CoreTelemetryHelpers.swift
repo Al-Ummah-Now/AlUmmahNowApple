@@ -86,11 +86,7 @@ extension CoreTelemetryService {
         for regex in Self.parenPathRegexes {
             scrubbed = Self.replaceUnquotedParenPaths(in: scrubbed, using: regex)
         }
-        for rule in Self.preKeywordPathRules {
-            scrubbed = Self.replaceOutsideBalancedDoubleQuotes(
-                in: scrubbed, regex: rule.regex, template: rule.template
-            )
-        }
+        scrubbed = Self.replacePreKeywordPathRules(in: scrubbed, rules: Self.preKeywordPathRules)
         scrubbed = Self.redactQuotedFilenames(in: scrubbed)
         if let kwQuote = Self.keywordQuotedPathRegex {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
@@ -426,7 +422,7 @@ extension CoreTelemetryService {
     )
 
     private static let bareFilenameRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"(^|[\r\n:=;\u001F])([ \t]*)(?=[^\r\n:=;\u001E\u001F \t])[^\r\n:=;\u001E\u001F]*\."#
+        pattern: #"(^|[\r\n:=;\u001F"])([ \t]*)(?=[^\r\n:=;\u001E\u001F" \t])[^\r\n:=;\u001E\u001F"]*\."#
             + #"(?!ts:\d+)(?:"# + bareFilenameExtensions + #")\b(?!\()"#,
         options: [.caseInsensitive]
     )
