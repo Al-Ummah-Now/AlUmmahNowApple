@@ -322,7 +322,8 @@ extension CoreTelemetryService {
             }
             let nsTail = finalTail as NSString
             quoteState = Self.advanceQuoteState(nsTail, from: 0, to: nsTail.length, quoteState: quoteState)
-            tracker.onVaultedURL(matchEnd: endPos)
+            let activeQuote: unichar = (quoteState & 2) != 0 ? 0x22 : ((quoteState & 1) != 0 ? 0x27 : 0)
+            tracker.onVaultedURL(matchEnd: endPos, activeQuote: activeQuote)
             copied = endPos
             quoteCursor = endPos
             searchFrom = endPos

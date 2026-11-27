@@ -90,10 +90,7 @@ extension CoreTelemetryService {
     private static func isURLStructuralEscape(_ ch: unichar) -> Bool {
         if ch <= 0x20 || (ch >= 0x7F && ch <= 0x9F) || (ch >= 0xD800 && ch <= 0xDFFF) { return false }
         if let scalar = UnicodeScalar(ch), CharacterSet.whitespacesAndNewlines.contains(scalar) { return false }
-        switch ch {
-        case 0x22, 0x5C, 0x3C, 0x3E, 0x27, 0x28, 0x29, 0x5B, 0x5D, 0x7B, 0x7D, 0x2C, 0x3B: return false
-        default: return true
-        }
+        return ch != 0x22 && ch != 0x5C && ch != 0x3C && ch != 0x3E
     }
 
     private static func decodeURLEscapesForVault(_ nsText: NSString, start: Int, end: Int) -> String {
@@ -109,10 +106,18 @@ extension CoreTelemetryService {
                     pos += 2
                     continue
                 }
-                if next == 0x75 && pos + 5 < end, let code = parseHex4(nsText, pos: pos + 2), isURLStructuralEscape(code) {
-                    units.append(code)
-                    pos += 6
-                    continue
+                if next == 0x75 && pos + 5 < end, let code = parseHex4(nsText, pos: pos + 2) {
+                    if code == 0x22 {
+                        units.append(0x5C)
+                        units.append(0x22)
+                        pos += 6
+                        continue
+                    }
+                    if isURLStructuralEscape(code) {
+                        units.append(code)
+                        pos += 6
+                        continue
+                    }
                 }
                 units.append(ch)
                 units.append(next)

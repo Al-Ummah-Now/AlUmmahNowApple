@@ -30,7 +30,10 @@ extension CoreTelemetryService {
         let wrappedInAngle = urlStart > 0 && nsText.character(at: urlStart - 1) == 0x3C
         let stopOnLess = !inDoubleQuote && !wrappedInAngle
         let stopOnGreater = !inDoubleQuote || wrappedInAngle
-        return (stopOnLess ? 1 : 0) | (stopOnGreater ? 2 : 0)
+        let allowInlineSpace =
+            inDoubleQuote && urlStart > 0 && nsText.character(at: urlStart - 1) == 0x22
+            && !VaultLineTracker.isPrecededByOddBackslashes(nsText, at: urlStart - 1, minPos: 0)
+        return (stopOnLess ? 1 : 0) | (stopOnGreater ? 2 : 0) | (allowInlineSpace ? 4 : 0)
     }
 
     static func scanURLAfterScheme(
@@ -186,7 +189,8 @@ extension CoreTelemetryService {
         var pos = start + 1
         while pos < len {
             let ch = nsText.character(at: pos)
-            if VaultLineTracker.isWhitespace(ch)
+            if ch == 0x0A || ch == 0x0D
+                || ((angleStopMask & 4) == 0 && VaultLineTracker.isWhitespace(ch))
                 || (ch == 0x3C && (angleStopMask & 1) != 0)
                 || (ch == 0x3E && (angleStopMask & 2) != 0)
             {
@@ -302,6 +306,17 @@ extension CoreTelemetryService.VaultLineTracker {
             && !isSchemeSlash(nsText, at: localStart - 1)
         {
             localStart -= 1
+        }
+        if localStart < atPos && localStart > minPos && isPrecededByOddBackslashes(nsText, at: localStart, minPos: minPos) {
+            let esc = nsText.character(at: localStart)
+            if esc == 0x6E || esc == 0x72 || esc == 0x74 || esc == 0x62 || esc == 0x66 || esc == 0x2F {
+                localStart += 1
+            } else if esc == 0x75 && localStart + 5 <= atPos,
+                let code = CoreTelemetryService.parseHex4(nsText, pos: localStart + 1)
+            {
+                let decodedStr = String(utf16CodeUnits: [code], count: 1) as NSString
+                localStart = isEmailLocalChar(decodedStr, at: 0, len: 1) ? localStart - 1 : localStart + 5
+            }
         }
         var trimmedStart = localStart
         while trimmedStart < atPos && isEmailLeadingWrapper(nsText.character(at: trimmedStart)) {

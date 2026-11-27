@@ -62,9 +62,10 @@ extension CoreTelemetryService {
             return isCurrentTokenPath(nsText)
         }
 
-        mutating func onVaultedURL(matchEnd: Int) {
+        mutating func onVaultedURL(matchEnd: Int, activeQuote: unichar = 0) {
             cursor = matchEnd
             resetLineState()
+            openQuote = activeQuote
         }
 
         private mutating func resetTokenState() {
@@ -166,7 +167,7 @@ extension CoreTelemetryService {
         }
 
         private func isLeadingEscapedQuote(_ nsText: NSString) -> Bool {
-            openQuote == 0x22 && !escapedBackslash && tokenStart == cursor && cursor + 1 < nsText.length
+            openQuote == 0x22 && !escapedBackslash && cursor + 1 < nsText.length
                 && nsText.character(at: cursor + 1) == 0x22
         }
 

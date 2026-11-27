@@ -508,4 +508,43 @@ extension CoreTelemetryURLContinuationTests {
         let expectedFileURIs = Array(repeating: "open [redacted-path]", count: 2000).joined(separator: "\n")
         #expect(CoreTelemetryService.sanitizeLocalPaths(manyFileURIs) == expectedFileURIs)
     }
+
+    @Test("Preserves vault quote state, inline spaces in quoted URL queries, and JSON escapes before emails")
+    func quotedURLSpacesEscapedQuotesAndEmails() {
+        let cases: [(String, String)] = [
+            (
+                "[\"https://example.test/api\\u0028v1\\u0029?token=opaqueSecret123\"]",
+                "[\"https://example.test/api(v1)?[redacted]\"]"
+            ),
+            (
+                "[\"https://example.com/api?token=first secondSecret\"]",
+                "[\"https://example.com/api?[redacted]\"]"
+            ),
+            (
+                "[\"https://example.com/api?token=first\u{00A0}secondSecret\"]",
+                "[\"https://example.com/api?[redacted]\"]"
+            ),
+            (
+                "[\"https://example.com/api#first secondSecret\"]",
+                "[\"https://example.com/api#[redacted]\"]"
+            ),
+            (
+                "[\"https:\\/\\/example.com\\/api?token=first secondSecret\"]",
+                "[\"https://example.com/api?[redacted]\"]"
+            ),
+            (
+                "[\"https://example.com/webhook/first\\u0022secondSecret\"]",
+                "[\"https://example.com/webhook/[redacted]\"]"
+            ),
+            ("[\"prefix\\nalice@example.com\"]", "[\"prefix\\n[redacted-email]\"]"),
+            ("[\"\\u0020alice@example.com ok\"]", "[\"\\u0020[redacted-email] ok\"]"),
+            (
+                "[\"https://a.test\",\"open /foo\",\"https://b.test\"]",
+                "[\"https://a.test\",\"open [redacted-path]\",\"https://b.test\"]"
+            ),
+        ]
+        for (input, expected) in cases {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
+        }
+    }
 }
