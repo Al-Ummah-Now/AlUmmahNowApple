@@ -231,16 +231,18 @@ struct CoreTelemetryServiceTests {
             bufferPath: bufferPath,
             initialEnabled: true
         )
+        let gate = TelemetryFlushSlotGate()
         service.flushOverrideForTesting = {
-            try await Task.sleep(nanoseconds: 50_000_000)
+            await gate.enter()
         }
         service.track("screen_view", properties: ["screen": "home"])
         service.persist()
         #expect(FileManager.default.fileExists(atPath: bufferPath))
 
         let flushTask = Task { await service.flush() }
-        try await Task.sleep(nanoseconds: 10_000_000)
+        await gate.waitForSlot(0)
         service.close()
+        gate.releaseSlot(0)
         await flushTask.value
 
         #expect(FileManager.default.fileExists(atPath: bufferPath))
@@ -488,6 +490,8 @@ struct CoreTelemetryExternalConsentTests {
             "https://[2001:db8::1]/v1/items",
             "https://example.com/a(b)/items",
             "open(https://example.com/a(b)/items)",
+            "https://example.com/a'b/items",
+            "https://foo!bar.example/api",
             "git+http2://example.com/repo",
             "profile://example.com/repo",
             "https://[::1]:8443/api",
@@ -497,6 +501,31 @@ struct CoreTelemetryExternalConsentTests {
         for item in preserved {
             #expect(CoreTelemetryService.sanitizeLocalPaths(item) == item)
         }
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,open(C://Secret/Acquisition.mov)")
+                == "https://example.com/api,open([redacted-path])"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("(https://example.com)(private/Secret.mov)")
+                == "(https://example.com)([redacted-path])"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com(/Users/alice/Secret.mov)")
+                == "https://example.com([redacted-path])"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("open(/Volumes/Secret/Acquisition.mov) Player.open() + 42")
+                == "open([redacted-path]) Player.open() + 42"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("open Secret.mov from https://example.com/api")
+                == "open [redacted-path] from https://example.com/api"
+        )
+        #expect(CoreTelemetryService.sanitizeLocalPaths("Secret Project.mov (missing)") == "[redacted-path] (missing)")
+        #expect(CoreTelemetryService.sanitizeLocalPaths("Secret.Final.mov") == "[redacted-path]")
+        #expect(CoreTelemetryService.sanitizeLocalPaths("Could not find file Secret.2026") == "Could not find file [redacted-path]")
+        #expect(CoreTelemetryService.sanitizeLocalPaths("https://[:::]/api") != "https://[:::]/api")
+        #expect(CoreTelemetryService.sanitizeLocalPaths("https://bad%zz/api") != "https://bad%zz/api")
     }
 
     @Test("Queued flush re-checks UserDefaults via live(defaults:) before entering native flush")

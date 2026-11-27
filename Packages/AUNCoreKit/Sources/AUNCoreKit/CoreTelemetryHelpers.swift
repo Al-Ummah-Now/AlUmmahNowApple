@@ -83,7 +83,16 @@ extension CoreTelemetryService {
             for match in matches {
                 let raw = nsText.substring(with: match.range)
                 if raw.lowercased().hasPrefix("file://") { continue }
-                let (url, tail) = Self.splitUnmatchedURLClosers(raw)
+                let ipv6Range = match.range(at: 1)
+                if ipv6Range.location != NSNotFound && !Self.isValidIPv6(nsText.substring(with: ipv6Range)) {
+                    continue
+                }
+                var url = raw
+                var tail = ""
+                if match.range.location > 0 && nsText.character(at: match.range.location - 1) == 0x27 && url.hasSuffix("'") {
+                    url.removeLast()
+                    tail = "'"
+                }
                 rebuilt += nsText.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
                 let idx = vaultedURLs.count
                 vaultedURLs.append(url)
@@ -105,31 +114,14 @@ extension CoreTelemetryService {
         return scrubbed
     }
 
-    private static func splitUnmatchedURLClosers(_ raw: String) -> (String, String) {
-        var openParens = 0, closeParens = 0, openBrackets = 0, closeBrackets = 0
-        for ch in raw {
-            if ch == "(" { openParens += 1 } else if ch == ")" { closeParens += 1 }
-            if ch == "[" { openBrackets += 1 } else if ch == "]" { closeBrackets += 1 }
-        }
-        var end = raw.endIndex
-        while end > raw.startIndex {
-            let prev = raw.index(before: end)
-            let last = raw[prev]
-            if last == ")" && closeParens > openParens {
-                closeParens -= 1
-                end = prev
-            } else if last == "]" && closeBrackets > openBrackets {
-                closeBrackets -= 1
-                end = prev
-            } else {
-                break
-            }
-        }
-        return (String(raw[..<end]), String(raw[end...]))
+    private static func isValidIPv6(_ host: String) -> Bool {
+        var addr = in6_addr()
+        return host.withCString { inet_pton(AF_INET6, $0, &addr) == 1 }
     }
 
     private static let urlVaultRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]+://(?!\S*\\)[^\s"'<>\\{}\r\n]+"#,
+        pattern: #"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]+://(?:\[([^\]\s"'<>\\{}\r\n]+)\]|(?:[A-Za-z0-9._~!$&'*+=-]|%[0-9A-Fa-f]{2})+)(?::\d+)?"# +
+            #"(?:[/?#](?:[^\s"<>\\{},;()\[\]\r\n]|\([^\s"<>\\{},;()\[\]/:\\]+\)|\[[^\s"<>\\{},;()\[\]/:\\]+\])*|(?=$|[\s"'<>\\{},;()\[\]]))"#,
         options: [.caseInsensitive]
     )
 
@@ -148,6 +140,8 @@ extension CoreTelemetryService {
     private static let pathRedactionRules: [(regex: NSRegularExpression, template: String)] = {
         let specs: [(String, String)] = [
             (#"(?<![A-Za-z0-9+.-])file://[^\r\n]+"#, "[redacted-path]"),
+            (#"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n]+(\))"#, "$1[redacted-path]$2"),
+            (#"(\()(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:\u001E\u001F]+/[^()\r\n]+(\))"#, "$1[redacted-path]$2"),
             (#"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n]+"#, "[redacted-path]"),
             (#"(^|[\s(\[{"'=,:;])[^\s\\/"'<>]+\\[^\r\n]+"#, "$1[redacted-path]"),
             (#"["']/[ \t]+[^\r\n]+"#, "[redacted-path]"),
@@ -156,9 +150,9 @@ extension CoreTelemetryService {
             (#""[^"\r\n/\\]*\.[A-Za-z0-9]{1,16}""#, "[redacted-path]"),
             (#"'(?:[^'\r\n/\\]|'(?=\p{L}))*\.[A-Za-z0-9]{1,16}'"#, "[redacted-path]"),
             (#"(\b(?:file|path|directory|folder|document)\s+)(['"])(?!\u001E)[^'"\r\n]+\2"#, "$1[redacted-path]"),
-            (#"(\b(?:"# + ioKeywordVerbs + #")\b(?:\s*[:=]\s*|\s+))(?!\u001E)(?=[^\r\n]*\.[A-Za-z][A-Za-z0-9]{0,15}\b(?!\s*\())[^\r\n]+"#, "$1[redacted-path]"),
-            (#"(\b(?:file|path|filename|filepath)\s*[:=]\s*)(?!\u001E)[^\r\n]+"#, "$1[redacted-path]"),
-            (#"(?<![\p{L}\p{N}._-])[\p{L}\p{N}_-]+\.(?:"# + bareFilenameExtensions + #")\b(?!\s*\()"#, "[redacted-path]"),
+            (#"(\b(?:"# + ioKeywordVerbs + #")\b(?:\s*[:=]\s*|\s+))(?!\u001E)[^\r\n\u001E\u001F]*\.[A-Za-z0-9]{1,16}\b(?!\(|:\d+)"#, "$1[redacted-path]"),
+            (#"(\b(?:file|path|filename|filepath)\s*[:=]\s*)(?!\u001E)[^\r\n\u001E\u001F]+"#, "$1[redacted-path]"),
+            (#"(^|[\r\n:=;\u001F])([ \t]*)[^\r\n:=;\u001E\u001F]*\.(?:"# + bareFilenameExtensions + #")\b(?!\(|:\d+)"#, "$1$2[redacted-path]"),
         ]
         return specs.compactMap { pattern, template in
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
