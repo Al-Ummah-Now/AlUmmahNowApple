@@ -255,7 +255,19 @@ struct CoreTelemetryAuthSanitizerTests {
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,/public?token=opaqueSecret123")
-                == "https://example.com/api,/public?[redacted]"
+                == "https://example.com/api,[redacted-path]?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,private/Secret.mov?token=opaqueSecret123")
+                == "https://example.com/api,[redacted-path]?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com(/Users/alice/Secret.mov)?token=opaqueSecret123")
+                == "https://example.com([redacted-path])?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,alice@example.com?token=opaqueSecret123")
+                == "https://example.com/api,[redacted-email]?[redacted]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.com/api)public?token=opaqueSecret123")
@@ -267,7 +279,16 @@ struct CoreTelemetryAuthSanitizerTests {
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,public/webhook/opaqueSecret123")
-                == "https://example.com/api,public/webhook/[redacted]"
+                == "https://example.com/api,[redacted-path]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com(/Users/alice/Secret.mov)/webhook/opaqueSecret123")
+                == "https://example.com([redacted-path])[redacted-path]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "https://api.telegram." + "org/bot123:opaqueSecret123,/Users/alice/Secret.mov")
+                == "https://api.telegram.org/bot123:[redacted][redacted-path]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,https://other.com/x?token=opaqueSecret123")

@@ -282,19 +282,22 @@ extension CoreTelemetryService {
             } else {
                 (url, tail) = Self.trimTrailingURLDelimiters(baseURL, nsText: nsText, matchStart: span.start)
             }
-            var redactedURL = Self.redactURLPathSecrets(url)
+            let redactedURL = Self.redactURLPathSecrets(url)
             var endPos = span.totalEnd
-            var finalTail = tail
-            if let extended = Self.extendURLContinuation(
-                nsText, span: span, rawURL: baseURL, failedContMax: &failedContMax
-            ) {
-                (redactedURL, endPos, finalTail) = extended
-            }
             rebuilt += nsText.substring(with: NSRange(location: copied, length: span.start - copied))
-            let idx = vaultedURLs.count
-            vaultedURLs.append(redactedURL)
+            if let ext = Self.extendURLContinuation(
+                nsText, span: span, rawURL: baseURL, baseTail: tail, failedContMax: &failedContMax
+            ) {
+                endPos = ext.endPos
+                rebuilt += Self.formatURLContinuation(
+                    ext, prefix: prefix, baseRedacted: redactedURL, baseTail: tail, vaultedURLs: &vaultedURLs
+                )
+            } else {
+                let idx = vaultedURLs.count
+                vaultedURLs.append(redactedURL)
+                rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
+            }
             tracker.onVaultedURL(matchEnd: endPos)
-            rebuilt += "\(prefix)\(idx)\u{001F}\(finalTail)"
             copied = endPos
             searchFrom = endPos
         }

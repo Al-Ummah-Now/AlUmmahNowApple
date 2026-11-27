@@ -88,17 +88,52 @@ extension CoreTelemetryService {
         return nil
     }
 
+    struct URLContinuationResult {
+        let replaceBase: Bool
+        let baseURL: String
+        let keepBaseTail: Bool
+        let middle: String
+        let qfToken: String
+        let tail: String
+        let endPos: Int
+    }
+
+    static func formatURLContinuation(
+        _ ext: URLContinuationResult, prefix: String, baseRedacted: String, baseTail: String, vaultedURLs: inout [String]
+    ) -> String {
+        if ext.replaceBase {
+            let idx = vaultedURLs.count
+            vaultedURLs.append(ext.baseURL)
+            return "\(prefix)\(idx)\u{001F}\(ext.tail)"
+        }
+        let baseIdx = vaultedURLs.count
+        vaultedURLs.append(baseRedacted)
+        var piece = "\(prefix)\(baseIdx)\u{001F}"
+        if ext.keepBaseTail { piece += baseTail }
+        piece += ext.middle
+        if !ext.qfToken.isEmpty {
+            let qfIdx = vaultedURLs.count
+            vaultedURLs.append(ext.qfToken)
+            piece += "\(prefix)\(qfIdx)\u{001F}"
+        }
+        return piece + ext.tail
+    }
+
     static func extendURLContinuation(
-        _ nsText: NSString, span: URLScanMatch, rawURL: String, failedContMax: inout Int
-    ) -> (String, Int, String)? {
+        _ nsText: NSString, span: URLScanMatch, rawURL: String, baseTail: String, failedContMax: inout Int
+    ) -> URLContinuationResult? {
         let len = nsText.length
         guard !span.hasQueryOrFragment && span.totalEnd >= failedContMax && span.totalEnd < len else { return nil }
         guard isURLContinuationStarter(nsText.character(at: span.totalEnd)) else { return nil }
         let pathEnd = scanURLContinuation(nsText, start: span.totalEnd, len: len)
-        if let qfResult = extendURLContinuationQuery(nsText, span: span, pathEnd: pathEnd, len: len) {
+        if let qfResult = extendURLContinuationQuery(
+            nsText, span: span, rawURL: rawURL, baseTail: baseTail, pathEnd: pathEnd
+        ) {
             return qfResult
         }
-        if let secretResult = extendURLContinuationSecret(nsText, span: span, rawURL: rawURL, pathEnd: pathEnd) {
+        if let secretResult = extendURLContinuationSecret(
+            nsText, span: span, rawURL: rawURL, baseTail: baseTail, pathEnd: pathEnd
+        ) {
             return secretResult
         }
         if pathEnd > failedContMax { failedContMax = pathEnd }
@@ -106,32 +141,69 @@ extension CoreTelemetryService {
     }
 
     private static func extendURLContinuationQuery(
-        _ nsText: NSString, span: URLScanMatch, pathEnd: Int, len: Int
-    ) -> (String, Int, String)? {
+        _ nsText: NSString, span: URLScanMatch, rawURL: String, baseTail: String, pathEnd: Int
+    ) -> URLContinuationResult? {
+        let len = nsText.length
         guard pathEnd > span.totalEnd && pathEnd < len else { return nil }
         let nextCh = nsText.character(at: pathEnd)
         guard nextCh == 0x3F || nextCh == 0x23 else { return nil }
         let qfEnd = Self.scanQueryOrFragment(nsText, start: pathEnd, len: len)
         let qf = nsText.substring(with: NSRange(location: pathEnd, length: qfEnd - pathEnd))
-        let (cleanQF, trimmedTail) = Self.trimQueryOrFragmentDelimiters(qf, nsText: nsText, matchStart: span.start)
-        let prefix = Self.redactURLPathSecrets(
+        let (cleanQF, qfTail) = Self.trimQueryOrFragmentDelimiters(qf, nsText: nsText, matchStart: span.start)
+        let qfToken = "\(cleanQF.first.map(String.init) ?? "?")[redacted]"
+        let baseRedacted = Self.redactURLPathSecrets(rawURL)
+        let prefixRedacted = Self.redactURLPathSecrets(
             nsText.substring(with: NSRange(location: span.start, length: pathEnd - span.start)))
-        let marker = cleanQF.first.map(String.init) ?? "?"
-        return ("\(prefix)\(marker)[redacted]", qfEnd, trimmedTail)
+        if prefixRedacted == baseRedacted || prefixRedacted == "\(baseRedacted)[redacted]" {
+            return URLContinuationResult(
+                replaceBase: true, baseURL: "\(prefixRedacted)\(qfToken)", keepBaseTail: false,
+                middle: "", qfToken: "", tail: qfTail, endPos: qfEnd
+            )
+        }
+        let middle = continuationMiddle(
+            prefixRedacted, baseRedacted: baseRedacted, nsText: nsText, from: span.totalEnd, to: pathEnd
+        )
+        let keepTail = !baseTail.isEmpty && baseRedacted.hasSuffix(baseTail)
+        return URLContinuationResult(
+            replaceBase: false, baseURL: "", keepBaseTail: keepTail,
+            middle: middle, qfToken: qfToken, tail: qfTail, endPos: qfEnd
+        )
     }
 
     private static func extendURLContinuationSecret(
-        _ nsText: NSString, span: URLScanMatch, rawURL: String, pathEnd: Int
-    ) -> (String, Int, String)? {
+        _ nsText: NSString, span: URLScanMatch, rawURL: String, baseTail: String, pathEnd: Int
+    ) -> URLContinuationResult? {
         let end = trimWebhookContinuationEnd(nsText, urlStart: span.start, minEnd: span.totalEnd, scanEnd: pathEnd)
         guard end > span.totalEnd else { return nil }
         let baseRedacted = Self.redactURLPathSecrets(rawURL)
-        let extCandidate = nsText.substring(with: NSRange(location: span.start, length: end - span.start))
-        let extRedacted = Self.redactURLPathSecrets(extCandidate)
+        let extRedacted = Self.redactURLPathSecrets(
+            nsText.substring(with: NSRange(location: span.start, length: end - span.start)))
         let addedRaw = nsText.substring(with: NSRange(location: span.totalEnd, length: end - span.totalEnd))
         guard extRedacted != baseRedacted + addedRaw else { return nil }
-        let tail = nsText.substring(with: NSRange(location: end, length: pathEnd - end))
-        return (extRedacted, pathEnd, tail)
+        let extTail = nsText.substring(with: NSRange(location: end, length: pathEnd - end))
+        if extRedacted == baseRedacted || extRedacted == "\(baseRedacted)[redacted]" {
+            return URLContinuationResult(
+                replaceBase: true, baseURL: extRedacted, keepBaseTail: false,
+                middle: "", qfToken: "", tail: extTail, endPos: pathEnd
+            )
+        }
+        let middle = continuationMiddle(
+            extRedacted, baseRedacted: baseRedacted, nsText: nsText, from: span.totalEnd, to: end
+        )
+        let keepTail = !baseTail.isEmpty && baseRedacted.hasSuffix(baseTail)
+        return URLContinuationResult(
+            replaceBase: false, baseURL: "", keepBaseTail: keepTail,
+            middle: middle, qfToken: "", tail: extTail, endPos: pathEnd
+        )
+    }
+
+    private static func continuationMiddle(
+        _ redacted: String, baseRedacted: String, nsText: NSString, from start: Int, to end: Int
+    ) -> String {
+        if redacted.hasPrefix(baseRedacted) {
+            return String(redacted.dropFirst(baseRedacted.count))
+        }
+        return nsText.substring(with: NSRange(location: start, length: end - start))
     }
 
     private static func isURLContinuationStarter(_ ch: unichar) -> Bool {
