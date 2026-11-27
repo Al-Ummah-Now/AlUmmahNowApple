@@ -101,20 +101,22 @@ extension CoreTelemetryService {
     }
 
     static func probeWebhookCommaExtension(
-        span: URLScanMatch, tail: String, url: String, nsText: NSString
+        span: URLScanMatch, tail: String, rawURL: String, nsText: NSString
     ) -> String? {
-        guard !span.hasQueryOrFragment && tail.isEmpty && span.totalEnd < nsText.length else { return nil }
+        guard !span.hasQueryOrFragment && (tail.isEmpty || tail == ";") && span.totalEnd < nsText.length else {
+            return nil
+        }
         let nextCh = nsText.character(at: span.totalEnd)
         let canContinue: Bool
         if nextCh == 0x2C {
             canContinue = !Self.shouldStopAtURLComma(nsText, at: span.totalEnd, len: nsText.length)
         } else if nextCh == 0x28 || nextCh == 0x5B {
-            canContinue = !Self.startsEmbeddedPathInsideGroup(nsText, nextPos: span.totalEnd + 1, len: nsText.length)
+            canContinue = !Self.startsEmbeddedFilesystemPath(nsText, nextPos: span.totalEnd + 1, len: nsText.length)
         } else {
             return nil
         }
         guard canContinue, let scalar = UnicodeScalar(nextCh) else { return nil }
-        let withNext = url + String(scalar)
+        let withNext = rawURL + String(scalar)
         let probe = Self.redactURLPathSecrets(withNext)
         return (probe != withNext && probe.hasSuffix("[redacted]")) ? probe : nil
     }

@@ -285,7 +285,7 @@ extension CoreTelemetryService {
             var endPos = span.totalEnd
             var finalTail = tail
             if let probe = Self.probeWebhookCommaExtension(
-                span: span, tail: tail, url: url, nsText: nsText
+                span: span, tail: tail, rawURL: baseURL, nsText: nsText
             ) {
                 (redactedURL, endPos, finalTail) = Self.extendRedactedWebhookComma(
                     nsText, redactedURL: probe, urlStart: span.start, totalEnd: endPos, len: totalLen

@@ -179,6 +179,30 @@ struct CoreTelemetryAuthSanitizerTests {
             CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken,(tag:opaqueSecret123")
                 == "https://example.test/webhook/[redacted]"
         )
+    }
+
+    @Test("Scrubs comma-query, semicolon-comma, and leading-colon grouped webhook URLs")
+    func scrubsWebhookCommaQuerySemicolonAndColonGroups() {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken,?token=opaqueSecret123")
+                == "https://example.test/webhook/[redacted]?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,?token=opaqueSecret123")
+                == "https://example.com/api,?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken;,(tag:opaqueSecret123)")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken(:opaqueSecret123)")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken,;opaqueSecret123")
+                == "https://example.test/webhook/[redacted]"
+        )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.test/%77ebhook/fakeToken")
                 == "https://example.test/%77ebhook/[redacted]"
