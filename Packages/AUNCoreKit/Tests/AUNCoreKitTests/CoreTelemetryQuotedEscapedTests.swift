@@ -107,6 +107,33 @@ struct CoreTelemetryQuotedEscapedTests {
                 "{\"m\":\"Bearer secret\\nX-Public: ok\"}",
                 "{\"m\":\"Bearer [redacted]\\nX-Public: ok\"}"
             ),
+            ("{\"Cookie \":\"session=opaqueSecret123\"}", "{\"Cookie \":\"[redacted]\"}"),
+            ("[[\"Cookie\",\"session=opaqueSecret123\"]]", "[[\"Cookie\",\"[redacted]\"]]"),
+            ("[[\"Authorization\",\"opaqueSecret123\"]]", "[[\"Authorization\",\"[redacted]\"]]"),
+            ("[\"Authorization\",\"Cookie\",\"Accept\"]", "[\"Authorization\",\"Cookie\",\"Accept\"]"),
+            ("{\\\"Authorization\\\":\\\"opaqueSecret123\\\"}", "{\\\"Authorization\\\":\\\"[redacted]\\\"}"),
+            ("{\\\"Cookie\\\":\\\"opaqueSecret123\\\"}", "{\\\"Cookie\\\":\\\"[redacted]\\\"}"),
+            (
+                "{\"m\":\"auth = {\\\"a\\\":1,\\\"Cookie\\\":\\\"opaqueSecret123\\\"}; next\",\"next\":1}",
+                "{\"m\":\"auth = {\\\"a\\\":1,\\\"Cookie\\\":\\\"[redacted]\\\"}; next\",\"next\":1}"
+            ),
+            (
+                "{\"m\":\"Bearer \\\"opaqueSecret123\\\"tail\",\"next\":1}",
+                "{\"m\":\"Bearer \\\"[redacted]\\\"tail\",\"next\":1}"
+            ),
+            ("{\"a\":\"Bearer \",\"b\":\"safe\"}", "{\"a\":\"Bearer \",\"b\":\"safe\"}"),
+            (
+                "{\"m\":\"literal=\\\"file:///tmp/private.mov\\\"tail\",\"next\":1}",
+                "{\"m\":\"literal=\\\"[redacted-path]\\\"tail\",\"next\":1}"
+            ),
+            ("{\"Cookie\\t\":\"opaqueSecret123\"}", "{\"Cookie\":\"[redacted]\"}"),
+            ("[[\"Cookie\\t\",\"opaqueSecret123\"]]", "[[\"Cookie\",\"[redacted]\"]]"),
+            ("{\\\"Authorization\\\":[123456789]}", "{\\\"Authorization\\\":[\\\"[redacted]\\\"]}"),
+            ("{\\\"Authorization\\\":123456789,\\\"next\\\":1}", "{\\\"Authorization\\\":\\\"[redacted]\\\",\\\"next\\\":1}"),
+            (
+                "{\\\"Authorization\\\":{\\\"token\\\":\\\"secret\\\"},\\\"next\\\":1}",
+                "{\\\"Authorization\\\":\\\"[redacted]\\\",\\\"next\\\":1}"
+            ),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)

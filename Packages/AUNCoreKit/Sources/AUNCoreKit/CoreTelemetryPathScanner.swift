@@ -451,13 +451,12 @@ extension CoreTelemetryService {
     /// file:// URIs fail closed to the next vaulted URL or line break so unescaped apostrophes
     /// inside filenames (e.g. "O' Connor") can never leak suffixes.
     private static func fileURISpanEnd(
-        _ nsText: NSString, after schemeEnd: Int, isDoubleQuoted: Bool, vaultPrefix: NSString
+        _ nsText: NSString, after schemeEnd: Int, isDoubleQuoted: Bool, limit: Int, vaultPrefix: NSString
     ) -> (rawEnd: Int, trimmedEnd: Int) {
-        let totalLength = nsText.length
         var rawEnd = schemeEnd
         var stoppedAtVault = false
         var escapedBackslash = false
-        while rawEnd < totalLength {
+        while rawEnd < limit {
             let ch = nsText.character(at: rawEnd)
             let atVault = ch == 0x1E && matchesPrefix(nsText, at: rawEnd, prefix: vaultPrefix)
             if ch == 0x0A || ch == 0x0D || atVault {
@@ -553,18 +552,11 @@ extension CoreTelemetryService {
                     checkedQuotes = true
                     if text.contains("\"") { quoteSpans = collectBalancedDoubleQuoteSpans(nsText) }
                 }
-                if let spans = quoteSpans {
-                    while spanIdx < spans.count && spans[spanIdx].close <= pos { spanIdx += 1 }
-                }
-                let inBalancedQuote =
-                    if let spans = quoteSpans, spanIdx < spans.count {
-                        spans[spanIdx].open < pos && pos < spans[spanIdx].close
-                    } else {
-                        false
-                    }
-                let isDoubleQuoted = inBalancedQuote || (pos > 0 && nsText.character(at: pos - 1) == 0x22)
+                let (isDoubleQuoted, scanLimit) = CoreTelemetryQuotedPathHelpers.resolveFileURIQuoteBounds(
+                    nsText, pos: pos, spans: quoteSpans, spanIdx: &spanIdx
+                )
                 let (rawEnd, trimmedEnd) = fileURISpanEnd(
-                    nsText, after: pos + 7, isDoubleQuoted: isDoubleQuoted, vaultPrefix: nsPrefix
+                    nsText, after: pos + 7, isDoubleQuoted: isDoubleQuoted, limit: scanLimit, vaultPrefix: nsPrefix
                 )
                 if result.isEmpty { result.reserveCapacity(text.count) }
                 result += nsText.substring(with: NSRange(location: copyStart, length: pos - copyStart))

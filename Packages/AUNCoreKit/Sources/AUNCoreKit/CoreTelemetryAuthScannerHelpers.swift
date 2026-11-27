@@ -203,7 +203,9 @@ extension CoreTelemetryAuthScanner {
         let len = nsText.length
         var idx = start
         while idx < len && isHorizSpace(nsText.character(at: idx)) { idx += 1 }
-        return idx >= len || isNewline(nsText.character(at: idx))
+        guard idx < len else { return true }
+        let ch = nsText.character(at: idx)
+        return isNewline(ch) || ch == 0x3B || ch == 0x29
     }
 
     private static func findParentJsonContainerOpen(
@@ -378,7 +380,7 @@ extension CoreTelemetryAuthScanner {
 
     static func isJsonMemberContinuationDelimiter(_ nsText: NSString, at pos: Int) -> Bool {
         let ch = nsText.character(at: pos)
-        if ch == 0x7D {
+        if ch == 0x7D || ch == 0x5D {
             guard pos + 1 < nsText.length else { return true }
             let after = nsText.character(at: pos + 1)
             return isHorizSpace(after) || isNewline(after) || isJsonDelimiter(after) || after == 0x29 || after == 0x3B

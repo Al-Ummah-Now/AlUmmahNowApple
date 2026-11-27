@@ -1,6 +1,24 @@
 import Foundation
 
 enum CoreTelemetryQuotedPathHelpers {
+    static func resolveFileURIQuoteBounds(
+        _ nsText: NSString,
+        pos: Int,
+        spans: [CoreTelemetryService.QuotedPathSpan]?,
+        spanIdx: inout Int
+    ) -> (isDoubleQuoted: Bool, limit: Int) {
+        if let spans {
+            while spanIdx < spans.count && spans[spanIdx].close <= pos { spanIdx += 1 }
+            if spanIdx < spans.count && spans[spanIdx].open < pos && pos < spans[spanIdx].close {
+                let innerClose = findInnerEscapedQuoteClose(
+                    nsText, pathPos: pos, minPos: spans[spanIdx].open + 1, segEnd: spans[spanIdx].close
+                )
+                return (true, innerClose >= 0 ? innerClose : nsText.length)
+            }
+        }
+        return (pos > 0 && nsText.character(at: pos - 1) == 0x22, nsText.length)
+    }
+
     static func findInnerEscapedQuoteClose(
         _ nsText: NSString,
         pathPos: Int,
