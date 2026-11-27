@@ -26,16 +26,6 @@ extension CoreTelemetryService {
         return start
     }
 
-    static func computeQueryAngleStopMask(_ nsText: NSString, urlStart: Int, inDoubleQuote: Bool) -> Int {
-        let wrappedInAngle = urlStart > 0 && nsText.character(at: urlStart - 1) == 0x3C
-        let stopOnLess = !inDoubleQuote && !wrappedInAngle
-        let stopOnGreater = !inDoubleQuote || wrappedInAngle
-        let allowInlineSpace =
-            inDoubleQuote && urlStart > 0 && nsText.character(at: urlStart - 1) == 0x22
-            && !VaultLineTracker.isPrecededByOddBackslashes(nsText, at: urlStart - 1, minPos: 0)
-        return (stopOnLess ? 1 : 0) | (stopOnGreater ? 2 : 0) | (allowInlineSpace ? 4 : 0)
-    }
-
     static func scanURLAfterScheme(
         _ nsText: NSString, start: Int, sep: Int, angleStopMask: Int = 3
     ) -> URLScanMatch? {
@@ -302,21 +292,31 @@ extension CoreTelemetryService.VaultLineTracker {
             return findQuotedEmailLocalStart(nsText, at: atPos, minPos: minPos)
         }
         var localStart = atPos
-        while localStart > minPos && isEmailLocalChar(nsText, at: localStart - 1, len: len)
-            && !isSchemeSlash(nsText, at: localStart - 1)
-        {
-            localStart -= 1
-        }
-        if localStart < atPos && localStart > minPos && isPrecededByOddBackslashes(nsText, at: localStart, minPos: minPos) {
-            let esc = nsText.character(at: localStart)
-            if esc == 0x6E || esc == 0x72 || esc == 0x74 || esc == 0x62 || esc == 0x66 || esc == 0x2F {
-                localStart += 1
-            } else if esc == 0x75 && localStart + 5 <= atPos,
-                let code = CoreTelemetryService.parseHex4(nsText, pos: localStart + 1)
+        while true {
+            while localStart > minPos && isEmailLocalChar(nsText, at: localStart - 1, len: len)
+                && !isSchemeSlash(nsText, at: localStart - 1)
             {
-                let decodedStr = String(utf16CodeUnits: [code], count: 1) as NSString
-                localStart = isEmailLocalChar(decodedStr, at: 0, len: 1) ? localStart - 1 : localStart + 5
+                localStart -= 1
             }
+            if localStart < atPos && localStart > minPos && isPrecededByOddBackslashes(nsText, at: localStart, minPos: minPos) {
+                let esc = nsText.character(at: localStart)
+                if esc == 0x6E || esc == 0x72 || esc == 0x74 || esc == 0x62 || esc == 0x66 || esc == 0x2F {
+                    localStart += 1
+                    break
+                }
+                if esc == 0x75 && localStart + 5 <= atPos,
+                    let code = CoreTelemetryService.parseHex4(nsText, pos: localStart + 1)
+                {
+                    let decodedStr = String(utf16CodeUnits: [code], count: 1) as NSString
+                    if isEmailLocalChar(decodedStr, at: 0, len: 1) {
+                        localStart -= 1
+                        continue
+                    }
+                    localStart += 5
+                    break
+                }
+            }
+            break
         }
         var trimmedStart = localStart
         while trimmedStart < atPos && isEmailLeadingWrapper(nsText.character(at: trimmedStart)) {

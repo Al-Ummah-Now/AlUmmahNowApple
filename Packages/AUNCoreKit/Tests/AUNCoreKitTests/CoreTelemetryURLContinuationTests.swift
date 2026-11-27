@@ -542,6 +542,29 @@ extension CoreTelemetryURLContinuationTests {
                 "[\"https://a.test\",\"open /foo\",\"https://b.test\"]",
                 "[\"https://a.test\",\"open [redacted-path]\",\"https://b.test\"]"
             ),
+            (
+                "[\"https://example.com/webhook/first\\u00A0secondSecret\"]",
+                "[\"https://example.com/webhook/[redacted]\"]"
+            ),
+            (
+                "[\"https://example.com/webhook/\\u00A0secondSecret\"]",
+                "[\"https://example.com/webhook/[redacted]\"]"
+            ),
+            (
+                "[\" https://example.com/api?token=first secondSecret\"]",
+                "[\" https://example.com/api?[redacted]\"]"
+            ),
+            (
+                "[\"fetch https://example.com/api?token=first secondSecret\"]",
+                "[\"fetch https://example.com/api?[redacted]\"]"
+            ),
+            (
+                "[\"fetch https://example.com/api?token=first secondSecret\",\"public\"]",
+                "[\"fetch https://example.com/api?[redacted]\",\"public\"]"
+            ),
+            ("[\"al\\u0069\\u0063e@example.com ok\"]", "[\"[redacted-email] ok\"]"),
+            ("[\"prefix\\nal\\u0069\\u0063e@example.com\"]", "[\"prefix\\n[redacted-email]\"]"),
+            ("[\"\\u0020al\\u0069\\u0063e@example.com ok\"]", "[\"\\u0020[redacted-email] ok\"]"),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)

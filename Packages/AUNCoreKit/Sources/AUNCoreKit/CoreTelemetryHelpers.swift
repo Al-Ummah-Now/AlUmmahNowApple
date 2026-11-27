@@ -286,22 +286,10 @@ extension CoreTelemetryService {
                 searchFrom = sep + 3
                 continue
             }
-            let inSingleQuote = (quoteState & 1) != 0
             let baseURL = nsText.substring(with: NSRange(location: span.start, length: span.baseEnd - span.start))
-            let (url, tail): (String, String)
-            if span.hasQueryOrFragment {
-                let qf = nsText.substring(with: NSRange(location: span.baseEnd, length: span.totalEnd - span.baseEnd))
-                let (cleanQF, trimmedTail) = Self.trimQueryOrFragmentDelimiters(
-                    qf, nsText: nsText, matchStart: span.start, inSingleQuote: inSingleQuote
-                )
-                let marker = cleanQF.first.map(String.init) ?? "?"
-                url = "\(baseURL)\(marker)[redacted]"
-                tail = trimmedTail
-            } else {
-                (url, tail) = Self.trimTrailingURLDelimiters(
-                    baseURL, nsText: nsText, matchStart: span.start, inSingleQuote: inSingleQuote
-                )
-            }
+            let (url, tail) = Self.formatVaultedURLAndTail(
+                nsText, span: span, baseURL: baseURL, inSingleQuote: (quoteState & 1) != 0
+            )
             let redactedURL = Self.redactURLPathSecrets(url)
             var endPos = span.totalEnd
             var finalTail = tail
@@ -316,9 +304,14 @@ extension CoreTelemetryService {
                     ext, prefix: prefix, baseRedacted: redactedURL, baseTail: tail, vaultedURLs: &vaultedURLs
                 )
             } else {
-                let idx = vaultedURLs.count
-                vaultedURLs.append(redactedURL)
-                rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
+                let (token, newEnd, newTail) = Self.emitSimpleVaultedURL(
+                    nsText, span: span, quoteState: quoteState,
+                    urls: (base: baseURL, redacted: redactedURL, tail: tail),
+                    prefix: prefix, vaultedURLs: &vaultedURLs
+                )
+                rebuilt += token
+                endPos = newEnd
+                finalTail = newTail
             }
             let nsTail = finalTail as NSString
             quoteState = Self.advanceQuoteState(nsTail, from: 0, to: nsTail.length, quoteState: quoteState)
