@@ -170,8 +170,10 @@ struct CoreTelemetryExternalConsentTests {
             ("\"My (/tmp/Client) Acquisition Plan\"", "\"My ([redacted-path]"),
             ("\"(relative/Client) Acquisition Plan\"", "\"([redacted-path]"),
             (
-                "Failed for 李@example.com, محمد@مثال.مصر, user@bücher.example, 「李@例え.jp」, 李@例え.xn--p1ai, 李!明@example.com",
-                "Failed for [redacted-email], [redacted-email], [redacted-email], 「[redacted-email]」, [redacted-email], [redacted-email]"
+                "Failed for 李@example.com, محمد@مثال.مصر, user@bücher.example, 「李·明@例え.jp」, "
+                    + "李@例え.xn--p1ai, 李!明@example.com, mary'ann@example.com, 李·明@example.com, 'o'brien@example.com",
+                "Failed for [redacted-email], [redacted-email], [redacted-email], 「[redacted-email]」, "
+                    + "[redacted-email], [redacted-email], [redacted-email], [redacted-email], '[redacted-email]"
             ),
             ("status 'ready' (https://example.com/api)", "status 'ready' (https://example.com/api)"),
             ("/tmp/Private\u{2028}Acquisition Plan", "[redacted-path]"),

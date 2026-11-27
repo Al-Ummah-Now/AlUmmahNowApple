@@ -217,72 +217,12 @@ extension CoreTelemetryService {
             (ch >= 0x61 && ch <= 0x7A) ? (ch - 0x20) : ch
         }
 
-        private static func matchesASCIIUpper3(
+        static func matchesASCIIUpper3(
             _ nsText: NSString, at start: Int, c0: unichar, c1: unichar, c2: unichar
         ) -> Bool {
             foldASCIIUpper(nsText.character(at: start)) == c0
                 && foldASCIIUpper(nsText.character(at: start + 1)) == c1
                 && foldASCIIUpper(nsText.character(at: start + 2)) == c2
-        }
-
-        static func emailAtLength(_ nsText: NSString, at pos: Int, len: Int) -> Int {
-            let ch = nsText.character(at: pos)
-            if ch == 0x40 { return 1 }  // '@'
-            if ch == 0x25 && pos + 2 < len
-                && nsText.character(at: pos + 1) == 0x34 && nsText.character(at: pos + 2) == 0x30
-            {
-                return 3  // "%40"
-            }
-            return 0
-        }
-
-        static func isEmailLocalChar(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
-            let ch = nsText.character(at: pos)
-            if isLetterOrDigit(ch) || isUnicodeCombiningMark(ch) || isSurrogate(ch) || isEmailLocalPunct(ch) {
-                return true
-            }
-            return ch == 0x25
-                && !(pos + 2 < len && nsText.character(at: pos + 1) == 0x34 && nsText.character(at: pos + 2) == 0x30)
-        }
-
-        private static func isEmailLocalPunct(_ ch: unichar) -> Bool {
-            switch ch {
-            case 0x2E, 0x5F, 0x2B, 0x2D, 0x21, 0x23, 0x24, 0x26, 0x2A, 0x5E, 0x60, 0x7C, 0x7E:
-                return true
-            default:
-                return false
-            }
-        }
-
-        static func isPunycodeTLD(_ nsText: NSString, start: Int, end: Int, allASCII: Bool) -> Bool {
-            guard allASCII && end - start >= 6 else { return false }
-            let last = nsText.character(at: end - 1)
-            guard CoreTelemetryService.isASCIILetter(last) || CoreTelemetryService.isASCIIDigit(last) else {
-                return false
-            }
-            return matchesASCIIUpper3(nsText, at: start, c0: 0x58, c1: 0x4E, c2: 0x2D)
-                && nsText.character(at: start + 3) == 0x2D
-        }
-
-        static func isUnicodeCombiningMark(_ ch: unichar) -> Bool {
-            ch >= 0x80 && (UnicodeScalar(ch).map { CharacterSet.nonBaseCharacters.contains($0) } ?? false)
-        }
-
-        static func isSurrogate(_ ch: unichar) -> Bool { ch >= 0xD800 && ch <= 0xDFFF }
-
-        static func isLowSurrogate(_ ch: unichar) -> Bool { ch >= 0xDC00 && ch <= 0xDFFF }
-
-        static func isEmailDigit(_ ch: unichar) -> Bool {
-            if ch < 0x80 { return ch >= 0x30 && ch <= 0x39 }
-            return UnicodeScalar(ch).map { CharacterSet.decimalDigits.contains($0) } ?? false
-        }
-
-        static func isEmailLetter(_ ch: unichar) -> Bool {
-            isLetter(ch) || isUnicodeCombiningMark(ch) || isSurrogate(ch)
-        }
-
-        static func isEmailBoundaryBlocked(_ ch: unichar) -> Bool {
-            isLetterOrDigit(ch) || ch == 0x5F || isUnicodeCombiningMark(ch)
         }
 
         private static func canOpenQuote(_ nsText: NSString, at pos: Int, ch: unichar) -> Bool {
@@ -298,7 +238,7 @@ extension CoreTelemetryService {
                 && isLetterOrDigit(nsText.character(at: pos - 1)) && isLetter(nsText.character(at: pos + 1))
         }
 
-        private static func isLetter(_ ch: unichar) -> Bool {
+        static func isLetter(_ ch: unichar) -> Bool {
             if ch < 0x80 { return (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) }
             return UnicodeScalar(ch).map { CharacterSet.letters.contains($0) } ?? false
         }

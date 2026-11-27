@@ -127,6 +127,9 @@ extension CoreTelemetryService {
             while localStart > copied && VaultLineTracker.isEmailLocalChar(nsText, at: localStart - 1, len: len) {
                 localStart -= 1
             }
+            while localStart < idx && VaultLineTracker.isEmailLeadingWrapper(nsText.character(at: localStart)) {
+                localStart += 1
+            }
             let domEnd = localStart < idx ? Self.findEmailDomainEnd(nsText, domStart: idx + atLen, len: len) : -1
             if domEnd > 0 {
                 if result.isEmpty { result.reserveCapacity(text.count) }
