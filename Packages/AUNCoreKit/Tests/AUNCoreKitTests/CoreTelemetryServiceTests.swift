@@ -1,7 +1,8 @@
 import AUNCoreBridge
-@testable import AUNCoreKit
 import Foundation
 import Testing
+
+@testable import AUNCoreKit
 
 private final class TelemetryFlushSlotGate: @unchecked Sendable {
     private let lock = NSLock()
@@ -268,62 +269,63 @@ struct CoreTelemetryServiceTests {
 
         service.addBreadcrumb(
             category: "io",
-            message: "Opened /workspace/E\u{0301}lodie/Very Secret Client Project Name.mov\nFailed '/data/user/0/O'Brien.mov'\nRead \"/Users/O'Brien/Final.mov\"",
+            message:
+                "Opened /workspace/E\u{0301}lodie/Very Secret Client Project Name.mov\nFailed '/data/user/0/O'Brien.mov'\nRead \"/Users/O'Brien/Final.mov\"",
             level: .info
         )
         service.reportCrash(
             kind: "IOException",
             message: """
-            Failed reading /Private (Client).mov
-            /Private Client
-            /private-key
-            /Users/alice/Secret<Project>.mov
-            /Users/alice/Draft:77 in open() Acquisition.mov
-            failed at path=/Users/alice/Secret"Acquisition.mov
-            Failed to open "/ Secret/Acquisition.mov"
-            Failed to open "/ SecretFile"
-            / SecretFile.mov
-            / SecretFile
-            / SecretFile.abcdefghijkl
-            // SecretFile
-            42:/ Secret/Acquisition.mov:77
-            error 42://SecretHost/Acquisition.mov
-            open(path\\\\unc\\Secret\\Acquisition.mov)
-            open(pathC:\\Secret\\Acquisition.mov)
-            open(C://Secret/Acquisition.mov)
-            C://Users\\Alice\\Secret.mov
-            Could not find file 'Secret.mov'
-            Could not find file 'private/Secret.mov'
-            Could not find file './Secret.mov'
-            Could not find file 'O'Brien.mov'
-            Could not find file 'SecretBareName'
-            Could not find file Secret.xyz
-            open Acquisition.custom
-            open Secret Project.mov
-            open //storage/emulated/0/Private.mov
-            error 42:/home/alice/private.mov
-            /workspace/alice/Project|Acquisition.mov
-            /workspace/alice/Project;Acquisition.mov
-            '/workspace/alice/Project:2026;Acquisition.mov'
-            /!Acquisition.mov
-            "/!Acquisition.mov"
-            "C:\\Users\\Alice Smith\\Private Draft.mp4"
-            """,
+                Failed reading /Private (Client).mov
+                /Private Client
+                /private-key
+                /Users/alice/Secret<Project>.mov
+                /Users/alice/Draft:77 in open() Acquisition.mov
+                failed at path=/Users/alice/Secret"Acquisition.mov
+                Failed to open "/ Secret/Acquisition.mov"
+                Failed to open "/ SecretFile"
+                / SecretFile.mov
+                / SecretFile
+                / SecretFile.abcdefghijkl
+                // SecretFile
+                42:/ Secret/Acquisition.mov:77
+                error 42://SecretHost/Acquisition.mov
+                open(path\\\\unc\\Secret\\Acquisition.mov)
+                open(pathC:\\Secret\\Acquisition.mov)
+                open(C://Secret/Acquisition.mov)
+                C://Users\\Alice\\Secret.mov
+                Could not find file 'Secret.mov'
+                Could not find file 'private/Secret.mov'
+                Could not find file './Secret.mov'
+                Could not find file 'O'Brien.mov'
+                Could not find file 'SecretBareName'
+                Could not find file Secret.xyz
+                open Acquisition.custom
+                open Secret Project.mov
+                open //storage/emulated/0/Private.mov
+                error 42:/home/alice/private.mov
+                /workspace/alice/Project|Acquisition.mov
+                /workspace/alice/Project;Acquisition.mov
+                '/workspace/alice/Project:2026;Acquisition.mov'
+                /!Acquisition.mov
+                "/!Acquisition.mov"
+                "C:\\Users\\Alice Smith\\Private Draft.mp4"
+                """,
             stack: """
-            NSException: /Users/alice/Draft:99 in open()
-            0   ViewerIOS   0x0000000104abcdef Player.open() + 42
-            at Player.open() in /workspace/Élodie/src/Player.swift:42
-            at "/home/alice/private:66" while opening file
-            at file:///Users/alice/Player.swift:55
-            at /Users/alice/Split.swift:line\rCaused by: /Users/alice/Cause:99
-            at App.run()
-            """
+                NSException: /Users/alice/Draft:99 in open()
+                0   ViewerIOS   0x0000000104abcdef Player.open() + 42
+                at Player.open() in /workspace/Élodie/src/Player.swift:42
+                at "/home/alice/private:66" while opening file
+                at file:///Users/alice/Player.swift:55
+                at /Users/alice/Split.swift:line\rCaused by: /Users/alice/Cause:99
+                at App.run()
+                """
         )
 
         let json = try String(contentsOfFile: bufferPath, encoding: .utf8)
         let forbidden = [
             "alice", "smith", "lodie", "brien", "private", "secret", "abcdefghijkl",
-            "acquisition", "project>.mov", "storage", "player.swift", "client).mov", "name.mov", "draft.mp4"
+            "acquisition", "project>.mov", "storage", "player.swift", "client).mov", "name.mov", "draft.mp4",
         ]
         for token in forbidden {
             #expect(!json.localizedCaseInsensitiveContains(token))
@@ -492,6 +494,8 @@ struct CoreTelemetryExternalConsentTests {
             "open(https://example.com/a(b)/items)",
             "https://example.com/a'b/items",
             "https://foo!bar.example/api",
+            "https://one;two.example/api",
+            "https://example.com/v1;version=2/items",
             "git+http2://example.com/repo",
             "profile://example.com/repo",
             "https://[::1]:8443/api",
@@ -522,8 +526,14 @@ struct CoreTelemetryExternalConsentTests {
                 == "open [redacted-path] from https://example.com/api"
         )
         #expect(CoreTelemetryService.sanitizeLocalPaths("Secret Project.mov (missing)") == "[redacted-path] (missing)")
+        #expect(CoreTelemetryService.sanitizeLocalPaths("open Secret.mov:42") == "open [redacted-path]:42")
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,private/Secret.mov")
+                == "https://example.com/api,[redacted-path]"
+        )
         #expect(CoreTelemetryService.sanitizeLocalPaths("Secret.Final.mov") == "[redacted-path]")
-        #expect(CoreTelemetryService.sanitizeLocalPaths("Could not find file Secret.2026") == "Could not find file [redacted-path]")
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Could not find file Secret.2026") == "Could not find file [redacted-path]")
         #expect(CoreTelemetryService.sanitizeLocalPaths("https://[:::]/api") != "https://[:::]/api")
         #expect(CoreTelemetryService.sanitizeLocalPaths("https://bad%zz/api") != "https://bad%zz/api")
     }

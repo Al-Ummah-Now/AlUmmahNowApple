@@ -79,11 +79,12 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
 
     @discardableResult
     public func setConsent(_ consent: TelemetryConsent) -> Bool {
-        let mapped: TelemetryConsentState = switch consent {
-        case .full: .analytics
-        case .crashOnly: .crashOnly
-        case .off: .denied
-        }
+        let mapped: TelemetryConsentState =
+            switch consent {
+            case .full: .analytics
+            case .crashOnly: .crashOnly
+            case .off: .denied
+            }
 
         let (result, waitersToCancel): (Bool, [Task<Void, Never>]) = lock.withLock {
             if _closed {
@@ -143,12 +144,13 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
 
     public func addBreadcrumb(category: String, message: String, level: TelemetryBreadcrumbSeverity) {
         guard !category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let mapped: TelemetryBreadcrumbLevel = switch level {
-        case .debug: .debug
-        case .info: .info
-        case .warning: .warning
-        case .error: .error
-        }
+        let mapped: TelemetryBreadcrumbLevel =
+            switch level {
+            case .debug: .debug
+            case .info: .info
+            case .warning: .warning
+            case .error: .error
+            }
         let safeMessage = Self.sanitizeLocalPaths(message)
         withActiveConsent(requiresFull: false) {
             client.addBreadcrumb(category: category, message: safeMessage, level: mapped)

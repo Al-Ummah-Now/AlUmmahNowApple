@@ -73,37 +73,7 @@ extension CoreTelemetryService {
         while text.contains(prefix) {
             prefix += "X"
         }
-        var vaultedURLs: [String] = []
-        var scrubbed = text
-        if let urlRegex = Self.urlVaultRegex {
-            let nsText = scrubbed as NSString
-            let matches = urlRegex.matches(in: scrubbed, options: [], range: NSRange(location: 0, length: nsText.length))
-            var rebuilt = ""
-            var cursor = 0
-            for match in matches {
-                let raw = nsText.substring(with: match.range)
-                if raw.lowercased().hasPrefix("file://") { continue }
-                let ipv6Range = match.range(at: 1)
-                if ipv6Range.location != NSNotFound && !Self.isValidIPv6(nsText.substring(with: ipv6Range)) {
-                    continue
-                }
-                var url = raw
-                var tail = ""
-                if match.range.location > 0 && nsText.character(at: match.range.location - 1) == 0x27 && url.hasSuffix("'") {
-                    url.removeLast()
-                    tail = "'"
-                }
-                rebuilt += nsText.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
-                let idx = vaultedURLs.count
-                vaultedURLs.append(url)
-                rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
-                cursor = match.range.location + match.range.length
-            }
-            if !vaultedURLs.isEmpty {
-                rebuilt += nsText.substring(from: cursor)
-                scrubbed = rebuilt
-            }
-        }
+        var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: text, prefix: prefix)
         for rule in Self.pathRedactionRules {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
             scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
@@ -114,45 +84,100 @@ extension CoreTelemetryService {
         return scrubbed
     }
 
+    private static func vaultNonFileURLs(in text: String, prefix: String) -> (String, [String]) {
+        guard let urlRegex = Self.urlVaultRegex else { return (text, []) }
+        let nsText = text as NSString
+        let matches = urlRegex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+        var vaultedURLs: [String] = []
+        var rebuilt = ""
+        var cursor = 0
+        for match in matches {
+            let raw = nsText.substring(with: match.range)
+            if raw.lowercased().hasPrefix("file://") { continue }
+            let ipv6Range = match.range(at: 1)
+            if ipv6Range.location != NSNotFound && !Self.isValidIPv6(nsText.substring(with: ipv6Range)) {
+                continue
+            }
+            let (url, tail) = Self.trimTrailingURLDelimiters(raw, nsText: nsText, matchStart: match.range.location)
+            rebuilt += nsText.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            let idx = vaultedURLs.count
+            vaultedURLs.append(url)
+            rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
+            cursor = match.range.location + match.range.length
+        }
+        guard !vaultedURLs.isEmpty else { return (text, []) }
+        rebuilt += nsText.substring(from: cursor)
+        return (rebuilt, vaultedURLs)
+    }
+
+    private static func trimTrailingURLDelimiters(_ raw: String, nsText: NSString, matchStart: Int) -> (String, String) {
+        var url = raw
+        var tail = ""
+        if url.hasSuffix(";") {
+            url.removeLast()
+            tail = ";"
+        }
+        if matchStart > 0 && nsText.character(at: matchStart - 1) == 0x27 && url.hasSuffix("'") {
+            url.removeLast()
+            tail = "'" + tail
+        }
+        return (url, tail)
+    }
+
     private static func isValidIPv6(_ host: String) -> Bool {
         var addr = in6_addr()
         return host.withCString { inet_pton(AF_INET6, $0, &addr) == 1 }
     }
 
     private static let urlVaultRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]+://(?:\[([^\]\s"'<>\\{}\r\n]+)\]|(?:[A-Za-z0-9._~!$&'*+=-]|%[0-9A-Fa-f]{2})+)(?::\d+)?"# +
-            #"(?:[/?#](?:[^\s"<>\\{},;()\[\]\r\n]|\([^\s"<>\\{},;()\[\]/:\\]+\)|\[[^\s"<>\\{},;()\[\]/:\\]+\])*|(?=$|[\s"'<>\\{},;()\[\]]))"#,
+        pattern:
+            #"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]+://(?:\[([^\]\s"'<>\\{}\r\n]+)\]|"#
+            + #"(?:[A-Za-z0-9._~!$&'*+;=-]|%[0-9A-Fa-f]{2})+)(?::\d+)?"#
+            + #"(?:[/?#](?:[^\s"<>\\{},()\[\]\r\n]|\([^\s"<>\\{},;()\[\]/:\\]+\)|"#
+            + #"\[[^\s"<>\\{},;()\[\]/:\\]+\])*|(?=$|[\s"'<>\\{},;()\[\]]))"#,
         options: [.caseInsensitive]
     )
 
     private static let bareFilenameExtensions =
-        "mov|mp4|m4v|mkv|webm|avi|ts|m3u8|mpd|mp3|m4a|wav|aac|flac|ogg|opus|" +
-        "jpg|jpeg|png|gif|webp|heic|svg|pdf|txt|md|rtf|doc|docx|xls|xlsx|ppt|pptx|" +
-        "csv|json|xml|yaml|yml|toml|ini|cfg|conf|log|srt|vtt|ass|ssa|" +
-        "zip|tar|gz|tgz|bz2|xz|7z|rar|dmg|pkg|msi|exe|apk|aab|ipa|" +
-        "pem|key|crt|cer|p12|pfx|jks|keystore|db|sqlite|sqlite3|bin|dat|tmp|bak|proj|aun"
+        "mov|mp4|m4v|mkv|webm|avi|ts|m3u8|mpd|mp3|m4a|wav|aac|flac|ogg|opus|"
+        + "jpg|jpeg|png|gif|webp|heic|svg|pdf|txt|md|rtf|doc|docx|xls|xlsx|ppt|pptx|"
+        + "csv|json|xml|yaml|yml|toml|ini|cfg|conf|log|srt|vtt|ass|ssa|"
+        + "zip|tar|gz|tgz|bz2|xz|7z|rar|dmg|pkg|msi|exe|apk|aab|ipa|"
+        + "pem|key|crt|cer|p12|pfx|jks|keystore|db|sqlite|sqlite3|bin|dat|tmp|bak|proj|aun"
 
     private static let ioKeywordVerbs =
-        "open|opening|read|reading|write|writing|delete|deleting|remove|removing|rename|stat|" +
-        "create|creating|load|loading|save|saving|access|accessing|unlink|" +
-        "file|path|directory|folder|document|filename|filepath"
+        "open|opening|read|reading|write|writing|delete|deleting|remove|removing|rename|stat|"
+        + "create|creating|load|loading|save|saving|access|accessing|unlink|"
+        + "file|path|directory|folder|document|filename|filepath"
+
+    private static let sourceLineExts = "kt|java|swift|cs|cpp|cc|c|h|hpp|rs|py|js|ts|go|rb|m|mm"
 
     private static let pathRedactionRules: [(regex: NSRegularExpression, template: String)] = {
         let specs: [(String, String)] = [
             (#"(?<![A-Za-z0-9+.-])file://[^\r\n]+"#, "[redacted-path]"),
             (#"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n]+(\))"#, "$1[redacted-path]$2"),
-            (#"(\()(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:\u001E\u001F]+/[^()\r\n]+(\))"#, "$1[redacted-path]$2"),
+            (#"(\()(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/[^()\r\n]+(\))"#, "$1[redacted-path]$2"),
             (#"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n]+"#, "[redacted-path]"),
-            (#"(^|[\s(\[{"'=,:;])[^\s\\/"'<>]+\\[^\r\n]+"#, "$1[redacted-path]"),
+            (#"(^|[\s(\[{"'=,:;\u001F])[^\s\\/"'<>(),;\u001E\u001F]+\\[^\r\n\u001E\u001F]+"#, "$1[redacted-path]"),
             (#"["']/[ \t]+[^\r\n]+"#, "[redacted-path]"),
             (#"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|//+(?=[ \t]*[^\s/])|/(?=[ \t]*[^\s/]))[^\r\n]+"#, "[redacted-path]"),
-            (#"(^|[\s(\[{"'=,:;])(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:]+/[^\r\n]+"#, "$1[redacted-path]"),
+            (
+                #"(^|[\s(\[{"'=,:;\u001F])(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/[^\r\n\u001E\u001F]+"#,
+                "$1[redacted-path]"
+            ),
             (#""[^"\r\n/\\]*\.[A-Za-z0-9]{1,16}""#, "[redacted-path]"),
             (#"'(?:[^'\r\n/\\]|'(?=\p{L}))*\.[A-Za-z0-9]{1,16}'"#, "[redacted-path]"),
             (#"(\b(?:file|path|directory|folder|document)\s+)(['"])(?!\u001E)[^'"\r\n]+\2"#, "$1[redacted-path]"),
-            (#"(\b(?:"# + ioKeywordVerbs + #")\b(?:\s*[:=]\s*|\s+))(?!\u001E)[^\r\n\u001E\u001F]*\.[A-Za-z0-9]{1,16}\b(?!\(|:\d+)"#, "$1[redacted-path]"),
+            (
+                #"(\b(?:"# + ioKeywordVerbs + #")\b(?:\s*[:=]\s*|\s+))(?!\u001E)[^\r\n\u001E\u001F]*\.(?!(?:"#
+                    + sourceLineExts + #"):\d+)[A-Za-z0-9]{1,16}\b(?!\()"#,
+                "$1[redacted-path]"
+            ),
             (#"(\b(?:file|path|filename|filepath)\s*[:=]\s*)(?!\u001E)[^\r\n\u001E\u001F]+"#, "$1[redacted-path]"),
-            (#"(^|[\r\n:=;\u001F])([ \t]*)[^\r\n:=;\u001E\u001F]*\.(?:"# + bareFilenameExtensions + #")\b(?!\(|:\d+)"#, "$1$2[redacted-path]"),
+            (
+                #"(^|[\r\n:=;\u001F])([ \t]*)[^\r\n:=;\u001E\u001F]*\.(?:"# + bareFilenameExtensions + #")\b(?!\()"#,
+                "$1$2[redacted-path]"
+            ),
         ]
         return specs.compactMap { pattern, template in
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
@@ -164,8 +189,8 @@ extension CoreTelemetryService {
         guard !properties.isEmpty else { return nil }
         let filtered = properties.filter { !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard !filtered.isEmpty,
-              let data = try? JSONSerialization.data(withJSONObject: filtered, options: [.sortedKeys]),
-              let json = String(data: data, encoding: .utf8)
+            let data = try? JSONSerialization.data(withJSONObject: filtered, options: [.sortedKeys]),
+            let json = String(data: data, encoding: .utf8)
         else { return nil }
         return json
     }
