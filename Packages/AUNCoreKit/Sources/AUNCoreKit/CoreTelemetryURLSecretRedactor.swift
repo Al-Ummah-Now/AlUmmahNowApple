@@ -185,10 +185,11 @@ extension CoreTelemetryService {
         let webhookProbe = (probe != probeInput && probe.hasSuffix("[redacted]")) ? probe : nil
         if webhookProbe == nil && span.totalEnd < limits.failedContMax { return nil }
         let outerQuote = resolveOuterQuote(nsText, spanStart: span.start)
+        let isContainerValue = outerQuote != 0 && Self.isContainerValueStart(nsText, quotePos: span.start - 1)
         var scanState = ContinuationScanState(
             allowDoubleQuotes: span.totalEnd >= limits.unclosedDoubleQuoteEnd,
             allowSingleQuotes: span.totalEnd >= limits.unclosedSingleQuoteEnd,
-            outerQuote: outerQuote, stopAtSchemes: webhookProbe == nil
+            outerQuote: outerQuote, isContainerValue: isContainerValue, stopAtSchemes: webhookProbe == nil
         )
         let pathEnd = scanWithUnclosedFallback(
             nsText, start: span.totalEnd, webhookProbe: webhookProbe, state: &scanState, limits: &limits
@@ -223,7 +224,7 @@ extension CoreTelemetryService {
         state = ContinuationScanState(
             allowDoubleQuotes: state.quoteChar == 0x22 ? false : state.allowDoubleQuotes,
             allowSingleQuotes: state.quoteChar == 0x27 ? false : state.allowSingleQuotes,
-            outerQuote: state.outerQuote, stopAtSchemes: state.stopAtSchemes
+            outerQuote: state.outerQuote, isContainerValue: state.isContainerValue, stopAtSchemes: state.stopAtSchemes
         )
         return scanURLContinuation(nsText, start: start, state: &state)
     }
@@ -429,6 +430,7 @@ extension CoreTelemetryService {
         let allowDoubleQuotes: Bool
         let allowSingleQuotes: Bool
         let outerQuote: unichar
+        let isContainerValue: Bool
         let stopAtSchemes: Bool
         var groupStack: [unichar] = []
         var quoteChar: unichar = 0
@@ -504,7 +506,10 @@ extension CoreTelemetryService {
     ) -> Bool {
         let allowed = ch == 0x22 ? state.allowDoubleQuotes : state.allowSingleQuotes
         guard allowed && !state.groupStack.isEmpty else { return false }
-        if ch == state.outerQuote && Self.isOuterQuoteCloser(nsText, at: pos, outerQuote: state.outerQuote) {
+        if ch == state.outerQuote
+            && Self.isOuterQuoteCloser(
+                nsText, at: pos, outerQuote: state.outerQuote, isContainerValue: state.isContainerValue)
+        {
             return false
         }
         let afterNonAlphaNum = pos > start && !Self.isASCIIAlphaNum(nsText.character(at: pos - 1))

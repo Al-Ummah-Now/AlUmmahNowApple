@@ -497,4 +497,43 @@ struct CoreTelemetryURLContinuationTests {
             ) == "'https://example.test/webhook/[redacted]'"
         )
     }
+
+    @Test("Handles container-aware outer quote closers and punctuation-leading quoted secrets")
+    func handlesContainerAwareOuterQuoteClosersAndPunctuationLeadingQuotedSecrets() {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "'https://example.test/webhook/fakeToken(' )opaqueSecret123')'"
+            ) == "'https://example.test/webhook/[redacted]'"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "'https://example.test/webhook/fakeToken(') opaqueSecret123')'"
+            ) == "'https://example.test/webhook/[redacted]'"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "'https://example.test/webhook/fakeToken(')first opaqueSecret123')'"
+            ) == "'https://example.test/webhook/[redacted]'"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "'https://example.test/webhook/fakeToken('} opaqueSecret123')'"
+            ) == "'https://example.test/webhook/[redacted]'"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"https://example.test/webhook/fakeToken(\",123,\")public-text\"]"
+            ) == "[\"https://example.test/webhook/[redacted]\",123,\")public-text\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[{\"a\":\"https://example.test/webhook/fakeToken(\"},\")public\"]"
+            ) == "[{\"a\":\"https://example.test/webhook/[redacted]\"},\")public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "['https://example.test/webhook/fakeToken(',123, opaqueSecret123')']"
+            ) == "['https://example.test/webhook/[redacted]']"
+        )
+    }
 }
