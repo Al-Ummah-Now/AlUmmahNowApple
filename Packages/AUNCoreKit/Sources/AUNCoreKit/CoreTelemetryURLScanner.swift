@@ -230,7 +230,31 @@ extension CoreTelemetryService.VaultLineTracker {
         return atPos
     }
 
-    private static func isPrecededByOddBackslashes(_ nsText: NSString, at pos: Int, minPos: Int) -> Bool {
+    static func findNextEmailClosingQuote(_ nsText: NSString, from start: Int, len: Int) -> (Int, Int) {
+        var idx = start
+        var escaped = false
+        while idx < len {
+            let ch = nsText.character(at: idx)
+            if ch == 0x0D || ch == 0x0A {
+                let afterNewline = (ch == 0x0D && idx + 1 < len && nsText.character(at: idx + 1) == 0x0A) ? idx + 2 : idx + 1
+                if afterNewline < len {
+                    let next = nsText.character(at: afterNewline)
+                    if next == 0x20 || next == 0x09 {
+                        escaped = false
+                        idx = afterNewline + 1
+                        continue
+                    }
+                }
+                return (-1, idx)
+            }
+            if ch == 0x22 && !escaped { return (idx, idx) }
+            escaped = ch == 0x5C && !escaped
+            idx += 1
+        }
+        return (-1, len)
+    }
+
+    static func isPrecededByOddBackslashes(_ nsText: NSString, at pos: Int, minPos: Int) -> Bool {
         var count = 0
         var idx = pos - 1
         while idx >= minPos && nsText.character(at: idx) == 0x5C {
@@ -283,7 +307,7 @@ extension CoreTelemetryService.VaultLineTracker {
 
     private static func isEmailLocalPunct(_ ch: unichar) -> Bool {
         switch ch {
-        case 0x2E, 0x5F, 0x2B, 0x2D, 0x21, 0x23, 0x24, 0x26, 0x27, 0x2A, 0x5E, 0x60, 0x7B, 0x7C, 0x7D, 0x7E:
+        case 0x2E, 0x5F, 0x2B, 0x2D, 0x21, 0x23, 0x24, 0x26, 0x27, 0x2A, 0x3D, 0x3F, 0x5E, 0x60, 0x7B, 0x7C, 0x7D, 0x7E:
             return true
         default:
             return false
@@ -325,7 +349,88 @@ extension CoreTelemetryService.VaultLineTracker {
         isLetter(ch) || isUnicodeCombiningMark(ch) || isSurrogate(ch)
     }
 
+    static func matchQuotedEmailEnd(
+        _ nsText: NSString, at pos: Int, cacheUntil: inout Int, cachedClose: inout Int
+    ) -> Int? {
+        let len = nsText.length
+        let closeQuote: Int
+        if pos < cacheUntil {
+            closeQuote = cachedClose
+        } else {
+            let (found, stopPos) = findNextEmailClosingQuote(nsText, from: pos + 1, len: len)
+            cachedClose = found
+            cacheUntil = found >= 0 ? found : stopPos
+            closeQuote = found
+        }
+        guard closeQuote > pos, closeQuote + 1 < len else { return nil }
+        let atPos = closeQuote + 1
+        let atLen = emailAtLength(nsText, at: atPos, len: len)
+        guard atLen > 0 else { return nil }
+        let domEnd = findEmailDomainEnd(nsText, domStart: atPos + atLen, len: len)
+        return domEnd > 0 ? domEnd : nil
+    }
+
+    static func findEmailDomainEnd(_ nsText: NSString, domStart: Int, len: Int) -> Int {
+        if domStart < len && nsText.character(at: domStart) == 0x5B {
+            return findIPLiteralDomainEnd(nsText, domStart: domStart, len: len)
+        }
+        var idx = domStart
+        var lastDot = -1
+        var lettersSinceDot = 0
+        var tldAllASCII = true
+        var bestEnd = -1
+        while idx < len {
+            let ch = nsText.character(at: idx)
+            if isEmailLetter(ch) {
+                if ch >= 0x80 { tldAllASCII = false }
+                if lastDot >= 0 && lettersSinceDot >= 0 && !isUnicodeCombiningMark(ch) && !isLowSurrogate(ch) {
+                    lettersSinceDot += 1
+                }
+            } else if ch == 0x2E {
+                lastDot = idx > domStart ? idx : -1
+                lettersSinceDot = 0
+                tldAllASCII = true
+            } else if isEmailDigit(ch) || ch == 0x2D {
+                if ch >= 0x80 { tldAllASCII = false }
+                lettersSinceDot = -1
+            } else {
+                break
+            }
+            idx += 1
+            let state = DomainEndCheck(
+                domStart: domStart, lastDot: lastDot, end: idx, lettersSinceDot: lettersSinceDot, allASCII: tldAllASCII
+            )
+            if isValidDomainEnd(nsText, check: state) { bestEnd = idx }
+        }
+        return bestEnd
+    }
+
+    private struct DomainEndCheck {
+        let domStart: Int
+        let lastDot: Int
+        let end: Int
+        let lettersSinceDot: Int
+        let allASCII: Bool
+    }
+
     static func isEmailBoundaryBlocked(_ ch: unichar) -> Bool {
-        isLetterOrDigit(ch) || ch == 0x5F || isUnicodeCombiningMark(ch)
+        isLetterOrDigit(ch) || ch == 0x5F || ch == 0x2D || isUnicodeCombiningMark(ch)
+    }
+
+    private static func isValidDomainEnd(_ nsText: NSString, check: DomainEndCheck) -> Bool {
+        let len = nsText.length
+        guard check.end == len || !isEmailBoundaryBlocked(nsText.character(at: check.end)) else { return false }
+        if check.lastDot > check.domStart {
+            return check.lettersSinceDot >= 2
+                || isPunycodeTLD(nsText, start: check.lastDot + 1, end: check.end, allASCII: check.allASCII)
+        }
+        guard check.lastDot < 0 && check.end - check.domStart >= 2 else { return false }
+        let first = nsText.character(at: check.domStart)
+        guard isLetter(first) || isSurrogate(first), nsText.character(at: check.end - 1) != 0x2D else { return false }
+        if check.end + 1 < len && nsText.character(at: check.end) == 0x2E {
+            let afterDot = nsText.character(at: check.end + 1)
+            if isLetter(afterDot) || isSurrogate(afterDot) { return false }
+        }
+        return true
     }
 }

@@ -181,6 +181,14 @@ struct CoreTelemetryExternalConsentTests {
             ),
             ("status 'ready' (https://example.com/api)", "status 'ready' (https://example.com/api)"),
             ("/tmp/Private\u{2028}Acquisition Plan", "[redacted-path]"),
+            (
+                "Failed for \"Private Name user@[IPv6:2001:db8::1]\"@example.com, \"john@doe.example\"@example.com, "
+                    + "\"alice@example.com private\"@example.org, \"john\r\n doe\"@example.com, "
+                    + "alice=tag@example.com, user@localhost, alice@intranet",
+                "Failed for [redacted-email], [redacted-email], [redacted-email], "
+                    + "[redacted-email], [redacted-email], [redacted-email], [redacted-email]"
+            ),
+            ("alice/bob@example.com", "[redacted-path]"),
             ("'Private.qzx'2 Acquisition.qzx'", "[redacted-path]"),
             ("'Studio 2's Acquisition.qzx'", "[redacted-path]"),
         ]

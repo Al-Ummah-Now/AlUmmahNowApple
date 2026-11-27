@@ -331,7 +331,10 @@ extension CoreTelemetryService {
                 if ch == 0x22 || isQuotedSegStop(ch) { break }
                 close += 1
             }
-            if close < len && nsText.character(at: close) == 0x22 && endsWithFilenameExt(nsText, start: idx + 1, end: close) {
+            let followedByAt = close + 1 < len && VaultLineTracker.emailAtLength(nsText, at: close + 1, len: len) > 0
+            if close < len && nsText.character(at: close) == 0x22 && !followedByAt
+                && endsWithFilenameExt(nsText, start: idx + 1, end: close)
+            {
                 if result.isEmpty { result.reserveCapacity(text.count) }
                 result += nsText.substring(with: NSRange(location: copied, length: idx - copied))
                 result += "[redacted-path]"

@@ -117,13 +117,32 @@ extension CoreTelemetryService {
         var result = ""
         var copied = 0
         var idx = 0
+        var quoteCacheUntil = -1
+        var cachedNextQuote = -1
         while idx < len {
+            if nsText.character(at: idx) == 0x22
+                && !VaultLineTracker.isPrecededByOddBackslashes(nsText, at: idx, minPos: copied)
+            {
+                if let qEnd = VaultLineTracker.matchQuotedEmailEnd(
+                    nsText, at: idx, cacheUntil: &quoteCacheUntil, cachedClose: &cachedNextQuote
+                ) {
+                    if result.isEmpty { result.reserveCapacity(text.count) }
+                    result += nsText.substring(with: NSRange(location: copied, length: idx - copied))
+                    result += "[redacted-email]"
+                    copied = qEnd
+                    idx = qEnd
+                    quoteCacheUntil = -1
+                    continue
+                }
+                idx += 1
+                continue
+            }
             let atLen = VaultLineTracker.emailAtLength(nsText, at: idx, len: len)
             if atLen == 0 {
                 idx += 1
                 continue
             }
-            let domEnd = Self.findEmailDomainEnd(nsText, domStart: idx + atLen, len: len)
+            let domEnd = VaultLineTracker.findEmailDomainEnd(nsText, domStart: idx + atLen, len: len)
             let localStart = domEnd > 0 ? VaultLineTracker.findEmailLocalStart(nsText, at: idx, minPos: copied, len: len) : idx
             if domEnd > 0 && localStart < idx {
                 if result.isEmpty { result.reserveCapacity(text.count) }
@@ -131,6 +150,7 @@ extension CoreTelemetryService {
                 result += "[redacted-email]"
                 copied = domEnd
                 idx = domEnd
+                quoteCacheUntil = -1
             } else {
                 idx += atLen
             }
@@ -138,46 +158,6 @@ extension CoreTelemetryService {
         guard copied > 0 else { return text }
         result += nsText.substring(from: copied)
         return result
-    }
-
-    private static func findEmailDomainEnd(_ nsText: NSString, domStart: Int, len: Int) -> Int {
-        if domStart < len && nsText.character(at: domStart) == 0x5B {
-            return VaultLineTracker.findIPLiteralDomainEnd(nsText, domStart: domStart, len: len)
-        }
-        var idx = domStart
-        var lastDot = -1
-        var lettersSinceDot = 0
-        var tldAllASCII = true
-        var bestEnd = -1
-        while idx < len {
-            let ch = nsText.character(at: idx)
-            if VaultLineTracker.isEmailLetter(ch) {
-                if ch >= 0x80 { tldAllASCII = false }
-                if lastDot >= 0 && lettersSinceDot >= 0
-                    && !VaultLineTracker.isUnicodeCombiningMark(ch) && !VaultLineTracker.isLowSurrogate(ch)
-                {
-                    lettersSinceDot += 1
-                }
-            } else if ch == 0x2E {
-                lastDot = idx > domStart ? idx : -1
-                lettersSinceDot = 0
-                tldAllASCII = true
-            } else if VaultLineTracker.isEmailDigit(ch) || ch == 0x2D {
-                if ch >= 0x80 { tldAllASCII = false }
-                lettersSinceDot = -1
-            } else {
-                break
-            }
-            idx += 1
-            let validTLD =
-                lastDot > domStart
-                && (lettersSinceDot >= 2
-                    || VaultLineTracker.isPunycodeTLD(nsText, start: lastDot + 1, end: idx, allASCII: tldAllASCII))
-            if validTLD && (idx == len || !VaultLineTracker.isEmailBoundaryBlocked(nsText.character(at: idx))) {
-                bestEnd = idx
-            }
-        }
-        return bestEnd
     }
 
     private static func isASCIIWordChar(_ ch: unichar) -> Bool {
