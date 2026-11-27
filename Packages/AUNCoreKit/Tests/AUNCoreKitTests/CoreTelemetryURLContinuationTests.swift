@@ -419,6 +419,15 @@ extension CoreTelemetryURLContinuationTests {
             ("[\"secret\\u002epdf pending\"]", "[\"[redacted-path] pending\"]"),
             ("[\"secret\\u002epdf\"]", "[\"[redacted-path]\"]"),
             ("[\"read Private\\\"Merger.custom pending\"]", "[\"read [redacted-path] pending\"]"),
+            ("[\"file \\u0027Acquisition\\u0027\"]", "[\"file [redacted-path]\"]"),
+            ("[\"file \\\"Acquisition\\\"\"]", "[\"file [redacted-path]\"]"),
+            ("[\"file \\u0022Acquisition\\u0022\"]", "[\"file [redacted-path]\"]"),
+            ("[\"file \\\"Acquisition\\\"\",\"public\"]", "[\"file [redacted-path]\",\"public\"]"),
+            ("[\"file \\\"Acquisition\\\" and path \\\"Secret\\\"\"]", "[\"file [redacted-path] and path [redacted-path]\"]"),
+            ("[\"\\u0027Secret.custom\\u0027 pending\"]", "[\"[redacted-path] pending\"]"),
+            ("[\"\\\"Secret.custom\\\" pending\"]", "[\"\\\"[redacted-path]\\\" pending\"]"),
+            ("[\"\\u0022Secret.custom\\u0022 pending\"]", "[\"\\u0022[redacted-path]\\u0022 pending\"]"),
+            ("[\"Secret\\\"file.custom\"]", "[\"[redacted-path]\"]"),
             ("Failed reading /Users/alice/My \"Secret\" Folder/file.mov", "Failed reading [redacted-path]"),
         ]
         for (input, expected) in cases {

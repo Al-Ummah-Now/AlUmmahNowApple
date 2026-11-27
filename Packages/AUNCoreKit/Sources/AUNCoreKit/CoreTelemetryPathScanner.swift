@@ -315,43 +315,10 @@ extension CoreTelemetryService {
 
     static func redactQuotedFilenames(in text: String) -> String {
         guard text.contains(".") || text.contains("\\u") else { return text }
-        let afterDouble = (text.contains("\"") && text.contains(".")) ? redactDoubleQuotedFilenames(in: text) : text
-        return afterDouble.contains("'") ? redactSingleQuotedFilenamesRespectingQuotes(in: afterDouble) : afterDouble
-    }
-
-    private static func redactDoubleQuotedFilenames(in text: String) -> String {
-        let nsText = text as NSString
-        let len = nsText.length
-        var result = ""
-        var copied = 0
-        var idx = 0
-        while idx < len {
-            guard nsText.character(at: idx) == 0x22 else {
-                idx += 1
-                continue
-            }
-            var close = idx + 1
-            while close < len {
-                let ch = nsText.character(at: close)
-                if ch == 0x22 || isQuotedSegStop(ch) { break }
-                close += 1
-            }
-            let followedByAt = close + 1 < len && VaultLineTracker.emailAtLength(nsText, at: close + 1, len: len) > 0
-            if close < len && nsText.character(at: close) == 0x22 && !followedByAt
-                && endsWithFilenameExt(nsText, start: idx + 1, end: close)
-            {
-                if result.isEmpty { result.reserveCapacity(text.count) }
-                result += nsText.substring(with: NSRange(location: copied, length: idx - copied))
-                result += "\"[redacted-path]\""
-                copied = close + 1
-                idx = close + 1
-            } else {
-                idx = (close < len && nsText.character(at: close) == 0x22) ? close : close + 1
-            }
-        }
-        guard copied > 0 else { return text }
-        result += nsText.substring(from: copied)
-        return result
+        let afterDouble = text.contains("\"") ? redactDoubleQuotedFilenamesRespectingQuotes(in: text) : text
+        return (afterDouble.contains("'") || afterDouble.contains("\\u"))
+            ? redactSingleQuotedFilenamesRespectingQuotes(in: afterDouble)
+            : afterDouble
     }
 
     static func redactSingleQuotedFilenamesOnSource(_ nsText: NSString, scanSource: NSString) -> String {
@@ -457,7 +424,7 @@ extension CoreTelemetryService {
         }
     }
 
-    private static func isQuotedSegStop(_ ch: unichar) -> Bool {
+    static func isQuotedSegStop(_ ch: unichar) -> Bool {
         ch == 0x0A || ch == 0x0D || ch == 0x2F || ch == 0x5C || ch == 0x1E || ch == 0x1F
     }
 
