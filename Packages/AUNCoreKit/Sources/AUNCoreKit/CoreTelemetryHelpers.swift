@@ -89,19 +89,15 @@ extension CoreTelemetryService {
         scrubbed = Self.replacePreKeywordPathRules(in: scrubbed, rules: Self.preKeywordPathRules)
         scrubbed = Self.redactQuotedFilenames(in: scrubbed)
         if let kwQuote = Self.keywordQuotedPathRegex {
-            let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
-            scrubbed = kwQuote.stringByReplacingMatches(
-                in: scrubbed, options: [], range: range, withTemplate: "$1[redacted-path]")
+            scrubbed = Self.replaceKeywordQuotedPaths(in: scrubbed, regex: kwQuote)
         }
         scrubbed = Self.redactKeywordUnquotedFilenames(in: scrubbed)
         if let kwAssign = Self.keywordAssignedPathRegex {
             scrubbed = Self.replaceKeywordAssignedPaths(in: scrubbed, regex: kwAssign)
         }
         scrubbed = Self.redactEmails(in: scrubbed)
-        if scrubbed.contains("."), let bareRegex = Self.bareFilenameRegex {
-            let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
-            scrubbed = bareRegex.stringByReplacingMatches(
-                in: scrubbed, options: [], range: range, withTemplate: "$1$2[redacted-path]")
+        if scrubbed.contains(".") || scrubbed.contains("\\u"), let bareRegex = Self.bareFilenameRegex {
+            scrubbed = Self.replaceBareFilenames(in: scrubbed, regex: bareRegex)
         }
         scrubbed = Self.restoreVaultedURLs(in: scrubbed, prefix: Self.vaultPrefix, vaultedURLs: vaultedURLs)
         if !vaultedURLs.isEmpty {
@@ -169,44 +165,52 @@ extension CoreTelemetryService {
     }
 
     private static func redactKeywordUnquotedFilenames(in text: String) -> String {
-        guard text.contains("."), let kwRegex = Self.keywordFilenamePrefixRegex else { return text }
-        let hasAt = VaultLineTracker.hasEmailAt(text)
-        let nsText = text as NSString
-        let len = nsText.length
+        guard text.contains(".") || text.contains("\\u"), let kwRegex = Self.keywordFilenamePrefixRegex else { return text }
+        return Self.redactKeywordUnquotedFilenamesRespectingQuotes(in: text, kwRegex: kwRegex)
+    }
+
+    static func redactKeywordUnquotedOnSource(
+        _ nsText: NSString, scanSource: NSString, kwRegex: NSRegularExpression
+    ) -> String {
+        let scanStr = scanSource as String
+        guard scanStr.contains(".") else { return nsText as String }
+        let hasAt = VaultLineTracker.hasEmailAt(scanStr)
+        let len = scanSource.length
         var result = ""
         var copied = 0
         var segStart = 0
         while segStart < len {
             var segEnd = segStart
             while segEnd < len {
-                let ch = nsText.character(at: segEnd)
-                if ch == 0x0A || ch == 0x0D || ch == 0x1E || ch == 0x1F || ch == 0x22 { break }
+                let ch = scanSource.character(at: segEnd)
+                if ch == 0x0A || ch == 0x0D || ch == 0x1E || ch == 0x1F { break }
                 segEnd += 1
             }
-            if let (lastDot, lastExtEnd) = Self.findLastUnquotedFilenameExt(nsText, segStart: segStart, segEnd: segEnd, len: len),
+            if let (lastDot, lastExtEnd) = Self.findLastUnquotedFilenameExt(
+                scanSource, segStart: segStart, segEnd: segEnd, len: len),
                 let kwMatch = kwRegex.firstMatch(
-                    in: text, options: [], range: NSRange(location: segStart, length: lastDot - segStart)
+                    in: scanStr, options: [], range: NSRange(location: segStart, length: lastDot - segStart)
                 )
             {
                 let kwEnd = kwMatch.range.location + kwMatch.range.length
-                let emailEnd = hasAt ? VaultLineTracker.findEmailTailEnd(nsText, from: lastExtEnd, len: len) : -1
-                if emailEnd > 0 && !VaultLineTracker.containsWhitespace(nsText, from: kwEnd, to: lastDot) {
+                let emailEnd = hasAt ? VaultLineTracker.findEmailTailEnd(scanSource, from: lastExtEnd, len: len) : -1
+                if emailEnd > 0 && !VaultLineTracker.containsWhitespace(scanSource, from: kwEnd, to: lastDot) {
                     segStart = segEnd + 1
                     continue
                 }
-                if result.isEmpty { result.reserveCapacity(text.count) }
+                if result.isEmpty { result.reserveCapacity(nsText.length) }
                 result += nsText.substring(with: NSRange(location: copied, length: kwEnd - copied))
                 result += "[redacted-path]"
                 copied = max(lastExtEnd, emailEnd)
             }
             segStart = max(segEnd + 1, copied)
         }
-        guard copied > 0 else { return text }
+        guard copied > 0 else { return nsText as String }
         result += nsText.substring(from: copied)
         return result
     }
 
-    private static func findLastUnquotedFilenameExt(
+    static func findLastUnquotedFilenameExt(
         _ nsText: NSString, segStart: Int, segEnd: Int, len: Int
     ) -> (Int, Int)? {
         var dot = segEnd - 1

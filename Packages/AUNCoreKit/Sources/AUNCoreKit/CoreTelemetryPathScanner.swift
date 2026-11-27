@@ -314,9 +314,9 @@ extension CoreTelemetryService {
     }
 
     static func redactQuotedFilenames(in text: String) -> String {
-        guard text.contains(".") else { return text }
-        let afterDouble = text.contains("\"") ? redactDoubleQuotedFilenames(in: text) : text
-        return afterDouble.contains("'") ? redactSingleQuotedFilenames(in: afterDouble) : afterDouble
+        guard text.contains(".") || text.contains("\\u") else { return text }
+        let afterDouble = (text.contains("\"") && text.contains(".")) ? redactDoubleQuotedFilenames(in: text) : text
+        return afterDouble.contains("'") ? redactSingleQuotedFilenamesRespectingQuotes(in: afterDouble) : afterDouble
     }
 
     private static func redactDoubleQuotedFilenames(in text: String) -> String {
@@ -354,47 +354,96 @@ extension CoreTelemetryService {
         return result
     }
 
-    private static func redactSingleQuotedFilenames(in text: String) -> String {
-        let hasAt = VaultLineTracker.hasEmailAt(text)
-        let nsText = text as NSString
-        let len = nsText.length
+    static func redactSingleQuotedFilenamesOnSource(_ nsText: NSString, scanSource: NSString) -> String {
+        let hasAt = VaultLineTracker.hasEmailAt(scanSource as String)
+        let len = scanSource.length
         var result = ""
         var copied = 0
         var segStart = 0
         while segStart < len {
             var segEnd = segStart
-            while segEnd < len && nsText.character(at: segEnd) != 0x22
-                && !isQuotedSegStop(nsText.character(at: segEnd))
-            {
-                segEnd += 1
-            }
+            while segEnd < len && !isQuotedSegStop(scanSource.character(at: segEnd)) { segEnd += 1 }
             redactSingleQuotesInSegment(
-                nsText, range: segStart..<segEnd, hasAt: hasAt, result: &result, copied: &copied
+                nsText, scanSource: scanSource, range: segStart..<segEnd, hasAt: hasAt, result: &result, copied: &copied
             )
             segStart = max(segEnd + 1, copied)
         }
-        guard copied > 0 else { return text }
+        guard copied > 0 else { return nsText as String }
         result += nsText.substring(from: copied)
         return result
     }
 
-    private static func redactSingleQuotesInSegment(
-        _ nsText: NSString, range: Range<Int>, hasAt: Bool, result: inout String, copied: inout Int
+    static func applySingleQuotedSpans(
+        _ nsText: NSString, decoded: NSString, rawOffsets: [Int], result: inout String, copied: inout Int
+    ) {
+        let hasAt = VaultLineTracker.hasEmailAt(decoded as String)
+        let len = decoded.length
+        var decCopied = 0
+        var segStart = 0
+        while segStart < len {
+            var segEnd = segStart
+            while segEnd < len && !isQuotedSegStop(decoded.character(at: segEnd)) { segEnd += 1 }
+            applySingleQuotesInDecodedSegment(
+                nsText, decoded: decoded, range: segStart..<segEnd,
+                rawOffsets: rawOffsets, hasAt: hasAt, result: &result, copied: &copied, decCopied: &decCopied
+            )
+            segStart = max(segEnd + 1, decCopied)
+        }
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    private static func applySingleQuotesInDecodedSegment(
+        _ nsText: NSString, decoded: NSString, range: Range<Int>,
+        rawOffsets: [Int], hasAt: Bool, result: inout String, copied: inout Int, decCopied: inout Int
     ) {
         var open = -1
         var candidateClose = -1
-        for pos in range where pos >= copied && nsText.character(at: pos) == 0x27 {
-            let isOpener = pos == range.lowerBound || !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos - 1))
+        for pos in range where pos >= decCopied && decoded.character(at: pos) == 0x27 {
+            let isOpener = pos == range.lowerBound || !VaultLineTracker.isLetterOrDigit(decoded.character(at: pos - 1))
             if isOpener {
                 if open < 0 || candidateClose >= 0 {
                     open = pos
                     candidateClose = -1
                 }
             } else if open >= 0
-                && (pos + 1 == range.upperBound || !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos + 1)))
+                && (pos + 1 == range.upperBound || !VaultLineTracker.isLetterOrDigit(decoded.character(at: pos + 1)))
             {
-                if endsWithFilenameExt(nsText, start: open + 1, end: pos) {
-                    let emailEnd = hasAt ? VaultLineTracker.findEmailTailEnd(nsText, from: pos + 1, len: nsText.length) : -1
+                if endsWithFilenameExt(decoded, start: open + 1, end: pos) {
+                    let emailEnd = hasAt ? VaultLineTracker.findEmailTailEnd(decoded, from: pos + 1, len: decoded.length) : -1
+                    let endPos = max(pos + 1, emailEnd)
+                    if result.isEmpty { result.reserveCapacity(nsText.length) }
+                    result += nsText.substring(with: NSRange(location: copied, length: rawOffsets[open] - copied))
+                    result += "[redacted-path]"
+                    copied = rawOffsets[endPos]
+                    decCopied = endPos
+                    open = -1
+                    candidateClose = -1
+                } else {
+                    candidateClose = pos
+                }
+            }
+        }
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    private static func redactSingleQuotesInSegment(
+        _ nsText: NSString, scanSource: NSString, range: Range<Int>, hasAt: Bool, result: inout String, copied: inout Int
+    ) {
+        var open = -1
+        var candidateClose = -1
+        for pos in range where pos >= copied && scanSource.character(at: pos) == 0x27 {
+            let isOpener = pos == range.lowerBound || !VaultLineTracker.isLetterOrDigit(scanSource.character(at: pos - 1))
+            if isOpener {
+                if open < 0 || candidateClose >= 0 {
+                    open = pos
+                    candidateClose = -1
+                }
+            } else if open >= 0
+                && (pos + 1 == range.upperBound || !VaultLineTracker.isLetterOrDigit(scanSource.character(at: pos + 1)))
+            {
+                if endsWithFilenameExt(scanSource, start: open + 1, end: pos) {
+                    let emailEnd =
+                        hasAt ? VaultLineTracker.findEmailTailEnd(scanSource, from: pos + 1, len: scanSource.length) : -1
                     if result.isEmpty { result.reserveCapacity(nsText.length) }
                     result += nsText.substring(with: NSRange(location: copied, length: open - copied))
                     result += "[redacted-path]"
@@ -412,7 +461,7 @@ extension CoreTelemetryService {
         ch == 0x0A || ch == 0x0D || ch == 0x2F || ch == 0x5C || ch == 0x1E || ch == 0x1F
     }
 
-    private static func endsWithFilenameExt(_ nsText: NSString, start: Int, end: Int) -> Bool {
+    static func endsWithFilenameExt(_ nsText: NSString, start: Int, end: Int) -> Bool {
         var extStart = end
         while extStart > start && end - extStart < 17 {
             let ch = nsText.character(at: extStart - 1)

@@ -1,7 +1,7 @@
 import Foundation
 
 extension CoreTelemetryService {
-    private struct QuotedPathSpan {
+    struct QuotedPathSpan {
         let open: Int
         let close: Int
         let hasVault: Bool
@@ -146,7 +146,7 @@ extension CoreTelemetryService {
         return false
     }
 
-    private static func decodeQuotedSpanWithOffsets(_ nsText: NSString, start: Int, end: Int) -> (String, [Int]) {
+    static func decodeQuotedSpanWithOffsets(_ nsText: NSString, start: Int, end: Int) -> (String, [Int]) {
         let cap = end - start
         var units = [unichar](repeating: 0, count: cap)
         var offsets = [Int](repeating: 0, count: cap + 1)
@@ -155,7 +155,8 @@ extension CoreTelemetryService {
         while pos < end {
             offsets[count] = pos
             let dec = decodeJsonCharAt(nsText, pos: pos, end: end)
-            units[count] = dec.ch
+            let ch: unichar = (dec.len > 1 && (dec.ch == 0x1E || dec.ch == 0x1F)) ? 0x5F : dec.ch
+            units[count] = ch
             count += 1
             pos += dec.len
         }
@@ -163,7 +164,7 @@ extension CoreTelemetryService {
         return (String(utf16CodeUnits: units, count: count), offsets)
     }
 
-    private static func buildMaskedDoubleQuotes(_ nsText: NSString, spans: [QuotedPathSpan]) -> String {
+    static func buildMaskedDoubleQuotes(_ nsText: NSString, spans: [QuotedPathSpan]) -> String {
         let len = nsText.length
         var units = [unichar](repeating: 0, count: len)
         nsText.getCharacters(&units, range: NSRange(location: 0, length: len))
@@ -177,7 +178,7 @@ extension CoreTelemetryService {
         return String(utf16CodeUnits: units, count: len)
     }
 
-    private static func applyMaskedPathRegex(
+    static func applyMaskedPathRegex(
         _ text: String, masked: String, regex: NSRegularExpression, hasPrefix: Bool
     ) -> String {
         let nsText = text as NSString
@@ -198,7 +199,7 @@ extension CoreTelemetryService {
         return result
     }
 
-    private static func collectBalancedDoubleQuoteSpans(_ nsText: NSString) -> [QuotedPathSpan] {
+    static func collectBalancedDoubleQuoteSpans(_ nsText: NSString) -> [QuotedPathSpan] {
         var spans: [QuotedPathSpan] = []
         let len = nsText.length
         var idx = 0
