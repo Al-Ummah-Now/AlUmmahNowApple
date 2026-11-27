@@ -13,8 +13,10 @@ extension CoreTelemetryService {
         while start > minStart && VaultLineTracker.isURLSchemeChar(nsText.character(at: start - 1)) {
             start -= 1
         }
+        let (adjusted, stepped) = stepJsonEscapeBeforeScheme(nsText, start: start, sep: sep, minStart: minStart)
+        start = adjusted
         guard sep - start >= 2, isASCIILetter(nsText.character(at: start)) else { return nil }
-        if start > 0 {
+        if !stepped && start > 0 {
             let prev = nsText.character(at: start - 1)
             if VaultLineTracker.isURLSchemeChar(prev) || prev == 0x2F || prev == 0x5C { return nil }
         }
@@ -183,6 +185,7 @@ extension CoreTelemetryService {
                 || ((angleStopMask & 4) == 0 && VaultLineTracker.isWhitespace(ch))
                 || (ch == 0x3C && (angleStopMask & 1) != 0)
                 || (ch == 0x3E && (angleStopMask & 2) != 0)
+                || ((angleStopMask & 8) != 0 && ch == 0x5C && isEscapedGreater(nsText, at: pos, len: len))
             {
                 break
             }
@@ -460,8 +463,8 @@ extension CoreTelemetryService.VaultLineTracker {
         return UnicodeScalar(ch).map { ($0, 1) }
     }
 
-    private static func classifyDomainChar(_ nsText: NSString, at pos: Int, len: Int) -> (DomainCharKind, Int) {
-        if let escKind = CoreTelemetryService.classifyEscapedDomainChar(nsText, at: pos, len: len) { return (escKind, 6) }
+    static func classifyDomainChar(_ nsText: NSString, at pos: Int, len: Int) -> (DomainCharKind, Int) {
+        if let esc = CoreTelemetryService.classifyEscapedDomainChar(nsText, at: pos, len: len) { return esc }
         let ch = nsText.character(at: pos)
         if ch < 0x80 {
             if CoreTelemetryService.isASCIILetter(ch) { return (.letter, 1) }
@@ -554,43 +557,29 @@ extension CoreTelemetryService.VaultLineTracker {
         var idx = domStart
         var labelStart = domStart
         var labelHasLetter = false
+        var lastKind: DomainCharKind = .other
         var bestEnd = -1
         while idx < len {
             let (kind, step) = classifyDomainChar(nsText, at: idx, len: len)
             if kind == .letter {
                 labelHasLetter = true
             } else if kind == .dot {
-                if idx == labelStart || nsText.character(at: idx - 1) == 0x2D { break }
-                labelStart = idx + 1
+                if idx == labelStart || lastKind == .hyphen { break }
+                labelStart = idx + step
                 labelHasLetter = false
             } else if kind == .hyphen {
                 if idx == labelStart { break }
             } else if kind != .digit {
                 break
             }
+            lastKind = kind
             idx += step
-            if isValidDomainLabelEnd(nsText, labelStart: labelStart, end: idx, labelHasLetter: labelHasLetter) {
+            if CoreTelemetryService.isValidDomainLabelEnd(
+                nsText, labelStart: labelStart, end: idx, labelHasLetter: labelHasLetter, endedHyphen: lastKind == .hyphen
+            ) {
                 bestEnd = idx
             }
         }
         return bestEnd
-    }
-
-    static func isEmailBoundaryBlocked(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
-        let (kind, _) = classifyDomainChar(nsText, at: pos, len: len)
-        return kind == .letter || kind == .digit || kind == .hyphen || nsText.character(at: pos) == 0x5F
-    }
-
-    private static func isValidDomainLabelEnd(
-        _ nsText: NSString, labelStart: Int, end: Int, labelHasLetter: Bool
-    ) -> Bool {
-        let len = nsText.length
-        guard end > labelStart, labelHasLetter, nsText.character(at: end - 1) != 0x2D else { return false }
-        guard end == len || !isEmailBoundaryBlocked(nsText, at: end, len: len) else { return false }
-        if end + 1 < len && isEmailDomainDot(nsText.character(at: end)) {
-            let (nextKind, _) = classifyDomainChar(nsText, at: end + 1, len: len)
-            if nextKind == .letter || nextKind == .digit { return false }
-        }
-        return true
     }
 }

@@ -22,7 +22,7 @@ extension CoreTelemetryAuthScanner {
         return result
     }
 
-    private static func isBasicCredentialToken(_ token: String) -> Bool {
+    static func isBasicCredentialToken(_ token: String) -> Bool {
         guard let data = decodeCanonicalBase64(token), data.contains(0x3A) else { return false }
         if let decoded = String(data: data, encoding: .utf8) {
             let hasControl = decoded.unicodeScalars.contains {
@@ -274,7 +274,7 @@ extension CoreTelemetryAuthScanner {
         return (ch == 0x7B || ch == 0x2C) ? beforeKey : -1
     }
 
-    private static func skipJsonWhitespaceBackward(_ nsText: NSString, from start: Int) -> Int {
+    static func skipJsonWhitespaceBackward(_ nsText: NSString, from start: Int) -> Int {
         var idx = start
         while idx >= 0 && (isHorizSpace(nsText.character(at: idx)) || isNewline(nsText.character(at: idx))) { idx -= 1 }
         return idx

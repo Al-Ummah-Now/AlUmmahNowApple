@@ -2,18 +2,20 @@ import Foundation
 
 /// Linear O(n) auth-header scanner (plain text, JSON escaped keys, arrays) and RFC 7617 Basic / Bearer redactor.
 enum CoreTelemetryAuthScanner {
-    private static let knownAuthSchemes = [
+    static let knownAuthSchemes = [
         "Bearer", "Basic", "Digest", "Token", "Api-Key", "ApiKey",
         "OAuth", "Negotiate", "Mutual", "HOBA", "Vapid", "SCRAM-SHA-256", "AWS4-HMAC-SHA256",
     ]
 
-    private static let bearerTokenRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"\b(Bearer)\s+(?!\[redacted\](?=$|[\s"',;)\]}]))(?:\\[^\r\n\s]|[^\s\\"',;)\]}]|\\(?=$|[\s\r\n]))+"#,
+    static let bearerTokenRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern:
+            #"\b(Bearer)[\s\p{Zs}]+(?!\[redacted\](?=$|[\s\p{Zs}"',;)\]}]|\\(?:[nrtbf"]|u00(?:20|09|0[aAdD]|[aA]0))))"#
+            + #"(?:\\[^\r\n\s\p{Zs}]|[^\s\p{Zs}\\"',;)\]}]|\\(?=$|[\s\p{Zs}\r\n]))+"#,
         options: [.caseInsensitive]
     )
 
     static let basicTokenRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"\b(Basic)\s+([A-Za-z0-9+/_-]{2,}={0,2})(?![A-Za-z0-9+/_=-])"#,
+        pattern: #"\b(Basic)[\s\p{Zs}]+([A-Za-z0-9+/_-]{2,}={0,2})(?![A-Za-z0-9+/_=-])"#,
         options: [.caseInsensitive]
     )
 
@@ -23,12 +25,14 @@ enum CoreTelemetryAuthScanner {
             let range = NSRange(result.startIndex..<result.endIndex, in: result)
             result = bearerRegex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "$1 [redacted]")
         }
-        return redactBasicTokens(in: result)
+        result = redactBasicTokens(in: result)
+        return redactEscapedTokensInBalancedQuotes(in: result)
     }
 
     struct AuthScanState {
         var result = ""
         var copied = 0
+        var edits: [(Int, Int, String)]?
         var validJsonValueEnd: [Int: Int] = [:]
         var closeToOpenMap: [Int: Int] = [:]
         var memberCommaOpen: [Int: Int] = [:]
@@ -37,6 +41,11 @@ enum CoreTelemetryAuthScanner {
         var failedContainerBack = -1
 
         mutating func appendRedacted(_ nsText: NSString, start: Int, end: Int, replacement: String) {
+            if edits != nil {
+                edits?.append((start, end, replacement))
+                copied = end
+                return
+            }
             if result.isEmpty { result.reserveCapacity(nsText.length) }
             result += nsText.substring(with: NSRange(location: copied, length: start - copied))
             result += replacement
@@ -59,14 +68,34 @@ enum CoreTelemetryAuthScanner {
         let normalizedKey: String?
     }
 
-    private static func redactAuthHeaders(in text: String) -> String {
-        guard text.contains(":") || text.contains("=") else { return text }
+    private static func mayContainAuthHeader(_ text: String, maxDepth: Int) -> Bool {
+        text.contains(":") || text.contains("=") || (maxDepth > 0 && text.contains("\"") && text.contains("\\u"))
+    }
+
+    private static func redactAuthHeaders(in text: String, maxDepth: Int = 4) -> String {
+        guard mayContainAuthHeader(text, maxDepth: maxDepth) else { return text }
         let nsText = text as NSString
-        let len = nsText.length
         var state = AuthScanState()
+        scanAuthHeaders(nsText, maxDepth: maxDepth, state: &state)
+        guard state.copied > 0 else { return text }
+        state.result += nsText.substring(from: state.copied)
+        return state.result
+    }
+
+    static func scanAuthHeaders(_ nsText: NSString, maxDepth: Int, state: inout AuthScanState) {
+        let len = nsText.length
         var idx = 0
         while idx < len {
             guard let keyMatch = matchAuthHeaderKey(nsText, at: idx, len: len, state: &state) else {
+                if maxDepth > 0 && nsText.character(at: idx) == 0x22
+                    && !CoreTelemetryService.VaultLineTracker.isPrecededByOddBackslashes(nsText, at: idx, minPos: state.copied),
+                    let close = findBalancedJsonStringEnd(nsText, open: idx, len: len)
+                {
+                    redactAuthHeadersInBalancedSpan(
+                        nsText, innerStart: idx + 1, close: close, nextDepth: maxDepth - 1, state: &state)
+                    idx = close + 1
+                    continue
+                }
                 idx += 1
                 continue
             }
@@ -96,9 +125,6 @@ enum CoreTelemetryAuthScanner {
             }
             idx = redactAuthHeaderValue(nsText, valStart: valStart, ctx: ctx, state: &state)
         }
-        guard state.copied > 0 else { return text }
-        state.result += nsText.substring(from: state.copied)
-        return state.result
     }
 
     private static func matchAuthHeaderKey(
@@ -366,64 +392,5 @@ enum CoreTelemetryAuthScanner {
     private static func nextAfterArrayNewline(_ nsText: NSString, at pos: Int, len: Int, allowNewlines: Bool) -> Int {
         if allowNewlines { return pos + 1 }
         return advanceObsFold(nsText, at: pos, len: len)
-    }
-
-    private static func redactUnquotedArrayElement(
-        _ nsText: NSString, from start: Int, isJsonMember: Bool, state: inout AuthScanState
-    ) -> Int {
-        let len = nsText.length
-        var elemEnd = start
-        while elemEnd < len {
-            let ch = nsText.character(at: elemEnd)
-            if ch == 0x2C || ch == 0x5B || ch == 0x5D || isNewline(ch) { break }
-            elemEnd += 1
-        }
-        var trimEnd = elemEnd
-        while trimEnd > start && isHorizSpace(nsText.character(at: trimEnd - 1)) { trimEnd -= 1 }
-        let isNull = trimEnd - start == 4 && nsText.substring(with: NSRange(location: start, length: 4)) == "null"
-        if trimEnd > start && !isNull, let redacted = redactAuthValueBody(nsText, start: start, end: trimEnd) {
-            let wrapped = isJsonMember ? "\"\(redacted)\"" : redacted
-            let suffix = nsText.substring(with: NSRange(location: trimEnd, length: elemEnd - trimEnd))
-            state.appendRedacted(nsText, start: start, end: elemEnd, replacement: wrapped + suffix)
-        }
-        return elemEnd
-    }
-
-    private static func redactQuotedAuthString(
-        _ nsText: NSString, quotePos: Int, quote: unichar, state: inout AuthScanState
-    ) -> Int {
-        let len = nsText.length
-        var idx = quotePos + 1
-        var escaped = false
-        while idx < len {
-            let ch = nsText.character(at: idx)
-            if isNewline(ch) || (ch == quote && !escaped) { break }
-            escaped = ch == 0x5C && !escaped
-            idx += 1
-        }
-        let innerStart = quotePos + 1
-        if let redacted = redactAuthValueBody(nsText, start: innerStart, end: idx) {
-            state.appendRedacted(nsText, start: innerStart, end: idx, replacement: redacted)
-        }
-        return idx < len && nsText.character(at: idx) == quote ? idx + 1 : idx
-    }
-
-    private static func redactAuthValueBody(_ nsText: NSString, start: Int, end: Int) -> String? {
-        var idx = start
-        while idx < end && isHorizSpace(nsText.character(at: idx)) { idx += 1 }
-        guard idx < end else { return nil }
-        for scheme in knownAuthSchemes {
-            let schemeLen = scheme.utf16.count
-            if idx + schemeLen < end && matchesASCII(nsText, at: idx, literal: scheme, len: end) {
-                var after = idx + schemeLen
-                if isHorizSpace(nsText.character(at: after)) {
-                    while after < end && isHorizSpace(nsText.character(at: after)) { after += 1 }
-                    if after < end {
-                        return nsText.substring(with: NSRange(location: start, length: after - start)) + "[redacted]"
-                    }
-                }
-            }
-        }
-        return nsText.substring(with: NSRange(location: start, length: idx - start)) + "[redacted]"
     }
 }

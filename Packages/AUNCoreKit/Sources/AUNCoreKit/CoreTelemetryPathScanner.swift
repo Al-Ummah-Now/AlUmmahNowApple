@@ -166,14 +166,21 @@ extension CoreTelemetryService {
             }
         }
 
-        private func isLeadingEscapedQuote(_ nsText: NSString) -> Bool {
-            openQuote == 0x22 && !escapedBackslash && cursor + 1 < nsText.length
-                && nsText.character(at: cursor + 1) == 0x22
+        private func isNonPathJsonEscape(_ nsText: NSString) -> Bool {
+            guard openQuote == 0x22 && !escapedBackslash && cursor + 1 < nsText.length else { return false }
+            let next = nsText.character(at: cursor + 1)
+            if next == 0x22 || next == 0x6E || next == 0x72 || next == 0x74 || next == 0x62 || next == 0x66 {
+                return true
+            }
+            guard next == 0x75 && cursor + 5 < nsText.length,
+                let code = CoreTelemetryService.parseHex4(nsText, pos: cursor + 2)
+            else { return false }
+            return code != 0x5C && code != 0x2F
         }
 
         private mutating func trackTokenChar(_ nsText: NSString, ch: unichar) {
             if ch == 0x5C {
-                if !isLeadingEscapedQuote(nsText) { tokenHasBackslash = true }
+                if !isNonPathJsonEscape(nsText) { tokenHasBackslash = true }
             } else if ch == 0x2F {
                 if tokenSlashCount == 0 { tokenFirstSlash = cursor }
                 tokenSlashCount += 1

@@ -79,7 +79,10 @@ extension CoreTelemetryService {
     public static func sanitizeLocalPaths(_ text: String) -> String {
         guard !text.isEmpty else { return text }
         let (escaped, hadSentinels) = Self.escapeSentinels(text)
-        let preAuth = CoreTelemetryAuthScanner.redactAuthCredentials(in: VaultLineTracker.redactQuotedEmails(in: escaped))
+        let quotedEmails = Self.redactEmailsInEscapedDoubleQuotes(
+            in: VaultLineTracker.redactQuotedEmails(in: escaped), quotedOnly: true
+        )
+        let preAuth = CoreTelemetryAuthScanner.redactAuthCredentials(in: quotedEmails)
         var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: preAuth, prefix: Self.vaultPrefix)
         scrubbed = Self.redactFileURIs(in: scrubbed, vaultPrefix: Self.vaultPrefix)
         scrubbed = Self.redactDoubleQuotedLocalPaths(in: scrubbed)
@@ -107,6 +110,11 @@ extension CoreTelemetryService {
     }
 
     private static func redactEmails(in text: String) -> String {
+        let current = redactEmailsRaw(in: text)
+        return Self.redactEmailsInEscapedDoubleQuotes(in: current, quotedOnly: false)
+    }
+
+    private static func redactEmailsRaw(in text: String) -> String {
         guard VaultLineTracker.hasEmailAt(text) else { return text }
         let nsText = text as NSString
         let len = nsText.length
@@ -262,6 +270,8 @@ extension CoreTelemetryService {
         var quoteCursor = 0
         var quoteState = 0
         var contLimits = ContinuationLimits()
+        var failedSpacedContMax = 0
+        var unclosedAngleLineEnd = 0
         while searchFrom < totalLen {
             let found = nsText.range(
                 of: "://", options: [], range: NSRange(location: searchFrom, length: totalLen - searchFrom)
@@ -297,7 +307,9 @@ extension CoreTelemetryService {
             let contInput = URLContinuationInput(
                 span: span, rawURL: baseURL, baseTail: tail, quoteState: quoteState
             )
-            if let ext = Self.extendURLContinuation(nsText, input: contInput, limits: &contLimits) {
+            if let ext = Self.extendURLContinuation(nsText, input: contInput, limits: &contLimits)
+                ?? Self.extendSpacedQuotedURLQuery(nsText, input: contInput, failedSpacedContMax: &failedSpacedContMax)
+            {
                 endPos = ext.endPos
                 finalTail = ext.tail
                 rebuilt += Self.formatURLContinuation(
@@ -307,6 +319,7 @@ extension CoreTelemetryService {
                 let (token, newEnd, newTail) = Self.emitSimpleVaultedURL(
                     nsText, span: span, quoteState: quoteState,
                     urls: (base: baseURL, redacted: redactedURL, tail: tail),
+                    unclosedAngleLineEnd: &unclosedAngleLineEnd,
                     prefix: prefix, vaultedURLs: &vaultedURLs
                 )
                 rebuilt += token
@@ -428,9 +441,22 @@ extension CoreTelemetryService {
 
     static func serializeProperties(_ properties: [String: String]) -> String? {
         guard !properties.isEmpty else { return nil }
-        let filtered = properties.filter { !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        guard !filtered.isEmpty,
-            let data = try? JSONSerialization.data(withJSONObject: filtered, options: [.sortedKeys]),
+        var sanitized: [String: String] = [:]
+        sanitized.reserveCapacity(properties.count)
+        for (key, value) in properties {
+            let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedKey.isEmpty else { continue }
+            let lowered = trimmedKey.lowercased()
+            if lowered == "authorization" || lowered == "proxy-authorization" {
+                sanitized[key] = "[redacted]"
+            } else {
+                let safeKey = Self.sanitizeLocalPaths(key)
+                guard !safeKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                sanitized[safeKey] = Self.sanitizeLocalPaths(value)
+            }
+        }
+        guard !sanitized.isEmpty,
+            let data = try? JSONSerialization.data(withJSONObject: sanitized, options: [.sortedKeys]),
             let json = String(data: data, encoding: .utf8)
         else { return nil }
         return json
