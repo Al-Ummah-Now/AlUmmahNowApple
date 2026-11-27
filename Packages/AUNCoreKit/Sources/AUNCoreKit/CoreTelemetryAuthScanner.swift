@@ -179,7 +179,33 @@ enum CoreTelemetryAuthScanner {
                 nsText, afterPos: afterArray, allowNewlines: allowNewlines, result: &result, copied: &copied
             )
         }
+        if allowNewlines,
+            let afterPrim = tryRedactJsonPrimitiveAuthValue(nsText, from: valStart, result: &result, copied: &copied)
+        {
+            return afterPrim
+        }
         return redactPlainAuthSpan(nsText, from: valStart, result: &result, copied: &copied)
+    }
+
+    private static func tryRedactJsonPrimitiveAuthValue(
+        _ nsText: NSString, from valStart: Int, result: inout String, copied: inout Int
+    ) -> Int? {
+        let len = nsText.length
+        var tokenEnd = valStart
+        while tokenEnd < len && !isJsonPrimitiveStop(nsText.character(at: tokenEnd)) { tokenEnd += 1 }
+        guard tokenEnd > valStart else { return nil }
+        let token = nsText.substring(with: NSRange(location: valStart, length: tokenEnd - valStart))
+        let isNull = token == "null"
+        guard isNull || token == "true" || token == "false" || isJsonNumber(token) else { return nil }
+        let next = skipAuthWhitespace(nsText, from: tokenEnd, len: len, allowNewlines: true)
+        guard next >= len || isJsonDelimiter(nsText.character(at: next)) else { return nil }
+        if !isNull {
+            if result.isEmpty { result.reserveCapacity(len) }
+            result += nsText.substring(with: NSRange(location: copied, length: valStart - copied))
+            result += "\"[redacted]\""
+            copied = tokenEnd
+        }
+        return tokenEnd
     }
 
     private static func redactPlainAuthSpan(
@@ -207,22 +233,17 @@ enum CoreTelemetryAuthScanner {
     private static func findTrailingPlainAuthStart(_ nsText: NSString, afterPos: Int, allowNewlines: Bool) -> Int {
         let len = nsText.length
         var pos = afterPos
-        var sawFold = false
         while pos < len {
             while pos < len && isHorizSpace(nsText.character(at: pos)) { pos += 1 }
             let fold = advanceObsFold(nsText, at: pos, len: len)
             if fold > pos {
-                sawFold = true
                 pos = fold
                 continue
             }
             break
         }
         guard pos < len && !isNewline(nsText.character(at: pos)) else { return -1 }
-        let next = nsText.character(at: pos)
-        let isCloser = next == 0x7D || next == 0x5D
-        if sawFold { return allowNewlines && isCloser ? -1 : pos }
-        if isCloser || (allowNewlines && next == 0x2C) { return -1 }
+        if allowNewlines && isJsonDelimiter(nsText.character(at: pos)) { return -1 }
         return pos
     }
 
@@ -266,7 +287,9 @@ enum CoreTelemetryAuthScanner {
                 if next < 0 { return idx }
                 idx = next
             } else {
-                idx = redactUnquotedArrayElement(nsText, from: idx, len: len, result: &result, copied: &copied)
+                idx = redactUnquotedArrayElement(
+                    nsText, from: idx, allowNewlines: allowNewlines, result: &result, copied: &copied
+                )
             }
         }
         return idx
@@ -278,8 +301,9 @@ enum CoreTelemetryAuthScanner {
     }
 
     private static func redactUnquotedArrayElement(
-        _ nsText: NSString, from start: Int, len: Int, result: inout String, copied: inout Int
+        _ nsText: NSString, from start: Int, allowNewlines: Bool, result: inout String, copied: inout Int
     ) -> Int {
+        let len = nsText.length
         var elemEnd = start
         while elemEnd < len {
             let ch = nsText.character(at: elemEnd)
@@ -292,7 +316,7 @@ enum CoreTelemetryAuthScanner {
         if trimEnd > start && !isNull, let redacted = redactAuthValueBody(nsText, start: start, end: trimEnd) {
             if result.isEmpty { result.reserveCapacity(len) }
             result += nsText.substring(with: NSRange(location: copied, length: start - copied))
-            result += redacted
+            result += allowNewlines ? "\"\(redacted)\"" : redacted
             result += nsText.substring(with: NSRange(location: trimEnd, length: elemEnd - trimEnd))
             copied = elemEnd
         }
@@ -431,6 +455,21 @@ extension CoreTelemetryAuthScanner {
 
     private static func isHorizSpace(_ ch: unichar) -> Bool { ch == 0x20 || ch == 0x09 }
     private static func isNewline(_ ch: unichar) -> Bool { ch == 0x0A || ch == 0x0D }
+    private static func isJsonDelimiter(_ ch: unichar) -> Bool { ch == 0x2C || ch == 0x7D || ch == 0x5D }
+
+    private static func isJsonPrimitiveStop(_ ch: unichar) -> Bool {
+        isHorizSpace(ch) || isNewline(ch) || isJsonDelimiter(ch)
+    }
+
+    private static let jsonNumberRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"#
+    )
+
+    private static func isJsonNumber(_ token: String) -> Bool {
+        guard let regex = jsonNumberRegex else { return false }
+        let range = NSRange(token.startIndex..<token.endIndex, in: token)
+        return regex.firstMatch(in: token, options: [], range: range) != nil
+    }
 
     private static func isAuthKeyWordChar(_ ch: unichar) -> Bool {
         CoreTelemetryService.isASCIILetter(ch) || CoreTelemetryService.isASCIIDigit(ch) || ch == 0x5F || ch == 0x2D

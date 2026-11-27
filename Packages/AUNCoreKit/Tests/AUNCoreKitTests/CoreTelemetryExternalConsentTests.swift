@@ -298,6 +298,17 @@ struct CoreTelemetryExternalConsentTests {
                 "{\"Authorization\": \"opaqueSecret123\", \"status\": \"safe\"}",
                 "{\"Authorization\": \"[redacted]\", \"status\": \"safe\"}"
             ),
+            (
+                "{\"Authorization\":\"opaqueSecret123\"\n  , \"status\":\"safe\"\n}",
+                "{\"Authorization\":\"[redacted]\"\n  , \"status\":\"safe\"\n}"
+            ),
+            ("Authorization: \"firstValue\" ]opaqueSecret123", "Authorization: \"[redacted]\" [redacted]"),
+            ("{\"Authorization\":[123,true,null]}", "{\"Authorization\":[\"[redacted]\",\"[redacted]\",null]}"),
+            (
+                "{\"Authorization\":12345,\"status\":\"safe\"}",
+                "{\"Authorization\":\"[redacted]\",\"status\":\"safe\"}"
+            ),
+            ("{\"Authorization\":null,\"status\":\"safe\"}", "{\"Authorization\":null,\"status\":\"safe\"}"),
             ("Authorization: [firstValue]\r\nNextHeader: safe", "Authorization: [[redacted]]\r\nNextHeader: safe"),
             ("{\n  \"Authorization\": \"opaqueSecret123\"\n  }", "{\n  \"Authorization\": \"[redacted]\"\n  }"),
             ("Authorization:\r\n\topaqueSecret123", "Authorization:\r\n\t[redacted]"),
