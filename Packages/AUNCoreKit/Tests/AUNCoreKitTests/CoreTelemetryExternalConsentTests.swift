@@ -254,17 +254,36 @@ struct CoreTelemetryExternalConsentTests {
             ("Proxy-Authorization: Basic YWxpY2U6c2VjcmV0", "Proxy-Authorization: Basic [redacted]"),
             ("Authorization: Digest username=\"alice\", response=\"deadbeef\"", "Authorization: Digest [redacted]"),
             ("{\"Authorization\": \"Basic YWxpY2U6c2VjcmV0\"}", "{\"Authorization\": \"Basic [redacted]\"}"),
+            ("{\"Authorization\":\"opaqueSecret123\"}", "{\"Authorization\":\"[redacted]\"}"),
+            (
+                "{\"Proxy-Authorization\":\"Digest username=alice, response=deadbeef\"}",
+                "{\"Proxy-Authorization\":\"Digest [redacted]\"}"
+            ),
+            ("Authorization: opaqueSecret123 nextPart", "Authorization: [redacted]"),
+            ("Authorization: X-Secret secondword", "Authorization: [redacted]"),
+            ("Basic YTpi", "Basic [redacted]"),
+            ("Basic ajpqampq", "Basic [redacted]"),
+            ("BASIC YWxpY2U6c2VjcmV0", "BASIC [redacted]"),
             ("Basic auth failed", "Basic auth failed"),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
+        let escapedDigestJSON = CoreTelemetryService.sanitizeLocalPaths(
+            "{\"Authorization\":\"Digest username=\\\"alice\\\", response=\\\"deadbeef\\\"\"}"
+        )
+        #expect(escapedDigestJSON.hasPrefix("{\"Authorization\":\"Digest [redacted]"))
+        #expect(!escapedDigestJSON.contains("alice") && !escapedDigestJSON.contains("deadbeef"))
         let repeatedFilenameEmails = String(repeating: "alice.txt@example.org ", count: 5_000)
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(repeatedFilenameEmails)
                 == String(repeating: "[redacted-email] ", count: 5_000)
         )
     }
+}
+
+@Suite("CoreTelemetryLifecycle")
+struct CoreTelemetryLifecycleTests {
 
     @Test("Scrubs quoted/wrapped embedded URLs and scales linearly on adversarial inputs")
     func scrubsQuotedEmbeddedURLsAndScalesLinearly() {

@@ -393,21 +393,33 @@ extension CoreTelemetryService.VaultLineTracker {
         return atLen > 0 ? findEmailDomainEnd(nsText, domStart: idx + atLen, len: len) : -1
     }
 
+    private static let knownAuthSchemes =
+        "Bearer|Basic|Digest|Token|Api-?Key|OAuth|Negotiate|Mutual|HOBA|Vapid|SCRAM-SHA-256|AWS4-HMAC-SHA256"
+
     private static let authCredentialRules: [(regex: NSRegularExpression, template: String)] = {
-        let specs: [(String, NSRegularExpression.Options, String)] = [
-            (#"(\b(?:Proxy-)?Authorization\s*:\s*(?:[A-Za-z0-9._-]+\s+)?)[^\r\n]+"#, [.caseInsensitive], "$1[redacted]"),
-            (#"\bBearer\s+\S+"#, [.caseInsensitive], "Bearer [redacted]"),
+        let schemes = knownAuthSchemes
+        let specs: [(String, String)] = [
             (
-                #"\b[Bb]asic\s+(?=[A-Za-z0-9+/]{8,}={0,2}(?=$|[\s"',;)\]}]))(?=[A-Za-z0-9+/]*[0-9+/A-Z])[A-Za-z0-9+/]+={0,2}"#,
-                [],
-                "Basic [redacted]"
+                #"(["']?\b(?:Proxy-)?Authorization["']?\s*[:=]\s*"\s*(?:(?:"# + schemes + #")\s+)?)(?:\\.|[^\\"\r\n])+"#,
+                "$1[redacted]"
             ),
+            (
+                #"(["']?\b(?:Proxy-)?Authorization["']?\s*[:=]\s*'\s*(?:(?:"# + schemes + #")\s+)?)(?:\\.|[^\\'\r\n])+"#,
+                "$1[redacted]"
+            ),
+            (#"(\b(?:Proxy-)?Authorization\s*[:=]\s*(?!['"])(?:(?:"# + schemes + #")\s+)?)[^\r\n]+"#, "$1[redacted]"),
+            (#"\bBearer\s+\S+"#, "Bearer [redacted]"),
         ]
-        return specs.compactMap { pattern, options, template in
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return nil }
+        return specs.compactMap { pattern, template in
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
             return (regex, template)
         }
     }()
+
+    private static let basicTokenRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"\b(Basic)\s+([A-Za-z0-9+/_-]{4,}={0,2})(?=$|[\s"',;)\]}])"#,
+        options: [.caseInsensitive]
+    )
 
     static func redactAuthCredentials(in text: String) -> String {
         var result = text
@@ -415,7 +427,44 @@ extension CoreTelemetryService.VaultLineTracker {
             let range = NSRange(result.startIndex..<result.endIndex, in: result)
             result = rule.regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: rule.template)
         }
+        return redactBasicTokens(in: result)
+    }
+
+    private static func redactBasicTokens(in text: String) -> String {
+        guard let regex = basicTokenRegex else { return text }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+        var result = ""
+        var copied = 0
+        for match in matches {
+            let token = nsText.substring(with: match.range(at: 2))
+            guard isBasicCredentialToken(token) else { continue }
+            if result.isEmpty { result.reserveCapacity(text.count) }
+            result += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
+            result += nsText.substring(with: match.range(at: 1))
+            result += " [redacted]"
+            copied = match.range.location + match.range.length
+        }
+        guard copied > 0 else { return text }
+        result += nsText.substring(from: copied)
         return result
+    }
+
+    private static func isBasicCredentialToken(_ token: String) -> Bool {
+        if token.count >= 8 && token.utf8.contains(where: { $0 == 0x2B || $0 == 0x2F || $0 == 0x3D }) {
+            return true
+        }
+        var normalized = token.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        let rem = normalized.count & 3
+        if rem == 1 { return false }
+        if rem == 2 { normalized += "==" } else if rem == 3 { normalized += "=" }
+        guard let data = Data(base64Encoded: normalized), data.contains(0x3A),
+            let decoded = String(data: data, encoding: .utf8)
+        else {
+            return false
+        }
+        return !decoded.unicodeScalars.contains { ($0.value < 0x20 && $0.value != 0x09) || $0.value == 0x7F }
     }
 
     static func redactQuotedEmails(in text: String) -> String {
