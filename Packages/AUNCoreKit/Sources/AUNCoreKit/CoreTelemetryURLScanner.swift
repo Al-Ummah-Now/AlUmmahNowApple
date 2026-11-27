@@ -202,6 +202,67 @@ extension CoreTelemetryService.VaultLineTracker {
         return 0
     }
 
+    static func findEmailLocalStart(_ nsText: NSString, at atPos: Int, minPos: Int, len: Int) -> Int {
+        if atPos > minPos && nsText.character(at: atPos - 1) == 0x22
+            && !isPrecededByOddBackslashes(nsText, at: atPos - 1, minPos: minPos)
+        {
+            return findQuotedEmailLocalStart(nsText, at: atPos, minPos: minPos)
+        }
+        var localStart = atPos
+        while localStart > minPos && isEmailLocalChar(nsText, at: localStart - 1, len: len) {
+            localStart -= 1
+        }
+        var trimmedStart = localStart
+        while trimmedStart < atPos && isEmailLeadingWrapper(nsText.character(at: trimmedStart)) {
+            trimmedStart += 1
+        }
+        return trimmedStart < atPos ? trimmedStart : localStart
+    }
+
+    private static func findQuotedEmailLocalStart(_ nsText: NSString, at atPos: Int, minPos: Int) -> Int {
+        var idx = atPos - 2
+        while idx >= minPos {
+            let ch = nsText.character(at: idx)
+            if ch == 0x0A || ch == 0x0D { return atPos }
+            if ch == 0x22 && !isPrecededByOddBackslashes(nsText, at: idx, minPos: minPos) { return idx }
+            idx -= 1
+        }
+        return atPos
+    }
+
+    private static func isPrecededByOddBackslashes(_ nsText: NSString, at pos: Int, minPos: Int) -> Bool {
+        var count = 0
+        var idx = pos - 1
+        while idx >= minPos && nsText.character(at: idx) == 0x5C {
+            count += 1
+            idx -= 1
+        }
+        return (count & 1) == 1
+    }
+
+    static func findIPLiteralDomainEnd(_ nsText: NSString, domStart: Int, len: Int) -> Int {
+        var close = domStart + 1
+        while close < len {
+            let ch = nsText.character(at: close)
+            if ch == 0x5D { break }
+            if isWhitespace(ch) || ch == 0x5B || ch == 0x22 || ch == 0x27 || ch == 0x3C || ch == 0x3E
+                || ch == 0x5C || ch == 0x7B || ch == 0x7D || ch == 0x0A || ch == 0x0D
+            {
+                return -1
+            }
+            close += 1
+        }
+        guard close < len, nsText.character(at: close) == 0x5D, close > domStart + 1 else { return -1 }
+        let inner = nsText.substring(with: NSRange(location: domStart + 1, length: close - domStart - 1))
+        if inner.lowercased().hasPrefix("ipv6:") {
+            let v6 = String(inner.dropFirst(5))
+            var addr = in6_addr()
+            return v6.withCString({ inet_pton(AF_INET6, $0, &addr) == 1 }) ? close + 1 : -1
+        }
+        var addr4 = in_addr()
+        return inner.withCString({ inet_pton(AF_INET, $0, &addr4) == 1 }) ? close + 1 : -1
+    }
+
     static func isEmailLocalChar(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
         let ch = nsText.character(at: pos)
         if CoreTelemetryService.isASCIILetter(ch) || CoreTelemetryService.isASCIIDigit(ch)

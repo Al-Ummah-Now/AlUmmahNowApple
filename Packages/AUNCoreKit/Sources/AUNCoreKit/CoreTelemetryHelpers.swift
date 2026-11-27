@@ -123,17 +123,9 @@ extension CoreTelemetryService {
                 idx += 1
                 continue
             }
-            var localStart = idx
-            while localStart > copied && VaultLineTracker.isEmailLocalChar(nsText, at: localStart - 1, len: len) {
-                localStart -= 1
-            }
-            var trimmedStart = localStart
-            while trimmedStart < idx && VaultLineTracker.isEmailLeadingWrapper(nsText.character(at: trimmedStart)) {
-                trimmedStart += 1
-            }
-            if trimmedStart < idx { localStart = trimmedStart }
-            let domEnd = localStart < idx ? Self.findEmailDomainEnd(nsText, domStart: idx + atLen, len: len) : -1
-            if domEnd > 0 {
+            let domEnd = Self.findEmailDomainEnd(nsText, domStart: idx + atLen, len: len)
+            let localStart = domEnd > 0 ? VaultLineTracker.findEmailLocalStart(nsText, at: idx, minPos: copied, len: len) : idx
+            if domEnd > 0 && localStart < idx {
                 if result.isEmpty { result.reserveCapacity(text.count) }
                 result += nsText.substring(with: NSRange(location: copied, length: localStart - copied))
                 result += "[redacted-email]"
@@ -149,6 +141,9 @@ extension CoreTelemetryService {
     }
 
     private static func findEmailDomainEnd(_ nsText: NSString, domStart: Int, len: Int) -> Int {
+        if domStart < len && nsText.character(at: domStart) == 0x5B {
+            return VaultLineTracker.findIPLiteralDomainEnd(nsText, domStart: domStart, len: len)
+        }
         var idx = domStart
         var lastDot = -1
         var lettersSinceDot = 0
