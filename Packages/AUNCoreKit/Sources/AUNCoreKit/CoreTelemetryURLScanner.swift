@@ -407,8 +407,11 @@ extension CoreTelemetryService.VaultLineTracker {
                 #"(["']?\b(?:Proxy-)?Authorization["']?\s*[:=]\s*'\s*(?:(?:"# + schemes + #")\s+)?)(?:\\.|[^\\'\r\n])+"#,
                 "$1[redacted]"
             ),
-            (#"(\b(?:Proxy-)?Authorization\s*[:=]\s*(?!['"])(?:(?:"# + schemes + #")\s+)?)[^\r\n]+"#, "$1[redacted]"),
-            (#"\bBearer\s+\S+"#, "Bearer [redacted]"),
+            (
+                #"(["']?\b(?:Proxy-)?Authorization["']?[ \t]*[:=](?![ \t]*['"])[ \t]*(?:(?:"# + schemes + #")[ \t]+)?)[^\r\n]+"#,
+                "$1[redacted]"
+            ),
+            (#"\b(Bearer)\s+(?!\[redacted\](?=$|[\s"',;)\]}]))[^\s"',;)\]}]+"#, "$1 [redacted]"),
         ]
         return specs.compactMap { pattern, template in
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
@@ -417,7 +420,7 @@ extension CoreTelemetryService.VaultLineTracker {
     }()
 
     private static let basicTokenRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"\b(Basic)\s+([A-Za-z0-9+/_-]{4,}={0,2})(?=$|[\s"',;)\]}])"#,
+        pattern: #"\b(Basic)\s+([A-Za-z0-9+/_-]{2,}={0,2})(?![A-Za-z0-9+/_=-])"#,
         options: [.caseInsensitive]
     )
 
@@ -452,9 +455,7 @@ extension CoreTelemetryService.VaultLineTracker {
     }
 
     private static func isBasicCredentialToken(_ token: String) -> Bool {
-        if token.count >= 8 && token.utf8.contains(where: { $0 == 0x2B || $0 == 0x2F || $0 == 0x3D }) {
-            return true
-        }
+        if token.hasSuffix("=") && (token.count & 3) != 0 { return false }
         var normalized = token.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         let rem = normalized.count & 3
         if rem == 1 { return false }
@@ -464,7 +465,7 @@ extension CoreTelemetryService.VaultLineTracker {
         else {
             return false
         }
-        return !decoded.unicodeScalars.contains { ($0.value < 0x20 && $0.value != 0x09) || $0.value == 0x7F }
+        return !decoded.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
     }
 
     static func redactQuotedEmails(in text: String) -> String {

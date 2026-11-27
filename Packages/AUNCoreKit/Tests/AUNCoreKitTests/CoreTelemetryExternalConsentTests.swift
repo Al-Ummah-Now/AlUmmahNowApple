@@ -259,21 +259,30 @@ struct CoreTelemetryExternalConsentTests {
                 "{\"Proxy-Authorization\":\"Digest username=alice, response=deadbeef\"}",
                 "{\"Proxy-Authorization\":\"Digest [redacted]\"}"
             ),
+            (
+                "{\"Authorization\":\"Digest username=\\\"alice\\\", response=\\\"deadbeef\\\"\"}",
+                "{\"Authorization\":\"Digest [redacted]\"}"
+            ),
+            (
+                "{\"Authorization\":\"Bearer testSecret\",\"status\":401}",
+                "{\"Authorization\":\"Bearer [redacted]\",\"status\":401}"
+            ),
+            ("\"Authorization\": opaqueSecret123 nextPart", "\"Authorization\": [redacted]"),
             ("Authorization: opaqueSecret123 nextPart", "Authorization: [redacted]"),
             ("Authorization: X-Secret secondword", "Authorization: [redacted]"),
             ("Basic YTpi", "Basic [redacted]"),
+            ("Basic YTpi.", "Basic [redacted]."),
+            ("Basic YTo=", "Basic [redacted]"),
+            ("Basic Og==", "Basic [redacted]"),
             ("Basic ajpqampq", "Basic [redacted]"),
             ("BASIC YWxpY2U6c2VjcmV0", "BASIC [redacted]"),
+            ("Basic YWJjZGU=", "Basic YWJjZGU="),
+            ("Basic YTpiCQ", "Basic YTpiCQ"),
             ("Basic auth failed", "Basic auth failed"),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
-        let escapedDigestJSON = CoreTelemetryService.sanitizeLocalPaths(
-            "{\"Authorization\":\"Digest username=\\\"alice\\\", response=\\\"deadbeef\\\"\"}"
-        )
-        #expect(escapedDigestJSON.hasPrefix("{\"Authorization\":\"Digest [redacted]"))
-        #expect(!escapedDigestJSON.contains("alice") && !escapedDigestJSON.contains("deadbeef"))
         let repeatedFilenameEmails = String(repeating: "alice.txt@example.org ", count: 5_000)
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(repeatedFilenameEmails)

@@ -79,8 +79,8 @@ extension CoreTelemetryService {
     public static func sanitizeLocalPaths(_ text: String) -> String {
         guard !text.isEmpty else { return text }
         let (escaped, hadSentinels) = Self.escapeSentinels(text)
-        let preQuoted = VaultLineTracker.redactQuotedEmails(in: escaped)
-        var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: preQuoted, prefix: Self.vaultPrefix)
+        let preAuth = VaultLineTracker.redactAuthCredentials(in: VaultLineTracker.redactQuotedEmails(in: escaped))
+        var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: preAuth, prefix: Self.vaultPrefix)
         scrubbed = Self.redactFileURIs(in: scrubbed, vaultPrefix: Self.vaultPrefix)
         for regex in Self.parenPathRegexes {
             scrubbed = Self.replaceUnquotedParenPaths(in: scrubbed, using: regex)
@@ -111,7 +111,6 @@ extension CoreTelemetryService {
         if !vaultedURLs.isEmpty {
             scrubbed = Self.redactEmails(in: scrubbed)
         }
-        scrubbed = VaultLineTracker.redactAuthCredentials(in: scrubbed)
         return hadSentinels ? Self.unescapeSentinels(scrubbed) : scrubbed
     }
 
