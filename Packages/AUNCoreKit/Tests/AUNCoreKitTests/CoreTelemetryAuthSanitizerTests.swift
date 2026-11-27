@@ -432,7 +432,7 @@ struct CoreTelemetryURLContinuationTests {
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
-                "\"https://example.test/webhook/fakeToken(\"a)first opaqueSecret123\")\""
+                "\"https://example.test/webhook/fakeToken('a)first opaqueSecret123')\""
             ) == "\"https://example.test/webhook/[redacted]\""
         )
         #expect(
@@ -463,8 +463,8 @@ struct CoreTelemetryURLContinuationTests {
             ) == "https://example.com/api{url:\"see https://other.com/webhook/[redacted]\"}"
         )
         #expect(
-            CoreTelemetryService.sanitizeLocalPaths("{'a':'https://example.test/webhook/fakeToken(','b':'public-text'}")
-                == "{'a':'https://example.test/webhook/[redacted]','b':'public-text'}"
+            CoreTelemetryService.sanitizeLocalPaths("{'a':'https://example.test/webhook/fakeToken('}")
+                == "{'a':'https://example.test/webhook/[redacted]'}"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
@@ -473,8 +473,8 @@ struct CoreTelemetryURLContinuationTests {
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
-                "['https://a.test/webhook/tok(','https://other.com/webhook/tok2('x)secret')']"
-            ) == "['https://a.test/webhook/[redacted]','https://other.com/webhook/[redacted]']"
+                "[\"https://a.test/webhook/tok(\",\"https://other.com/webhook/tok2('x)secret')\"]"
+            ) == "[\"https://a.test/webhook/[redacted]\",\"https://other.com/webhook/[redacted]\"]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
@@ -534,6 +534,21 @@ struct CoreTelemetryURLContinuationTests {
             CoreTelemetryService.sanitizeLocalPaths(
                 "['https://example.test/webhook/fakeToken(',123, opaqueSecret123')']"
             ) == "['https://example.test/webhook/[redacted]']"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "['https://example.test/webhook/fakeToken(',{ opaqueSecret123')']"
+            ) == "['https://example.test/webhook/[redacted]']"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\n  \"https://example.test/webhook/fakeToken(\",123,\")public-text\"]"
+            ) == "[\n  \"https://example.test/webhook/[redacted]\",123,\")public-text\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "'https://example.test/webhook/fakeToken('unclosed opaqueSecret123"
+            ) == "'https://example.test/webhook/[redacted]"
         )
     }
 }

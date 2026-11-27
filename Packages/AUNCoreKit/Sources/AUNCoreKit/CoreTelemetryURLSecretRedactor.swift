@@ -170,7 +170,6 @@ extension CoreTelemetryService {
         let webhookProbe: String?
         let allowDoubleQuotes: Bool
         let allowSingleQuotes: Bool
-        let outerQuote: unichar
         let pathEnd: Int
     }
 
@@ -185,18 +184,19 @@ extension CoreTelemetryService {
         let webhookProbe = (probe != probeInput && probe.hasSuffix("[redacted]")) ? probe : nil
         if webhookProbe == nil && span.totalEnd < limits.failedContMax { return nil }
         let outerQuote = resolveOuterQuote(nsText, spanStart: span.start)
-        let isContainerValue = outerQuote != 0 && Self.isContainerValueStart(nsText, quotePos: span.start - 1)
         var scanState = ContinuationScanState(
-            allowDoubleQuotes: span.totalEnd >= limits.unclosedDoubleQuoteEnd,
+            allowDoubleQuotes: span.totalEnd >= limits.unclosedDoubleQuoteEnd && outerQuote != 0x22,
             allowSingleQuotes: span.totalEnd >= limits.unclosedSingleQuoteEnd,
-            outerQuote: outerQuote, isContainerValue: isContainerValue, stopAtSchemes: webhookProbe == nil
+            outerQuote: outerQuote, stopAtSchemes: webhookProbe == nil
         )
         let pathEnd = scanWithUnclosedFallback(
             nsText, start: span.totalEnd, webhookProbe: webhookProbe, state: &scanState, limits: &limits
         )
         let ctx = ContinuationContext(
-            input: input, webhookProbe: webhookProbe, allowDoubleQuotes: scanState.allowDoubleQuotes,
-            allowSingleQuotes: scanState.allowSingleQuotes, outerQuote: outerQuote, pathEnd: pathEnd
+            input: input, webhookProbe: webhookProbe,
+            allowDoubleQuotes: scanState.allowDoubleQuotes && scanState.quoteChar != 0x22,
+            allowSingleQuotes: scanState.allowSingleQuotes && scanState.quoteChar != 0x27,
+            pathEnd: pathEnd
         )
         if let qfResult = extendURLContinuationQuery(nsText, ctx: ctx) { return qfResult }
         if let secretResult = extendURLContinuationSecret(nsText, ctx: ctx) { return secretResult }
@@ -218,13 +218,12 @@ extension CoreTelemetryService {
         let hitsQF =
             firstEnd > start && firstEnd < nsText.length
             && (nsText.character(at: firstEnd) == 0x3F || nsText.character(at: firstEnd) == 0x23)
-        let retry = state.quoteChar != 0 && (state.quoteChar == state.outerQuote || (webhookProbe == nil && !hitsQF))
-        guard retry else { return firstEnd }
+        guard state.quoteChar != 0 && webhookProbe == nil && !hitsQF else { return firstEnd }
         recordUnclosedQuote(state.quoteChar, pathEnd: firstEnd, limits: &limits)
         state = ContinuationScanState(
             allowDoubleQuotes: state.quoteChar == 0x22 ? false : state.allowDoubleQuotes,
             allowSingleQuotes: state.quoteChar == 0x27 ? false : state.allowSingleQuotes,
-            outerQuote: state.outerQuote, isContainerValue: state.isContainerValue, stopAtSchemes: state.stopAtSchemes
+            outerQuote: state.outerQuote, stopAtSchemes: true
         )
         return scanURLContinuation(nsText, start: start, state: &state)
     }
@@ -430,7 +429,6 @@ extension CoreTelemetryService {
         let allowDoubleQuotes: Bool
         let allowSingleQuotes: Bool
         let outerQuote: unichar
-        let isContainerValue: Bool
         let stopAtSchemes: Bool
         var groupStack: [unichar] = []
         var quoteChar: unichar = 0
@@ -506,14 +504,7 @@ extension CoreTelemetryService {
     ) -> Bool {
         let allowed = ch == 0x22 ? state.allowDoubleQuotes : state.allowSingleQuotes
         guard allowed && !state.groupStack.isEmpty else { return false }
-        if ch == state.outerQuote
-            && Self.isOuterQuoteCloser(
-                nsText, at: pos, outerQuote: state.outerQuote, isContainerValue: state.isContainerValue)
-        {
-            return false
-        }
-        let afterNonAlphaNum = pos > start && !Self.isASCIIAlphaNum(nsText.character(at: pos - 1))
-        return ch == 0x22 ? (state.outerQuote != 0x22 || afterNonAlphaNum) : afterNonAlphaNum
+        return ch == 0x22 || (pos > start && !Self.isASCIIAlphaNum(nsText.character(at: pos - 1)))
     }
 
     private static func updateURLContinuationGroupStack(_ ch: unichar, stack: inout [unichar]) {
@@ -575,10 +566,9 @@ extension CoreTelemetryService {
     ) -> Bool {
         guard openGroups > 0 else { return false }
         let ch = nsText.character(at: idx)
-        let afterNonAlphaNum = idx > ctx.input.span.start && !Self.isASCIIAlphaNum(nsText.character(at: idx - 1))
-        if ch == 0x22 { return ctx.allowDoubleQuotes && (ctx.outerQuote != 0x22 || afterNonAlphaNum) }
-        if ch == 0x27 { return ctx.allowSingleQuotes && afterNonAlphaNum }
-        return false
+        if ch == 0x22 { return ctx.allowDoubleQuotes }
+        return ch == 0x27 && ctx.allowSingleQuotes && idx > ctx.input.span.start
+            && !Self.isASCIIAlphaNum(nsText.character(at: idx - 1))
     }
 
     private static func tallyGroupCloser(_ ch: unichar, counts: inout (Int, Int, Int), openGroups: inout Int) {
