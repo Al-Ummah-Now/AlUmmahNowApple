@@ -79,8 +79,8 @@ extension CoreTelemetryService {
     public static func sanitizeLocalPaths(_ text: String) -> String {
         guard !text.isEmpty else { return text }
         let (escaped, hadSentinels) = Self.escapeSentinels(text)
-        var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: escaped, prefix: Self.vaultPrefix)
-        scrubbed = VaultLineTracker.redactQuotedEmails(in: scrubbed)
+        let preQuoted = VaultLineTracker.redactQuotedEmails(in: escaped)
+        var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: preQuoted, prefix: Self.vaultPrefix)
         scrubbed = Self.redactFileURIs(in: scrubbed, vaultPrefix: Self.vaultPrefix)
         for regex in Self.parenPathRegexes {
             scrubbed = Self.replaceUnquotedParenPaths(in: scrubbed, using: regex)
@@ -96,9 +96,13 @@ extension CoreTelemetryService {
                 in: scrubbed, options: [], range: range, withTemplate: "$1[redacted-path]")
         }
         scrubbed = Self.redactKeywordUnquotedFilenames(in: scrubbed)
-        for rule in Self.postKeywordPathRules {
+        if let kwAssign = Self.keywordAssignedPathRegex {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
-            scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
+            scrubbed = kwAssign.stringByReplacingMatches(
+                in: scrubbed, options: [], range: range, withTemplate: "$1[redacted-path]")
+        }
+        if let bareRegex = Self.bareFilenameRegex {
+            scrubbed = VaultLineTracker.redactBareFilenames(in: scrubbed, using: bareRegex)
         }
         scrubbed = Self.restoreVaultedURLs(in: scrubbed, prefix: Self.vaultPrefix, vaultedURLs: vaultedURLs)
         scrubbed = Self.redactEmails(in: scrubbed)
@@ -171,6 +175,7 @@ extension CoreTelemetryService {
 
     private static func redactKeywordUnquotedFilenames(in text: String) -> String {
         guard text.contains("."), let kwRegex = Self.keywordFilenamePrefixRegex else { return text }
+        let hasAt = VaultLineTracker.hasEmailAt(text)
         let nsText = text as NSString
         let len = nsText.length
         var result = ""
@@ -189,12 +194,17 @@ extension CoreTelemetryService {
                 )
             {
                 let kwEnd = kwMatch.range.location + kwMatch.range.length
+                let emailEnd = hasAt ? VaultLineTracker.findEmailTailEnd(nsText, from: lastExtEnd, len: len) : -1
+                if emailEnd > 0 && !VaultLineTracker.containsWhitespace(nsText, from: kwEnd, to: lastDot) {
+                    segStart = segEnd + 1
+                    continue
+                }
                 if result.isEmpty { result.reserveCapacity(text.count) }
                 result += nsText.substring(with: NSRange(location: copied, length: kwEnd - copied))
                 result += "[redacted-path]"
-                copied = lastExtEnd
+                copied = max(lastExtEnd, emailEnd)
             }
-            segStart = segEnd + 1
+            segStart = max(segEnd + 1, copied)
         }
         guard copied > 0 else { return text }
         result += nsText.substring(from: copied)
@@ -429,20 +439,16 @@ extension CoreTelemetryService {
         }
     }()
 
-    private static let postKeywordPathRules: [(regex: NSRegularExpression, template: String)] = {
-        let specs: [(String, String)] = [
-            (#"(\b(?:file|path|filename|filepath)\s*[:=]\s*)(?!\u001E)[^\r\n\u001E\u001F]+"#, "$1[redacted-path]"),
-            (
-                #"(^|[\r\n:=;\u001F])([ \t]*)(?=[^\r\n:=;\u001E\u001F \t])[^\r\n:=;\u001E\u001F]*\."#
-                    + #"(?!ts:\d+)(?:"# + bareFilenameExtensions + #")\b(?!\()"#,
-                "$1$2[redacted-path]"
-            ),
-        ]
-        return specs.compactMap { pattern, template in
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
-            return (regex, template)
-        }
-    }()
+    private static let keywordAssignedPathRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"(\b(?:file|path|filename|filepath)\s*[:=]\s*)(?!\u001E)[^\r\n\u001E\u001F]+"#,
+        options: [.caseInsensitive]
+    )
+
+    private static let bareFilenameRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"(^|[\r\n:=;\u001F])([ \t]*)(?=[^\r\n:=;\u001E\u001F \t])[^\r\n:=;\u001E\u001F]*\."#
+            + #"(?!ts:\d+)(?:"# + bareFilenameExtensions + #")\b(?!\()"#,
+        options: [.caseInsensitive]
+    )
 
     private static let bearerTokenRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern: #"\bBearer\s+\S+"#, options: [.caseInsensitive]

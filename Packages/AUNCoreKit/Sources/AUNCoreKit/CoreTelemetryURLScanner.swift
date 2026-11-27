@@ -209,7 +209,9 @@ extension CoreTelemetryService.VaultLineTracker {
             return findQuotedEmailLocalStart(nsText, at: atPos, minPos: minPos)
         }
         var localStart = atPos
-        while localStart > minPos && isEmailLocalChar(nsText, at: localStart - 1, len: len) {
+        while localStart > minPos && isEmailLocalChar(nsText, at: localStart - 1, len: len)
+            && !isSchemeSlash(nsText, at: localStart - 1)
+        {
             localStart -= 1
         }
         var trimmedStart = localStart
@@ -305,9 +307,14 @@ extension CoreTelemetryService.VaultLineTracker {
         return cat == .openPunctuation || cat == .initialPunctuation
     }
 
+    private static func isSchemeSlash(_ nsText: NSString, at pos: Int) -> Bool {
+        pos >= 2 && nsText.character(at: pos) == 0x2F
+            && nsText.character(at: pos - 1) == 0x2F && nsText.character(at: pos - 2) == 0x3A
+    }
+
     private static func isEmailLocalPunct(_ ch: unichar) -> Bool {
         switch ch {
-        case 0x2E, 0x5F, 0x2B, 0x2D, 0x21, 0x23, 0x24, 0x26, 0x27, 0x2A, 0x3D, 0x3F, 0x5E, 0x60, 0x7B, 0x7C, 0x7D, 0x7E:
+        case 0x2E, 0x5F, 0x2B, 0x2D, 0x2F, 0x21, 0x23, 0x24, 0x26, 0x27, 0x2A, 0x3D, 0x3F, 0x5E, 0x60, 0x7B, 0x7C, 0x7D, 0x7E:
             return true
         default:
             return false
@@ -322,25 +329,124 @@ extension CoreTelemetryService.VaultLineTracker {
             && !CharacterSet.controlCharacters.contains(scalar)
     }
 
-    static func isUnicodeCombiningMark(_ ch: unichar) -> Bool {
-        ch >= 0x80 && (UnicodeScalar(ch).map { CharacterSet.nonBaseCharacters.contains($0) } ?? false)
+    enum DomainCharKind {
+        case other
+        case letter
+        case digit
+        case dot
+        case hyphen
     }
 
     static func isSurrogate(_ ch: unichar) -> Bool { ch >= 0xD800 && ch <= 0xDFFF }
 
-    static func isLowSurrogate(_ ch: unichar) -> Bool { ch >= 0xDC00 && ch <= 0xDFFF }
-
-    static func isEmailDigit(_ ch: unichar) -> Bool {
-        if ch < 0x80 { return ch >= 0x30 && ch <= 0x39 }
-        return UnicodeScalar(ch).map { CharacterSet.decimalDigits.contains($0) } ?? false
+    static func isEmailDomainDot(_ ch: unichar) -> Bool {
+        ch == 0x2E || ch == 0x3002 || ch == 0xFF0E || ch == 0xFF61
     }
 
-    static func isEmailLetter(_ ch: unichar) -> Bool {
-        isLetter(ch) || isUnicodeCombiningMark(ch) || isSurrogate(ch)
+    private static func decodeScalar(_ nsText: NSString, at pos: Int, len: Int) -> (UnicodeScalar, Int)? {
+        let ch = nsText.character(at: pos)
+        if ch >= 0xD800 && ch <= 0xDBFF {
+            guard pos + 1 < len else { return nil }
+            let low = nsText.character(at: pos + 1)
+            guard low >= 0xDC00 && low <= 0xDFFF else { return nil }
+            let codePoint = 0x10000 + ((Int(ch) - 0xD800) << 10) + (Int(low) - 0xDC00)
+            return UnicodeScalar(codePoint).map { ($0, 2) }
+        }
+        guard ch < 0xDC00 || ch > 0xDFFF else { return nil }
+        return UnicodeScalar(ch).map { ($0, 1) }
+    }
+
+    private static func classifyDomainChar(_ nsText: NSString, at pos: Int, len: Int) -> (DomainCharKind, Int) {
+        let ch = nsText.character(at: pos)
+        if ch < 0x80 {
+            if CoreTelemetryService.isASCIILetter(ch) { return (.letter, 1) }
+            if CoreTelemetryService.isASCIIDigit(ch) { return (.digit, 1) }
+            if ch == 0x2E { return (.dot, 1) }
+            return (ch == 0x2D ? .hyphen : .other, 1)
+        }
+        if isEmailDomainDot(ch) { return (.dot, 1) }
+        guard let (scalar, step) = decodeScalar(nsText, at: pos, len: len) else { return (.other, 1) }
+        if CharacterSet.letters.contains(scalar) || CharacterSet.nonBaseCharacters.contains(scalar) {
+            return (.letter, step)
+        }
+        return (CharacterSet.decimalDigits.contains(scalar) ? .digit : .other, step)
+    }
+
+    static func hasEmailAt(_ text: String) -> Bool {
+        text.contains("@") || text.contains("%40")
+    }
+
+    static func containsWhitespace(_ nsText: NSString, from start: Int, to end: Int) -> Bool {
+        var idx = start
+        while idx < end {
+            if isWhitespace(nsText.character(at: idx)) { return true }
+            idx += 1
+        }
+        return false
+    }
+
+    static func findEmailTailAt(_ nsText: NSString, from pos: Int, len: Int) -> Int {
+        var idx = pos
+        while idx < len && isEmailLocalChar(nsText, at: idx, len: len) { idx += 1 }
+        guard idx < len else { return -1 }
+        let atLen = emailAtLength(nsText, at: idx, len: len)
+        return atLen > 0 && findEmailDomainEnd(nsText, domStart: idx + atLen, len: len) > 0 ? idx : -1
+    }
+
+    static func findEmailTailEnd(_ nsText: NSString, from pos: Int, len: Int) -> Int {
+        let atPos = findEmailTailAt(nsText, from: pos, len: len)
+        guard atPos >= 0 else { return -1 }
+        return findEmailDomainEnd(nsText, domStart: atPos + emailAtLength(nsText, at: atPos, len: len), len: len)
+    }
+
+    static func redactBareFilenames(in text: String, using regex: NSRegularExpression) -> String {
+        guard text.contains(".") else { return text }
+        let nsText = text as NSString
+        let len = nsText.length
+        if !hasEmailAt(text) {
+            return regex.stringByReplacingMatches(
+                in: text, options: [], range: NSRange(location: 0, length: len), withTemplate: "$1$2[redacted-path]"
+            )
+        }
+        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: len))
+        guard !matches.isEmpty else { return text }
+        var result = ""
+        var copied = 0
+        for match in matches where match.range.location >= copied {
+            if let resolved = resolveNonEmailBareMatch(nsText, text: text, match: match, regex: regex) {
+                if result.isEmpty { result.reserveCapacity(text.count) }
+                let loc = resolved.range.location
+                result += nsText.substring(with: NSRange(location: copied, length: loc - copied))
+                result += nsText.substring(with: resolved.range(at: 1))
+                result += nsText.substring(with: resolved.range(at: 2))
+                result += "[redacted-path]"
+                copied = loc + resolved.range.length
+            }
+        }
+        guard copied > 0 else { return text }
+        result += nsText.substring(from: copied)
+        return result
+    }
+
+    private static func resolveNonEmailBareMatch(
+        _ nsText: NSString, text: String, match: NSTextCheckingResult, regex: NSRegularExpression
+    ) -> NSTextCheckingResult? {
+        let len = nsText.length
+        var current: NSTextCheckingResult? = match
+        while let cur = current {
+            let curEnd = cur.range.location + cur.range.length
+            let emailAt = findEmailTailAt(nsText, from: curEnd, len: len)
+            if emailAt < 0 { return cur }
+            let localStart = findEmailLocalStart(nsText, at: emailAt, minPos: match.range.location, len: len)
+            guard localStart > match.range.location else { return nil }
+            let slice = NSRange(location: match.range.location, length: localStart - match.range.location)
+            current = regex.firstMatch(in: text, options: [], range: slice)
+        }
+        return nil
     }
 
     static func redactQuotedEmails(in text: String) -> String {
-        guard text.contains("\"") && (text.contains("@") || text.contains("%40")) else { return text }
+        guard text.contains("\"") && hasEmailAt(text) else { return text }
         let nsText = text as NSString
         let len = nsText.length
         var result = ""
@@ -397,21 +503,19 @@ extension CoreTelemetryService.VaultLineTracker {
         var labelHasLetter = false
         var bestEnd = -1
         while idx < len {
-            let ch = nsText.character(at: idx)
-            if isEmailLetter(ch) {
+            let (kind, step) = classifyDomainChar(nsText, at: idx, len: len)
+            if kind == .letter {
                 labelHasLetter = true
-            } else if ch == 0x2E {
+            } else if kind == .dot {
                 if idx == labelStart || nsText.character(at: idx - 1) == 0x2D { break }
                 labelStart = idx + 1
                 labelHasLetter = false
-            } else if isEmailDigit(ch) {
-                // Digits are allowed inside domain labels (e.g. 3com, 123.example.com, xn--p1ai).
-            } else if ch == 0x2D {
+            } else if kind == .hyphen {
                 if idx == labelStart { break }
-            } else {
+            } else if kind != .digit {
                 break
             }
-            idx += 1
+            idx += step
             if isValidDomainLabelEnd(nsText, labelStart: labelStart, end: idx, labelHasLetter: labelHasLetter) {
                 bestEnd = idx
             }
@@ -419,8 +523,9 @@ extension CoreTelemetryService.VaultLineTracker {
         return bestEnd
     }
 
-    static func isEmailBoundaryBlocked(_ ch: unichar) -> Bool {
-        isLetterOrDigit(ch) || ch == 0x5F || ch == 0x2D || isUnicodeCombiningMark(ch) || isSurrogate(ch)
+    static func isEmailBoundaryBlocked(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+        let (kind, _) = classifyDomainChar(nsText, at: pos, len: len)
+        return kind == .letter || kind == .digit || kind == .hyphen || nsText.character(at: pos) == 0x5F
     }
 
     private static func isValidDomainLabelEnd(
@@ -428,10 +533,10 @@ extension CoreTelemetryService.VaultLineTracker {
     ) -> Bool {
         let len = nsText.length
         guard end > labelStart, labelHasLetter, nsText.character(at: end - 1) != 0x2D else { return false }
-        guard end == len || !isEmailBoundaryBlocked(nsText.character(at: end)) else { return false }
-        if end + 1 < len && nsText.character(at: end) == 0x2E {
-            let afterDot = nsText.character(at: end + 1)
-            if isEmailLetter(afterDot) || isEmailDigit(afterDot) { return false }
+        guard end == len || !isEmailBoundaryBlocked(nsText, at: end, len: len) else { return false }
+        if end + 1 < len && isEmailDomainDot(nsText.character(at: end)) {
+            let (nextKind, _) = classifyDomainChar(nsText, at: end + 1, len: len)
+            if nextKind == .letter || nextKind == .digit { return false }
         }
         return true
     }

@@ -45,9 +45,10 @@ struct CoreTelemetryExternalConsentTests {
             ("https://example.com/api?q=(PrivateProject)", "https://example.com/api?[redacted]"),
             ("(https://example.com/api?q=(PrivateProject))", "(https://example.com/api?[redacted])"),
             ("https://example.com/api#first,PrivateProject", "https://example.com/api#[redacted]"),
-            ("https://example.com/users/alice@example.com", "https://example.com/users/[redacted-email]"),
-            ("https://example.com/users/alice%40example.com", "https://example.com/users/[redacted-email]"),
-            ("https://example.com/users/alice%team@example.com", "https://example.com/users/[redacted-email]"),
+            ("https://example.com/users/alice@example.com", "https://[redacted-email]"),
+            ("https://example.com/users/alice%40example.com", "https://[redacted-email]"),
+            ("https://example.com/users/alice%team@example.com", "https://[redacted-email]"),
+            ("https://example.com/users/alice/bob@example.org", "https://[redacted-email]"),
             ("alice%notes@example.com", "[redacted-email]"),
             ("https://example.com/?token=abc{Secret}xyz", "https://example.com/?[redacted]"),
             ("(https://example.com/?q=secret).", "(https://example.com/?[redacted])."),
@@ -224,6 +225,33 @@ struct CoreTelemetryExternalConsentTests {
             CoreTelemetryService.sanitizeLocalPaths("opening\u{00A0}Acquisition.qzx")
                 == "opening\u{00A0}[redacted-path]"
         )
+    }
+
+    @Test("Scrubs IDN email dots, Unicode scalars, and filename-like email local parts")
+    func scrubsIDNEmailDotsScalarsAndFilenameEmails() {
+        let cases: [(String, String)] = [
+            ("\"Private Name https://example.com/api?q=secret\\\" tail\"@example.com", "[redacted-email]"),
+            ("alice@example.123😀", "alice@example.123😀"),
+            ("alice@😀", "alice@😀"),
+            ("alice@x😀", "[redacted-email]😀"),
+            ("alice@example.𐐷", "[redacted-email]"),
+            ("alice@123。example.com", "[redacted-email]"),
+            ("alice@example。com", "[redacted-email]"),
+            ("alice@example．com", "[redacted-email]"),
+            ("alice@example｡com", "[redacted-email]"),
+            ("alice@example.com。", "[redacted-email]。"),
+            ("alice.txt@example.com", "[redacted-email]"),
+            ("alice.txt+tag@example.com", "[redacted-email]"),
+            ("Failed for alice.txt@example.com", "Failed for [redacted-email]"),
+            ("Private Project.pdf and alice.txt@example.com", "[redacted-path] and [redacted-email]"),
+            ("file alice.txt@example.com", "file [redacted-path]"),
+            ("file alice.txt@localhost", "file [redacted-email]"),
+            ("file Private Project alice.txt@example.com", "file [redacted-path]"),
+            ("'alice.txt'@example.com", "[redacted-path]"),
+        ]
+        for (input, expected) in cases {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
+        }
     }
 
     @Test("Scrubs quoted/wrapped embedded URLs and scales linearly on adversarial inputs")

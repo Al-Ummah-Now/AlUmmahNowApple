@@ -350,6 +350,7 @@ extension CoreTelemetryService {
     }
 
     private static func redactSingleQuotedFilenames(in text: String) -> String {
+        let hasAt = VaultLineTracker.hasEmailAt(text)
         let nsText = text as NSString
         let len = nsText.length
         var result = ""
@@ -359,9 +360,9 @@ extension CoreTelemetryService {
             var segEnd = segStart
             while segEnd < len && !isQuotedSegStop(nsText.character(at: segEnd)) { segEnd += 1 }
             redactSingleQuotesInSegment(
-                nsText, range: segStart..<segEnd, result: &result, copied: &copied
+                nsText, range: segStart..<segEnd, hasAt: hasAt, result: &result, copied: &copied
             )
-            segStart = segEnd + 1
+            segStart = max(segEnd + 1, copied)
         }
         guard copied > 0 else { return text }
         result += nsText.substring(from: copied)
@@ -369,11 +370,11 @@ extension CoreTelemetryService {
     }
 
     private static func redactSingleQuotesInSegment(
-        _ nsText: NSString, range: Range<Int>, result: inout String, copied: inout Int
+        _ nsText: NSString, range: Range<Int>, hasAt: Bool, result: inout String, copied: inout Int
     ) {
         var open = -1
         var candidateClose = -1
-        for pos in range where nsText.character(at: pos) == 0x27 {
+        for pos in range where pos >= copied && nsText.character(at: pos) == 0x27 {
             let isOpener = pos == range.lowerBound || !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos - 1))
             if isOpener {
                 if open < 0 || candidateClose >= 0 {
@@ -384,10 +385,11 @@ extension CoreTelemetryService {
                 && (pos + 1 == range.upperBound || !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos + 1)))
             {
                 if endsWithFilenameExt(nsText, start: open + 1, end: pos) {
+                    let emailEnd = hasAt ? VaultLineTracker.findEmailTailEnd(nsText, from: pos + 1, len: nsText.length) : -1
                     if result.isEmpty { result.reserveCapacity(nsText.length) }
                     result += nsText.substring(with: NSRange(location: copied, length: open - copied))
                     result += "[redacted-path]"
-                    copied = pos + 1
+                    copied = max(pos + 1, emailEnd)
                     open = -1
                     candidateClose = -1
                 } else {
