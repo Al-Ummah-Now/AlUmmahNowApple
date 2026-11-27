@@ -223,7 +223,9 @@ extension CoreTelemetryService {
         private static func canOpenQuote(_ nsText: NSString, at pos: Int, ch: unichar) -> Bool {
             if ch == 0x22 { return true }
             guard ch == 0x27 else { return false }
-            return pos == 0 || !isLetterOrDigit(nsText.character(at: pos - 1))
+            if pos == 0 || !isLetterOrDigit(nsText.character(at: pos - 1)) { return true }
+            return pos + 1 < nsText.length
+                && (isFileScheme(nsText, at: pos + 1) || startsLocalPath(nsText, at: pos + 1, atTokenStart: true))
         }
 
         static func isInnerApostrophe(_ nsText: NSString, at pos: Int, ch: unichar) -> Bool {

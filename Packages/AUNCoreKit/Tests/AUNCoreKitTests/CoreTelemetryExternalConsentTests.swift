@@ -162,6 +162,8 @@ struct CoreTelemetryExternalConsentTests {
             ("'file:///tmp/Artists' Private 'Collection'", "'[redacted-path]"),
             ("'file:///tmp/Artists' Private 'Collection", "'[redacted-path]"),
             ("'file:///tmp/O' Connor Private (https://private.example/Acquisition.mov)", "'[redacted-path]"),
+            ("input'file:///tmp/O' Connor Private https://private.example/Acquisition.mov", "input'[redacted-path]"),
+            ("input'/tmp/O' Connor Private https://private.example/Acquisition.mov", "input'[redacted-path]"),
             ("status 'ready' (https://example.com/api)", "status 'ready' (https://example.com/api)"),
             ("/tmp/Private\u{2028}Acquisition Plan", "[redacted-path]"),
             ("'Private.qzx'2 Acquisition.qzx'", "[redacted-path]"),
