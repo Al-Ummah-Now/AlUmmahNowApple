@@ -12,7 +12,7 @@ enum CoreTelemetryAuthScanner {
         options: [.caseInsensitive]
     )
 
-    private static let basicTokenRegex: NSRegularExpression? = try? NSRegularExpression(
+    static let basicTokenRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern: #"\b(Basic)\s+([A-Za-z0-9+/_-]{2,}={0,2})(?![A-Za-z0-9+/_=-])"#,
         options: [.caseInsensitive]
     )
@@ -26,10 +26,12 @@ enum CoreTelemetryAuthScanner {
         return redactBasicTokens(in: result)
     }
 
-    private struct AuthScanState {
+    struct AuthScanState {
         var result = ""
         var copied = 0
         var braceMap: [Int: Int]?
+        var failedBraceBack = -1
+        var failedBracketBack = -1
 
         mutating func appendRedacted(_ nsText: NSString, start: Int, end: Int, replacement: String) {
             if result.isEmpty { result.reserveCapacity(nsText.length) }
@@ -53,7 +55,7 @@ enum CoreTelemetryAuthScanner {
         var state = AuthScanState()
         var idx = 0
         while idx < len {
-            guard let keyMatch = matchAuthHeaderKey(nsText, at: idx, len: len) else {
+            guard let keyMatch = matchAuthHeaderKey(nsText, at: idx, len: len, state: &state) else {
                 idx += 1
                 continue
             }
@@ -80,10 +82,12 @@ enum CoreTelemetryAuthScanner {
         return state.result
     }
 
-    private static func matchAuthHeaderKey(_ nsText: NSString, at pos: Int, len: Int) -> AuthKeyMatch? {
+    private static func matchAuthHeaderKey(
+        _ nsText: NSString, at pos: Int, len: Int, state: inout AuthScanState
+    ) -> AuthKeyMatch? {
         let ch = nsText.character(at: pos)
         if ch == 0x22 || ch == 0x27 {
-            return matchQuotedAuthKey(nsText, at: pos, quote: ch, len: len)
+            return matchQuotedAuthKey(nsText, at: pos, quote: ch, state: &state)
         }
         if pos > 0 && isAuthKeyWordChar(nsText.character(at: pos - 1)) { return nil }
         if matchesASCII(nsText, at: pos, literal: "proxy-authorization", len: len),
@@ -100,8 +104,9 @@ enum CoreTelemetryAuthScanner {
     }
 
     private static func matchQuotedAuthKey(
-        _ nsText: NSString, at pos: Int, quote: unichar, len: Int
+        _ nsText: NSString, at pos: Int, quote: unichar, state: inout AuthScanState
     ) -> AuthKeyMatch? {
+        let len = nsText.length
         let limit = min(len, pos + 129)
         var decoded: [unichar] = []
         decoded.reserveCapacity(20)
@@ -112,7 +117,7 @@ enum CoreTelemetryAuthScanner {
             if isNewline(ch) { return nil }
             if ch == quote {
                 let key = String(utf16CodeUnits: decoded, count: decoded.count).lowercased()
-                let isJson = quote == 0x22 && isPrecededByJsonMemberDelimiter(nsText, before: pos)
+                let isJson = quote == 0x22 && isPrecededByJsonMemberDelimiter(nsText, before: pos, state: &state)
                 if key == "authorization" {
                     return AuthKeyMatch(
                         keyStart: pos, keyEnd: idx + 1, isJsonCandidate: isJson,
@@ -181,10 +186,10 @@ enum CoreTelemetryAuthScanner {
             let afterArray = redactAuthArrayValue(nsText, start: valStart + 1, isJsonMember: isJsonMember, state: &state)
             return redactTrailingPlainAuthContinuation(nsText, afterPos: afterArray, isJsonMember: isJsonMember, state: &state)
         }
-        if ch == 0x7B, let objEnd = scanBalancedJsonObjectEnd(nsText, from: valStart, state: &state) {
-            state.appendRedacted(
-                nsText, start: valStart, end: objEnd, replacement: isJsonMember ? "\"[redacted]\"" : "[redacted]")
-            return redactTrailingPlainAuthContinuation(nsText, afterPos: objEnd, isJsonMember: isJsonMember, state: &state)
+        if ch == 0x7B, let next = redactJsonObject(nsText, from: valStart, isJsonMember: isJsonMember, state: &state) {
+            return next < nsText.length
+                ? redactTrailingPlainAuthContinuation(nsText, afterPos: next, isJsonMember: isJsonMember, state: &state)
+                : next
         }
         if isJsonMember, let afterPrim = tryRedactJsonPrimitiveAuthValue(nsText, from: valStart, state: &state) {
             return afterPrim
@@ -276,9 +281,10 @@ enum CoreTelemetryAuthScanner {
                 idx += 1
             } else if ch == 0x22 || ch == 0x27 {
                 idx = redactQuotedAuthString(nsText, quotePos: idx, quote: ch, state: &state)
-            } else if ch == 0x7B, let objEnd = scanBalancedJsonObjectEnd(nsText, from: idx, state: &state) {
-                state.appendRedacted(nsText, start: idx, end: objEnd, replacement: isJsonMember ? "\"[redacted]\"" : "[redacted]")
-                idx = objEnd
+            } else if ch == 0x7B,
+                let next = redactJsonObject(nsText, from: idx, isJsonMember: isJsonMember, state: &state)
+            {
+                idx = next
             } else if isHorizSpace(ch) || ch == 0x2C {
                 idx += 1
             } else if isNewline(ch) {
@@ -354,199 +360,5 @@ enum CoreTelemetryAuthScanner {
             }
         }
         return nsText.substring(with: NSRange(location: start, length: idx - start)) + "[redacted]"
-    }
-}
-
-extension CoreTelemetryAuthScanner {
-    private static func redactBasicTokens(in text: String) -> String {
-        guard let regex = basicTokenRegex else { return text }
-        let nsText = text as NSString
-        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
-        guard !matches.isEmpty else { return text }
-        var result = ""
-        var copied = 0
-        for match in matches {
-            let token = nsText.substring(with: match.range(at: 2))
-            guard isBasicCredentialToken(token) else { continue }
-            if result.isEmpty { result.reserveCapacity(text.count) }
-            result += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
-            result += nsText.substring(with: match.range(at: 1))
-            result += " [redacted]"
-            copied = match.range.location + match.range.length
-        }
-        guard copied > 0 else { return text }
-        result += nsText.substring(from: copied)
-        return result
-    }
-
-    private static func isBasicCredentialToken(_ token: String) -> Bool {
-        guard let data = decodeCanonicalBase64(token), data.contains(0x3A) else { return false }
-        if let decoded = String(data: data, encoding: .utf8) {
-            let hasControl = decoded.unicodeScalars.contains {
-                $0.value < 0x20 || $0.value == 0x7F || ($0.value >= 0x80 && $0.value <= 0x9F)
-            }
-            if !hasControl { return true }
-        }
-        return !data.contains { $0 < 0x20 || ($0 >= 0x7F && $0 <= 0x9F) }
-    }
-
-    private static func decodeCanonicalBase64(_ token: String) -> Data? {
-        let bytes = Array(token.utf8)
-        var unpaddedLen = bytes.count
-        while unpaddedLen > 0 && bytes[unpaddedLen - 1] == 0x3D { unpaddedLen -= 1 }
-        let pad = bytes.count - unpaddedLen
-        guard pad <= 2, pad == 0 || (bytes.count & 3) == 0 else { return nil }
-        let rem = unpaddedLen & 3
-        guard rem != 1, pad == 0 || rem + pad == 4 else { return nil }
-        if rem == 2 && (base64ByteValue(bytes[unpaddedLen - 1]) & 0x0F) != 0 { return nil }
-        if rem == 3 && (base64ByteValue(bytes[unpaddedLen - 1]) & 0x03) != 0 { return nil }
-        guard let rawNormalized = String(bytes: bytes[0..<unpaddedLen], encoding: .utf8) else { return nil }
-        var normalized =
-            rawNormalized
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-        if rem == 2 { normalized += "==" } else if rem == 3 { normalized += "=" }
-        return Data(base64Encoded: normalized)
-    }
-
-    private static func base64ByteValue(_ byte: UInt8) -> Int {
-        if byte >= 0x41 && byte <= 0x5A { return Int(byte - 0x41) }
-        if byte >= 0x61 && byte <= 0x7A { return Int(byte - 0x61 + 26) }
-        if byte >= 0x30 && byte <= 0x39 { return Int(byte - 0x30 + 52) }
-        if byte == 0x2B || byte == 0x2D { return 62 }
-        if byte == 0x2F || byte == 0x5F { return 63 }
-        return -1
-    }
-
-    private static func skipAuthWhitespace(_ nsText: NSString, from pos: Int, len: Int, allowNewlines: Bool) -> Int {
-        var idx = pos
-        while idx < len {
-            let ch = nsText.character(at: idx)
-            if isHorizSpace(ch) || (allowNewlines && isNewline(ch)) {
-                idx += 1
-            } else if !allowNewlines && isNewline(ch) {
-                let fold = advanceObsFold(nsText, at: idx, len: len)
-                if fold > idx { idx = fold } else { break }
-            } else {
-                break
-            }
-        }
-        return idx
-    }
-
-    private static func advanceObsFold(_ nsText: NSString, at nlPos: Int, len: Int) -> Int {
-        guard nlPos < len && isNewline(nsText.character(at: nlPos)) else { return -1 }
-        let afterNl =
-            (nsText.character(at: nlPos) == 0x0D && nlPos + 1 < len && nsText.character(at: nlPos + 1) == 0x0A)
-            ? nlPos + 2 : nlPos + 1
-        guard afterNl < len && isHorizSpace(nsText.character(at: afterNl)) else { return -1 }
-        var idx = afterNl
-        while idx < len && isHorizSpace(nsText.character(at: idx)) { idx += 1 }
-        return idx
-    }
-
-    private static func isHorizSpace(_ ch: unichar) -> Bool { ch == 0x20 || ch == 0x09 }
-    private static func isNewline(_ ch: unichar) -> Bool { ch == 0x0A || ch == 0x0D }
-    private static func isJsonDelimiter(_ ch: unichar) -> Bool { ch == 0x2C || ch == 0x7D || ch == 0x5D }
-
-    private static func isPrecededByJsonMemberDelimiter(_ nsText: NSString, before pos: Int) -> Bool {
-        var idx = pos - 1
-        while idx >= 0 {
-            let ch = nsText.character(at: idx)
-            if isHorizSpace(ch) || isNewline(ch) {
-                idx -= 1
-                continue
-            }
-            return ch == 0x7B || ch == 0x2C
-        }
-        return false
-    }
-
-    private static func isJsonMemberContinuationDelimiter(_ nsText: NSString, at pos: Int) -> Bool {
-        let ch = nsText.character(at: pos)
-        if ch == 0x7D { return true }
-        guard ch == 0x2C else { return false }
-        let next = skipAuthWhitespace(nsText, from: pos + 1, len: nsText.length, allowNewlines: true)
-        return next < nsText.length && nsText.character(at: next) == 0x22
-    }
-
-    private static func scanBalancedJsonObjectEnd(
-        _ nsText: NSString, from bracePos: Int, state: inout AuthScanState
-    ) -> Int? {
-        let len = nsText.length
-        guard bracePos < len && nsText.character(at: bracePos) == 0x7B else { return nil }
-        if state.braceMap == nil {
-            state.braceMap = buildJsonBraceMatchMap(nsText)
-        }
-        return state.braceMap?[bracePos]
-    }
-
-    private static func buildJsonBraceMatchMap(_ nsText: NSString) -> [Int: Int] {
-        let len = nsText.length
-        var map: [Int: Int] = [:]
-        var stack: [Int] = []
-        var noCloseQuoteBefore = -1
-        var idx = 0
-        while idx < len {
-            let ch = nsText.character(at: idx)
-            if ch == 0x22 && idx >= noCloseQuoteBefore {
-                let strEnd = scanJsonStringEnd(nsText, from: idx + 1, len: len)
-                if strEnd > 0 {
-                    idx = strEnd
-                    continue
-                }
-                noCloseQuoteBefore = -strEnd - 1
-            } else if ch == 0x7B {
-                stack.append(idx)
-            } else if ch == 0x7D, let openPos = stack.popLast() {
-                map[openPos] = idx + 1
-            }
-            idx += 1
-        }
-        return map
-    }
-
-    private static func scanJsonStringEnd(_ nsText: NSString, from start: Int, len: Int) -> Int {
-        var idx = start
-        var escaped = false
-        while idx < len {
-            let ch = nsText.character(at: idx)
-            if isNewline(ch) { return -(idx + 1) }
-            if ch == 0x22 && !escaped { return idx + 1 }
-            escaped = ch == 0x5C && !escaped
-            idx += 1
-        }
-        return -(len + 1)
-    }
-
-    private static func isJsonPrimitiveStop(_ ch: unichar) -> Bool {
-        isHorizSpace(ch) || isNewline(ch) || isJsonDelimiter(ch)
-    }
-
-    private static let jsonNumberRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"#
-    )
-
-    private static func isJsonNumber(_ token: String) -> Bool {
-        guard let regex = jsonNumberRegex else { return false }
-        let range = NSRange(token.startIndex..<token.endIndex, in: token)
-        return regex.firstMatch(in: token, options: [], range: range) != nil
-    }
-
-    private static func isAuthKeyWordChar(_ ch: unichar) -> Bool {
-        CoreTelemetryService.isASCIILetter(ch) || CoreTelemetryService.isASCIIDigit(ch) || ch == 0x5F || ch == 0x2D
-    }
-
-    private static func matchesASCII(_ nsText: NSString, at pos: Int, literal: String, len: Int) -> Bool {
-        let litBytes = Array(literal.utf8)
-        guard pos + litBytes.count <= len else { return false }
-        for offset in 0..<litBytes.count {
-            var actual = nsText.character(at: pos + offset)
-            var expected = unichar(litBytes[offset])
-            if actual >= 0x41 && actual <= 0x5A { actual += 0x20 }
-            if expected >= 0x41 && expected <= 0x5A { expected += 0x20 }
-            if actual != expected { return false }
-        }
-        return true
     }
 }
