@@ -131,6 +131,31 @@ struct CoreTelemetryExternalConsentTests {
             !CoreTelemetryService.sanitizeLocalPaths("opening \"1/2 (https://private.example/Acquisition.mov)\"")
                 .contains("private.example")
         )
+        #expect(
+            !CoreTelemetryService.sanitizeLocalPaths(
+                "opening \"/tmp/Project 'draft' (https://private.example/Acquisition.mov)\""
+            ).contains("private.example")
+        )
+        #expect(
+            !CoreTelemetryService.sanitizeLocalPaths(
+                "opening /tmp/Project 'draft' (https://private.example/Acquisition.mov)"
+            ).contains("private.example")
+        )
+        #expect(
+            !CoreTelemetryService.sanitizeLocalPaths(
+                "opening \"relative/My's (https://private.example/Acquisition.mov)\""
+            ).contains("private.example")
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "opening \"relative/My's Clip.mov\" (https://example.com/api)"
+            ).contains("https://example.com/api")
+        )
+        #expect(
+            !CoreTelemetryService.sanitizeLocalPaths(
+                "opening relative/My(1) (https://private.example/Acquisition.mov)"
+            ).contains("private.example")
+        )
     }
 
     @Test("Queued flush re-checks UserDefaults via live(defaults:) before entering native flush")

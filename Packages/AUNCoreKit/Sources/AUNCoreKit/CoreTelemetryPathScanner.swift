@@ -99,7 +99,8 @@ extension CoreTelemetryService {
 
         private func isClosingQuoteChar(_ nsText: NSString, ch: unichar) -> Bool {
             if pathQuote != 0 && ch == pathQuote { return true }
-            return !inWrapperRun && tokenStart > 0 && (ch == 0x22 || ch == 0x27) && nsText.character(at: tokenStart - 1) == ch
+            return !hasPathOnLine && !inWrapperRun && tokenStart > 0 && (ch == 0x22 || ch == 0x27)
+                && nsText.character(at: tokenStart - 1) == ch
         }
 
         private mutating func captureOpeningQuote(_ nsText: NSString, at pos: Int) {
@@ -108,19 +109,24 @@ extension CoreTelemetryService {
             if prev == 0x22 || prev == 0x27 { pathQuote = prev }
         }
 
+        private mutating func promoteTokenPath(_ nsText: NSString) {
+            if tokenHasPathSep && !Self.isNonPathSlashToken(nsText, start: tokenStart, end: tokenEnd) {
+                hasPathOnLine = true
+                captureOpeningQuote(nsText, at: tokenStart)
+            }
+        }
+
         private mutating func updateRunState(_ nsText: NSString, ch: unichar) {
             if Self.isWhitespace(ch) {
                 if !inWrapperRun {
-                    if tokenHasPathSep && !Self.isNonPathSlashToken(nsText, start: tokenStart, end: tokenEnd) {
-                        hasPathOnLine = true
-                        captureOpeningQuote(nsText, at: tokenStart)
-                    }
+                    promoteTokenPath(nsText)
                     tokenStart = -1
                     tokenEnd = -1
                     wsBeforeRun = true
                     tokenHasPathSep = false
                 }
             } else if Self.isOpeningWrapper(ch) {
+                if !inWrapperRun { promoteTokenPath(nsText) }
                 inWrapperRun = true
             } else {
                 if tokenStart < 0 || inWrapperRun {
