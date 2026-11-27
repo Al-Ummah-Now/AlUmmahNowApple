@@ -322,16 +322,6 @@ extension CoreTelemetryService.VaultLineTracker {
             && !CharacterSet.controlCharacters.contains(scalar)
     }
 
-    static func isPunycodeTLD(_ nsText: NSString, start: Int, end: Int, allASCII: Bool) -> Bool {
-        guard allASCII && end - start >= 6 else { return false }
-        let last = nsText.character(at: end - 1)
-        guard CoreTelemetryService.isASCIILetter(last) || CoreTelemetryService.isASCIIDigit(last) else {
-            return false
-        }
-        return matchesASCIIUpper3(nsText, at: start, c0: 0x58, c1: 0x4E, c2: 0x2D)
-            && nsText.character(at: start + 3) == 0x2D
-    }
-
     static func isUnicodeCombiningMark(_ ch: unichar) -> Bool {
         ch >= 0x80 && (UnicodeScalar(ch).map { CharacterSet.nonBaseCharacters.contains($0) } ?? false)
     }
@@ -347,6 +337,34 @@ extension CoreTelemetryService.VaultLineTracker {
 
     static func isEmailLetter(_ ch: unichar) -> Bool {
         isLetter(ch) || isUnicodeCombiningMark(ch) || isSurrogate(ch)
+    }
+
+    static func redactQuotedEmails(in text: String) -> String {
+        guard text.contains("\"") && (text.contains("@") || text.contains("%40")) else { return text }
+        let nsText = text as NSString
+        let len = nsText.length
+        var result = ""
+        var copied = 0
+        var idx = 0
+        var cacheUntil = -1
+        var cachedClose = -1
+        while idx < len {
+            if nsText.character(at: idx) == 0x22 && !isPrecededByOddBackslashes(nsText, at: idx, minPos: copied),
+                let qEnd = matchQuotedEmailEnd(nsText, at: idx, cacheUntil: &cacheUntil, cachedClose: &cachedClose)
+            {
+                if result.isEmpty { result.reserveCapacity(text.count) }
+                result += nsText.substring(with: NSRange(location: copied, length: idx - copied))
+                result += "[redacted-email]"
+                copied = qEnd
+                idx = qEnd
+                cacheUntil = -1
+            } else {
+                idx += 1
+            }
+        }
+        guard copied > 0 else { return text }
+        result += nsText.substring(from: copied)
+        return result
     }
 
     static func matchQuotedEmailEnd(
@@ -375,61 +393,45 @@ extension CoreTelemetryService.VaultLineTracker {
             return findIPLiteralDomainEnd(nsText, domStart: domStart, len: len)
         }
         var idx = domStart
-        var lastDot = -1
-        var lettersSinceDot = 0
-        var tldAllASCII = true
+        var labelStart = domStart
+        var labelHasLetter = false
         var bestEnd = -1
         while idx < len {
             let ch = nsText.character(at: idx)
             if isEmailLetter(ch) {
-                if ch >= 0x80 { tldAllASCII = false }
-                if lastDot >= 0 && lettersSinceDot >= 0 && !isUnicodeCombiningMark(ch) && !isLowSurrogate(ch) {
-                    lettersSinceDot += 1
-                }
+                labelHasLetter = true
             } else if ch == 0x2E {
-                lastDot = idx > domStart ? idx : -1
-                lettersSinceDot = 0
-                tldAllASCII = true
-            } else if isEmailDigit(ch) || ch == 0x2D {
-                if ch >= 0x80 { tldAllASCII = false }
-                lettersSinceDot = -1
+                if idx == labelStart || nsText.character(at: idx - 1) == 0x2D { break }
+                labelStart = idx + 1
+                labelHasLetter = false
+            } else if isEmailDigit(ch) {
+                // Digits are allowed inside domain labels (e.g. 3com, 123.example.com, xn--p1ai).
+            } else if ch == 0x2D {
+                if idx == labelStart { break }
             } else {
                 break
             }
             idx += 1
-            let state = DomainEndCheck(
-                domStart: domStart, lastDot: lastDot, end: idx, lettersSinceDot: lettersSinceDot, allASCII: tldAllASCII
-            )
-            if isValidDomainEnd(nsText, check: state) { bestEnd = idx }
+            if isValidDomainLabelEnd(nsText, labelStart: labelStart, end: idx, labelHasLetter: labelHasLetter) {
+                bestEnd = idx
+            }
         }
         return bestEnd
     }
 
-    private struct DomainEndCheck {
-        let domStart: Int
-        let lastDot: Int
-        let end: Int
-        let lettersSinceDot: Int
-        let allASCII: Bool
-    }
-
     static func isEmailBoundaryBlocked(_ ch: unichar) -> Bool {
-        isLetterOrDigit(ch) || ch == 0x5F || ch == 0x2D || isUnicodeCombiningMark(ch)
+        isLetterOrDigit(ch) || ch == 0x5F || ch == 0x2D || isUnicodeCombiningMark(ch) || isSurrogate(ch)
     }
 
-    private static func isValidDomainEnd(_ nsText: NSString, check: DomainEndCheck) -> Bool {
+    private static func isValidDomainLabelEnd(
+        _ nsText: NSString, labelStart: Int, end: Int, labelHasLetter: Bool
+    ) -> Bool {
         let len = nsText.length
-        guard check.end == len || !isEmailBoundaryBlocked(nsText.character(at: check.end)) else { return false }
-        if check.lastDot > check.domStart {
-            return check.lettersSinceDot >= 2
-                || isPunycodeTLD(nsText, start: check.lastDot + 1, end: check.end, allASCII: check.allASCII)
-        }
-        guard check.lastDot < 0 && check.end - check.domStart >= 2 else { return false }
-        let first = nsText.character(at: check.domStart)
-        guard isLetter(first) || isSurrogate(first), nsText.character(at: check.end - 1) != 0x2D else { return false }
-        if check.end + 1 < len && nsText.character(at: check.end) == 0x2E {
-            let afterDot = nsText.character(at: check.end + 1)
-            if isLetter(afterDot) || isSurrogate(afterDot) { return false }
+        guard end > labelStart, labelHasLetter, nsText.character(at: end - 1) != 0x2D else { return false }
+        guard end == len || !isEmailBoundaryBlocked(nsText.character(at: end)) else { return false }
+        if end + 1 < len && nsText.character(at: end) == 0x2E {
+            let afterDot = nsText.character(at: end + 1)
+            if isEmailLetter(afterDot) || isEmailDigit(afterDot) { return false }
         }
         return true
     }

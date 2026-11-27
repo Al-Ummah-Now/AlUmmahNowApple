@@ -184,11 +184,15 @@ struct CoreTelemetryExternalConsentTests {
             (
                 "Failed for \"Private Name user@[IPv6:2001:db8::1]\"@example.com, \"john@doe.example\"@example.com, "
                     + "\"alice@example.com private\"@example.org, \"john\r\n doe\"@example.com, "
-                    + "alice=tag@example.com, user@localhost, alice@intranet",
+                    + "alice=tag@example.com, user@localhost, alice@intranet, "
+                    + "\"Private Name alice/bob\"@example.com, alice@x, alice@3com",
                 "Failed for [redacted-email], [redacted-email], [redacted-email], "
-                    + "[redacted-email], [redacted-email], [redacted-email], [redacted-email]"
+                    + "[redacted-email], [redacted-email], [redacted-email], [redacted-email], "
+                    + "[redacted-email], [redacted-email], [redacted-email]"
             ),
             ("alice/bob@example.com", "[redacted-path]"),
+            ("file \"private name\"@localhost", "file [redacted-email]"),
+            ("document \"private name\"%40intranet", "document [redacted-email]"),
             ("'Private.qzx'2 Acquisition.qzx'", "[redacted-path]"),
             ("'Studio 2's Acquisition.qzx'", "[redacted-path]"),
         ]

@@ -80,6 +80,7 @@ extension CoreTelemetryService {
         guard !text.isEmpty else { return text }
         let (escaped, hadSentinels) = Self.escapeSentinels(text)
         var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: escaped, prefix: Self.vaultPrefix)
+        scrubbed = VaultLineTracker.redactQuotedEmails(in: scrubbed)
         scrubbed = Self.redactFileURIs(in: scrubbed, vaultPrefix: Self.vaultPrefix)
         for regex in Self.parenPathRegexes {
             scrubbed = Self.replaceUnquotedParenPaths(in: scrubbed, using: regex)
