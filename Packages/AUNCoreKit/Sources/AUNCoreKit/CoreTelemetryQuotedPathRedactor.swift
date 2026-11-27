@@ -316,7 +316,7 @@ extension CoreTelemetryService {
         }
     }
 
-    private static func parseHex4(_ nsText: NSString, pos: Int) -> unichar? {
+    static func parseHex4(_ nsText: NSString, pos: Int) -> unichar? {
         var val: UInt32 = 0
         for offset in 0..<4 {
             let ch = nsText.character(at: pos + offset)
@@ -334,6 +334,7 @@ extension CoreTelemetryService {
     }
 
     private static func findLocalPathStartInQuoted(_ nsText: NSString, start: Int, end: Int) -> Int {
+        if isExactProtocolVersion(nsText, start: start, end: end) { return -1 }
         var tokenStart = -1
         var pos = start
         while pos < end {
@@ -363,6 +364,54 @@ extension CoreTelemetryService {
         return stepPlainQuotedChar(pos: pos, dec0: dec0, tokenStart: &tokenStart)
     }
 
+    private static func isExactProtocolVersion(_ nsText: NSString, start: Int, end: Int) -> Bool {
+        guard var pos = decodeProtocolPrefix(nsText, start: start, end: end), pos < end else { return false }
+        let slash = decodeJsonCharAt(nsText, pos: pos, end: end)
+        guard slash.ch == 0x2F else { return false }
+        pos += slash.len
+        var hasDigit = false
+        var expectDigit = true
+        while pos < end {
+            let dec = decodeJsonCharAt(nsText, pos: pos, end: end)
+            if dec.ch >= 0x30 && dec.ch <= 0x39 {
+                hasDigit = true
+                expectDigit = false
+            } else if dec.ch == 0x2E && !expectDigit {
+                expectDigit = true
+            } else {
+                return false
+            }
+            pos += dec.len
+        }
+        return hasDigit && !expectDigit
+    }
+
+    private static func decodeProtocolPrefix(_ nsText: NSString, start: Int, end: Int) -> Int? {
+        var pos = start
+        guard pos < end else { return nil }
+        let d0 = decodeJsonCharAt(nsText, pos: pos, end: end)
+        pos += d0.len
+        guard pos < end else { return nil }
+        let d1 = decodeJsonCharAt(nsText, pos: pos, end: end)
+        pos += d1.len
+        guard pos < end else { return nil }
+        let d2 = decodeJsonCharAt(nsText, pos: pos, end: end)
+        pos += d2.len
+        let c0 = asciiLower(d0.ch)
+        let c1 = asciiLower(d1.ch)
+        let c2 = asciiLower(d2.ch)
+        if (c0 == 0x74 && c1 == 0x6C && c2 == 0x73) || (c0 == 0x73 && c1 == 0x73 && c2 == 0x6C) { return pos }
+        if c0 == 0x68 && c1 == 0x74 && c2 == 0x74 && pos < end {
+            let d3 = decodeJsonCharAt(nsText, pos: pos, end: end)
+            if asciiLower(d3.ch) == 0x70 { return pos + d3.len }
+        }
+        return nil
+    }
+
+    private static func asciiLower(_ ch: unichar) -> unichar {
+        (ch >= 0x41 && ch <= 0x5A) ? (ch + 0x20) : ch
+    }
+
     private static func matchDecodedFileScheme(_ nsText: NSString, pos: Int, end: Int) -> Bool {
         let target: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F, 0x2F]
         var cursor = pos
@@ -374,125 +423,6 @@ extension CoreTelemetryService {
             cursor += dec.len
         }
         return true
-    }
-
-    private static let escVaultPrefix = "\u{001E}AUNESC"
-
-    static func vaultJsonEscapedURLsInBalancedQuotes(
-        _ text: String, prefix: String, vaultedURLs: inout [String]
-    ) -> String {
-        guard text.contains("\"") && (text.contains("\\/") || text.contains("\\u")) else { return text }
-        let nsText = text as NSString
-        let spans = collectBalancedDoubleQuoteSpans(nsText)
-        guard !spans.isEmpty else { return text }
-        var result = ""
-        var copied = 0
-        for span in spans {
-            let innerStart = span.open + 1
-            guard innerStart < span.close && containsSlashOrUnicodeEscape(nsText, start: innerStart, end: span.close) else {
-                continue
-            }
-            let norm = decodeURLEscapesForVault(nsText, start: innerStart, end: span.close)
-            guard norm.contains("://") else { continue }
-            var innerVaulted: [String] = []
-            let innerResult = vaultNonFileURLsInto("\"\(norm)\"", prefix: escVaultPrefix, vaultedURLs: &innerVaulted)
-            guard !innerVaulted.isEmpty else { continue }
-            if result.isEmpty { result.reserveCapacity(text.count) }
-            result += nsText.substring(with: NSRange(location: copied, length: innerStart - copied))
-            if innerVaulted.count == 1 && innerResult == "\"\(escVaultPrefix)0\u{001F}\"" && innerVaulted[0] == norm {
-                let idx = vaultedURLs.count
-                vaultedURLs.append(nsText.substring(with: NSRange(location: innerStart, length: span.close - innerStart)))
-                result += "\(prefix)\(idx)\u{001F}"
-            } else {
-                let nsInner = innerResult as NSString
-                appendRemappedEscapedVault(
-                    nsInner, start: 1, end: nsInner.length - 1, prefix: prefix,
-                    vaultedURLs: &vaultedURLs, innerVaulted: innerVaulted, result: &result
-                )
-            }
-            copied = span.close
-        }
-        guard copied > 0 else { return text }
-        result += nsText.substring(from: copied)
-        return result
-    }
-
-    // swiftlint:disable:next function_parameter_count
-    private static func appendRemappedEscapedVault(
-        _ nsText: NSString, start: Int, end: Int, prefix: String,
-        vaultedURLs: inout [String], innerVaulted: [String], result: inout String
-    ) {
-        var pos = start
-        let escPrefixLen = (escVaultPrefix as NSString).length
-        while pos < end {
-            let found = nsText.range(of: escVaultPrefix, options: [], range: NSRange(location: pos, length: end - pos))
-            if found.location == NSNotFound {
-                result += nsText.substring(with: NSRange(location: pos, length: end - pos))
-                break
-            }
-            result += nsText.substring(with: NSRange(location: pos, length: found.location - pos))
-            let numStart = found.location + escPrefixLen
-            let endFound = nsText.range(of: "\u{001F}", options: [], range: NSRange(location: numStart, length: end - numStart))
-            if endFound.location != NSNotFound && endFound.location > numStart,
-                let innerIdx = Int(nsText.substring(with: NSRange(location: numStart, length: endFound.location - numStart))),
-                innerIdx >= 0 && innerIdx < innerVaulted.count
-            {
-                let globalIdx = vaultedURLs.count
-                vaultedURLs.append(innerVaulted[innerIdx])
-                result += "\(prefix)\(globalIdx)\u{001F}"
-                pos = endFound.location + endFound.length
-            } else {
-                result += escVaultPrefix
-                pos = numStart
-            }
-        }
-    }
-
-    private static func containsSlashOrUnicodeEscape(_ nsText: NSString, start: Int, end: Int) -> Bool {
-        var idx = start
-        while idx < end {
-            if nsText.character(at: idx) == 0x5C && idx + 1 < end {
-                let next = nsText.character(at: idx + 1)
-                if next == 0x2F || (next == 0x75 && idx + 5 < end) { return true }
-                idx += 2
-                continue
-            }
-            idx += 1
-        }
-        return false
-    }
-
-    private static func isURLStructuralEscape(_ ch: unichar) -> Bool {
-        ch >= 0x20 && ch <= 0x7E && ch != 0x22 && ch != 0x5C
-    }
-
-    private static func decodeURLEscapesForVault(_ nsText: NSString, start: Int, end: Int) -> String {
-        var units: [unichar] = []
-        units.reserveCapacity(end - start)
-        var pos = start
-        while pos < end {
-            let ch = nsText.character(at: pos)
-            if ch == 0x5C && pos + 1 < end {
-                let next = nsText.character(at: pos + 1)
-                if next == 0x2F {
-                    units.append(0x2F)
-                    pos += 2
-                    continue
-                }
-                if next == 0x75 && pos + 5 < end, let code = parseHex4(nsText, pos: pos + 2), isURLStructuralEscape(code) {
-                    units.append(code)
-                    pos += 6
-                    continue
-                }
-                units.append(ch)
-                units.append(next)
-                pos += 2
-                continue
-            }
-            units.append(ch)
-            pos += 1
-        }
-        return String(utf16CodeUnits: units, count: units.count)
     }
 
     private static func matchDecodedWindowsDrive(

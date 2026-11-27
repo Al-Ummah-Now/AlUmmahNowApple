@@ -3,23 +3,62 @@ import Foundation
 extension CoreTelemetryService {
     static func replaceKeywordQuotedPaths(in text: String, regex: NSRegularExpression) -> String {
         let nsText = text as NSString
-        guard text.contains("\"") else {
-            let range = NSRange(location: 0, length: nsText.length)
-            return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "$1[redacted-path]")
-        }
+        guard text.contains("\"") else { return replaceKeywordQuotedOnSource(nsText, scanSource: nsText, regex: regex) }
         var spans = collectBalancedDoubleQuoteSpans(nsText)
-        if spans.isEmpty {
-            let range = NSRange(location: 0, length: nsText.length)
-            return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "$1[redacted-path]")
-        }
+        if spans.isEmpty { return replaceKeywordQuotedOnSource(nsText, scanSource: nsText, regex: regex) }
         let masked = buildMaskedDoubleQuotes(nsText, spans: spans)
-        let afterUnquoted = applyMaskedPathRegex(text, masked: masked, regex: regex, hasPrefix: true)
+        let afterUnquoted = replaceKeywordQuotedOnSource(nsText, scanSource: masked as NSString, regex: regex)
         let nsCur = afterUnquoted as NSString
         if afterUnquoted != text {
             guard afterUnquoted.contains("\"") else { return afterUnquoted }
             spans = collectBalancedDoubleQuoteSpans(nsCur)
         }
         return replaceKeywordQuotedInSpans(nsCur, spans: spans, regex: regex)
+    }
+
+    private static func replaceKeywordQuotedOnSource(
+        _ nsText: NSString, scanSource: NSString, regex: NSRegularExpression
+    ) -> String {
+        let scanStr = scanSource as String
+        let len = scanSource.length
+        var result = ""
+        var copied = 0
+        var searchFrom = 0
+        var unclosedSingleUntil = -1
+        var unclosedDoubleUntil = -1
+        while searchFrom < len {
+            guard
+                let match = regex.firstMatch(
+                    in: scanStr, options: [], range: NSRange(location: searchFrom, length: len - searchFrom))
+            else { break }
+            let kwEnd = match.range.location + match.range.length
+            let quote = scanSource.character(at: kwEnd)
+            let unclosedUntil = quote == 0x27 ? unclosedSingleUntil : unclosedDoubleUntil
+            if kwEnd < unclosedUntil {
+                searchFrom = kwEnd + 1
+                continue
+            }
+            let (closeEnd, stopPos) = findKeywordQuotedEnd(scanSource, quotePos: kwEnd)
+            if closeEnd > 0 {
+                if result.isEmpty { result.reserveCapacity(nsText.length) }
+                result += nsText.substring(with: NSRange(location: copied, length: kwEnd - copied))
+                result += "[redacted-path]"
+                copied = closeEnd
+                searchFrom = closeEnd
+            } else {
+                if stopPos > kwEnd {
+                    if quote == 0x27 {
+                        unclosedSingleUntil = max(unclosedSingleUntil, stopPos)
+                    } else {
+                        unclosedDoubleUntil = max(unclosedDoubleUntil, stopPos)
+                    }
+                }
+                searchFrom = kwEnd + 1
+            }
+        }
+        guard copied > 0 else { return nsText as String }
+        result += nsText.substring(from: copied)
+        return result
     }
 
     private static func replaceKeywordQuotedInSpans(
@@ -34,21 +73,79 @@ extension CoreTelemetryService {
             }
             let (decoded, rawOffsets) = decodeQuotedSpanWithOffsets(nsCur, start: innerStart, end: span.close)
             guard decoded.contains("'") || decoded.contains("\"") else { continue }
-            let matches = regex.matches(
-                in: decoded, options: [], range: NSRange(location: 0, length: (decoded as NSString).length))
-            for match in matches {
-                let g1 = match.range(at: 1)
-                let rawPrefixEnd = rawOffsets[g1.location + g1.length]
-                let rawEnd = rawOffsets[match.range.location + match.range.length]
-                if result.isEmpty { result.reserveCapacity(nsCur.length) }
-                result += nsCur.substring(with: NSRange(location: copied, length: rawPrefixEnd - copied))
-                result += "[redacted-path]"
-                copied = rawEnd
-            }
+            applyKeywordQuotedDecoded(
+                nsCur, decoded: decoded, rawOffsets: rawOffsets, regex: regex, result: &result, copied: &copied)
         }
         guard copied > 0 else { return nsCur as String }
         result += nsCur.substring(from: copied)
         return result
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    private static func applyKeywordQuotedDecoded(
+        _ nsCur: NSString, decoded: String, rawOffsets: [Int],
+        regex: NSRegularExpression, result: inout String, copied: inout Int
+    ) {
+        let nsDec = decoded as NSString
+        let len = nsDec.length
+        var searchFrom = 0
+        var unclosedSingleUntil = -1
+        var unclosedDoubleUntil = -1
+        while searchFrom < len {
+            guard
+                let match = regex.firstMatch(
+                    in: decoded, options: [], range: NSRange(location: searchFrom, length: len - searchFrom))
+            else { break }
+            let kwEnd = match.range.location + match.range.length
+            let quote = nsDec.character(at: kwEnd)
+            let unclosedUntil = quote == 0x27 ? unclosedSingleUntil : unclosedDoubleUntil
+            if kwEnd < unclosedUntil {
+                searchFrom = kwEnd + 1
+                continue
+            }
+            let (closeEnd, stopPos) = findKeywordQuotedEnd(nsDec, quotePos: kwEnd)
+            if closeEnd > 0 {
+                let rawPrefixEnd = rawOffsets[kwEnd]
+                let rawEnd = rawOffsets[closeEnd]
+                if result.isEmpty { result.reserveCapacity(nsCur.length) }
+                result += nsCur.substring(with: NSRange(location: copied, length: rawPrefixEnd - copied))
+                result += "[redacted-path]"
+                copied = rawEnd
+                searchFrom = closeEnd
+            } else {
+                if stopPos > kwEnd {
+                    if quote == 0x27 {
+                        unclosedSingleUntil = max(unclosedSingleUntil, stopPos)
+                    } else {
+                        unclosedDoubleUntil = max(unclosedDoubleUntil, stopPos)
+                    }
+                }
+                searchFrom = kwEnd + 1
+            }
+        }
+    }
+
+    private static func findKeywordQuotedEnd(_ nsText: NSString, quotePos: Int) -> (Int, Int) {
+        let len = nsText.length
+        let quote = nsText.character(at: quotePos)
+        guard quotePos + 1 < len && nsText.character(at: quotePos + 1) != 0x1E else { return (-1, -1) }
+        var idx = quotePos + 1
+        while idx < len {
+            let ch = nsText.character(at: idx)
+            if ch == 0x0A || ch == 0x0D || ch == 0x1E || ch == 0x1F { return (-1, idx) }
+            if ch == quote {
+                if quote == 0x27 && idx > quotePos + 1 && idx + 1 < len
+                    && VaultLineTracker.isLetterOrDigit(nsText.character(at: idx - 1))
+                    && VaultLineTracker.isLetter(nsText.character(at: idx + 1))
+                {
+                    idx += 1
+                    continue
+                }
+                return (idx > quotePos + 1 ? idx + 1 : -1, -1)
+            }
+            idx += 1
+        }
+        return (-1, len)
     }
 
     static func replaceBareFilenames(in text: String, regex: NSRegularExpression) -> String {

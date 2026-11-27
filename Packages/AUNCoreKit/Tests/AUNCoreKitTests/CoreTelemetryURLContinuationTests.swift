@@ -474,10 +474,36 @@ extension CoreTelemetryURLContinuationTests {
                 "[\"https://example.test/webhook/fake\\u0054oken\"]",
                 "[\"https://example.test/webhook/[redacted]\"]"
             ),
+            (
+                "[\"https://example.com/api\\u003Ftoken=prefix\\u0020opaqueSecret123\"]",
+                "[\"https://example.com/api?[redacted]\"]"
+            ),
+            (
+                "[\"https://example.com/api?token=first\\u0020secondSecret\"]",
+                "[\"https://example.com/api?[redacted]\"]"
+            ),
+            (
+                "[\"https://example.com/api\\u0023prefix\\u0020opaqueSecret123\"]",
+                "[\"https://example.com/api#[redacted]\"]"
+            ),
+            (
+                "[\"https://example.test/webhook/\\u00e9PrivateToken\"]",
+                "[\"https://example.test/webhook/[redacted]\"]"
+            ),
+            ("[\"HTTP/2\"]", "[\"HTTP/2\"]"),
+            ("[\"HTTP/1.1\"]", "[\"HTTP/1.1\"]"),
+            ("[\"HTTP\\/2\"]", "[\"HTTP\\/2\"]"),
+            ("[\"TLS/1.3\"]", "[\"TLS/1.3\"]"),
+            ("[\"SSL/3.0\"]", "[\"SSL/3.0\"]"),
+            ("[\"HTTP/2/Secret.mov\"]", "[\"[redacted-path]\"]"),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
+        let manyApostrophes = "file '\(String(repeating: "a'", count: 5000))end'"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(manyApostrophes) == "file [redacted-path]")
+        let manyUnclosedApostrophes = "file '\(String(repeating: "a'", count: 5000))end"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(manyUnclosedApostrophes) == manyUnclosedApostrophes)
         let manyFileURIs = Array(repeating: "open file:///Users/Alice/Secret.mov", count: 2000).joined(separator: "\n")
         let expectedFileURIs = Array(repeating: "open [redacted-path]", count: 2000).joined(separator: "\n")
         #expect(CoreTelemetryService.sanitizeLocalPaths(manyFileURIs) == expectedFileURIs)

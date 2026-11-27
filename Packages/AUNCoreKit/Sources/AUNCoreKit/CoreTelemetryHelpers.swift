@@ -380,9 +380,7 @@ extension CoreTelemetryService {
     ]
 
     private static let keywordQuotedPathRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern:
-            #"(\b(?:file|path|directory|folder|document)[^\S\r\n]+)"#
-            + #"(?:"(?!\u001E)[^"\r\n\u001E\u001F]+"|'(?!\u001E)[^'\r\n\u001E\u001F]+(?:(?<=[\p{L}\p{N}])'(?=[\p{L}])[^'\r\n\u001E\u001F]+)*')"#,
+        pattern: #"\b(?:file|path|directory|folder|document)[^\S\r\n]+(?=["'])"#,
         options: [.caseInsensitive]
     )
 
