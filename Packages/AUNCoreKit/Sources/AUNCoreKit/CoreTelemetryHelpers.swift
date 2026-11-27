@@ -79,9 +79,9 @@ extension CoreTelemetryService {
     private static let pathRegexes: [NSRegularExpression] = {
         let patterns = [
             #"file://[^\r\n]+"#,
-            #"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n]+"#,
+            #"(?:(?<![\p{L}\p{N}])[A-Za-z]:[\\/]|\\\\)[^\r\n]+"#,
             #"["']/[ \t]+[^\r\n]+"#,
-            #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|(?<!:)//+(?=[^\s/])|(?<!:)/(?=[ \t]*[^\r\n/]+/)|/(?=[^\s/]))[^\r\n]+"#,
+            #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|(?<![A-Za-z][A-Za-z0-9+.-]{0,20}:)//+(?=[^\s/])|/(?=[ \t]+(?:[^\r\n/]+/|[^\r\n]*\.[\p{L}\p{N}]{1,10}\b))|/(?=[^\s/]))[^\r\n]+"#,
         ]
         return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
     }()

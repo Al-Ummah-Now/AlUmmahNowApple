@@ -3,6 +3,48 @@ import AUNCoreBridge
 import Foundation
 import Testing
 
+private final class TelemetryFlushSlotGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var nextIndex = 0
+    private var slots: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var arrivedWaiters: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var arrivedSlots: Set<Int> = []
+
+    func enter() async {
+        let idx = lock.withLock { () -> Int in
+            let i = nextIndex
+            nextIndex += 1
+            return i
+        }
+        await withCheckedContinuation { cont in
+            let waiter: CheckedContinuation<Void, Never>? = lock.withLock {
+                slots[idx] = cont
+                arrivedSlots.insert(idx)
+                return arrivedWaiters.removeValue(forKey: idx)
+            }
+            waiter?.resume()
+        }
+    }
+
+    func waitForSlot(_ idx: Int) async {
+        await withCheckedContinuation { cont in
+            let ready = lock.withLock { () -> Bool in
+                if arrivedSlots.contains(idx) { return true }
+                arrivedWaiters[idx] = cont
+                return false
+            }
+            if ready { cont.resume() }
+        }
+    }
+
+    func releaseSlot(_ idx: Int) {
+        let cont: CheckedContinuation<Void, Never>? = lock.withLock {
+            slots.removeValue(forKey: idx)
+        }
+        cont?.resume()
+    }
+}
+
 @Suite("CoreTelemetryService")
 struct CoreTelemetryServiceTests {
     private func makeTempDir() throws -> URL {
@@ -238,6 +280,10 @@ struct CoreTelemetryServiceTests {
             failed at path=/Users/alice/Secret"Acquisition.mov
             Failed to open "/ Secret/Acquisition.mov"
             Failed to open "/ SecretFile"
+            / SecretFile.mov
+            42:/ Secret/Acquisition.mov:77
+            error 42://SecretHost/Acquisition.mov
+            open(path\\\\unc\\Secret\\Acquisition.mov)
             open //storage/emulated/0/Private.mov
             error 42:/home/alice/private.mov
             /workspace/alice/Project|Acquisition.mov
@@ -259,71 +305,21 @@ struct CoreTelemetryServiceTests {
         )
 
         let json = try String(contentsOfFile: bufferPath, encoding: .utf8)
-        #expect(!json.localizedCaseInsensitiveContains("alice"))
-        #expect(!json.localizedCaseInsensitiveContains("smith"))
-        #expect(!json.localizedCaseInsensitiveContains("lodie"))
-        #expect(!json.localizedCaseInsensitiveContains("brien"))
-        #expect(!json.localizedCaseInsensitiveContains("private"))
-        #expect(!json.localizedCaseInsensitiveContains("acquisition"))
-        #expect(!json.localizedCaseInsensitiveContains("project>.mov"))
-        #expect(!json.localizedCaseInsensitiveContains("storage"))
-        #expect(!json.localizedCaseInsensitiveContains("player.swift"))
-        #expect(!json.contains(":99"))
-        #expect(!json.contains(":66"))
-        #expect(!json.contains(":55"))
-        #expect(!json.localizedCaseInsensitiveContains("client).mov"))
-        #expect(!json.localizedCaseInsensitiveContains("name.mov"))
-        #expect(!json.localizedCaseInsensitiveContains("draft.mp4"))
-        #expect(!json.contains("workspace"))
-        #expect(json.contains("Player.open() + 42"))
-        #expect(json.contains("App.run()"))
-        #expect(json.contains("[redacted-path]"))
+        for forbidden in ["alice", "smith", "lodie", "brien", "private", "acquisition", "project>.mov", "storage", "player.swift", "client).mov", "name.mov", "draft.mp4"] {
+            #expect(!json.localizedCaseInsensitiveContains(forbidden))
+        }
+        #expect(!json.contains(":99") && !json.contains(":66") && !json.contains(":55") && !json.contains("workspace"))
+        #expect(json.contains("Player.open() + 42") && json.contains("App.run()") && json.contains("[redacted-path]"))
+        #expect(CoreTelemetryService.sanitizeLocalPaths("https://videos.api.alummahnow.net/v1/items") == "https://videos.api.alummahnow.net/v1/items")
+        #expect(CoreTelemetryService.sanitizeLocalPaths("git+http2://example.com/repo") == "git+http2://example.com/repo")
     }
 
     @Test("Re-enabling stays blocked until all pre-revocation flushes finish and purge")
     func reenableBlockedUntilMultipleRevokedFlushesDrain() async throws {
-        final class FlushGate: @unchecked Sendable {
-            private let lock = NSLock()
-            private var waiters: [CheckedContinuation<Void, Never>] = []
-            private var started = 0
-            private var startedWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
-
-            func enter() async {
-                await withCheckedContinuation { cont in
-                    let ready: [CheckedContinuation<Void, Never>] = lock.withLock {
-                        started += 1
-                        waiters.append(cont)
-                        let matched = startedWaiters.filter { started >= $0.0 }.map(\.1)
-                        startedWaiters.removeAll { started >= $0.0 }
-                        return matched
-                    }
-                    ready.forEach { $0.resume() }
-                }
-            }
-
-            func waitForStarted(_ count: Int) async {
-                await withCheckedContinuation { cont in
-                    let alreadyReady = lock.withLock { () -> Bool in
-                        if started >= count { return true }
-                        startedWaiters.append((count, cont))
-                        return false
-                    }
-                    if alreadyReady { cont.resume() }
-                }
-            }
-
-            func releaseOne() {
-                let next: CheckedContinuation<Void, Never>? = lock.withLock {
-                    waiters.isEmpty ? nil : waiters.removeFirst()
-                }
-                next?.resume()
-            }
-        }
-
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let bufferPath = dir.appendingPathComponent("telemetry-buffer.json").path
-        let gate = FlushGate()
+        let gate = TelemetryFlushSlotGate()
 
         let service = try CoreTelemetryService(
             platform: "macos",
@@ -339,23 +335,25 @@ struct CoreTelemetryServiceTests {
         service.flushOverrideForTesting = { await gate.enter() }
 
         let flush1 = Task { await service.flush() }
+        await gate.waitForSlot(0)
         let flush2 = Task { await service.flush() }
-        await gate.waitForStarted(2)
+        await gate.waitForSlot(1)
 
         // Opt out while BOTH pre-revocation flushes are active.
         #expect(service.setConsent(.off))
         #expect(!service.setConsent(.full))
         #expect(service.consent == .off)
 
-        // Release only the first flush; the second is still draining so re-enable must stay blocked.
-        gate.releaseOne()
-        try await Task.sleep(nanoseconds: 30_000_000)
-        #expect(!service.setConsent(.full))
-
-        // Simulate late persist remnant before releasing the second flush.
-        try Data("{\"late\":true}".utf8).write(to: URL(fileURLWithPath: bufferPath))
-        gate.releaseOne()
+        // Release slot 0 and deterministically await flush1 completion (including its defer cleanup);
+        // flush2 is still gated at slot 1, so re-enable must remain blocked.
+        gate.releaseSlot(0)
         await flush1.value
+        #expect(!service.setConsent(.full))
+        #expect(service.consent == .off)
+
+        // Simulate late persist remnant before releasing flush2.
+        try Data("{\"late\":true}".utf8).write(to: URL(fileURLWithPath: bufferPath))
+        gate.releaseSlot(1)
         await flush2.value
 
         #expect(!FileManager.default.fileExists(atPath: bufferPath))
