@@ -204,6 +204,10 @@ struct CoreTelemetryAuthSanitizerTests {
                 == "https://example.test/webhook/[redacted]"
         )
         #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken,'opaqueSecret123")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.test/%77ebhook/fakeToken")
                 == "https://example.test/%77ebhook/[redacted]"
         )

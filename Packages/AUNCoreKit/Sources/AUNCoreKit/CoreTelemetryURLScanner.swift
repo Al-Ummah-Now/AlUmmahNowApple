@@ -149,13 +149,15 @@ extension CoreTelemetryService {
         let nextPos = pos + 1
         guard nextPos < len else { return true }
         let next = nsText.character(at: nextPos)
-        if next == 0x28 || next == 0x5B || next == 0x2C || next == 0x3B || next == 0x3F || next == 0x23 {
-            return false
-        }
+        if isAllowedAfterURLComma(next) { return false }
         if VaultLineTracker.isWhitespace(next) || isURLPathStopChar(next) || isURLEndBoundaryChar(next) {
             return true
         }
         return startsEmbeddedFilesystemPath(nsText, nextPos: nextPos, len: len)
+    }
+
+    private static func isAllowedAfterURLComma(_ ch: unichar) -> Bool {
+        ch == 0x27 || ch == 0x28 || ch == 0x5B || ch == 0x2C || ch == 0x3B || ch == 0x3F || ch == 0x23
     }
 
     static func startsEmbeddedFilesystemPath(_ nsText: NSString, nextPos: Int, len: Int) -> Bool {
