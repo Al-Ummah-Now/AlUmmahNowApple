@@ -167,9 +167,9 @@ struct CoreTelemetryExternalConsentTests {
             ("input'/tmp/O' Connor Private https://private.example/Acquisition.mov", "input'[redacted-path]"),
             ("'(/tmp/Client) Acquisition Plan'", "'([redacted-path]"),
             ("' (/tmp/Client) Acquisition Plan'", "' ([redacted-path]"),
-            ("\" (/tmp/Client) Acquisition Plan\"", "\" ([redacted-path]"),
-            ("\"My (/tmp/Client) Acquisition Plan\"", "\"My ([redacted-path]"),
-            ("\"(relative/Client) Acquisition Plan\"", "\"([redacted-path]"),
+            ("\" (/tmp/Client) Acquisition Plan\"", "\" ([redacted-path]\""),
+            ("\"My (/tmp/Client) Acquisition Plan\"", "\"My ([redacted-path]\""),
+            ("\"(relative/Client) Acquisition Plan\"", "\"([redacted-path]\""),
             (
                 "Failed for 李@example.com, محمد@مثال.مصر, user@bücher.example, 「李·明@例え.jp」, "
                     + "李@例え.xn--p1ai, 李!明@example.com, mary'ann@example.com, 李·明@example.com, "

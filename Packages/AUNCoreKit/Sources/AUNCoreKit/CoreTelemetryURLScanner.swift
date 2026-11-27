@@ -26,8 +26,15 @@ extension CoreTelemetryService {
         return start
     }
 
+    static func computeQueryAngleStopMask(_ nsText: NSString, urlStart: Int, inDoubleQuote: Bool) -> Int {
+        let wrappedInAngle = urlStart > 0 && nsText.character(at: urlStart - 1) == 0x3C
+        let stopOnLess = !inDoubleQuote && !wrappedInAngle
+        let stopOnGreater = !inDoubleQuote || wrappedInAngle
+        return (stopOnLess ? 1 : 0) | (stopOnGreater ? 2 : 0)
+    }
+
     static func scanURLAfterScheme(
-        _ nsText: NSString, start: Int, sep: Int, allowAngleBrackets: Bool = false
+        _ nsText: NSString, start: Int, sep: Int, angleStopMask: Int = 3
     ) -> URLScanMatch? {
         let totalLen = nsText.length
         guard let afterHost = scanURLHost(nsText, hostStart: sep + 3, len: totalLen),
@@ -46,7 +53,7 @@ extension CoreTelemetryService {
             if nextCh == 0x3F || nextCh == 0x23 {
                 hasQF = true
                 totalEnd = scanQueryOrFragment(
-                    nsText, start: baseEnd, len: totalLen, allowAngleBrackets: allowAngleBrackets
+                    nsText, start: baseEnd, len: totalLen, angleStopMask: angleStopMask
                 )
             }
         }
@@ -174,12 +181,17 @@ extension CoreTelemetryService {
     }
 
     static func scanQueryOrFragment(
-        _ nsText: NSString, start: Int, len: Int, allowAngleBrackets: Bool = false
+        _ nsText: NSString, start: Int, len: Int, angleStopMask: Int = 3
     ) -> Int {
         var pos = start + 1
         while pos < len {
             let ch = nsText.character(at: pos)
-            if VaultLineTracker.isWhitespace(ch) || (!allowAngleBrackets && (ch == 0x3C || ch == 0x3E)) { break }
+            if VaultLineTracker.isWhitespace(ch)
+                || (ch == 0x3C && (angleStopMask & 1) != 0)
+                || (ch == 0x3E && (angleStopMask & 2) != 0)
+            {
+                break
+            }
             if ch == 0x22 {
                 var bs = 0
                 while pos - 1 - bs > start && nsText.character(at: pos - 1 - bs) == 0x5C { bs += 1 }

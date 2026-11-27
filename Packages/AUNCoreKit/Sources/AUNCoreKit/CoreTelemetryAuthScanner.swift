@@ -8,7 +8,7 @@ enum CoreTelemetryAuthScanner {
     ]
 
     private static let bearerTokenRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"\b(Bearer)\s+(?!\[redacted\](?=$|[\s"',;)\]}]))[^\s"',;)\]}]+"#,
+        pattern: #"\b(Bearer)\s+(?!\[redacted\](?=$|[\s"',;)\]}]))(?:\\[^\r\n\s]|[^\s\\"',;)\]}]|\\(?=$|[\s\r\n]))+"#,
         options: [.caseInsensitive]
     )
 

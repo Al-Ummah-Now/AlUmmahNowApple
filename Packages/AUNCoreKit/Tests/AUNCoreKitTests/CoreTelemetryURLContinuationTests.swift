@@ -313,4 +313,56 @@ struct CoreTelemetryURLContinuationTests {
             ) == "[\"https://example.com/api?[redacted]\",\"[redacted-path]\"]"
         )
     }
+
+    @Test("Handles angle-wrapped URL queries, escaped Bearer quotes, and quoted JSON paths")
+    func angleWrappedQueriesBearerEscapesAndQuotedJsonPaths() {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"see <https://example.com/api?token=first<opaqueSecret123> public\"]"
+            ) == "[\"see <https://example.com/api?[redacted]> public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "<https://example.com/api?token=first<opaqueSecret123> public"
+            ) == "<https://example.com/api?[redacted]> public"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[\"Bearer abc\\\"opaqueSecret123\"]")
+                == "[\"Bearer [redacted]\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[\"Bearer abc\\\"opaqueSecret123\",\"public\"]")
+                == "[\"Bearer [redacted]\",\"public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[\"Bearer abc\\\\\",\"public\"]")
+                == "[\"Bearer [redacted]\",\"public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[\"C://Secret/Acquisition.mov\",\"public\"]")
+                == "[\"[redacted-path]\",\"public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[\"Failed reading C://Secret/Acquisition.mov\",\"public\"]")
+                == "[\"Failed reading [redacted-path]\",\"public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[\"/Users/alice/Secret.mov\",\"public\"]")
+                == "[\"[redacted-path]\",\"public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[\"relative/Secret.mov\",\"public\"]")
+                == "[\"[redacted-path]\",\"public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"https://example.com/api?token=opaqueSecret123\",\"C://Secret/Acquisition.mov\",\"public\"]"
+            ) == "[\"https://example.com/api?[redacted]\",\"[redacted-path]\",\"public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[\"hello \\\"world\\\"\",\"public\"]")
+                == "[\"hello \\\"world\\\"\",\"public\"]"
+        )
+        #expect(CoreTelemetryService.sanitizeLocalPaths("[\"/\",\"public\"]") == "[\"/\",\"public\"]")
+    }
 }

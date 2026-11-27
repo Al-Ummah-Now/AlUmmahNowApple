@@ -82,6 +82,7 @@ extension CoreTelemetryService {
         let preAuth = CoreTelemetryAuthScanner.redactAuthCredentials(in: VaultLineTracker.redactQuotedEmails(in: escaped))
         var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: preAuth, prefix: Self.vaultPrefix)
         scrubbed = Self.redactFileURIs(in: scrubbed, vaultPrefix: Self.vaultPrefix)
+        scrubbed = Self.redactDoubleQuotedLocalPaths(in: scrubbed)
         for regex in Self.parenPathRegexes {
             scrubbed = Self.replaceUnquotedParenPaths(in: scrubbed, using: regex)
         }
@@ -279,8 +280,8 @@ extension CoreTelemetryService {
                 quoteState = Self.advanceQuoteState(nsText, from: quoteCursor, to: start, quoteState: quoteState)
                 quoteCursor = start
             }
-            let allowAngles = (quoteState & 2) != 0 && (start == 0 || nsText.character(at: start - 1) != 0x3C)
-            guard let span = Self.scanURLAfterScheme(nsText, start: start, sep: sep, allowAngleBrackets: allowAngles)
+            let angleMask = Self.computeQueryAngleStopMask(nsText, urlStart: start, inDoubleQuote: (quoteState & 2) != 0)
+            guard let span = Self.scanURLAfterScheme(nsText, start: start, sep: sep, angleStopMask: angleMask)
             else {
                 searchFrom = sep + 3
                 continue
@@ -396,13 +397,19 @@ extension CoreTelemetryService {
 
     private static let preKeywordPathRules: [(regex: NSRegularExpression, template: String)] = {
         let absTail = #"[^\r\n\u001E\s](?:[^\r\n\u001E]*[^\r\n\u001E\s])?"#
+        let absNonQuoteTail = #"[^\r\n\u001E\s"](?:[^\r\n\u001E]*[^\r\n\u001E\s])?"#
         let relTail = #"[^\r\n\u001E\u001F\s](?:[^\r\n\u001E\u001F]*[^\r\n\u001E\u001F\s])?"#
         let specs: [(String, String)] = [
-            (#"(?:[A-Za-z]:[\\/]|\\\\)[^\S\r\n]*"# + absTail, "[redacted-path]"),
-            (#"(^|[\s(\[{"'=,:;<>)\u001F])[^\s\\/"'<>()\[{:,;=\u001E\u001F]+\\"# + relTail, "$1[redacted-path]"),
-            (#"["']/[ \t]+[^\r\n\u001E]+"#, "[redacted-path]"),
+            (#"(?:[A-Za-z]:[\\/]|\\\\)[^\S\r\n]*"# + absNonQuoteTail, "[redacted-path]"),
             (
-                #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|//+(?=[^\S\r\n]*[^\s/])|/(?=[^\S\r\n]*[^\s/]))[^\S\r\n]*"# + absTail,
+                #"(^|[\s(\[{"'=,:;<>)\u001F])[^\s\\/"'<>()\[{:,;=\u001E\u001F]+\\[^\r\n\u001E\u001F\s"]"#
+                    + #"(?:[^\r\n\u001E\u001F]*[^\r\n\u001E\u001F\s])?"#,
+                "$1[redacted-path]"
+            ),
+            (#"["']/[ \t]+[^\r\n\u001E\s"][^\r\n\u001E]*"#, "[redacted-path]"),
+            (
+                #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/(?=[^\S\r\n]*[^\s"])|//+(?=[^\S\r\n]*[^\s/"])|/(?=[^\S\r\n]*[^\s/"]))[^\S\r\n]*"#
+                    + absTail,
                 "[redacted-path]"
             ),
             (
