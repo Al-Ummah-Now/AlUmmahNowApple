@@ -33,6 +33,10 @@ struct CoreTelemetryAuthSanitizerTests {
                 == "note \"hi\", \"Authorization\": \"[redacted]\" [redacted]"
         )
         #expect(
+            CoreTelemetryService.sanitizeLocalPaths("note: \"hi\", \"Authorization\": \"firstValue\" } opaqueSecret123")
+                == "note: \"hi\", \"Authorization\": \"[redacted]\" [redacted]"
+        )
+        #expect(
             CoreTelemetryService.sanitizeLocalPaths("{\"a\":{\"b\":1},\"Authorization\":\"opaqueSecret123\"}")
                 == "{\"a\":{\"b\":1},\"Authorization\":\"[redacted]\"}"
         )
@@ -51,6 +55,10 @@ struct CoreTelemetryAuthSanitizerTests {
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://hooks.slack." + "com/services/T0000/B0000/fakeWebhookToken")
                 == "https://hooks.slack.com/services/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://hooks.slack." + "com:443/services/T0000/B0000/fakeWebhookToken")
+                == "https://hooks.slack.com:443/services/[redacted]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://api.telegram." + "org/bot123456:fakeBotToken/getMe")

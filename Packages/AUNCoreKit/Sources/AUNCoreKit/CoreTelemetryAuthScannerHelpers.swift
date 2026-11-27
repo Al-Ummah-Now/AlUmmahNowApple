@@ -137,9 +137,20 @@ extension CoreTelemetryAuthScanner {
     }
 
     private static func isPrecededByColon(_ nsText: NSString, before pos: Int) -> Bool {
-        var idx = pos - 1
+        let colonPos = skipJsonWhitespaceBackward(nsText, from: pos - 1)
+        guard colonPos > 0 && nsText.character(at: colonPos) == 0x3A else { return false }
+        let keyEnd = skipJsonWhitespaceBackward(nsText, from: colonPos - 1)
+        guard keyEnd > 0 && nsText.character(at: keyEnd) == 0x22 else { return false }
+        let keyStart = scanJsonStringStartBackward(nsText, from: keyEnd)
+        guard keyStart > 0 else { return false }
+        let beforeKey = skipJsonWhitespaceBackward(nsText, from: keyStart - 1)
+        return beforeKey >= 0 && (nsText.character(at: beforeKey) == 0x7B || nsText.character(at: beforeKey) == 0x2C)
+    }
+
+    private static func skipJsonWhitespaceBackward(_ nsText: NSString, from start: Int) -> Int {
+        var idx = start
         while idx >= 0 && (isHorizSpace(nsText.character(at: idx)) || isNewline(nsText.character(at: idx))) { idx -= 1 }
-        return idx >= 0 && nsText.character(at: idx) == 0x3A
+        return idx
     }
 
     private static func isEscapedQuote(_ nsText: NSString, at quotePos: Int) -> Bool {

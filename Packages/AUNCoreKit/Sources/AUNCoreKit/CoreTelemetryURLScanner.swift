@@ -78,7 +78,9 @@ extension CoreTelemetryService {
         ),
         (
             try? NSRegularExpression(
-                pattern: #"(https?://hooks\.slack\.com/(?:services|workflows|triggers)/)[^\s?#]+"#, options: [.caseInsensitive]),
+                pattern: #"(https?://hooks\.slack(?:-gov)?\.com\.?(?::\d+)?/(?:services|workflows|triggers)/)[^\s?#]+"#,
+                options: [.caseInsensitive]
+            ),
             "$1[redacted]"
         ),
         (try? NSRegularExpression(pattern: #"(/bot\d+:)[^/\s?#]+"#, options: [.caseInsensitive]), "$1[redacted]"),
