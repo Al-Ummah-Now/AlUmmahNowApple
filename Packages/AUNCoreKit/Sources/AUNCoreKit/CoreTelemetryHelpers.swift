@@ -20,10 +20,9 @@ extension CoreTelemetryService {
         let bufferURL = Self.defaultBufferURL(bundleID: bundleID, filename: bufferFilename)
         let osVersion = Self.osVersionString()
         let initialEnabled = defaults.bool(forKey: "AUNTelemetryEnabled")
-        let suiteName = defaults === UserDefaults.standard ? nil : bundleID
+        nonisolated(unsafe) let defaultsStore = defaults
         let externalCheck: @Sendable () -> Bool = {
-            let store = suiteName.flatMap(UserDefaults.init(suiteName:)) ?? .standard
-            return store.bool(forKey: "AUNTelemetryEnabled")
+            defaultsStore.bool(forKey: "AUNTelemetryEnabled")
         }
         do {
             return try CoreTelemetryService(
@@ -67,47 +66,24 @@ extension CoreTelemetryService {
     }
 
     /// Scrubs local filesystem paths and `file://` URIs before crash or breadcrumb text enters telemetry.
-    /// Line numbers are preserved only when `preserveStackLocations` is `true` (stack traces) and the
-    /// location terminates the frame line.
-    public static func sanitizeLocalPaths(_ text: String, preserveStackLocations: Bool = false) -> String {
+    public static func sanitizeLocalPaths(_ text: String) -> String {
         guard !text.isEmpty else { return text }
-        let rules = preserveStackLocations ? Self.stackPathRules : Self.messagePathRules
         var result = text
-        for (regex, template) in rules {
+        for regex in Self.pathRegexes {
             let range = NSRange(result.startIndex..<result.endIndex, in: result)
-            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: template)
+            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "[redacted-path]")
         }
         return result
     }
 
-    private static let messagePathRules: [(NSRegularExpression, String)] = {
-        let patterns: [(String, String)] = [
-            (#""(?:file://|(?:[A-Za-z]:[\\/]|\\\\)|~/(?!\s)|/(?=[^\s/"]))[^"\r\n]*""#, "[redacted-path]"),
-            (#"file://[^\r\n"]+"#, "[redacted-path]"),
-            (#"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n"<>|]+"#, "[redacted-path]"),
-            (#"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|/(?=[^\s/"]))[^\r\n"]+"#, "[redacted-path]"),
+    private static let pathRegexes: [NSRegularExpression] = {
+        let patterns = [
+            #"file://[^\r\n]+"#,
+            #"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n]+"#,
+            #"["']/[ \t]+[^\r\n]+"#,
+            #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|(?<!:)//+(?=[^\s/])|(?<!:)/(?=[ \t]*[^\r\n/]+/)|/(?=[^\s/]))[^\r\n]+"#,
         ]
-        return patterns.compactMap { pattern, template in
-            (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])).map { ($0, template) }
-        }
-    }()
-
-    private static let stackPathRules: [(NSRegularExpression, String)] = {
-        let endOfFrame = #"(?::line\s+\d+|:\d+(?::\d+)?)(?:[)\]]*|\s+in\s+[\p{L}_][\p{L}\p{N}_.$<>]*\(\))(?=\r|\n|$)"#
-        let stackSuffix = "(?=\(endOfFrame)|[\\r\\n\"]|$)"
-        let winSuffix = "(?=\(endOfFrame)|[\\r\\n\"<>|]|$)"
-        let patterns: [(String, String)] = [
-            (
-                #""(?:file://|(?:[A-Za-z]:[\\/]|\\\\)|~/(?!\s)|/(?=[^\s/"]))[^"\r\n]*?((?::line\s+\d+|:\d+(?::\d+)?)?)""#,
-                "[redacted-path]$1"
-            ),
-            (#"file://[^\r\n"]+?"# + stackSuffix, "[redacted-path]"),
-            (#"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n"<>|]+?"# + winSuffix, "[redacted-path]"),
-            (#"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|/(?=[^\s/"]))[^\r\n"]+?"# + stackSuffix, "[redacted-path]"),
-        ]
-        return patterns.compactMap { pattern, template in
-            (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])).map { ($0, template) }
-        }
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
     }()
 
     static func serializeProperties(_ properties: [String: String]) -> String? {

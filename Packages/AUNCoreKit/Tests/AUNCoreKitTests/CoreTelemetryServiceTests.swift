@@ -235,6 +235,10 @@ struct CoreTelemetryServiceTests {
             /private-key
             /Users/alice/Secret<Project>.mov
             /Users/alice/Draft:77 in open() Acquisition.mov
+            failed at path=/Users/alice/Secret"Acquisition.mov
+            Failed to open "/ Secret/Acquisition.mov"
+            Failed to open "/ SecretFile"
+            open //storage/emulated/0/Private.mov
             error 42:/home/alice/private.mov
             /workspace/alice/Project|Acquisition.mov
             /workspace/alice/Project;Acquisition.mov
@@ -244,10 +248,12 @@ struct CoreTelemetryServiceTests {
             "C:\\Users\\Alice Smith\\Private Draft.mp4"
             """,
             stack: """
+            NSException: /Users/alice/Draft:99 in open()
+            0   ViewerIOS   0x0000000104abcdef Player.open() + 42
             at Player.open() in /workspace/Élodie/src/Player.swift:42
-            "/home/alice/source.swift:88"
-            file:///Users/alice/Player.swift:55
-            at /Users/alice/Player.swift:77 in open()
+            at "/home/alice/private:66" while opening file
+            at file:///Users/alice/Player.swift:55
+            at /Users/alice/Split.swift:line\rCaused by: /Users/alice/Cause:99
             at App.run()
             """
         )
@@ -260,17 +266,101 @@ struct CoreTelemetryServiceTests {
         #expect(!json.localizedCaseInsensitiveContains("private"))
         #expect(!json.localizedCaseInsensitiveContains("acquisition"))
         #expect(!json.localizedCaseInsensitiveContains("project>.mov"))
-        #expect(!json.localizedCaseInsensitiveContains("source.swift"))
+        #expect(!json.localizedCaseInsensitiveContains("storage"))
+        #expect(!json.localizedCaseInsensitiveContains("player.swift"))
+        #expect(!json.contains(":99"))
+        #expect(!json.contains(":66"))
+        #expect(!json.contains(":55"))
         #expect(!json.localizedCaseInsensitiveContains("client).mov"))
         #expect(!json.localizedCaseInsensitiveContains("name.mov"))
         #expect(!json.localizedCaseInsensitiveContains("draft.mp4"))
         #expect(!json.contains("workspace"))
-        #expect(json.contains("[redacted-path]:42"))
-        #expect(json.contains("[redacted-path]:55"))
-        #expect(json.contains("[redacted-path]:77 in open()"))
-        #expect(json.contains("[redacted-path]:88"))
+        #expect(json.contains("Player.open() + 42"))
         #expect(json.contains("App.run()"))
         #expect(json.contains("[redacted-path]"))
+    }
+
+    @Test("Re-enabling stays blocked until all pre-revocation flushes finish and purge")
+    func reenableBlockedUntilMultipleRevokedFlushesDrain() async throws {
+        final class FlushGate: @unchecked Sendable {
+            private let lock = NSLock()
+            private var waiters: [CheckedContinuation<Void, Never>] = []
+            private var started = 0
+            private var startedWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+            func enter() async {
+                await withCheckedContinuation { cont in
+                    let ready: [CheckedContinuation<Void, Never>] = lock.withLock {
+                        started += 1
+                        waiters.append(cont)
+                        let matched = startedWaiters.filter { started >= $0.0 }.map(\.1)
+                        startedWaiters.removeAll { started >= $0.0 }
+                        return matched
+                    }
+                    ready.forEach { $0.resume() }
+                }
+            }
+
+            func waitForStarted(_ count: Int) async {
+                await withCheckedContinuation { cont in
+                    let alreadyReady = lock.withLock { () -> Bool in
+                        if started >= count { return true }
+                        startedWaiters.append((count, cont))
+                        return false
+                    }
+                    if alreadyReady { cont.resume() }
+                }
+            }
+
+            func releaseOne() {
+                let next: CheckedContinuation<Void, Never>? = lock.withLock {
+                    waiters.isEmpty ? nil : waiters.removeFirst()
+                }
+                next?.resume()
+            }
+        }
+
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bufferPath = dir.appendingPathComponent("telemetry-buffer.json").path
+        let gate = FlushGate()
+
+        let service = try CoreTelemetryService(
+            platform: "macos",
+            appVersion: "1.0.0",
+            osVersion: "macOS 15.0",
+            deviceClass: "desktop",
+            locale: "en",
+            videosAPIBaseURL: nil,
+            userAgent: "AlUmmahNowMac/1.0.0",
+            bufferPath: bufferPath,
+            initialEnabled: true
+        )
+        service.flushOverrideForTesting = { await gate.enter() }
+
+        let flush1 = Task { await service.flush() }
+        let flush2 = Task { await service.flush() }
+        await gate.waitForStarted(2)
+
+        // Opt out while BOTH pre-revocation flushes are active.
+        #expect(service.setConsent(.off))
+        #expect(!service.setConsent(.full))
+        #expect(service.consent == .off)
+
+        // Release only the first flush; the second is still draining so re-enable must stay blocked.
+        gate.releaseOne()
+        try await Task.sleep(nanoseconds: 30_000_000)
+        #expect(!service.setConsent(.full))
+
+        // Simulate late persist remnant before releasing the second flush.
+        try Data("{\"late\":true}".utf8).write(to: URL(fileURLWithPath: bufferPath))
+        gate.releaseOne()
+        await flush1.value
+        await flush2.value
+
+        #expect(!FileManager.default.fileExists(atPath: bufferPath))
+        #expect(service.setConsent(.full))
+        #expect(service.consent == .full)
     }
 
     @Test("Re-enabling after a failed opt-out purge deletes leftover buffer before granting consent")

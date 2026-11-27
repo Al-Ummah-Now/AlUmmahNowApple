@@ -156,10 +156,10 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
     public func reportCrash(kind: String, message: String, stack: String?, fromPreviousSession: Bool) {
         let safeKind = kind.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "UnhandledException" : kind
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        let safeMessage = trimmed.isEmpty ? "Unhandled exception" : Self.sanitizeLocalPaths(trimmed, preserveStackLocations: false)
+        let safeMessage = trimmed.isEmpty ? "Unhandled exception" : Self.sanitizeLocalPaths(trimmed)
         let report = TelemetryCrashReport(
             kind: safeKind, message: safeMessage,
-            stack: stack.map { Self.sanitizeLocalPaths($0, preserveStackLocations: true) },
+            stack: stack.map(Self.sanitizeLocalPaths),
             occurredAtMs: Int64(Date().timeIntervalSince1970 * 1000),
             fromPreviousSession: fromPreviousSession, propertiesJson: nil
         )
