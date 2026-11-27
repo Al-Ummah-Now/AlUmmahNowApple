@@ -192,11 +192,18 @@ extension CoreTelemetryAuthScanner {
                 curOpen = parentOpen
                 continue
             }
-            authState = reachesLineOrTextEnd(nsText, from: endPos) ? 0 : endPos
+            let hasPrefix = hasSameLineNonWhitespaceBefore(nsText, pos: curOpen)
+            authState = (reachesLineOrTextEnd(nsText, from: endPos) || hasPrefix) ? 0 : endPos
             break
         }
         for pos in visited { state.containerAuthState[pos] = authState }
         return authState
+    }
+
+    private static func hasSameLineNonWhitespaceBefore(_ nsText: NSString, pos: Int) -> Bool {
+        var idx = pos - 1
+        while idx >= 0 && isHorizSpace(nsText.character(at: idx)) { idx -= 1 }
+        return idx >= 0 && !isNewline(nsText.character(at: idx))
     }
 
     private static func reachesLineOrTextEnd(_ nsText: NSString, from start: Int) -> Bool {

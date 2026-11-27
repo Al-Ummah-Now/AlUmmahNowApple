@@ -141,6 +141,32 @@ struct CoreTelemetryQuotedEscapedTests {
         #expect(CoreTelemetryService.sanitizeLocalPaths("Bearer " + String(repeating: "A", count: 10000)) == "Bearer [redacted]")
     }
 
+    @Test("Redacts escaped tuple containers, multiline escaped arrays, padded keys, and prose-embedded JSON")
+    func redactsEscapedTupleContainersMultilinePaddedKeysAndProseJson() {
+        let paddedCookie = "{\"Cookie" + String(repeating: " ", count: 60) + "\":\"opaqueSecret123\"}"
+        let expectedPadded = "{\"Cookie" + String(repeating: " ", count: 60) + "\":\"[redacted]\"}"
+        let cases: [(String, String)] = [
+            ("[[\\\"Authorization\\\",[\\\"opaqueSecret123\\\"]]]", "[[\\\"Authorization\\\",[\\\"[redacted]\\\"]]]"),
+            ("[[\\\"Authorization\\\",[123456789]]]", "[[\\\"Authorization\\\",[\\\"[redacted]\\\"]]]"),
+            ("[[\\\"Authorization\\\",{\\\"token\\\":\\\"opaqueSecret123\\\"}]]", "[[\\\"Authorization\\\",\\\"[redacted]\\\"]]"),
+            (
+                "{\\\"Authorization\\\":[\n  123456789\n],\\\"next\\\":1}",
+                "{\\\"Authorization\\\":[\n  \\\"[redacted]\\\"\n],\\\"next\\\":1}"
+            ),
+            ("{\\\"Authorization\\\":\n\\\"opaqueSecret123\\\"}", "{\\\"Authorization\\\":\n\\\"[redacted]\\\"}"),
+            (paddedCookie, expectedPadded),
+            (
+                "{\"m\":\"before {\\\"Cookie\\\":\\\"opaqueSecret123\\\"} after\",\"next\":1}",
+                "{\"m\":\"before {\\\"Cookie\\\":\\\"[redacted]\\\"} after\",\"next\":1}"
+            ),
+        ]
+        for (input, expected) in cases {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
+        }
+        let malformedEscaped = "{\\\"Authorization\\\":[" + String(repeating: "{,", count: 2000) + "]"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(malformedEscaped).hasPrefix("{\\\"Authorization\\\":[\\\"[redacted]\\\""))
+    }
+
     @Test("Scales linearly on unclosed angles/spaced hashes and sanitizes serialized property keys and values")
     func scalesLinearlyAndSanitizesPropertyKeysAndValues() {
         let repeatedAngles = String(repeating: "<https://example.test/webhooks/token ", count: 500)

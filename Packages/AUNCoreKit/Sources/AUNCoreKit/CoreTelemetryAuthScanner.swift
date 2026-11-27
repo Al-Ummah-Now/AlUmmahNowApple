@@ -29,6 +29,7 @@ enum CoreTelemetryAuthScanner {
         var memberCommaOpen: [Int: Int] = [:]
         var arrayCommaOpen: [Int: Int] = [:]
         var containerAuthState: [Int: Int] = [:]
+        var escapedContainerEnd: [Int: Int] = [:]
         var failedContainerBack = -1
 
         mutating func appendRedacted(_ nsText: NSString, start: Int, end: Int, replacement: String) {
@@ -168,30 +169,29 @@ enum CoreTelemetryAuthScanner {
         _ nsText: NSString, at pos: Int, quote: unichar, state: inout AuthScanState
     ) -> AuthKeyMatch? {
         let len = nsText.length
-        let limit = min(len, pos + 256)
-        var decoded: [unichar] = []
-        decoded.reserveCapacity(64)
+        var core: [unichar] = []
+        core.reserveCapacity(20)
+        var sawTrailingPad = false
         var sawEscape = false
         var hasInvalidJsonEscape = false
         var idx = pos + 1
-        while idx < limit {
+        while idx < len {
             let ch = nsText.character(at: idx)
             if ch < 0x20 { return nil }
             if ch == quote {
                 return finishQuotedAuthKey(
-                    nsText, keyRange: pos..<(idx + 1), decoded: decoded,
+                    nsText, keyRange: pos..<(idx + 1), decoded: core,
                     flags: (quote == 0x22, !hasInvalidJsonEscape, sawEscape), state: &state
                 )
             }
-            guard decoded.count < 64 else { return nil }
             if ch == 0x5C {
                 sawEscape = true
                 guard let (unit, step, validJson) = decodeKeyEscape(nsText, at: idx, len: len) else { return nil }
                 if !validJson { hasInvalidJsonEscape = true }
-                decoded.append(unit)
+                guard appendTrimmedKeyUnit(unit, core: &core, sawTrailingPad: &sawTrailingPad) else { return nil }
                 idx += step
             } else {
-                decoded.append(ch)
+                guard appendTrimmedKeyUnit(ch, core: &core, sawTrailingPad: &sawTrailingPad) else { return nil }
                 idx += 1
             }
         }
