@@ -2,15 +2,15 @@ import Foundation
 
 extension CoreTelemetryService {
     static func escapeSentinels(_ text: String) -> (String, Bool) {
-        let needsEscape = text.utf16.contains { $0 == 0x1D || $0 == 0x1E || $0 == 0x1F }
+        let needsEscape = text.utf16.contains { $0 == 0x18 || $0 == 0x1E || $0 == 0x1F }
         guard needsEscape else { return (text, false) }
         var out: [unichar] = []
         out.reserveCapacity(text.utf16.count + 8)
         for unit in text.utf16 {
             switch unit {
-            case 0x1D: out.append(contentsOf: [0x1D, 0x1D])
-            case 0x1E: out.append(contentsOf: [0x1D, 0x1C])
-            case 0x1F: out.append(contentsOf: [0x1D, 0x1B])
+            case 0x18: out.append(contentsOf: [0x18, 0x18])
+            case 0x1E: out.append(contentsOf: [0x18, 0x19])
+            case 0x1F: out.append(contentsOf: [0x18, 0x1A])
             default: out.append(unit)
             }
         }
@@ -19,16 +19,16 @@ extension CoreTelemetryService {
 
     static func unescapeSentinels(_ text: String) -> String {
         let units = Array(text.utf16)
-        guard units.contains(0x1D) else { return text }
+        guard units.contains(0x18) else { return text }
         var out: [unichar] = []
         out.reserveCapacity(units.count)
         var idx = 0
         while idx < units.count {
-            if units[idx] == 0x1D && idx + 1 < units.count {
+            if units[idx] == 0x18 && idx + 1 < units.count {
                 switch units[idx + 1] {
-                case 0x1D: out.append(0x1D); idx += 2; continue
-                case 0x1C: out.append(0x1E); idx += 2; continue
-                case 0x1B: out.append(0x1F); idx += 2; continue
+                case 0x18: out.append(0x18); idx += 2; continue
+                case 0x19: out.append(0x1E); idx += 2; continue
+                case 0x1A: out.append(0x1F); idx += 2; continue
                 default: break
                 }
             }
@@ -94,7 +94,7 @@ extension CoreTelemetryService {
                     if prev == 0x22 || prev == 0x27 { pathQuote = prev }
                 }
             }
-            updateRunState(ch)
+            updateRunState(nsText, ch: ch)
         }
 
         private mutating func closeQuotedPath() {
@@ -107,9 +107,12 @@ extension CoreTelemetryService {
             wsBeforeRun = false
         }
 
-        private mutating func updateRunState(_ ch: unichar) {
+        private mutating func updateRunState(_ nsText: NSString, ch: unichar) {
             if Self.isWhitespace(ch) {
                 if !inWrapperRun {
+                    if tokenHasPathSep && !Self.isProtocolToken(nsText, start: tokenStart, end: tokenEnd) {
+                        hasPathOnLine = true
+                    }
                     tokenStart = -1
                     tokenEnd = -1
                     wsBeforeRun = true
@@ -195,14 +198,14 @@ extension CoreTelemetryService {
     }
 
     private static func fileURISpanEnd(
-        _ nsText: NSString, after schemeEnd: Int, vaultPrefix: NSString
+        _ nsText: NSString, after schemeEnd: Int, quote: unichar, vaultPrefix: NSString
     ) -> (rawEnd: Int, trimmedEnd: Int) {
         let totalLength = nsText.length
         var rawEnd = schemeEnd
         var stoppedAtVault = false
         while rawEnd < totalLength {
             let ch = nsText.character(at: rawEnd)
-            if ch == 0x0A || ch == 0x0D { break }
+            if ch == 0x0A || ch == 0x0D || (quote != 0 && ch == quote) { break }
             if ch == 0x1E && matchesPrefix(nsText, at: rawEnd, prefix: vaultPrefix) {
                 stoppedAtVault = true
                 break
@@ -232,7 +235,9 @@ extension CoreTelemetryService {
         var pos = 0
         while pos < totalLength {
             if VaultLineTracker.isFileScheme(nsText, at: pos) {
-                let (rawEnd, trimmedEnd) = fileURISpanEnd(nsText, after: pos + 7, vaultPrefix: nsPrefix)
+                let prev = pos > 0 ? nsText.character(at: pos - 1) : 0
+                let quote: unichar = (prev == 0x22 || prev == 0x27) ? prev : 0
+                let (rawEnd, trimmedEnd) = fileURISpanEnd(nsText, after: pos + 7, quote: quote, vaultPrefix: nsPrefix)
                 if result.isEmpty { result.reserveCapacity(text.count) }
                 result += nsText.substring(with: NSRange(location: copyStart, length: pos - copyStart))
                 result += "[redacted-path]"
