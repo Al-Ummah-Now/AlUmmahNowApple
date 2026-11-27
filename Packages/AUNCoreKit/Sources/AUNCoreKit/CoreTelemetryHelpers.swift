@@ -283,7 +283,7 @@ extension CoreTelemetryService {
             }
             rebuilt += nsText.substring(with: NSRange(location: copied, length: span.start - copied))
             let idx = vaultedURLs.count
-            vaultedURLs.append(url)
+            vaultedURLs.append(Self.redactURLPathSecrets(url))
             tracker.onVaultedURL(matchEnd: span.totalEnd)
             rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
             copied = span.totalEnd

@@ -118,13 +118,11 @@ extension CoreTelemetryAuthScanner {
             return strStart >= 0 && isPrecededByColon(nsText, before: strStart)
         }
         if ch == 0x7D {
-            let objStart = scanContainerStartBackward(
-                nsText, closePos: prev, open: 0x7B, close: 0x7D, floor: &state.failedBraceBack)
+            let objStart = scanContainerStartBackward(nsText, closePos: prev, isBrace: true, state: &state)
             return objStart >= 0 && isPrecededByColon(nsText, before: objStart)
         }
         if ch == 0x5D {
-            let arrStart = scanContainerStartBackward(
-                nsText, closePos: prev, open: 0x5B, close: 0x5D, floor: &state.failedBracketBack)
+            let arrStart = scanContainerStartBackward(nsText, closePos: prev, isBrace: false, state: &state)
             return arrStart >= 0 && isPrecededByColon(nsText, before: arrStart)
         }
         if ch >= 0x30 && ch <= 0x39 {
@@ -166,9 +164,29 @@ extension CoreTelemetryAuthScanner {
     }
 
     private static func scanContainerStartBackward(
-        _ nsText: NSString, closePos: Int, open: unichar, close: unichar, floor: inout Int
+        _ nsText: NSString, closePos: Int, isBrace: Bool, state: inout AuthScanState
     ) -> Int {
-        var depth = 0
+        if let cached = state.closeToOpenMap[closePos] { return cached }
+        let floor = isBrace ? state.failedBraceBack : state.failedBracketBack
+        let matched = walkContainerBackward(
+            nsText, closePos: closePos, isBrace: isBrace, floor: floor, map: &state.closeToOpenMap
+        )
+        if matched < 0 {
+            if isBrace {
+                state.failedBraceBack = max(state.failedBraceBack, closePos)
+            } else {
+                state.failedBracketBack = max(state.failedBracketBack, closePos)
+            }
+        }
+        return matched
+    }
+
+    private static func walkContainerBackward(
+        _ nsText: NSString, closePos: Int, isBrace: Bool, floor: Int, map: inout [Int: Int]
+    ) -> Int {
+        let open: unichar = isBrace ? 0x7B : 0x5B
+        let close: unichar = isBrace ? 0x7D : 0x5D
+        var stack: [Int] = []
         var idx = closePos
         while idx > floor {
             let ch = nsText.character(at: idx)
@@ -179,14 +197,19 @@ extension CoreTelemetryAuthScanner {
                 continue
             }
             if ch == close {
-                depth += 1
-            } else if ch == open {
-                depth -= 1
-                if depth == 0 { return idx }
+                if let innerOpen = map[idx] {
+                    if innerOpen < 0 { break }
+                    idx = innerOpen - 1
+                    continue
+                }
+                stack.append(idx)
+            } else if ch == open, let matchedClose = stack.popLast() {
+                map[matchedClose] = idx
+                if stack.isEmpty { return idx }
             }
             idx -= 1
         }
-        floor = max(floor, closePos)
+        for unmatched in stack { map[unmatched] = -1 }
         return -1
     }
 

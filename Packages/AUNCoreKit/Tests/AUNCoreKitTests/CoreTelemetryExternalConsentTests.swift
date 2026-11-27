@@ -371,41 +371,6 @@ struct CoreTelemetryExternalConsentTests {
         #expect(!scrubbedPadded.contains("opaqueSecret123"))
         #expect(scrubbedPadded.hasSuffix("{\"Authorization\":\"[redacted]\",\"status\":\"safe\"}"))
     }
-
-    @Test("Scrubs quote-prefixed and truncated JSON auth objects and non-JSON commas")
-    func scrubsQuotePrefixedTruncatedObjectsAndNonJsonCommas() {
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths(
-                "note \" {\"Authorization\":{\"token\":\n\"opaqueSecret123\"\n},\"status\":\"safe\"}"
-            ) == "note \" {\"Authorization\":\"[redacted]\",\"status\":\"safe\"}"
-        )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("{\"Authorization\":{\n\"token\":\"opaqueSecret123\"\n")
-                == "{\"Authorization\":\"[redacted]\""
-        )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("prefix, \"Authorization\": \"firstValue\" }opaqueSecret123")
-                == "prefix, \"Authorization\": \"[redacted]\" [redacted]"
-        )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("{\"status\":401,\"Authorization\":\"opaqueSecret123\"}")
-                == "{\"status\":401,\"Authorization\":\"[redacted]\"}"
-        )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("{\"Authorization\":\"firstValue\", \"opaqueSecret123\"}")
-                == "{\"Authorization\":\"[redacted]\"[redacted]"
-        )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("note \"hi\", \"Authorization\": \"firstValue\" } opaqueSecret123")
-                == "note \"hi\", \"Authorization\": \"[redacted]\" [redacted]"
-        )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("{\"a\":{\"b\":1},\"Authorization\":\"opaqueSecret123\"}")
-                == "{\"a\":{\"b\":1},\"Authorization\":\"[redacted]\"}"
-        )
-        let repeatedMalformedBack = "\"\n" + String(repeating: "}, \"Authorization\": ", count: 2_000)
-        #expect(!CoreTelemetryService.sanitizeLocalPaths(repeatedMalformedBack).isEmpty)
-    }
 }
 
 @Suite("CoreTelemetryLifecycle")

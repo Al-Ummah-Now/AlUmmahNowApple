@@ -71,6 +71,29 @@ extension CoreTelemetryService {
         return pos > hostStart ? pos : nil
     }
 
+    private static let urlPathSecretRules: [(NSRegularExpression?, String)] = [
+        (
+            try? NSRegularExpression(pattern: #"((?:^|/)webhooks?/[^/\s?#]+/)[^/\s?#]+"#, options: [.caseInsensitive]),
+            "$1[redacted]"
+        ),
+        (
+            try? NSRegularExpression(
+                pattern: #"(https?://hooks\.slack\.com/(?:services|workflows|triggers)/)[^\s?#]+"#, options: [.caseInsensitive]),
+            "$1[redacted]"
+        ),
+        (try? NSRegularExpression(pattern: #"(/bot\d+:)[^/\s?#]+"#, options: [.caseInsensitive]), "$1[redacted]"),
+    ]
+
+    static func redactURLPathSecrets(_ url: String) -> String {
+        var result = url
+        for (regex, template) in urlPathSecretRules {
+            guard let regex else { continue }
+            let range = NSRange(result.startIndex..<result.endIndex, in: result)
+            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: template)
+        }
+        return result
+    }
+
     private static func scanIPv6Host(_ nsText: NSString, hostStart: Int, len: Int) -> Int? {
         var close = hostStart + 1
         while close < len {

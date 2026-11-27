@@ -30,6 +30,7 @@ enum CoreTelemetryAuthScanner {
         var result = ""
         var copied = 0
         var braceMap: [Int: Int] = [:]
+        var closeToOpenMap: [Int: Int] = [:]
         var failedBraceBack = -1
         var failedBracketBack = -1
 
