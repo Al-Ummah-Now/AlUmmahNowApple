@@ -288,11 +288,16 @@ struct CoreTelemetryServiceTests {
             error 42://SecretHost/Acquisition.mov
             open(path\\\\unc\\Secret\\Acquisition.mov)
             open(pathC:\\Secret\\Acquisition.mov)
+            open(C://Secret/Acquisition.mov)
+            C://Users\\Alice\\Secret.mov
             Could not find file 'Secret.mov'
             Could not find file 'private/Secret.mov'
             Could not find file './Secret.mov'
             Could not find file 'O'Brien.mov'
             Could not find file 'SecretBareName'
+            Could not find file Secret.xyz
+            open Acquisition.custom
+            open Secret Project.mov
             open //storage/emulated/0/Private.mov
             error 42:/home/alice/private.mov
             /workspace/alice/Project|Acquisition.mov
@@ -480,9 +485,12 @@ struct CoreTelemetryExternalConsentTests {
         let preserved = [
             "https://videos.api.alummahnow.net/v1/items",
             "https://example.com/?path=/api/items",
+            "https://[2001:db8::1]/v1/items",
+            "https://example.com/a(b)/items",
+            "open(https://example.com/a(b)/items)",
             "git+http2://example.com/repo",
             "profile://example.com/repo",
-            "x://example.com/repo",
+            "https://[::1]:8443/api",
             "a123456789012345678901234567890123://example.com/repo",
             "HTTP/1.1 503 Service Unavailable",
         ]

@@ -83,10 +83,11 @@ extension CoreTelemetryService {
             for match in matches {
                 let raw = nsText.substring(with: match.range)
                 if raw.lowercased().hasPrefix("file://") { continue }
+                let (url, tail) = Self.splitUnmatchedURLClosers(raw)
                 rebuilt += nsText.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
                 let idx = vaultedURLs.count
-                vaultedURLs.append(raw)
-                rebuilt += "\(prefix)\(idx)\u{001F}"
+                vaultedURLs.append(url)
+                rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
                 cursor = match.range.location + match.range.length
             }
             if !vaultedURLs.isEmpty {
@@ -104,8 +105,31 @@ extension CoreTelemetryService {
         return scrubbed
     }
 
+    private static func splitUnmatchedURLClosers(_ raw: String) -> (String, String) {
+        var openParens = 0, closeParens = 0, openBrackets = 0, closeBrackets = 0
+        for ch in raw {
+            if ch == "(" { openParens += 1 } else if ch == ")" { closeParens += 1 }
+            if ch == "[" { openBrackets += 1 } else if ch == "]" { closeBrackets += 1 }
+        }
+        var end = raw.endIndex
+        while end > raw.startIndex {
+            let prev = raw.index(before: end)
+            let last = raw[prev]
+            if last == ")" && closeParens > openParens {
+                closeParens -= 1
+                end = prev
+            } else if last == "]" && closeBrackets > openBrackets {
+                closeBrackets -= 1
+                end = prev
+            } else {
+                break
+            }
+        }
+        return (String(raw[..<end]), String(raw[end...]))
+    }
+
     private static let urlVaultRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*://[^\s"'<>()\[\]{}\r\n]+"#,
+        pattern: #"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]+://(?!\S*\\)[^\s"'<>\\{}\r\n]+"#,
         options: [.caseInsensitive]
     )
 
@@ -115,6 +139,11 @@ extension CoreTelemetryService {
         "csv|json|xml|yaml|yml|toml|ini|cfg|conf|log|srt|vtt|ass|ssa|" +
         "zip|tar|gz|tgz|bz2|xz|7z|rar|dmg|pkg|msi|exe|apk|aab|ipa|" +
         "pem|key|crt|cer|p12|pfx|jks|keystore|db|sqlite|sqlite3|bin|dat|tmp|bak|proj|aun"
+
+    private static let ioKeywordVerbs =
+        "open|opening|read|reading|write|writing|delete|deleting|remove|removing|rename|stat|" +
+        "create|creating|load|loading|save|saving|access|accessing|unlink|" +
+        "file|path|directory|folder|document|filename|filepath"
 
     private static let pathRedactionRules: [(regex: NSRegularExpression, template: String)] = {
         let specs: [(String, String)] = [
@@ -127,6 +156,7 @@ extension CoreTelemetryService {
             (#""[^"\r\n/\\]*\.[A-Za-z0-9]{1,16}""#, "[redacted-path]"),
             (#"'(?:[^'\r\n/\\]|'(?=\p{L}))*\.[A-Za-z0-9]{1,16}'"#, "[redacted-path]"),
             (#"(\b(?:file|path|directory|folder|document)\s+)(['"])(?!\u001E)[^'"\r\n]+\2"#, "$1[redacted-path]"),
+            (#"(\b(?:"# + ioKeywordVerbs + #")\b(?:\s*[:=]\s*|\s+))(?!\u001E)(?=[^\r\n]*\.[A-Za-z][A-Za-z0-9]{0,15}\b(?!\s*\())[^\r\n]+"#, "$1[redacted-path]"),
             (#"(\b(?:file|path|filename|filepath)\s*[:=]\s*)(?!\u001E)[^\r\n]+"#, "$1[redacted-path]"),
             (#"(?<![\p{L}\p{N}._-])[\p{L}\p{N}_-]+\.(?:"# + bareFilenameExtensions + #")\b(?!\s*\()"#, "[redacted-path]"),
         ]
