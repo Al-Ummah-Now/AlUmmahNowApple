@@ -85,6 +85,12 @@ extension CoreTelemetryService {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
             scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
         }
+        scrubbed = Self.redactQuotedFilenames(in: scrubbed)
+        if let kwQuote = Self.keywordQuotedPathRegex {
+            let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
+            scrubbed = kwQuote.stringByReplacingMatches(
+                in: scrubbed, options: [], range: range, withTemplate: "$1[redacted-path]")
+        }
         scrubbed = Self.redactKeywordUnquotedFilenames(in: scrubbed)
         for rule in Self.postKeywordPathRules {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
@@ -252,45 +258,49 @@ extension CoreTelemetryService {
     }
 
     private static func vaultNonFileURLs(in text: String, prefix: String) -> (String, [String]) {
-        guard let urlRegex = Self.urlVaultRegex else { return (text, []) }
+        guard text.contains("://") else { return (text, []) }
         let nsText = text as NSString
-        let matches = urlRegex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+        let totalLen = nsText.length
         var vaultedURLs: [String] = []
         var tracker = VaultLineTracker()
         var rebuilt = ""
-        var cursor = 0
-        for match in matches {
-            let raw = nsText.substring(with: match.range)
-            let embedded = tracker.isEmbeddedInPath(nsText, matchStart: match.range.location)
-            if raw.lowercased().hasPrefix("file://") || embedded {
+        var copied = 0
+        var searchFrom = 0
+        while searchFrom < totalLen {
+            let found = nsText.range(
+                of: "://", options: [], range: NSRange(location: searchFrom, length: totalLen - searchFrom)
+            )
+            if found.location == NSNotFound { break }
+            let sep = found.location
+            guard let span = Self.scanNonFileURL(nsText, sep: sep, minStart: copied) else {
+                searchFrom = sep + 3
                 continue
             }
-            let ipv6Range = match.range(at: 2)
-            if ipv6Range.location != NSNotFound && !Self.isValidIPv6(nsText.substring(with: ipv6Range)) {
+            if tracker.isEmbeddedInPath(nsText, matchStart: span.start) {
+                searchFrom = sep + 3
                 continue
             }
-            let baseURL = nsText.substring(with: match.range(at: 1))
-            let qfRange = match.range(at: 3)
+            let baseURL = nsText.substring(with: NSRange(location: span.start, length: span.baseEnd - span.start))
             let (url, tail): (String, String)
-            if qfRange.location != NSNotFound && qfRange.length > 0 {
-                let qf = nsText.substring(with: qfRange)
-                let (cleanQF, trimmedTail) = Self.trimQueryOrFragmentDelimiters(
-                    qf, nsText: nsText, matchStart: match.range.location)
+            if span.hasQueryOrFragment {
+                let qf = nsText.substring(with: NSRange(location: span.baseEnd, length: span.totalEnd - span.baseEnd))
+                let (cleanQF, trimmedTail) = Self.trimQueryOrFragmentDelimiters(qf, nsText: nsText, matchStart: span.start)
                 let marker = cleanQF.first.map(String.init) ?? "?"
                 url = "\(baseURL)\(marker)[redacted]"
                 tail = trimmedTail
             } else {
-                (url, tail) = Self.trimTrailingURLDelimiters(baseURL, nsText: nsText, matchStart: match.range.location)
+                (url, tail) = Self.trimTrailingURLDelimiters(baseURL, nsText: nsText, matchStart: span.start)
             }
-            rebuilt += nsText.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            rebuilt += nsText.substring(with: NSRange(location: copied, length: span.start - copied))
             let idx = vaultedURLs.count
             vaultedURLs.append(url)
-            tracker.onVaultedURL(matchEnd: match.range.location + match.range.length)
+            tracker.onVaultedURL(matchEnd: span.totalEnd)
             rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
-            cursor = match.range.location + match.range.length
+            copied = span.totalEnd
+            searchFrom = span.totalEnd
         }
         guard !vaultedURLs.isEmpty else { return (text, []) }
-        rebuilt += nsText.substring(from: cursor)
+        rebuilt += nsText.substring(from: copied)
         return (rebuilt, vaultedURLs)
     }
 
@@ -382,21 +392,6 @@ extension CoreTelemetryService {
         return ch == "." || ch == ";" || ch == "," || (ch == "'" && precededByQuote)
     }
 
-    private static func isValidIPv6(_ host: String) -> Bool {
-        var addr = in6_addr()
-        return host.withCString { inet_pton(AF_INET6, $0, &addr) == 1 }
-    }
-
-    private static let urlVaultRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern:
-            #"(?<![A-Za-z0-9+.-/\\])([A-Za-z][A-Za-z0-9+.-]+://(?:\[([^\]\s"'<>\\{}\r\n]+)\]|"#
-            + #"(?:[A-Za-z0-9._~!$&'*+;=-]|%[0-9A-Fa-f]{2})+)(?::\d+)?"#
-            + #"(?:/(?:(?!(?:file://|[A-Za-z]:[\\/]))(?:[^\s"<>\\{},()\[\]?#\r\n]|"#
-            + #"\([^\s"<>\\{},()\[\]:\\?#]+\)|\[[^\s"<>\\{},()\[\]:\\?#]+\]))*)?)"#
-            + #"([?#][^\s"<>\r\n]*)?(?=$|[\s"'<>\\{},;()\[\]]|file://|[A-Za-z]:[\\/])"#,
-        options: [.caseInsensitive]
-    )
-
     private static let bareFilenameExtensions =
         "mov|mp4|m4v|mkv|webm|avi|ts|m3u8|mpd|mp3|m4a|wav|aac|flac|ogg|opus|"
         + "jpg|jpeg|png|gif|webp|heic|svg|pdf|txt|md|rtf|doc|docx|xls|xlsx|ppt|pptx|"
@@ -413,6 +408,11 @@ extension CoreTelemetryService {
         "kt", "java", "swift", "cs", "cpp", "cc", "c", "h", "hpp", "rs", "py", "js", "ts", "go", "rb", "m", "mm",
     ]
 
+    private static let keywordQuotedPathRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"(\b(?:file|path|directory|folder|document)[^\S\r\n]+)([""'])(?!\u001E)[^'""\r\n]+\2"#,
+        options: [.caseInsensitive]
+    )
+
     private static let keywordFilenamePrefixRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern: #"\b(?:"# + ioKeywordVerbs + #")\b(?:[^\S\r\n]*[:=][^\S\r\n]*|[^\S\r\n]+)"#,
         options: [.caseInsensitive]
@@ -428,7 +428,7 @@ extension CoreTelemetryService {
             ),
             (#"(?:[A-Za-z]:[\\/]|\\\\)[^\S\r\n]*[^\r\n\u001E\s]+(?:[^\S\r\n]+[^\r\n\u001E\s]+)*"#, "[redacted-path]"),
             (
-                #"(^|[\s(\[{"'=,:;\u001F])[^\s\\/"'<>()\[\]{}:,;=\u001E\u001F]+\\"#
+                #"(^|[\s(\[{"'=,:;\u001F])[^\s\\/"'<>()\[{:,;=\u001E\u001F]+\\"#
                     + #"[^\r\n\u001E\u001F\s]+(?:[^\S\r\n]+[^\r\n\u001E\u001F\s]+)*"#,
                 "$1[redacted-path]"
             ),
@@ -444,9 +444,6 @@ extension CoreTelemetryService {
                     + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/[^\r\n\u001E\u001F\s]+(?:[^\S\r\n]+[^\r\n\u001E\u001F\s]+)*"#,
                 "$1[redacted-path]"
             ),
-            (#""[^"\r\n/\\]*\.[A-Za-z0-9]{1,16}""#, "[redacted-path]"),
-            (#"(?<![\p{L}\p{N}])'(?:[^'\r\n/\\]|(?<=[\p{L}\p{N}])'(?=\p{L}))*\.[A-Za-z0-9]{1,16}'"#, "[redacted-path]"),
-            (#"(\b(?:file|path|directory|folder|document)[^\S\r\n]+)(['"])(?!\u001E)[^'"\r\n]+\2"#, "$1[redacted-path]"),
         ]
         return specs.compactMap { pattern, template in
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }

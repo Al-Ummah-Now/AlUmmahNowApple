@@ -139,11 +139,35 @@ struct CoreTelemetryExternalConsentTests {
                 == "https://example.com/a(b/c)"
         )
         #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/a(b(c/d))")
+                == "https://example.com/a(b(c/d))"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/a(/storage/PrivateProject)")
+                == "https://example.com/a([redacted-path])"
+        )
+        #expect(
             CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/O'Brien Secret'")
                 == "'[redacted-path]'"
         )
         #expect(
+            CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/James' Private Name'")
+                == "'[redacted-path]'"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/Project'2 Secret'")
+                == "'[redacted-path]'"
+        )
+        #expect(
             CoreTelemetryService.sanitizeLocalPaths("'Studio 2's Acquisition.qzx'")
+                == "[redacted-path]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("'Studio 2' Acquisition.qzx'")
+                == "[redacted-path]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("private]folder\\secret")
                 == "[redacted-path]"
         )
         #expect(
@@ -191,6 +215,10 @@ struct CoreTelemetryExternalConsentTests {
         #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedEquals) == repeatedEquals)
         let leadingSpaces = String(repeating: " ", count: 50_000) + "x.qzx"
         #expect(CoreTelemetryService.sanitizeLocalPaths(leadingSpaces) == leadingSpaces)
+        let repeatedBrackets = String(repeating: "https://[", count: 20_000)
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedBrackets).contains("[redacted-path]"))
+        let longQuotedFile = "'" + String(repeating: "b", count: 100_000) + ".pdf'"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(longQuotedFile) == "[redacted-path]")
     }
 
     @Test("Startup live(defaults:) clears stored AUNTelemetryEnabled when initial consent activation fails")
