@@ -257,5 +257,15 @@ struct CoreTelemetryURLContinuationTests {
                 "[\"https://example.com/api?token=opaqueSecret123\\\"moreSecret\"]"
             ) == "[\"https://example.com/api?[redacted]\"]"
         )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"https://example.com/api?token=first\\\",opaqueSecret123\",\"public\"]"
+            ) == "[\"https://example.com/api?[redacted]\",\"public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"https://example.com/api{1:\\\"see https://other.com/x?token=opaqueSecret123\\\"}\"]"
+            ) == "[\"https://example.com/api{1:\\\"see https://other.com/x?[redacted]\\\"}\"]"
+        )
     }
 }
