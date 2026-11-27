@@ -89,14 +89,13 @@ extension CoreTelemetryService {
     private struct VaultLineTracker {
         private var cursor = 0
         private var hasFileURIOnLine = false
-        private var lastNonWSChar: unichar = 0
-        private var lastNonWrapperChar: unichar = 0
+        private var lastNonWSOrWrapperChar: unichar = 0
+        private var inWrapperRun = false
+        private var wsBeforeRun = false
 
         mutating func isEmbeddedInPath(_ nsText: NSString, matchStart: Int) -> Bool {
             advance(nsText, to: matchStart)
-            let precededByWS = matchStart > 0 && Self.isWhitespace(nsText.character(at: matchStart - 1))
-            let insideFileURI = hasFileURIOnLine && (!precededByWS || Self.isPathSep(lastNonWSChar))
-            return insideFileURI || Self.isPathSep(lastNonWrapperChar)
+            return !wsBeforeRun && (hasFileURIOnLine || Self.isPathSep(lastNonWSOrWrapperChar))
         }
 
         private mutating func advance(_ nsText: NSString, to target: Int) {
@@ -104,14 +103,22 @@ extension CoreTelemetryService {
                 let ch = nsText.character(at: cursor)
                 if ch == 0x0A || ch == 0x0D {
                     hasFileURIOnLine = false
-                    lastNonWSChar = 0
-                    lastNonWrapperChar = 0
+                    lastNonWSOrWrapperChar = 0
+                    inWrapperRun = false
+                    wsBeforeRun = false
                 } else {
                     if !hasFileURIOnLine && Self.isFileScheme(nsText, at: cursor) {
                         hasFileURIOnLine = true
                     }
-                    if !Self.isWhitespace(ch) { lastNonWSChar = ch }
-                    if !Self.isOpeningWrapper(ch) { lastNonWrapperChar = ch }
+                    if Self.isWhitespace(ch) {
+                        if !inWrapperRun { wsBeforeRun = true }
+                    } else if Self.isOpeningWrapper(ch) {
+                        inWrapperRun = true
+                    } else {
+                        lastNonWSOrWrapperChar = ch
+                        inWrapperRun = false
+                        wsBeforeRun = false
+                    }
                 }
                 cursor += 1
             }
@@ -308,7 +315,7 @@ extension CoreTelemetryService {
 
     private static let pathRedactionRules: [(regex: NSRegularExpression, template: String)] = {
         let specs: [(String, String)] = [
-            (#"(?<![A-Za-z0-9+.-])file://(?:(?!\s+\u001E)[^\r\n\u001E])+"#, "[redacted-path]"),
+            (#"(?<![A-Za-z0-9+.-])file://(?:(?!\s+(?:[\(\[\{"']\s*)*\u001E)[^\r\n\u001E])+"#, "[redacted-path]"),
             (#"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n\u001E]+(\))"#, "$1[redacted-path]$2"),
             (
                 #"(\()(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/[^()\r\n\u001E]+(\))"#,
