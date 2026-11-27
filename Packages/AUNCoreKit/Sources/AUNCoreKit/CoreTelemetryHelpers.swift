@@ -87,8 +87,9 @@ extension CoreTelemetryService {
             scrubbed = Self.replaceUnquotedParenPaths(in: scrubbed, using: regex)
         }
         for rule in Self.preKeywordPathRules {
-            let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
-            scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
+            scrubbed = Self.replaceOutsideBalancedDoubleQuotes(
+                in: scrubbed, regex: rule.regex, template: rule.template
+            )
         }
         scrubbed = Self.redactQuotedFilenames(in: scrubbed)
         if let kwQuote = Self.keywordQuotedPathRegex {
@@ -98,9 +99,7 @@ extension CoreTelemetryService {
         }
         scrubbed = Self.redactKeywordUnquotedFilenames(in: scrubbed)
         if let kwAssign = Self.keywordAssignedPathRegex {
-            let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
-            scrubbed = kwAssign.stringByReplacingMatches(
-                in: scrubbed, options: [], range: range, withTemplate: "$1[redacted-path]")
+            scrubbed = Self.replaceKeywordAssignedPaths(in: scrubbed, regex: kwAssign)
         }
         scrubbed = Self.redactEmails(in: scrubbed)
         if scrubbed.contains("."), let bareRegex = Self.bareFilenameRegex {

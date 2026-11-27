@@ -373,4 +373,23 @@ struct CoreTelemetryURLContinuationTests {
         let manySlashes = "[\"\(String(repeating: "/", count: 10_000))\",\"public\"]"
         #expect(CoreTelemetryService.sanitizeLocalPaths(manySlashes) == manySlashes)
     }
+
+    @Test("Handles JSON escape sequences in quoted paths and preserves unquoted path fail-closed behavior")
+    func quotedJsonEscapePathsAndFallbackBoundaries() {
+        let cases: [(String, String)] = [
+            ("[\"relative\\/\",\"public\"]", "[\"relative\\/\",\"public\"]"),
+            ("[\"relative\\u002F\",\"public\"]", "[\"relative\\u002F\",\"public\"]"),
+            ("[\"\\u002Fprivate\",\"public\"]", "[\"[redacted-path]\",\"public\"]"),
+            ("[\"\\u002fAcquisition\",\"public\"]", "[\"[redacted-path]\",\"public\"]"),
+            ("[\"C\\u003A\\u002FSecret\",\"public\"]", "[\"[redacted-path]\",\"public\"]"),
+            ("[\"\\u007E\\u002FSecret\",\"public\"]", "[\"[redacted-path]\",\"public\"]"),
+            ("[\"\\u005C\\u005CServer\\u005CShare\",\"public\"]", "[\"[redacted-path]\",\"public\"]"),
+            ("[\"hello\\nworld\",\"public\"]", "[\"hello\\nworld\",\"public\"]"),
+            ("[\"path=secret\",\"public\"]", "[\"path=[redacted-path]\",\"public\"]"),
+            ("Failed reading /Users/alice/My \"Secret\" Folder/file.mov", "Failed reading [redacted-path]"),
+        ]
+        for (input, expected) in cases {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
+        }
+    }
 }
