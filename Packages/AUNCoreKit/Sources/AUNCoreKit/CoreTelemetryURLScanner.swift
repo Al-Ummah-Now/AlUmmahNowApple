@@ -93,71 +93,50 @@ extension CoreTelemetryService {
         return idx > pos + 1 ? idx : nil
     }
 
-    static func scanURLPath(
-        _ nsText: NSString, start: Int, len: Int, allowCommas: Bool = false
-    ) -> (Int, Bool) {
+    static func scanURLPath(_ nsText: NSString, start: Int, len: Int) -> (Int, Bool) {
         var openGroups: [(pos: Int, ch: unichar)] = []
         var pos = start
         while pos < len {
-            let next = stepURLPathChar(nsText, pos: pos, len: len, allowCommas: allowCommas, openGroups: &openGroups)
+            let next = stepURLPathChar(nsText, pos: pos, len: len, openGroups: &openGroups)
             if next < 0 { break }
             pos = next
         }
-        if !allowCommas, let firstUnclosed = openGroups.first?.pos { return (firstUnclosed, true) }
+        if let firstUnclosed = openGroups.first?.pos { return (firstUnclosed, true) }
         return (pos, false)
     }
 
     private static func stepURLPathChar(
-        _ nsText: NSString, pos: Int, len: Int, allowCommas: Bool, openGroups: inout [(pos: Int, ch: unichar)]
+        _ nsText: NSString, pos: Int, len: Int, openGroups: inout [(pos: Int, ch: unichar)]
     ) -> Int {
-        if VaultLineTracker.isFileScheme(nsText, at: pos) || isWindowsDriveAt(nsText, at: pos, len: len) { return -1 }
+        if isURLPathTerminator(nsText, pos: pos, len: len) { return -1 }
         let ch = nsText.character(at: pos)
-        if VaultLineTracker.isWhitespace(ch) || isURLPathStopChar(ch) { return -1 }
-        if ch == 0x2C && stopsAtURLPathComma(nsText, pos: pos, len: len, allowCommas: allowCommas, openEmpty: openGroups.isEmpty)
-        {
-            return -1
-        }
         if ch == 0x28 || ch == 0x5B {
-            let blocked =
-                allowCommas
-                ? startsEmbeddedFilesystemPath(nsText, nextPos: pos + 1, len: len)
-                : startsEmbeddedPathInsideGroup(nsText, nextPos: pos + 1, len: len)
-            if blocked { return -1 }
-            openGroups.append((pos, ch))
-            return pos + 1
+            return pushURLPathGroup(nsText, pos: pos, len: len, ch: ch, openGroups: &openGroups)
         }
-        if ch == 0x29 || ch == 0x5D {
-            let expected: unichar = ch == 0x29 ? 0x28 : 0x5B
-            guard openGroups.last?.ch == expected else { return -1 }
-            openGroups.removeLast()
-            return pos + 1
-        }
-        return (!allowCommas && !openGroups.isEmpty && ch == 0x3A) ? -1 : pos + 1
+        if ch == 0x29 || ch == 0x5D { return popURLPathGroup(ch, openGroups: &openGroups) ? pos + 1 : -1 }
+        if !openGroups.isEmpty && ch == 0x3A { return -1 }
+        return pos + 1
     }
 
-    private static func stopsAtURLPathComma(
-        _ nsText: NSString, pos: Int, len: Int, allowCommas: Bool, openEmpty: Bool
-    ) -> Bool {
-        if pos + 1 < len {
-            let next = nsText.character(at: pos + 1)
-            if next == 0x3F || next == 0x23 { return false }
-        }
-        return !allowCommas || (openEmpty && shouldStopAtURLComma(nsText, at: pos, len: len))
+    private static func isURLPathTerminator(_ nsText: NSString, pos: Int, len: Int) -> Bool {
+        if VaultLineTracker.isFileScheme(nsText, at: pos) || isWindowsDriveAt(nsText, at: pos, len: len) { return true }
+        let ch = nsText.character(at: pos)
+        return ch == 0x2C || VaultLineTracker.isWhitespace(ch) || isURLPathStopChar(ch)
     }
 
-    static func shouldStopAtURLComma(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
-        let nextPos = pos + 1
-        guard nextPos < len else { return true }
-        let next = nsText.character(at: nextPos)
-        if isAllowedAfterURLComma(next) { return false }
-        if VaultLineTracker.isWhitespace(next) || isURLPathStopChar(next) || isURLEndBoundaryChar(next) {
-            return true
-        }
-        return startsEmbeddedFilesystemPath(nsText, nextPos: nextPos, len: len)
+    private static func pushURLPathGroup(
+        _ nsText: NSString, pos: Int, len: Int, ch: unichar, openGroups: inout [(pos: Int, ch: unichar)]
+    ) -> Int {
+        if startsEmbeddedPathInsideGroup(nsText, nextPos: pos + 1, len: len) { return -1 }
+        openGroups.append((pos, ch))
+        return pos + 1
     }
 
-    private static func isAllowedAfterURLComma(_ ch: unichar) -> Bool {
-        ch == 0x27 || ch == 0x28 || ch == 0x5B || ch == 0x2C || ch == 0x3B || ch == 0x3F || ch == 0x23
+    private static func popURLPathGroup(_ ch: unichar, openGroups: inout [(pos: Int, ch: unichar)]) -> Bool {
+        let expected: unichar = ch == 0x29 ? 0x28 : 0x5B
+        guard openGroups.last?.ch == expected else { return false }
+        openGroups.removeLast()
+        return true
     }
 
     static func startsEmbeddedFilesystemPath(_ nsText: NSString, nextPos: Int, len: Int) -> Bool {
@@ -190,7 +169,7 @@ extension CoreTelemetryService {
         return VaultLineTracker.isFileScheme(nsText, at: pos) || isWindowsDriveAt(nsText, at: pos, len: len)
     }
 
-    private static func isWindowsDriveAt(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+    static func isWindowsDriveAt(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
         pos + 2 < len && isASCIILetter(nsText.character(at: pos))
             && nsText.character(at: pos + 1) == 0x3A
             && VaultLineTracker.isPathSep(nsText.character(at: pos + 2))
@@ -217,7 +196,7 @@ extension CoreTelemetryService {
             || ch == 0x5C || ch == 0x7B || ch == 0x7D || ch == 0x0A || ch == 0x0D
     }
 
-    private static func isURLPathStopChar(_ ch: unichar) -> Bool {
+    static func isURLPathStopChar(_ ch: unichar) -> Bool {
         ch == 0x22 || ch == 0x3C || ch == 0x3E || ch == 0x5C || ch == 0x7B || ch == 0x7D
             || ch == 0x3F || ch == 0x23 || ch == 0x0A || ch == 0x0D
     }

@@ -252,6 +252,7 @@ extension CoreTelemetryService {
         var rebuilt = ""
         var copied = 0
         var searchFrom = 0
+        var failedContMax = 0
         while searchFrom < totalLen {
             let found = nsText.range(
                 of: "://", options: [], range: NSRange(location: searchFrom, length: totalLen - searchFrom)
@@ -284,12 +285,10 @@ extension CoreTelemetryService {
             var redactedURL = Self.redactURLPathSecrets(url)
             var endPos = span.totalEnd
             var finalTail = tail
-            if let probe = Self.probeWebhookCommaExtension(
-                span: span, tail: tail, rawURL: baseURL, nsText: nsText
+            if let extended = Self.extendURLContinuation(
+                nsText, span: span, rawURL: baseURL, failedContMax: &failedContMax
             ) {
-                (redactedURL, endPos, finalTail) = Self.extendRedactedWebhookComma(
-                    nsText, redactedURL: probe, urlStart: span.start, totalEnd: endPos, len: totalLen
-                )
+                (redactedURL, endPos, finalTail) = extended
             }
             rebuilt += nsText.substring(with: NSRange(location: copied, length: span.start - copied))
             let idx = vaultedURLs.count

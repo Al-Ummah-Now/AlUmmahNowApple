@@ -208,12 +208,78 @@ struct CoreTelemetryAuthSanitizerTests {
                 == "https://example.test/webhook/[redacted]"
         )
         #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken,)opaqueSecret123")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken)opaqueSecret123")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("(https://example.test/webhook/fakeToken)")
+                == "(https://example.test/webhook/[redacted])"
+        )
+        let repeatedBot = "https://api.telegram." + "org/bot1:a" + String(repeating: "%2Fbot2:b", count: 500)
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedBot) == "https://api.telegram.org/bot1:[redacted]")
+        #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.test/%77ebhook/fakeToken")
                 == "https://example.test/%77ebhook/[redacted]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken, next")
                 == "https://example.test/webhook/[redacted], next"
+        )
+    }
+
+    @Test("Scrubs general URL continuations, quoted webhooks, and encoded-slash Telegram URLs")
+    func scrubsGeneralURLContinuationsAndEncodedSlashTelegramURLs() {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("'https://example.test/webhook/fakeToken',)opaqueSecret123")
+                == "'https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("'https://example.test/webhook/fakeToken', next")
+                == "'https://example.test/webhook/[redacted]', next"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken,/opaqueSecret123")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,public?token=opaqueSecret123")
+                == "https://example.com/api,public?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,public#token=opaqueSecret123")
+                == "https://example.com/api,public#[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,/public?token=opaqueSecret123")
+                == "https://example.com/api,/public?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api)public?token=opaqueSecret123")
+                == "https://example.com/api)public?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api(tag:val)?token=opaqueSecret123")
+                == "https://example.com/api(tag:val)?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,public/webhook/opaqueSecret123")
+                == "https://example.com/api,public/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,https://other.com/x?token=opaqueSecret123")
+                == "https://example.com/api,https://other.com/x?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://api.telegram." + "org/bot123:%2FopaqueSecret123/sendMessage")
+                == "https://api.telegram.org/bot123:[redacted]/sendMessage"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook%2FfakeToken")
+                == "https://example.test/webhook%2F[redacted]"
         )
     }
 }
