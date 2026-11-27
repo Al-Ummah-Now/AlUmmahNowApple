@@ -419,6 +419,7 @@ extension CoreTelemetryAuthScanner {
     }
 
     private static func advanceObsFold(_ nsText: NSString, at nlPos: Int, len: Int) -> Int {
+        guard nlPos < len && isNewline(nsText.character(at: nlPos)) else { return -1 }
         let afterNl =
             (nsText.character(at: nlPos) == 0x0D && nlPos + 1 < len && nsText.character(at: nlPos + 1) == 0x0A)
             ? nlPos + 2 : nlPos + 1

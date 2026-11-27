@@ -293,6 +293,11 @@ struct CoreTelemetryExternalConsentTests {
             ("Authorization: [firstValue]\r\n\topaqueSecret123", "Authorization: [[redacted]]\r\n\t[redacted]"),
             ("Authorization: \"firstValue\"\r\n\topaqueSecret123", "Authorization: \"[redacted]\"\r\n\t[redacted]"),
             ("Authorization: \"firstValue\" opaqueSecret123", "Authorization: \"[redacted]\" [redacted]"),
+            ("Authorization: \"firstValue\" x opaqueSecret123", "Authorization: \"[redacted]\" [redacted]"),
+            (
+                "{\"Authorization\": \"opaqueSecret123\", \"status\": \"safe\"}",
+                "{\"Authorization\": \"[redacted]\", \"status\": \"safe\"}"
+            ),
             ("Authorization: [firstValue]\r\nNextHeader: safe", "Authorization: [[redacted]]\r\nNextHeader: safe"),
             ("{\n  \"Authorization\": \"opaqueSecret123\"\n  }", "{\n  \"Authorization\": \"[redacted]\"\n  }"),
             ("Authorization:\r\n\topaqueSecret123", "Authorization:\r\n\t[redacted]"),
