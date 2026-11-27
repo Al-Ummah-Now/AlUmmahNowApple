@@ -423,8 +423,8 @@ extension CoreTelemetryService {
     )
 
     private static let preKeywordPathRules: [(regex: NSRegularExpression, template: String)] = {
-        let absTail = #"[^\r\n\u001E\s](?:[^\r\n\u001E\u000B\u000C\u0085\u2028\u2029]*[^\r\n\u001E\s])?"#
-        let relTail = #"[^\r\n\u001E\u001F\s](?:[^\r\n\u001E\u001F\u000B\u000C\u0085\u2028\u2029]*[^\r\n\u001E\u001F\s])?"#
+        let absTail = #"[^\r\n\u001E\s](?:[^\r\n\u001E]*[^\r\n\u001E\s])?"#
+        let relTail = #"[^\r\n\u001E\u001F\s](?:[^\r\n\u001E\u001F]*[^\r\n\u001E\u001F\s])?"#
         let specs: [(String, String)] = [
             (#"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n\u001E]+(\))"#, "$1[redacted-path]$2"),
             (

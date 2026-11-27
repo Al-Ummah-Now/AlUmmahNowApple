@@ -406,7 +406,7 @@ extension CoreTelemetryService {
             escapedBackslash = (ch == 0x5C) ? !escapedBackslash : false
             rawEnd += 1
         }
-        if state.candidateClose >= 0 && state.nestedQuotes == 0 {
+        if state.candidateClose >= 0 && !state.hasUnclosedOpenAfterClose {
             return (state.candidateClose, state.candidateClose)
         }
         guard stoppedAtVault else { return (rawEnd, rawEnd) }
@@ -424,29 +424,28 @@ extension CoreTelemetryService {
 
     private struct FileURIQuoteState {
         var candidateClose = -1
-        var nestedQuotes = 0
+        var hasUnclosedOpenAfterClose = false
 
         mutating func step(_ nsText: NSString, at pos: Int, schemeEnd: Int, quote: unichar) -> Bool {
             if quote == 0x22 {
                 candidateClose = pos
                 return true
             }
+            // Single-quoted file:// URIs may contain unescaped literal apostrophes
+            // (e.g. "O' Connor" or "Artists' Private 'Collection'"); fail closed to the
+            // last closing quote before the next file:// URI, vaulted URL, or line break.
             let canClose = pos + 1 == nsText.length || !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos + 1))
-            let prevChar: unichar = pos > schemeEnd ? nsText.character(at: pos - 1) : 0
             if canClose {
                 candidateClose = pos
-                if nestedQuotes > 0 {
-                    nestedQuotes -= 1
-                    return false
-                }
-                return prevChar != 0x73 && prevChar != 0x53
+                hasUnclosedOpenAfterClose = false
+                return false
             }
-            let prevIsWord = pos > schemeEnd && VaultLineTracker.isLetterOrDigit(prevChar)
+            let prevIsWord = pos > schemeEnd && VaultLineTracker.isLetterOrDigit(nsText.character(at: pos - 1))
             guard !prevIsWord else { return false }
-            if candidateClose >= 0 && nestedQuotes == 0 && VaultLineTracker.isFileScheme(nsText, at: pos + 1) {
+            if candidateClose >= 0 && !hasUnclosedOpenAfterClose && VaultLineTracker.isFileScheme(nsText, at: pos + 1) {
                 return true
             }
-            nestedQuotes += 1
+            hasUnclosedOpenAfterClose = true
             return false
         }
     }

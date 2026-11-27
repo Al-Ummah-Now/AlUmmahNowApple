@@ -172,12 +172,15 @@ struct CoreTelemetryExternalConsentTests {
         )
         let extraCases: [(String, String)] = [
             ("'file:///tmp/a' progress 1/2 'file:///tmp/b'", "'[redacted-path]' progress 1/2 '[redacted-path]'"),
-            ("'file:///tmp/a' progress users' 1/2", "'[redacted-path]' progress users' 1/2"),
+            ("'file:///tmp/a' progress 1/2", "'[redacted-path]' progress 1/2"),
+            ("'file:///tmp/a' progress users' 1/2", "'[redacted-path]' 1/2"),
+            ("'file:///tmp/O' Connor Private'", "'[redacted-path]'"),
             ("'file:///tmp/docs' progress 1/2 'file:///tmp/b'", "'[redacted-path]' progress 1/2 '[redacted-path]'"),
             ("'file:///tmp/Artists' Private 'Collection'", "'[redacted-path]'"),
             ("'file:///tmp/Artists' Private 'Collection' Name'", "'[redacted-path]'"),
             ("'file:///tmp/Artists' Private 'Collection", "'[redacted-path]"),
             ("'file:///tmp/Studio 'Private' Project'", "'[redacted-path]'"),
+            ("/tmp/Private\u{2028}Acquisition Plan", "[redacted-path]"),
             ("'Private.qzx'2 Acquisition.qzx'", "[redacted-path]"),
             ("'Studio 2's Acquisition.qzx'", "[redacted-path]"),
         ]
