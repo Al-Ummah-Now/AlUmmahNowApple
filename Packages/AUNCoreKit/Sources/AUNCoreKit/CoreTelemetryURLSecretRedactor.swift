@@ -229,7 +229,7 @@ extension CoreTelemetryService {
         guard ctx.pathEnd > span.totalEnd && ctx.pathEnd < len else { return nil }
         let nextCh = nsText.character(at: ctx.pathEnd)
         guard nextCh == 0x3F || nextCh == 0x23 else { return nil }
-        let qfEnd = Self.scanQueryOrFragment(nsText, start: ctx.pathEnd, len: len, quoteState: ctx.input.quoteState)
+        let qfEnd = Self.scanQueryOrFragment(nsText, start: ctx.pathEnd, len: len)
         let qf = nsText.substring(with: NSRange(location: ctx.pathEnd, length: qfEnd - ctx.pathEnd))
         let (cleanQF, qfTail) = Self.trimQueryOrFragmentDelimiters(
             qf, nsText: nsText, matchStart: span.start, inSingleQuote: ctx.input.inSingleQuote

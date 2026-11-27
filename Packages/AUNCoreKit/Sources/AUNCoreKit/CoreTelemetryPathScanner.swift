@@ -159,15 +159,20 @@ extension CoreTelemetryService {
                     tokenStart = cursor
                 }
                 tokenEnd = cursor + 1
-                trackTokenChar(ch)
+                trackTokenChar(nsText, ch: ch)
                 inWrapperRun = false
                 wsBeforeRun = false
             }
         }
 
-        private mutating func trackTokenChar(_ ch: unichar) {
+        private func isLeadingEscapedQuote(_ nsText: NSString) -> Bool {
+            openQuote == 0x22 && !escapedBackslash && tokenStart == cursor && cursor + 1 < nsText.length
+                && nsText.character(at: cursor + 1) == 0x22
+        }
+
+        private mutating func trackTokenChar(_ nsText: NSString, ch: unichar) {
             if ch == 0x5C {
-                tokenHasBackslash = true
+                if !isLeadingEscapedQuote(nsText) { tokenHasBackslash = true }
             } else if ch == 0x2F {
                 if tokenSlashCount == 0 { tokenFirstSlash = cursor }
                 tokenSlashCount += 1

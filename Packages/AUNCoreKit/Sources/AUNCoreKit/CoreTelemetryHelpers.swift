@@ -274,12 +274,11 @@ extension CoreTelemetryService {
                 searchFrom = sep + 3
                 continue
             }
-            let urlQuoteState = Self.advanceQuoteState(nsText, from: copied, to: start, quoteState: quoteState)
-            guard let span = Self.scanURLAfterScheme(nsText, start: start, sep: sep, quoteState: urlQuoteState) else {
+            guard let span = Self.scanURLAfterScheme(nsText, start: start, sep: sep) else {
                 searchFrom = sep + 3
                 continue
             }
-            quoteState = urlQuoteState
+            quoteState = Self.advanceQuoteState(nsText, from: copied, to: span.start, quoteState: quoteState)
             let inSingleQuote = (quoteState & 1) != 0
             let baseURL = nsText.substring(with: NSRange(location: span.start, length: span.baseEnd - span.start))
             let (url, tail): (String, String)

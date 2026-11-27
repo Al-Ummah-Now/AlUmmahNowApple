@@ -26,9 +26,7 @@ extension CoreTelemetryService {
         return start
     }
 
-    static func scanURLAfterScheme(
-        _ nsText: NSString, start: Int, sep: Int, quoteState: Int = 0
-    ) -> URLScanMatch? {
+    static func scanURLAfterScheme(_ nsText: NSString, start: Int, sep: Int) -> URLScanMatch? {
         let totalLen = nsText.length
         guard let afterHost = scanURLHost(nsText, hostStart: sep + 3, len: totalLen),
             let afterPort = scanOptionalPort(nsText, pos: afterHost, len: totalLen)
@@ -45,7 +43,7 @@ extension CoreTelemetryService {
             let nextCh = nsText.character(at: baseEnd)
             if nextCh == 0x3F || nextCh == 0x23 {
                 hasQF = true
-                totalEnd = scanQueryOrFragment(nsText, start: baseEnd, len: totalLen, quoteState: quoteState)
+                totalEnd = scanQueryOrFragment(nsText, start: baseEnd, len: totalLen)
             }
         }
         guard totalEnd == totalLen || isURLEndBoundary(nsText, at: totalEnd, len: totalLen) else { return nil }
@@ -171,9 +169,7 @@ extension CoreTelemetryService {
         return startsEmbeddedFilesystemPath(nsText, nextPos: nextPos, len: len)
     }
 
-    static func scanQueryOrFragment(_ nsText: NSString, start: Int, len: Int, quoteState: Int = 0) -> Int {
-        let inDouble = (quoteState & 2) != 0
-        let inEscDouble = (quoteState & 4) != 0
+    static func scanQueryOrFragment(_ nsText: NSString, start: Int, len: Int) -> Int {
         var pos = start + 1
         while pos < len {
             let ch = nsText.character(at: pos)
@@ -182,11 +178,6 @@ extension CoreTelemetryService {
                 var bs = 0
                 while pos - 1 - bs > start && nsText.character(at: pos - 1 - bs) == 0x5C { bs += 1 }
                 if (bs & 1) == 0 { break }
-                if inEscDouble {
-                    pos -= 1
-                    break
-                }
-                if !inDouble { break }
             }
             pos += 1
         }
@@ -198,7 +189,6 @@ extension CoreTelemetryService {
     ) -> Int {
         var inSingle = (quoteState & 1) != 0
         var inDouble = (quoteState & 2) != 0
-        var inEscDouble = (quoteState & 4) != 0
         var idx = start
         let len = nsText.length
         while idx < end {
@@ -206,28 +196,20 @@ extension CoreTelemetryService {
             if ch == 0x0D || ch == 0x0A {
                 inSingle = false
                 inDouble = false
-                inEscDouble = false
-            } else if ch == 0x5C && idx + 1 < end && nsText.character(at: idx + 1) != 0x0D
-                && nsText.character(at: idx + 1) != 0x0A
-            {
-                if !inSingle && nsText.character(at: idx + 1) == 0x22 {
-                    inEscDouble.toggle()
-                    idx += 2
-                    continue
-                }
-                if inSingle || inDouble || inEscDouble {
+            } else if ch == 0x5C && (inSingle || inDouble) && idx + 1 < end {
+                let next = nsText.character(at: idx + 1)
+                if next != 0x0D && next != 0x0A {
                     idx += 2
                     continue
                 }
             } else if ch == 0x22 && !inSingle {
                 inDouble.toggle()
-                if !inDouble { inEscDouble = false }
-            } else if ch == 0x27 && !inDouble && !inEscDouble && !isContractionApostrophe(nsText, at: idx, len: len) {
+            } else if ch == 0x27 && !inDouble && !isContractionApostrophe(nsText, at: idx, len: len) {
                 inSingle.toggle()
             }
             idx += 1
         }
-        return (inSingle ? 1 : 0) | (inDouble ? 2 : 0) | (inEscDouble ? 4 : 0)
+        return (inSingle ? 1 : 0) | (inDouble ? 2 : 0)
     }
 
     static func isContractionApostrophe(_ nsText: NSString, at pos: Int, len: Int) -> Bool {

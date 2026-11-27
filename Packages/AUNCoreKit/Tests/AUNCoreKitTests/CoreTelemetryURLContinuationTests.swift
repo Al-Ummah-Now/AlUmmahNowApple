@@ -250,7 +250,7 @@ struct CoreTelemetryURLContinuationTests {
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
                 "[\"https://example.com/api{1:\\\"see https://other.com/x?token=opaqueSecret123\\\"}?outer=value\"]"
-            ) == "[\"https://example.com/api{1:\\\"see https://other.com/x?[redacted]\\\"}?[redacted]\"]"
+            ) == "[\"https://example.com/api{1:\\\"see https://other.com/x?[redacted]}?[redacted]\"]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
@@ -265,7 +265,18 @@ struct CoreTelemetryURLContinuationTests {
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
                 "[\"https://example.com/api{1:\\\"see https://other.com/x?token=opaqueSecret123\\\"}\"]"
-            ) == "[\"https://example.com/api{1:\\\"see https://other.com/x?[redacted]\\\"}\"]"
+            ) == "[\"https://example.com/api{1:\\\"see https://other.com/x?[redacted]}\"]"
         )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api?token=first\\\"opaqueSecret123")
+                == "https://example.com/api?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"see \\\"example https://example.com/api?token=first\\\",opaqueSecret123\"]"
+            ) == "[\"see \\\"example https://example.com/api?[redacted]\"]"
+        )
+        let repeatedRejected = String(repeating: "https:// ", count: 2000)
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedRejected) == "http[redacted-path] ")
     }
 }
