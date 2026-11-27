@@ -78,15 +78,17 @@ extension CoreTelemetryService {
     }
 
     private static let pathRegexes: [NSRegularExpression] = {
+        let stackSuffix = #"(?=(?::line\s+\d+|:\d+(?::\d+)?)(?:[)\]]*(?=\r|\n|$)|\s+in\s+[\p{L}_][\p{L}\p{N}_.$<>]*\()|[\r\n"]|$)"#
+        let winSuffix = #"(?=(?::line\s+\d+|:\d+(?::\d+)?)(?:[)\]]*(?=\r|\n|$)|\s+in\s+[\p{L}_][\p{L}\p{N}_.$<>]*\()|[\r\n"<>|]|$)"#
         let patterns = [
             // Double-quoted paths (may contain apostrophes, semicolons, spaces, Unicode, or parentheses)
             #""(?:file://|(?:[A-Za-z]:[\\/]|\\\\)|~/(?!\s)|/(?=[^\s/"]))[^"\r\n]*""#,
-            // Unquoted file:// URIs
-            #"file://[^\r\n"<>|]+"#,
-            // Unquoted Windows drive or UNC paths through end of clause (preserving trailing :line N / :N in stacks)
-            #"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n"<>|]+?(?=(?::line\s+\d+|:\d+(?::\d+)?)[)\]]*(?=\r|\n|$)|[\r\n"<>|]|$)"#,
-            // Unquoted Unix ~/ or root paths (including single-segment, punctuation-prefixed, and colon/semicolon filenames)
-            #"(?<![\p{L}\p{M}\p{N}._:/-])(?:~/|/(?=[^\s/"<>|]))[^\r\n"<>|]+?(?=(?::line\s+\d+|:\d+(?::\d+)?)[)\]]*(?=\r|\n|$)|[\r\n"<>|]|$)"#,
+            // Unquoted file:// URIs (preserving trailing :line N / :N in stacks)
+            #"file://[^\r\n"]+?"# + stackSuffix,
+            // Unquoted Windows drive or UNC paths through end of clause
+            #"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n"<>|]+?"# + winSuffix,
+            // Unquoted Unix ~/ or root paths (including punctuation, angle brackets, pipes, colons, semicolons)
+            #"(?<![\p{L}\p{M}\p{N}._:/-])(?:~/|/(?=[^\s/"]))[^\r\n"]+?"# + stackSuffix,
         ]
         return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
     }()

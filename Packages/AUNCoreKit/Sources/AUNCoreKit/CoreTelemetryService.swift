@@ -91,6 +91,12 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
             if consent == .off {
                 return revokeLocked()
             }
+            if _lastPurgeFailed {
+                guard Self.removeBufferAndTempFiles(at: bufferPath) else {
+                    return (false, [])
+                }
+                _lastPurgeFailed = false
+            }
             do {
                 try client.setConsent(consent: mapped)
                 _consent = consent
@@ -253,8 +259,8 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
         lock.withLock {
             _flushWaiters.removeValue(forKey: id)
             _inFlightFlushes = max(0, _inFlightFlushes - 1)
-            if _revoked, bufferPath != nil, !Self.removeBufferAndTempFiles(at: bufferPath) {
-                _lastPurgeFailed = true
+            if _revoked, bufferPath != nil {
+                _lastPurgeFailed = !Self.removeBufferAndTempFiles(at: bufferPath)
             }
         }
     }

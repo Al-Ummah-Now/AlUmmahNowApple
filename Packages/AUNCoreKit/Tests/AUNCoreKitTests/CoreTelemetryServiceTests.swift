@@ -233,13 +233,20 @@ struct CoreTelemetryServiceTests {
             Failed reading /Private (Client).mov
             /Private Client
             /private-key
+            /Users/alice/Secret<Project>.mov
+            /workspace/alice/Project|Acquisition.mov
             /workspace/alice/Project;Acquisition.mov
             '/workspace/alice/Project:2026;Acquisition.mov'
             /!Acquisition.mov
             "/!Acquisition.mov"
             "C:\\Users\\Alice Smith\\Private Draft.mp4"
             """,
-            stack: "at Player.open() in /workspace/Élodie/src/Player.swift:42\nat App.run()"
+            stack: """
+            at Player.open() in /workspace/Élodie/src/Player.swift:42
+            file:///Users/alice/Player.swift:55
+            at /Users/alice/Player.swift:77 in open()
+            at App.run()
+            """
         )
 
         let json = try String(contentsOfFile: bufferPath, encoding: .utf8)
@@ -249,13 +256,60 @@ struct CoreTelemetryServiceTests {
         #expect(!json.localizedCaseInsensitiveContains("brien"))
         #expect(!json.localizedCaseInsensitiveContains("private"))
         #expect(!json.localizedCaseInsensitiveContains("acquisition"))
+        #expect(!json.localizedCaseInsensitiveContains("project>.mov"))
         #expect(!json.localizedCaseInsensitiveContains("client).mov"))
         #expect(!json.localizedCaseInsensitiveContains("name.mov"))
         #expect(!json.localizedCaseInsensitiveContains("draft.mp4"))
         #expect(!json.contains("workspace"))
-        #expect(json.contains(":42"))
+        #expect(json.contains("[redacted-path]:42"))
+        #expect(json.contains("[redacted-path]:55"))
+        #expect(json.contains("[redacted-path]:77 in open()"))
         #expect(json.contains("App.run()"))
         #expect(json.contains("[redacted-path]"))
+    }
+
+    @Test("Re-enabling after a failed opt-out purge deletes leftover buffer before granting consent")
+    func reenableAfterFailedPurgeDeletesLeftoverBufferFirst() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let restrictedDir = dir.appendingPathComponent("locked", isDirectory: true)
+        try FileManager.default.createDirectory(at: restrictedDir, withIntermediateDirectories: true)
+        let bufferPath = restrictedDir.appendingPathComponent("telemetry-buffer.json").path
+
+        let service = try CoreTelemetryService(
+            platform: "macos",
+            appVersion: "1.0.0",
+            osVersion: "macOS 15.0",
+            deviceClass: "desktop",
+            locale: "en",
+            videosAPIBaseURL: nil,
+            userAgent: "AlUmmahNowMac/1.0.0",
+            bufferPath: bufferPath,
+            initialEnabled: true
+        )
+        service.track("screen_view", properties: ["screen": "revoked"])
+        service.persist()
+        #expect(FileManager.default.fileExists(atPath: bufferPath))
+
+        // Make parent directory read-only so opt-out cannot unlink the buffer file.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: restrictedDir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: restrictedDir.path) }
+
+        #expect(!service.setConsent(.off))
+        #expect(service.lastPurgeFailed)
+        #expect(FileManager.default.fileExists(atPath: bufferPath))
+
+        // While buffer still cannot be purged, re-enable must fail closed.
+        #expect(!service.setConsent(.full))
+        #expect(service.consent == .off)
+        #expect(service.lastPurgeFailed)
+
+        // Restore permissions: re-enable must purge the stale revoked buffer FIRST so 0 old events reload.
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: restrictedDir.path)
+        #expect(service.setConsent(.full))
+        #expect(service.consent == .full)
+        #expect(!service.lastPurgeFailed)
+        #expect(service.pendingCount == 0)
     }
 
     @Test("Revoking after close() still revokes native consent and removes sibling temp files")
