@@ -26,7 +26,9 @@ extension CoreTelemetryService {
         return start
     }
 
-    static func scanURLAfterScheme(_ nsText: NSString, start: Int, sep: Int) -> URLScanMatch? {
+    static func scanURLAfterScheme(
+        _ nsText: NSString, start: Int, sep: Int, allowAngleBrackets: Bool = false
+    ) -> URLScanMatch? {
         let totalLen = nsText.length
         guard let afterHost = scanURLHost(nsText, hostStart: sep + 3, len: totalLen),
             let afterPort = scanOptionalPort(nsText, pos: afterHost, len: totalLen)
@@ -43,7 +45,9 @@ extension CoreTelemetryService {
             let nextCh = nsText.character(at: baseEnd)
             if nextCh == 0x3F || nextCh == 0x23 {
                 hasQF = true
-                totalEnd = scanQueryOrFragment(nsText, start: baseEnd, len: totalLen)
+                totalEnd = scanQueryOrFragment(
+                    nsText, start: baseEnd, len: totalLen, allowAngleBrackets: allowAngleBrackets
+                )
             }
         }
         guard totalEnd == totalLen || isURLEndBoundary(nsText, at: totalEnd, len: totalLen) else { return nil }
@@ -169,11 +173,13 @@ extension CoreTelemetryService {
         return startsEmbeddedFilesystemPath(nsText, nextPos: nextPos, len: len)
     }
 
-    static func scanQueryOrFragment(_ nsText: NSString, start: Int, len: Int) -> Int {
+    static func scanQueryOrFragment(
+        _ nsText: NSString, start: Int, len: Int, allowAngleBrackets: Bool = false
+    ) -> Int {
         var pos = start + 1
         while pos < len {
             let ch = nsText.character(at: pos)
-            if VaultLineTracker.isWhitespace(ch) || ch == 0x3C || ch == 0x3E { break }
+            if VaultLineTracker.isWhitespace(ch) || (!allowAngleBrackets && (ch == 0x3C || ch == 0x3E)) { break }
             if ch == 0x22 {
                 var bs = 0
                 while pos - 1 - bs > start && nsText.character(at: pos - 1 - bs) == 0x5C { bs += 1 }

@@ -210,7 +210,7 @@ struct CoreTelemetryExternalConsentTests {
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("status \"ready; detail \"Private Project.qzx\"")
-                == "status \"ready; detail [redacted-path]"
+                == "status \"ready; detail \"[redacted-path]\""
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("private]folder\\secret")

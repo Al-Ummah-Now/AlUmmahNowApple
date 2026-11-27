@@ -258,6 +258,7 @@ extension CoreTelemetryService {
         var rebuilt = ""
         var copied = 0
         var searchFrom = 0
+        var quoteCursor = 0
         var quoteState = 0
         var contLimits = ContinuationLimits()
         while searchFrom < totalLen {
@@ -274,11 +275,16 @@ extension CoreTelemetryService {
                 searchFrom = sep + 3
                 continue
             }
-            guard let span = Self.scanURLAfterScheme(nsText, start: start, sep: sep) else {
+            if start > quoteCursor {
+                quoteState = Self.advanceQuoteState(nsText, from: quoteCursor, to: start, quoteState: quoteState)
+                quoteCursor = start
+            }
+            let allowAngles = (quoteState & 2) != 0 && (start == 0 || nsText.character(at: start - 1) != 0x3C)
+            guard let span = Self.scanURLAfterScheme(nsText, start: start, sep: sep, allowAngleBrackets: allowAngles)
+            else {
                 searchFrom = sep + 3
                 continue
             }
-            quoteState = Self.advanceQuoteState(nsText, from: copied, to: span.start, quoteState: quoteState)
             let inSingleQuote = (quoteState & 1) != 0
             let baseURL = nsText.substring(with: NSRange(location: span.start, length: span.baseEnd - span.start))
             let (url, tail): (String, String)
@@ -317,6 +323,7 @@ extension CoreTelemetryService {
             quoteState = Self.advanceQuoteState(nsTail, from: 0, to: nsTail.length, quoteState: quoteState)
             tracker.onVaultedURL(matchEnd: endPos)
             copied = endPos
+            quoteCursor = endPos
             searchFrom = endPos
         }
         guard vaultedURLs.count > startCount else { return text }

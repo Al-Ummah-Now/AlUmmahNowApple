@@ -342,7 +342,7 @@ extension CoreTelemetryService {
             {
                 if result.isEmpty { result.reserveCapacity(text.count) }
                 result += nsText.substring(with: NSRange(location: copied, length: idx - copied))
-                result += "[redacted-path]"
+                result += "\"[redacted-path]\""
                 copied = close + 1
                 idx = close + 1
             } else {

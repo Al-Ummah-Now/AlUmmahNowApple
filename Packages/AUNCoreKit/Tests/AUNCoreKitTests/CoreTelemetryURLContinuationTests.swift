@@ -279,4 +279,38 @@ struct CoreTelemetryURLContinuationTests {
         let repeatedRejected = String(repeating: "https:// ", count: 2000)
         #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedRejected) == "http[redacted-path] ")
     }
+
+    @Test("Allows angle brackets in quoted URL queries and preserves double quotes on redacted filenames")
+    func quotedQueryAngleBracketsAndJsonFilenameQuotes() {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"https://example.com/api?token=first\\\">opaqueSecret123\"]"
+            ) == "[\"https://example.com/api?[redacted]\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"https://example.com/api?token=first<opaqueSecret123\",\"public\"]"
+            ) == "[\"https://example.com/api?[redacted]\",\"public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"https://example.com/api(x)?token=first<opaqueSecret123\",\"public\"]"
+            ) == "[\"https://example.com/api(x)?[redacted]\",\"public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"see <https://example.com/api?token=secret> public\"]"
+            ) == "[\"see <https://example.com/api?[redacted]> public\"]"
+        )
+        #expect(CoreTelemetryService.sanitizeLocalPaths("[\"Acquisition.mov\"]") == "[\"[redacted-path]\"]")
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[\"report.pdf\",\"public\"]")
+                == "[\"[redacted-path]\",\"public\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"https://example.com/api?token=opaqueSecret123\",\"Quarterly Report.pdf\"]"
+            ) == "[\"https://example.com/api?[redacted]\",\"[redacted-path]\"]"
+        )
+    }
 }
