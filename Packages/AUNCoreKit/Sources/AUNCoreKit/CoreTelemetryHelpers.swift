@@ -298,9 +298,10 @@ extension CoreTelemetryService {
             var endPos = span.totalEnd
             var finalTail = tail
             rebuilt += nsText.substring(with: NSRange(location: copied, length: span.start - copied))
-            if let ext = Self.extendURLContinuation(
-                nsText, span: span, rawURL: baseURL, baseTail: tail, limits: &contLimits
-            ) {
+            let contInput = URLContinuationInput(
+                span: span, rawURL: baseURL, baseTail: tail, inSingleQuote: inSingleQuote
+            )
+            if let ext = Self.extendURLContinuation(nsText, input: contInput, limits: &contLimits) {
                 endPos = ext.endPos
                 finalTail = ext.tail
                 rebuilt += Self.formatURLContinuation(

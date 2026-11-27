@@ -422,4 +422,59 @@ struct CoreTelemetryURLContinuationTests {
                 == "https://example.test/webhook%2F[redacted]"
         )
     }
+
+    @Test("Handles outer-quoted nested webhooks, apostrophes, and unclosed quote fallback")
+    func handlesOuterQuotedNestedWebhooksApostrophesAndUnclosedQuoteFallback() {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "'https://example.test/webhook/fakeToken('a)first opaqueSecret123')'"
+            ) == "'https://example.test/webhook/[redacted]'"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "\"https://example.test/webhook/fakeToken(\"a)first opaqueSecret123\")\""
+            ) == "\"https://example.test/webhook/[redacted]\""
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "https://example.test/wiki/Writer_(O'Reilly)?private=opaqueSecret123"
+            ) == "https://example.test/wiki/Writer_(O'Reilly)?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/wiki/(Writers')?private=opaqueSecret123")
+                == "https://example.test/wiki/(Writers')?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/wiki/('unclosed)?private=opaqueSecret123")
+                == "https://example.test/wiki/('unclosed)?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("'see https://example.com/api{tag:\"value\"}?outer=value'")
+                == "'see https://example.com/api{tag:\"value\"}?[redacted]'"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "https://example.com/api{url:\"see https://other.com/webhook/fakeToken('a)first opaqueSecret123')\"}?outer=value"
+            ) == "https://example.com/api{url:\"see https://other.com/webhook/[redacted]\"}?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "https://example.com/api{url:\"see https://other.com/webhook/fakeToken('a)first opaqueSecret123')\"}"
+            ) == "https://example.com/api{url:\"see https://other.com/webhook/[redacted]\"}"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{'a':'https://example.test/webhook/fakeToken(','b':'public-text'}")
+                == "{'a':'https://example.test/webhook/[redacted]','b':'public-text'}"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "{\"a\":\"https://example.test/webhook/fakeToken(\",\"b\":\"public-text\"}"
+            ) == "{\"a\":\"https://example.test/webhook/[redacted]\",\"b\":\"public-text\"}"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "['https://a.test/webhook/tok(','https://other.com/webhook/tok2('x)secret')']"
+            ) == "['https://a.test/webhook/[redacted]','https://other.com/webhook/[redacted]']"
+        )
+    }
 }
