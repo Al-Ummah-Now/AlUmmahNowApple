@@ -428,6 +428,26 @@ extension CoreTelemetryURLContinuationTests {
             ("[\"\\\"Secret.custom\\\" pending\"]", "[\"\\\"[redacted-path]\\\" pending\"]"),
             ("[\"\\u0022Secret.custom\\u0022 pending\"]", "[\"\\u0022[redacted-path]\\u0022 pending\"]"),
             ("[\"Secret\\\"file.custom\"]", "[\"[redacted-path]\"]"),
+            ("[\"file \\\"O'Brien Acquisition\\\"\"]", "[\"file [redacted-path]\"]"),
+            ("[\"file \\\"Acquisition's Plan\\\"\"]", "[\"file [redacted-path]\"]"),
+            ("[\"file 'Acquisition\\u0027s Plan'\"]", "[\"file [redacted-path]\"]"),
+            (
+                "{\"message\":\"open file:///Users/Alice/Secret.mov\",\"status\":\"public\"}",
+                "{\"message\":\"open [redacted-path]\",\"status\":\"public\"}"
+            ),
+            (
+                "{\"message\":\"open file:\\/\\/\\/Users\\/Alice\\/Secret.mov\",\"status\":\"public\"}",
+                "{\"message\":\"open [redacted-path]\",\"status\":\"public\"}"
+            ),
+            ("[\"https:\\/\\/example.com\\/public\"]", "[\"https:\\/\\/example.com\\/public\"]"),
+            (
+                "[\"https:\\/\\/example.com\\/api?token=opaqueSecret123\",\"public\"]",
+                "[\"https://example.com/api?[redacted]\",\"public\"]"
+            ),
+            (
+                "[\"https:\\/\\/example.com\\/api\\u003ftoken=opaqueSecret123\",\"public\"]",
+                "[\"https://example.com/api?[redacted]\",\"public\"]"
+            ),
             ("Failed reading /Users/alice/My \"Secret\" Folder/file.mov", "Failed reading [redacted-path]"),
         ]
         for (input, expected) in cases {

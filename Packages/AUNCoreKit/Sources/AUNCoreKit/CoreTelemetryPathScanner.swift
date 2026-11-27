@@ -533,12 +533,26 @@ extension CoreTelemetryService {
         let nsPrefix = vaultPrefix as NSString
         let totalLength = nsText.length
         guard totalLength >= 7 else { return text }
+        var quoteSpans: [QuotedPathSpan]?
+        var spanIdx = 0
         var result = ""
         var copyStart = 0
         var pos = 0
         while pos < totalLength {
             if VaultLineTracker.isFileScheme(nsText, at: pos) {
-                let isDoubleQuoted = pos > 0 && nsText.character(at: pos - 1) == 0x22
+                if quoteSpans == nil && text.contains("\"") {
+                    quoteSpans = collectBalancedDoubleQuoteSpans(nsText)
+                }
+                if let spans = quoteSpans {
+                    while spanIdx < spans.count && spans[spanIdx].close <= pos { spanIdx += 1 }
+                }
+                let inBalancedQuote =
+                    if let spans = quoteSpans, spanIdx < spans.count {
+                        spans[spanIdx].open < pos && pos < spans[spanIdx].close
+                    } else {
+                        false
+                    }
+                let isDoubleQuoted = inBalancedQuote || (pos > 0 && nsText.character(at: pos - 1) == 0x22)
                 let (rawEnd, trimmedEnd) = fileURISpanEnd(
                     nsText, after: pos + 7, isDoubleQuoted: isDoubleQuoted, vaultPrefix: nsPrefix
                 )

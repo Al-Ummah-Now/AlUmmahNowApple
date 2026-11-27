@@ -246,7 +246,8 @@ extension CoreTelemetryService {
     static func vaultNonFileURLs(in text: String, prefix: String) -> (String, [String]) {
         var vaultedURLs: [String] = []
         let scrubbed = Self.vaultNonFileURLsInto(text, prefix: prefix, vaultedURLs: &vaultedURLs)
-        return (scrubbed, vaultedURLs)
+        let withEscaped = Self.vaultJsonEscapedURLsInBalancedQuotes(scrubbed, prefix: prefix, vaultedURLs: &vaultedURLs)
+        return (withEscaped, vaultedURLs)
     }
 
     static func vaultNonFileURLsInto(_ text: String, prefix: String, vaultedURLs: inout [String]) -> String {
@@ -379,7 +380,9 @@ extension CoreTelemetryService {
     ]
 
     private static let keywordQuotedPathRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"(\b(?:file|path|directory|folder|document)[^\S\r\n]+)([""'])(?!\u001E)[^'""\r\n]+\2"#,
+        pattern:
+            #"(\b(?:file|path|directory|folder|document)[^\S\r\n]+)"#
+            + #"(?:"(?!\u001E)[^"\r\n\u001E\u001F]+"|'(?!\u001E)[^'\r\n\u001E\u001F]+(?:(?<=[\p{L}\p{N}])'(?=[\p{L}])[^'\r\n\u001E\u001F]+)*')"#,
         options: [.caseInsensitive]
     )
 
