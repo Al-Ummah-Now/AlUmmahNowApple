@@ -347,7 +347,10 @@ struct CoreTelemetryAuthSanitizerTests {
                 == "https://example.com/api{tag:\"value\"}?[redacted]"
         )
     }
+}
 
+@Suite("CoreTelemetryURLContinuationSanitizer")
+struct CoreTelemetryURLContinuationTests {
     @Test("Handles quoted webhook groups, brace filenames, and linear nested parens")
     func handlesQuotedWebhookGroupsBraceFilenamesAndLinearNestedParens() {
         #expect(
@@ -376,6 +379,18 @@ struct CoreTelemetryAuthSanitizerTests {
                 "https://example.com/api{url:\"see https://other.com/x?token=opaqueSecret123\"}"
             ) == "https://example.com/api{url:\"see https://other.com/x?[redacted]\"}"
         )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "https://example.com/api{url:'see https://other.com/x?token=opaqueSecret123'}?outer=value"
+            ) == "https://example.com/api{url:'see https://other.com/x?[redacted]'}?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "https://example.test/webhook/fakeToken('a)first opaqueSecret123')"
+            ) == "https://example.test/webhook/[redacted]"
+        )
+        let repeatedEquals = Array(repeating: "https://a.test/x{a:\"https://b.test/x\"}", count: 500).joined(separator: "=")
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedEquals) == repeatedEquals)
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
                 "https://example.test/webhook/fakeToken{tag:\"a)opaqueSecret123\"}suffixSecret"

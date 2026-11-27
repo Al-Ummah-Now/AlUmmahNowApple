@@ -258,6 +258,7 @@ extension CoreTelemetryService {
         var rebuilt = ""
         var copied = 0
         var searchFrom = 0
+        var inSingleQuote = false
         var contLimits = ContinuationLimits()
         while searchFrom < totalLen {
             let found = nsText.range(
@@ -277,24 +278,31 @@ extension CoreTelemetryService {
                 searchFrom = sep + 3
                 continue
             }
+            inSingleQuote = Self.advanceSingleQuoteState(nsText, from: copied, to: span.start, inSingleQuote: inSingleQuote)
             let baseURL = nsText.substring(with: NSRange(location: span.start, length: span.baseEnd - span.start))
             let (url, tail): (String, String)
             if span.hasQueryOrFragment {
                 let qf = nsText.substring(with: NSRange(location: span.baseEnd, length: span.totalEnd - span.baseEnd))
-                let (cleanQF, trimmedTail) = Self.trimQueryOrFragmentDelimiters(qf, nsText: nsText, matchStart: span.start)
+                let (cleanQF, trimmedTail) = Self.trimQueryOrFragmentDelimiters(
+                    qf, nsText: nsText, matchStart: span.start, inSingleQuote: inSingleQuote
+                )
                 let marker = cleanQF.first.map(String.init) ?? "?"
                 url = "\(baseURL)\(marker)[redacted]"
                 tail = trimmedTail
             } else {
-                (url, tail) = Self.trimTrailingURLDelimiters(baseURL, nsText: nsText, matchStart: span.start)
+                (url, tail) = Self.trimTrailingURLDelimiters(
+                    baseURL, nsText: nsText, matchStart: span.start, inSingleQuote: inSingleQuote
+                )
             }
             let redactedURL = Self.redactURLPathSecrets(url)
             var endPos = span.totalEnd
+            var finalTail = tail
             rebuilt += nsText.substring(with: NSRange(location: copied, length: span.start - copied))
             if let ext = Self.extendURLContinuation(
                 nsText, span: span, rawURL: baseURL, baseTail: tail, limits: &contLimits
             ) {
                 endPos = ext.endPos
+                finalTail = ext.tail
                 rebuilt += Self.formatURLContinuation(
                     ext, prefix: prefix, baseRedacted: redactedURL, baseTail: tail, vaultedURLs: &vaultedURLs
                 )
@@ -303,6 +311,8 @@ extension CoreTelemetryService {
                 vaultedURLs.append(redactedURL)
                 rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
             }
+            let nsTail = finalTail as NSString
+            inSingleQuote = Self.advanceSingleQuoteState(nsTail, from: 0, to: nsTail.length, inSingleQuote: inSingleQuote)
             tracker.onVaultedURL(matchEnd: endPos)
             copied = endPos
             searchFrom = endPos
@@ -341,63 +351,6 @@ extension CoreTelemetryService {
             }
         }
         return result
-    }
-
-    private static func trimTrailingURLDelimiters(_ raw: String, nsText: NSString, matchStart: Int) -> (String, String) {
-        var url = raw
-        var tail = ""
-        if url.hasSuffix(";") {
-            url.removeLast()
-            tail = ";"
-        }
-        if matchStart > 0 && nsText.character(at: matchStart - 1) == 0x27 && url.hasSuffix("'") {
-            url.removeLast()
-            tail = "'" + tail
-        }
-        return (url, tail)
-    }
-
-    static func trimQueryOrFragmentDelimiters(_ qf: String, nsText: NSString, matchStart: Int) -> (String, String) {
-        let chars = Array(qf)
-        var excess = Self.countExcessClosers(chars)
-        var end = chars.count
-        let precededByQuote = matchStart > 0 && nsText.character(at: matchStart - 1) == 0x27
-        while end > 1 && Self.shouldTrimCloser(chars[end - 1], precededByQuote: precededByQuote, excess: &excess) {
-            end -= 1
-        }
-        return (String(chars[..<end]), String(chars[end...]))
-    }
-
-    private static func countExcessClosers(_ chars: [Character]) -> [Int] {
-        var excess = [0, 0, 0]
-        for ch in chars {
-            switch ch {
-            case "(": excess[0] -= 1
-            case ")": excess[0] += 1
-            case "[": excess[1] -= 1
-            case "]": excess[1] += 1
-            case "{": excess[2] -= 1
-            case "}": excess[2] += 1
-            default: break
-            }
-        }
-        return excess
-    }
-
-    private static func shouldTrimCloser(_ ch: Character, precededByQuote: Bool, excess: inout [Int]) -> Bool {
-        let slot =
-            switch ch {
-            case ")": 0
-            case "]": 1
-            case "}": 2
-            default: -1
-            }
-        if slot >= 0 {
-            guard excess[slot] > 0 else { return false }
-            excess[slot] -= 1
-            return true
-        }
-        return ch == "." || ch == ";" || ch == "," || (ch == "'" && precededByQuote)
     }
 
     private static let bareFilenameExtensions =

@@ -121,7 +121,7 @@ extension CoreTelemetryService {
             return popURLPathGroup(ch, openGroups: &openGroups, openBraces: &openBraces) ? pos + 1 : -1
         }
         if openBraces > 0 && !isURLBraceTemplateChar(ch) { return -1 }
-        if !openGroups.isEmpty && ch == 0x3A { return -1 }
+        if !openGroups.isEmpty && (ch == 0x3A || ch == 0x27) { return -1 }
         return pos + 1
     }
 

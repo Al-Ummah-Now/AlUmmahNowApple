@@ -98,6 +98,36 @@ extension CoreTelemetryService {
         let endPos: Int
     }
 
+    static func advanceSingleQuoteState(
+        _ nsText: NSString, from start: Int, to end: Int, inSingleQuote: Bool
+    ) -> Bool {
+        var open = inSingleQuote
+        var idx = start
+        let len = nsText.length
+        while idx < end {
+            let ch = nsText.character(at: idx)
+            if ch == 0x0D || ch == 0x0A {
+                open = false
+            } else if ch == 0x5C && open && idx + 1 < end {
+                let next = nsText.character(at: idx + 1)
+                if next != 0x0D && next != 0x0A {
+                    idx += 2
+                    continue
+                }
+            } else if ch == 0x27 && !isContractionApostrophe(nsText, at: idx, len: len) {
+                open.toggle()
+            }
+            idx += 1
+        }
+        return open
+    }
+
+    private static func isContractionApostrophe(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+        pos > 0 && pos + 1 < len
+            && Self.isASCIIAlphaNum(nsText.character(at: pos - 1))
+            && Self.isASCIIAlphaNum(nsText.character(at: pos + 1))
+    }
+
     struct ContinuationLimits {
         var failedContMax = 0
         var unclosedDoubleQuoteEnd = 0
@@ -174,7 +204,7 @@ extension CoreTelemetryService {
         } else if state.quoteChar == 0x27 && pathEnd > limits.unclosedSingleQuoteEnd {
             limits.unclosedSingleQuoteEnd = pathEnd
         }
-        if !state.sawInnerScheme && pathEnd > limits.failedContMax { limits.failedContMax = pathEnd }
+        if !state.sawInnerQF && pathEnd > limits.failedContMax { limits.failedContMax = pathEnd }
     }
 
     private static func extendURLContinuationQuery(
@@ -255,13 +285,74 @@ extension CoreTelemetryService {
         return nsText.substring(with: NSRange(location: start, length: end - start))
     }
 
+    static func trimTrailingURLDelimiters(
+        _ raw: String, nsText: NSString, matchStart: Int, inSingleQuote: Bool
+    ) -> (String, String) {
+        var url = raw
+        var tail = ""
+        if url.hasSuffix(";") {
+            url.removeLast()
+            tail = ";"
+        }
+        let quoted = inSingleQuote || (matchStart > 0 && nsText.character(at: matchStart - 1) == 0x27)
+        if quoted && url.hasSuffix("'") {
+            url.removeLast()
+            tail = "'" + tail
+        }
+        return (url, tail)
+    }
+
+    static func trimQueryOrFragmentDelimiters(
+        _ qf: String, nsText: NSString, matchStart: Int, inSingleQuote: Bool = false
+    ) -> (String, String) {
+        let chars = Array(qf)
+        var excess = Self.countExcessClosers(chars)
+        var end = chars.count
+        let precededByQuote = inSingleQuote || (matchStart > 0 && nsText.character(at: matchStart - 1) == 0x27)
+        while end > 1 && Self.shouldTrimCloser(chars[end - 1], precededByQuote: precededByQuote, excess: &excess) {
+            end -= 1
+        }
+        return (String(chars[..<end]), String(chars[end...]))
+    }
+
+    private static func countExcessClosers(_ chars: [Character]) -> [Int] {
+        var excess = [0, 0, 0]
+        for ch in chars {
+            switch ch {
+            case "(": excess[0] -= 1
+            case ")": excess[0] += 1
+            case "[": excess[1] -= 1
+            case "]": excess[1] += 1
+            case "{": excess[2] -= 1
+            case "}": excess[2] += 1
+            default: break
+            }
+        }
+        return excess
+    }
+
+    private static func shouldTrimCloser(_ ch: Character, precededByQuote: Bool, excess: inout [Int]) -> Bool {
+        let slot =
+            switch ch {
+            case ")": 0
+            case "]": 1
+            case "}": 2
+            default: -1
+            }
+        if slot >= 0 {
+            guard excess[slot] > 0 else { return false }
+            excess[slot] -= 1
+            return true
+        }
+        return ch == "." || ch == ";" || ch == "," || (ch == "'" && precededByQuote)
+    }
+
     private static func isURLContinuationStarter(_ ch: unichar) -> Bool {
         ch == 0x2C || ch == 0x28 || ch == 0x5B || ch == 0x29 || ch == 0x5D || ch == 0x7B || ch == 0x7D
     }
 
-    private static func isURLContinuationSeparator(_ ch: unichar) -> Bool {
-        ch == 0x2C || ch == 0x3B || ch == 0x28 || ch == 0x5B || ch == 0x29 || ch == 0x5D || ch == 0x7B || ch == 0x7D
-            || ch == 0x27
+    private static func isURLSchemePrefixBoundary(_ ch: unichar) -> Bool {
+        !VaultLineTracker.isURLSchemeChar(ch) && ch != 0x2F && ch != 0x5C
     }
 
     private static func isURLContinuationStopChar(_ ch: unichar) -> Bool {
@@ -284,7 +375,7 @@ extension CoreTelemetryService {
         let stopAtSchemes: Bool
         var groupStack: [unichar] = []
         var quoteChar: unichar = 0
-        var sawInnerScheme = false
+        var sawInnerQF = false
     }
 
     private static func scanURLContinuation(
@@ -308,9 +399,7 @@ extension CoreTelemetryService {
     ) -> Int {
         let ch = nsText.character(at: pos)
         if ch == 0x0D || ch == 0x0A { return -1 }
-        if ch == 0x3A && pos + 2 < len && nsText.character(at: pos + 1) == 0x2F && nsText.character(at: pos + 2) == 0x2F {
-            state.sawInnerScheme = true
-        }
+        if ch == 0x3F || ch == 0x23 { state.sawInnerQF = true }
         if ch == 0x5C && pos + 1 < len {
             let escaped = nsText.character(at: pos + 1)
             if escaped != 0x0D && escaped != 0x0A { return pos + 2 }
@@ -327,7 +416,7 @@ extension CoreTelemetryService {
             (pos == 0 || !Self.isASCIIAlphaNum(nsText.character(at: pos - 1)))
             && Self.isWindowsDriveAt(nsText, at: pos, len: len)
         if VaultLineTracker.isFileScheme(nsText, at: pos) || isDrive { return -1 }
-        if state.stopAtSchemes && pos > start && isURLContinuationSeparator(nsText.character(at: pos - 1))
+        if state.stopAtSchemes && pos > start && isURLSchemePrefixBoundary(nsText.character(at: pos - 1))
             && isURLScheme(nsText, at: pos, len: len)
         {
             return -1
