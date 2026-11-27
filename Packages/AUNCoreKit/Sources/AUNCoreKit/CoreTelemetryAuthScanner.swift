@@ -30,6 +30,7 @@ enum CoreTelemetryAuthScanner {
         var arrayCommaOpen: [Int: Int] = [:]
         var containerAuthState: [Int: Int] = [:]
         var escapedContainerEnd: [Int: Int] = [:]
+        var allowTrailingProse = false
         var failedContainerBack = -1
 
         mutating func appendRedacted(_ nsText: NSString, start: Int, end: Int, replacement: String) {
@@ -77,6 +78,7 @@ enum CoreTelemetryAuthScanner {
 
     static func scanAuthHeaders(_ nsText: NSString, maxDepth: Int, state: inout AuthScanState) {
         let len = nsText.length
+        state.allowTrailingProse = maxDepth < 4
         var idx = 0
         while idx < len {
             guard let keyMatch = matchAuthHeaderKey(nsText, at: idx, len: len, state: &state) else {
@@ -171,27 +173,27 @@ enum CoreTelemetryAuthScanner {
         let len = nsText.length
         var core: [unichar] = []
         core.reserveCapacity(20)
-        var sawTrailingPad = false
+        var padState = (trailing: false, any: false)
         var sawEscape = false
         var hasInvalidJsonEscape = false
         var idx = pos + 1
         while idx < len {
             let ch = nsText.character(at: idx)
-            if ch < 0x20 { return nil }
+            if ch < 0x20 && ch != 0x09 { return nil }
             if ch == quote {
                 return finishQuotedAuthKey(
                     nsText, keyRange: pos..<(idx + 1), decoded: core,
-                    flags: (quote == 0x22, !hasInvalidJsonEscape, sawEscape), state: &state
+                    flags: (quote == 0x22, !hasInvalidJsonEscape, sawEscape && !padState.any), state: &state
                 )
             }
             if ch == 0x5C {
                 sawEscape = true
                 guard let (unit, step, validJson) = decodeKeyEscape(nsText, at: idx, len: len) else { return nil }
                 if !validJson { hasInvalidJsonEscape = true }
-                guard appendTrimmedKeyUnit(unit, core: &core, sawTrailingPad: &sawTrailingPad) else { return nil }
+                guard appendTrimmedKeyUnit(unit, core: &core, padState: &padState) else { return nil }
                 idx += step
             } else {
-                guard appendTrimmedKeyUnit(ch, core: &core, sawTrailingPad: &sawTrailingPad) else { return nil }
+                guard appendTrimmedKeyUnit(ch, core: &core, padState: &padState) else { return nil }
                 idx += 1
             }
         }

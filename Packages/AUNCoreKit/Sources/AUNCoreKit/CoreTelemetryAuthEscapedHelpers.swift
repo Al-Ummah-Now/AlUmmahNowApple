@@ -18,12 +18,15 @@ extension CoreTelemetryAuthScanner {
         }
     }
 
-    static func appendTrimmedKeyUnit(_ unit: unichar, core: inout [unichar], sawTrailingPad: inout Bool) -> Bool {
+    static func appendTrimmedKeyUnit(
+        _ unit: unichar, core: inout [unichar], padState: inout (trailing: Bool, any: Bool)
+    ) -> Bool {
         if unit == 0x20 || unit == 0x09 {
-            if !core.isEmpty { sawTrailingPad = true }
+            padState.any = true
+            if !core.isEmpty { padState.trailing = true }
             return true
         }
-        if sawTrailingPad || core.count >= 19 { return false }
+        if padState.trailing || core.count >= 19 { return false }
         core.append(unit)
         return true
     }
@@ -43,34 +46,80 @@ extension CoreTelemetryAuthScanner {
         _ nsText: NSString, at pos: Int, len: Int, state: inout AuthScanState
     ) -> Int? {
         guard let keyEnd = matchEscapedQuotedAuthKeyEnd(nsText, at: pos, len: len) else { return nil }
-        let prevDelim = skipJsonWhitespaceBackward(nsText, from: pos - 1)
+        let prevDelim = skipEscapedWhitespaceBackward(nsText, from: pos - 1)
         let prevCh = prevDelim >= 0 ? nsText.character(at: prevDelim) : 0
         let isEscapedJsonCtx = prevCh == 0x7B || prevCh == 0x2C || prevCh == 0x5B
-        let sep = skipAuthWhitespace(nsText, from: keyEnd, len: len, allowNewlines: isEscapedJsonCtx)
+        let sep = skipEscapedAuthWhitespace(nsText, from: keyEnd, len: len, allowNewlines: isEscapedJsonCtx)
         guard let (sepLen, isTuple) = matchEscapedAuthSeparator(nsText, prevCh: prevCh, sep: sep, len: len) else {
             return nil
         }
-        let valStart = skipAuthWhitespace(nsText, from: sep + sepLen, len: len, allowNewlines: isEscapedJsonCtx)
+        let valStart = skipEscapedAuthWhitespace(nsText, from: sep + sepLen, len: len, allowNewlines: isEscapedJsonCtx)
         guard valStart < len && !isNewline(nsText.character(at: valStart)) else { return nil }
         return redactEscapedAuthHeaderValue(nsText, valStart: valStart, len: len, isTuple: isTuple, state: &state)
+    }
+
+    private static func isEscapedWhitespaceToken(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+        guard pos + 1 < len && nsText.character(at: pos) == 0x5C else { return false }
+        let next = nsText.character(at: pos + 1)
+        return next == 0x74 || next == 0x6E || next == 0x72
+    }
+
+    private static func skipEscapedAuthWhitespace(
+        _ nsText: NSString, from start: Int, len: Int, allowNewlines: Bool
+    ) -> Int {
+        var pos = start
+        while pos < len {
+            let ch = nsText.character(at: pos)
+            if isHorizSpace(ch) || (allowNewlines && isNewline(ch)) {
+                pos += 1
+            } else if ch == 0x5C && pos + 1 < len {
+                let next = nsText.character(at: pos + 1)
+                if next == 0x74 || (allowNewlines && (next == 0x6E || next == 0x72)) {
+                    pos += 2
+                } else {
+                    break
+                }
+            } else {
+                break
+            }
+        }
+        return pos
+    }
+
+    private static func skipEscapedWhitespaceBackward(_ nsText: NSString, from start: Int) -> Int {
+        var pos = start
+        while pos >= 0 {
+            let ch = nsText.character(at: pos)
+            if isHorizSpace(ch) || isNewline(ch) {
+                pos -= 1
+            } else if pos >= 1 && nsText.character(at: pos - 1) == 0x5C
+                && (ch == 0x74 || ch == 0x6E || ch == 0x72)
+                && !CoreTelemetryService.VaultLineTracker.isPrecededByOddBackslashes(nsText, at: pos - 1, minPos: 0)
+            {
+                pos -= 2
+            } else {
+                break
+            }
+        }
+        return pos
     }
 
     private static func matchEscapedQuotedAuthKeyEnd(_ nsText: NSString, at pos: Int, len: Int) -> Int? {
         var core: [unichar] = []
         core.reserveCapacity(20)
-        var sawTrailingPad = false
+        var padState = (trailing: false, any: false)
         var idx = pos + 2
         while idx < len {
             let ch = nsText.character(at: idx)
-            if ch < 0x20 || ch == 0x22 { return nil }
+            if (ch < 0x20 && ch != 0x09) || ch == 0x22 { return nil }
             if ch == 0x5C && idx + 1 < len {
                 let next = nsText.character(at: idx + 1)
                 if next == 0x22 { return matchCanonicalAuthHeaderName(core) != nil ? idx + 2 : nil }
                 let (unit, step) = decodeEscapedKeyUnit(nsText, at: idx, len: len)
-                guard appendTrimmedKeyUnit(unit, core: &core, sawTrailingPad: &sawTrailingPad) else { return nil }
+                guard appendTrimmedKeyUnit(unit, core: &core, padState: &padState) else { return nil }
                 idx += step
             } else {
-                guard appendTrimmedKeyUnit(ch, core: &core, sawTrailingPad: &sawTrailingPad) else { return nil }
+                guard appendTrimmedKeyUnit(ch, core: &core, padState: &padState) else { return nil }
                 idx += 1
             }
         }
@@ -131,7 +180,7 @@ extension CoreTelemetryAuthScanner {
     }
 
     private static func isTupleClosedAt(_ nsText: NSString, afterPos: Int, len: Int) -> Bool {
-        let after = skipAuthWhitespace(nsText, from: afterPos, len: len, allowNewlines: true)
+        let after = skipEscapedAuthWhitespace(nsText, from: afterPos, len: len, allowNewlines: true)
         return after < len && nsText.character(at: after) == 0x5D
     }
 
@@ -154,7 +203,11 @@ extension CoreTelemetryAuthScanner {
         _ nsText: NSString, valStart: Int, len: Int, isTuple: Bool, state: inout AuthScanState
     ) -> Int? {
         var tokEnd = valStart
-        while tokEnd < len && !isEscapedScalarStop(nsText.character(at: tokEnd)) { tokEnd += 1 }
+        while tokEnd < len && !isEscapedScalarStop(nsText.character(at: tokEnd))
+            && !isEscapedWhitespaceToken(nsText, at: tokEnd, len: len)
+        {
+            tokEnd += 1
+        }
         guard tokEnd > valStart else { return nil }
         let token = nsText.substring(with: NSRange(location: valStart, length: tokEnd - valStart))
         let isNull = token == "null"
@@ -168,7 +221,7 @@ extension CoreTelemetryAuthScanner {
 
     private static func isValidEscapedPrimitiveEnd(_ nsText: NSString, tokEnd: Int, len: Int, isTuple: Bool) -> Bool {
         if isTuple { return isTupleClosedAt(nsText, afterPos: tokEnd, len: len) }
-        let after = skipAuthWhitespace(nsText, from: tokEnd, len: len, allowNewlines: true)
+        let after = skipEscapedAuthWhitespace(nsText, from: tokEnd, len: len, allowNewlines: true)
         guard after < len else { return true }
         let aCh = nsText.character(at: after)
         return aCh == 0x2C || aCh == 0x7D || aCh == 0x5D || isNewline(aCh)
@@ -195,8 +248,6 @@ extension CoreTelemetryAuthScanner {
         return nil
     }
 
-    /// Returns `Int.min` on failure, `>= 0` when a container closed or jumped via cache,
-    /// or `-(nextPos + 2)` to advance to `nextPos`.
     private static func stepEscapedContainer(
         _ nsText: NSString,
         at pos: Int,
@@ -256,6 +307,8 @@ extension CoreTelemetryAuthScanner {
             if ch == 0x22 { return pos }
             if isHorizSpace(ch) || isNewline(ch) || ch == 0x2C {
                 pos += 1
+            } else if isEscapedWhitespaceToken(nsText, at: pos, len: len) {
+                pos += 2
             } else if ch == 0x5B {
                 depth += 1
                 pos += 1
@@ -290,6 +343,7 @@ extension CoreTelemetryAuthScanner {
         var elemEnd = pos
         while elemEnd < len && !isEscapedScalarStop(nsText.character(at: elemEnd))
             && nsText.character(at: elemEnd) != 0x5B
+            && !isEscapedWhitespaceToken(nsText, at: elemEnd, len: len)
         {
             elemEnd += 1
         }

@@ -126,8 +126,12 @@ struct CoreTelemetryQuotedEscapedTests {
                 "{\"m\":\"literal=\\\"file:///tmp/private.mov\\\"tail\",\"next\":1}",
                 "{\"m\":\"literal=\\\"[redacted-path]\\\"tail\",\"next\":1}"
             ),
-            ("{\"Cookie\\t\":\"opaqueSecret123\"}", "{\"Cookie\":\"[redacted]\"}"),
-            ("[[\"Cookie\\t\",\"opaqueSecret123\"]]", "[[\"Cookie\",\"[redacted]\"]]"),
+            ("{\"Cookie\\t\":\"opaqueSecret123\"}", "{\"Cookie\\t\":\"[redacted]\"}"),
+            ("[[\"Cookie\\t\",\"opaqueSecret123\"]]", "[[\"Cookie\\t\",\"[redacted]\"]]"),
+            (
+                "{\"\\tCookie\":\"opaqueSecret123\",\"Cookie\":\"otherSecret\"}",
+                "{\"\\tCookie\":\"[redacted]\",\"Cookie\":\"[redacted]\"}"
+            ),
             ("{\\\"Authorization\\\":[123456789]}", "{\\\"Authorization\\\":[\\\"[redacted]\\\"]}"),
             ("{\\\"Authorization\\\":123456789,\\\"next\\\":1}", "{\\\"Authorization\\\":\\\"[redacted]\\\",\\\"next\\\":1}"),
             (
@@ -159,10 +163,18 @@ struct CoreTelemetryQuotedEscapedTests {
                 "{\"m\":\"before {\\\"Cookie\\\":\\\"opaqueSecret123\\\"} after\",\"next\":1}",
                 "{\"m\":\"before {\\\"Cookie\\\":\\\"[redacted]\\\"} after\",\"next\":1}"
             ),
+            (
+                "{\"m\":\"{\\\"Authorization\\\":\\\"opaqueSecret123\\\"} after\",\"next\":1}",
+                "{\"m\":\"{\\\"Authorization\\\":\\\"[redacted]\\\"} after\",\"next\":1}"
+            ),
+            ("{\\\"\tCookie\t\\\":\\\"opaqueSecret123\\\"}", "{\\\"\tCookie\t\\\":\\\"[redacted]\\\"}"),
+            ("[[\\\"Authorization\\\",\\\"opaqueSecret123\\\"\\n]]", "[[\\\"Authorization\\\",\\\"[redacted]\\\"\\n]]"),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"\tCookie\t\":\"opaqueSecret123\"}").contains("opaqueSecret123") == false)
         let malformedEscaped = "{\\\"Authorization\\\":[" + String(repeating: "{,", count: 2000) + "]"
         #expect(CoreTelemetryService.sanitizeLocalPaths(malformedEscaped).hasPrefix("{\\\"Authorization\\\":[\\\"[redacted]\\\""))
     }

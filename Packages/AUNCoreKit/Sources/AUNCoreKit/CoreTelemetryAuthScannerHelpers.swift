@@ -193,7 +193,7 @@ extension CoreTelemetryAuthScanner {
                 continue
             }
             let hasPrefix = hasSameLineNonWhitespaceBefore(nsText, pos: curOpen)
-            authState = (reachesLineOrTextEnd(nsText, from: endPos) || hasPrefix) ? 0 : endPos
+            authState = (state.allowTrailingProse || reachesLineOrTextEnd(nsText, from: endPos) || hasPrefix) ? 0 : endPos
             break
         }
         for pos in visited { state.containerAuthState[pos] = authState }
