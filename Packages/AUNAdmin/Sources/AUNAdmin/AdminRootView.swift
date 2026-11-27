@@ -378,6 +378,12 @@ struct AccountMenu: View {
             Divider()
             Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
                 .accessibilityIdentifier("admin-diagnostics")
+            if !settings.telemetryEnabled && session.services.telemetry.lastPurgeFailed {
+                Button(l10n("common.retry")) {
+                    if !session.services.telemetry.setConsent(.off) { showingPurgeWarning = true }
+                }
+                .accessibilityIdentifier("admin-diagnostics-retry-purge")
+            }
             Divider()
             Button(l10n("admin.signOut"), role: .destructive) { confirmSignOut = true }
                 .accessibilityIdentifier("sign-out")

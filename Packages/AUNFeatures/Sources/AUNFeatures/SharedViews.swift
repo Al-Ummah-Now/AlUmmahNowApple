@@ -120,6 +120,12 @@ struct SettingsMenu: View {
                 Label(l10n("diagnostics.toggle"), systemImage: "waveform.path.ecg")
             }
             .accessibilityIdentifier("settings-diagnostics")
+            if !settings.telemetryEnabled && telemetry.lastPurgeFailed {
+                Button(l10n("common.retry")) {
+                    if !telemetry.setConsent(.off) { showingPurgeWarning = true }
+                }
+                .accessibilityIdentifier("settings-diagnostics-retry-purge")
+            }
             #if os(iOS) || os(macOS)
                 if let onOpenBlockedList {
                     Divider()

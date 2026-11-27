@@ -97,7 +97,9 @@ extension CoreTelemetryService {
         var cursor = 0
         for match in matches {
             let raw = nsText.substring(with: match.range)
-            if raw.lowercased().hasPrefix("file://") { continue }
+            if raw.lowercased().hasPrefix("file://") || Self.isInsideFileURIToken(nsText, matchStart: match.range.location) {
+                continue
+            }
             let ipv6Range = match.range(at: 2)
             if ipv6Range.location != NSNotFound && !Self.isValidIPv6(nsText.substring(with: ipv6Range)) {
                 continue
@@ -140,27 +142,59 @@ extension CoreTelemetryService {
         return (url, tail)
     }
 
+    private static func isInsideFileURIToken(_ nsText: NSString, matchStart: Int) -> Bool {
+        var tokenStart = matchStart
+        while tokenStart > 0 {
+            let scalar = nsText.character(at: tokenStart - 1)
+            if scalar == 0x20 || scalar == 0x09 || scalar == 0x0A || scalar == 0x0D { break }
+            tokenStart -= 1
+        }
+        guard tokenStart < matchStart else { return false }
+        let prefix = nsText.substring(with: NSRange(location: tokenStart, length: matchStart - tokenStart))
+        return prefix.range(of: "file://", options: [.caseInsensitive]) != nil
+    }
+
     private static func trimQueryOrFragmentDelimiters(_ qf: String, nsText: NSString, matchStart: Int) -> (String, String) {
-        var value = qf
-        var tail = ""
-        while value.count > 1, let last = value.last {
-            if last == ";" || last == "," {
-                value.removeLast()
-                tail = "\(last)\(tail)"
-            } else if last == "'" && matchStart > 0 && nsText.character(at: matchStart - 1) == 0x27 {
-                value.removeLast()
-                tail = "'\(tail)"
-            } else if last == ")" && value.filter({ $0 == ")" }).count > value.filter({ $0 == "(" }).count {
-                value.removeLast()
-                tail = ")\(tail)"
-            } else if last == "]" && value.filter({ $0 == "]" }).count > value.filter({ $0 == "[" }).count {
-                value.removeLast()
-                tail = "]\(tail)"
-            } else {
-                break
+        let chars = Array(qf)
+        var excess = Self.countExcessClosers(chars)
+        var end = chars.count
+        let precededByQuote = matchStart > 0 && nsText.character(at: matchStart - 1) == 0x27
+        while end > 1 && Self.shouldTrimCloser(chars[end - 1], precededByQuote: precededByQuote, excess: &excess) {
+            end -= 1
+        }
+        return (String(chars[..<end]), String(chars[end...]))
+    }
+
+    private static func countExcessClosers(_ chars: [Character]) -> [Int] {
+        var excess = [0, 0, 0]
+        for ch in chars {
+            switch ch {
+            case "(": excess[0] -= 1
+            case ")": excess[0] += 1
+            case "[": excess[1] -= 1
+            case "]": excess[1] += 1
+            case "{": excess[2] -= 1
+            case "}": excess[2] += 1
+            default: break
             }
         }
-        return (value, tail)
+        return excess
+    }
+
+    private static func shouldTrimCloser(_ ch: Character, precededByQuote: Bool, excess: inout [Int]) -> Bool {
+        let slot =
+            switch ch {
+            case ")": 0
+            case "]": 1
+            case "}": 2
+            default: -1
+            }
+        if slot >= 0 {
+            guard excess[slot] > 0 else { return false }
+            excess[slot] -= 1
+            return true
+        }
+        return ch == ";" || ch == "," || (ch == "'" && precededByQuote)
     }
 
     private static func isValidIPv6(_ host: String) -> Bool {
@@ -174,7 +208,7 @@ extension CoreTelemetryService {
             + #"(?:[A-Za-z0-9._~!$&'*+;=-]|%[0-9A-Fa-f]{2})+)(?::\d+)?"#
             + #"(?:/(?:(?!(?:file://|[A-Za-z]:[\\/]))(?:[^\s"<>\\{},()\[\]?#\r\n]|"#
             + #"\([^\s"<>\\{},()\[\]/:\\?#]+\)|\[[^\s"<>\\{},()\[\]/:\\?#]+\]))*)?)"#
-            + #"([?#][^\s"<>\\{}\r\n]*)?(?=$|[\s"'<>\\{},;()\[\]]|file://|[A-Za-z]:[\\/])"#,
+            + #"([?#][^\s"<>\r\n]*)?(?=$|[\s"'<>\\{},;()\[\]]|file://|[A-Za-z]:[\\/])"#,
         options: [.caseInsensitive]
     )
 
@@ -236,7 +270,7 @@ extension CoreTelemetryService {
 
     private static let postRestoreRedactionRules: [(regex: NSRegularExpression, template: String)] = {
         let specs: [(String, String)] = [
-            (#"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#, "[redacted-email]"),
+            (#"(?:[A-Za-z0-9._+-]|%(?!40)[0-9A-Fa-f]{2})+(?:@|%40)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#, "[redacted-email]"),
             (#"\bBearer\s+\S+"#, "Bearer [redacted]"),
         ]
         return specs.compactMap { pattern, template in

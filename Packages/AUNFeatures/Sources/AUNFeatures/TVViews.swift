@@ -175,6 +175,12 @@
                     }
                 }
                 .accessibilityIdentifier("diagnostics-toggle")
+                if !settings.telemetryEnabled && telemetry.lastPurgeFailed {
+                    Button(l10n("common.retry")) {
+                        if !telemetry.setConsent(.off) { showingPurgeWarning = true }
+                    }
+                    .accessibilityIdentifier("diagnostics-retry-purge")
+                }
             }
             .padding(.bottom, 40)
             .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
