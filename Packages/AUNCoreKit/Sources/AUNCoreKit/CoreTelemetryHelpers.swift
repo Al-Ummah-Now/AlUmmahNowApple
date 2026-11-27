@@ -423,6 +423,8 @@ extension CoreTelemetryService {
     )
 
     private static let preKeywordPathRules: [(regex: NSRegularExpression, template: String)] = {
+        let absTail = #"[^\r\n\u001E\s](?:[^\r\n\u001E\u000B\u000C\u0085\u2028\u2029]*[^\r\n\u001E\s])?"#
+        let relTail = #"[^\r\n\u001E\u001F\s](?:[^\r\n\u001E\u001F\u000B\u000C\u0085\u2028\u2029]*[^\r\n\u001E\u001F\s])?"#
         let specs: [(String, String)] = [
             (#"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n\u001E]+(\))"#, "$1[redacted-path]$2"),
             (
@@ -430,22 +432,17 @@ extension CoreTelemetryService {
                     + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/[^()\r\n\u001E]+(\))"#,
                 "$1[redacted-path]$2"
             ),
-            (#"(?:[A-Za-z]:[\\/]|\\\\)[^\S\r\n]*[^\r\n\u001E\s]+(?:[^\S\r\n]+[^\r\n\u001E\s]+)*"#, "[redacted-path]"),
-            (
-                #"(^|[\s(\[{"'=,:;\u001F])[^\s\\/"'<>()\[{:,;=\u001E\u001F]+\\"#
-                    + #"[^\r\n\u001E\u001F\s]+(?:[^\S\r\n]+[^\r\n\u001E\u001F\s]+)*"#,
-                "$1[redacted-path]"
-            ),
+            (#"(?:[A-Za-z]:[\\/]|\\\\)[^\S\r\n]*"# + absTail, "[redacted-path]"),
+            (#"(^|[\s(\[{"'=,:;\u001F])[^\s\\/"'<>()\[{:,;=\u001E\u001F]+\\"# + relTail, "$1[redacted-path]"),
             (#"["']/[ \t]+[^\r\n\u001E]+"#, "[redacted-path]"),
             (
-                #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|//+(?=[ \t]*[^\s/])|/(?=[ \t]*[^\s/]))"#
-                    + #"[^\S\r\n]*[^\r\n\u001E\s]+(?:[^\S\r\n]+[^\r\n\u001E\s]+)*"#,
+                #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|//+(?=[^\S\r\n]*[^\s/])|/(?=[^\S\r\n]*[^\s/]))[^\S\r\n]*"# + absTail,
                 "[redacted-path]"
             ),
             (
                 #"(^|[\s(\[{"'=,:;\u001F])(?!(?<!['"])(?:HTTP|TLS|SSL)/\d)"#
                     + #"(?!(?<!['"])\d+/\d+(?:$|[\s)\]},;:!?]|\.(?![A-Za-z0-9])))"#
-                    + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/[^\r\n\u001E\u001F\s]+(?:[^\S\r\n]+[^\r\n\u001E\u001F\s]+)*"#,
+                    + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/"# + relTail,
                 "$1[redacted-path]"
             ),
         ]

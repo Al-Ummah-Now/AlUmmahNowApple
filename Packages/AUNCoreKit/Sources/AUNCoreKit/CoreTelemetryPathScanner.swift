@@ -46,16 +46,20 @@ extension CoreTelemetryService {
         private var escapedBackslash = false
         private var tokenStart = -1
         private var tokenEnd = -1
-        private var tokenHasPathSep = false
+        private var tokenFirstSlash = -1
+        private var tokenSlashCount = 0
+        private var tokenHasBackslash = false
+        private var tokenAllDigitsBeforeSlash = true
+        private var tokenHasDigitAfterSlash = false
+        private var tokenAllDigitsAfterSlash = true
+        private var tokenSawPunctAfterSlash = false
         private var inWrapperRun = false
         private var wsBeforeRun = false
 
         mutating func isEmbeddedInPath(_ nsText: NSString, matchStart: Int) -> Bool {
             advance(nsText, to: matchStart)
-            let curTokenIsPath =
-                tokenHasPathSep
-                && !Self.isNonPathSlashToken(nsText, start: tokenStart, end: tokenEnd, insideQuote: openQuote != 0)
-            return pathQuote != 0 || curTokenIsPath || (hasPathOnLine && (!wsBeforeRun || inWrapperRun))
+            if pathQuote != 0 || (hasPathOnLine && (!wsBeforeRun || inWrapperRun)) { return true }
+            return isCurrentTokenPath(nsText)
         }
 
         mutating func onVaultedURL(matchEnd: Int) {
@@ -63,14 +67,24 @@ extension CoreTelemetryService {
             resetLineState()
         }
 
+        private mutating func resetTokenState() {
+            tokenStart = -1
+            tokenEnd = -1
+            tokenFirstSlash = -1
+            tokenSlashCount = 0
+            tokenHasBackslash = false
+            tokenAllDigitsBeforeSlash = true
+            tokenHasDigitAfterSlash = false
+            tokenAllDigitsAfterSlash = true
+            tokenSawPunctAfterSlash = false
+        }
+
         private mutating func resetLineState() {
             hasPathOnLine = false
             openQuote = 0
             pathQuote = 0
             escapedBackslash = false
-            tokenStart = -1
-            tokenEnd = -1
-            tokenHasPathSep = false
+            resetTokenState()
             inWrapperRun = false
             wsBeforeRun = false
         }
@@ -105,9 +119,7 @@ extension CoreTelemetryService {
                 resetLineState()
             } else {
                 openQuote = 0
-                tokenStart = -1
-                tokenEnd = -1
-                tokenHasPathSep = false
+                resetTokenState()
                 inWrapperRun = false
                 wsBeforeRun = false
                 escapedBackslash = false
@@ -116,9 +128,7 @@ extension CoreTelemetryService {
         }
 
         private mutating func promoteTokenPath(_ nsText: NSString) {
-            if tokenHasPathSep
-                && !Self.isNonPathSlashToken(nsText, start: tokenStart, end: tokenEnd, insideQuote: openQuote != 0)
-            {
+            if isCurrentTokenPath(nsText) {
                 hasPathOnLine = true
                 if pathQuote == 0 && openQuote != 0 { pathQuote = openQuote }
             }
@@ -128,10 +138,8 @@ extension CoreTelemetryService {
             if Self.isWhitespace(ch) {
                 if !inWrapperRun {
                     promoteTokenPath(nsText)
-                    tokenStart = -1
-                    tokenEnd = -1
+                    resetTokenState()
                     wsBeforeRun = true
-                    tokenHasPathSep = false
                 }
             } else if Self.isOpeningWrapper(ch) {
                 if !inWrapperRun { promoteTokenPath(nsText) }
@@ -141,14 +149,58 @@ extension CoreTelemetryService {
                 inWrapperRun = true
             } else {
                 if tokenStart < 0 || inWrapperRun {
+                    resetTokenState()
                     tokenStart = cursor
-                    tokenHasPathSep = false
                 }
                 tokenEnd = cursor + 1
-                if Self.isPathSep(ch) { tokenHasPathSep = true }
+                trackTokenChar(ch)
                 inWrapperRun = false
                 wsBeforeRun = false
             }
+        }
+
+        private mutating func trackTokenChar(_ ch: unichar) {
+            if ch == 0x5C {
+                tokenHasBackslash = true
+            } else if ch == 0x2F {
+                if tokenSlashCount == 0 { tokenFirstSlash = cursor }
+                tokenSlashCount += 1
+            } else if tokenSlashCount == 0 {
+                if !CoreTelemetryService.isASCIIDigit(ch) { tokenAllDigitsBeforeSlash = false }
+            } else if tokenSlashCount == 1 {
+                trackAfterSlashChar(ch)
+            }
+        }
+
+        private mutating func trackAfterSlashChar(_ ch: unichar) {
+            if Self.isTrailingSentencePunct(ch) {
+                tokenSawPunctAfterSlash = true
+            } else if CoreTelemetryService.isASCIIDigit(ch) {
+                if tokenSawPunctAfterSlash {
+                    tokenAllDigitsAfterSlash = false
+                } else {
+                    tokenHasDigitAfterSlash = true
+                }
+            } else {
+                tokenAllDigitsAfterSlash = false
+            }
+        }
+
+        private func isCurrentTokenPath(_ nsText: NSString) -> Bool {
+            guard tokenSlashCount > 0 || tokenHasBackslash else { return false }
+            guard openQuote == 0 && tokenStart >= 0 && tokenSlashCount == 1 && !tokenHasBackslash else { return true }
+            let beforeLen = tokenFirstSlash - tokenStart
+            guard beforeLen > 0 && tokenFirstSlash + 1 < tokenEnd else { return true }
+            if tokenAllDigitsBeforeSlash && tokenHasDigitAfterSlash && tokenAllDigitsAfterSlash { return false }
+            return !Self.isProtocolPrefix(nsText, start: tokenStart, len: beforeLen, afterSlash: tokenFirstSlash + 1)
+        }
+
+        private static func isProtocolPrefix(_ nsText: NSString, start: Int, len: Int, afterSlash: Int) -> Bool {
+            guard (len == 3 || len == 4) && CoreTelemetryService.isASCIIDigit(nsText.character(at: afterSlash)) else {
+                return false
+            }
+            let prefix = nsText.substring(with: NSRange(location: start, length: len)).uppercased()
+            return prefix == "HTTP" || prefix == "TLS" || prefix == "SSL"
         }
 
         private static func canOpenQuote(_ nsText: NSString, at pos: Int, ch: unichar) -> Bool {
@@ -183,28 +235,6 @@ extension CoreTelemetryService {
             let isAsciiLetter = (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A)
             return isAsciiLetter && pos + 2 < nsText.length && nsText.character(at: pos + 1) == 0x3A
                 && isPathSep(nsText.character(at: pos + 2))
-        }
-
-        private static func isNonPathSlashToken(
-            _ nsText: NSString, start: Int, end: Int, insideQuote: Bool
-        ) -> Bool {
-            guard !insideQuote && start >= 0 && end > start else { return false }
-            var trimmedEnd = end
-            while trimmedEnd > start && isTrailingSentencePunct(nsText.character(at: trimmedEnd - 1)) {
-                trimmedEnd -= 1
-            }
-            guard trimmedEnd > start else { return false }
-            let token = nsText.substring(with: NSRange(location: start, length: trimmedEnd - start))
-            guard !token.contains("\\"), let slashIdx = token.firstIndex(of: "/") else { return false }
-            let before = token[..<slashIdx]
-            let after = token[token.index(after: slashIdx)...]
-            guard !before.isEmpty, !after.isEmpty, !after.contains("/") else { return false }
-            let upper = before.uppercased()
-            let isProto = upper == "HTTP" || upper == "TLS" || upper == "SSL"
-            if isProto, let firstDigit = after.first, firstDigit.isASCII && firstDigit.isNumber {
-                return true
-            }
-            return before.allSatisfy { $0.isASCII && $0.isNumber } && after.allSatisfy { $0.isASCII && $0.isNumber }
         }
 
         private static func isTrailingSentencePunct(_ ch: unichar) -> Bool {
@@ -323,7 +353,9 @@ extension CoreTelemetryService {
                     open = pos
                     candidateClose = -1
                 }
-            } else if open >= 0 {
+            } else if open >= 0
+                && (pos + 1 == range.upperBound || !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos + 1)))
+            {
                 if endsWithFilenameExt(nsText, start: open + 1, end: pos) {
                     if result.isEmpty { result.reserveCapacity(nsText.length) }
                     result += nsText.substring(with: NSRange(location: copied, length: open - copied))
@@ -331,7 +363,7 @@ extension CoreTelemetryService {
                     copied = pos + 1
                     open = -1
                     candidateClose = -1
-                } else if pos + 1 == range.upperBound || !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos + 1)) {
+                } else {
                     candidateClose = pos
                 }
             }
@@ -360,7 +392,7 @@ extension CoreTelemetryService {
         var rawEnd = schemeEnd
         var stoppedAtVault = false
         var escapedBackslash = false
-        var candidateClose = -1
+        var state = FileURIQuoteState()
         while rawEnd < totalLength {
             let ch = nsText.character(at: rawEnd)
             let atVault = ch == 0x1E && matchesPrefix(nsText, at: rawEnd, prefix: vaultPrefix)
@@ -369,16 +401,14 @@ extension CoreTelemetryService {
                 break
             }
             if quote != 0 && ch == quote && !escapedBackslash {
-                let nextClose = evaluateFileURIQuote(
-                    nsText, at: rawEnd, schemeEnd: schemeEnd, quote: quote, candidateClose: candidateClose
-                )
-                if nextClose >= 0 { candidateClose = nextClose }
-                if nextClose == -2 || quote == 0x22 { break }
+                if state.step(nsText, at: rawEnd, schemeEnd: schemeEnd, quote: quote) { break }
             }
             escapedBackslash = (ch == 0x5C) ? !escapedBackslash : false
             rawEnd += 1
         }
-        if candidateClose >= 0 { return (candidateClose, candidateClose) }
+        if state.candidateClose >= 0 && state.nestedQuotes == 0 {
+            return (state.candidateClose, state.candidateClose)
+        }
         guard stoppedAtVault else { return (rawEnd, rawEnd) }
         var trimmedEnd = rawEnd
         while trimmedEnd > schemeEnd {
@@ -392,15 +422,33 @@ extension CoreTelemetryService {
         return (rawEnd, trimmedEnd)
     }
 
-    private static func evaluateFileURIQuote(
-        _ nsText: NSString, at pos: Int, schemeEnd: Int, quote: unichar, candidateClose: Int
-    ) -> Int {
-        if quote == 0x22 { return pos }
-        if candidateClose >= 0 && pos > schemeEnd && !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos - 1)) {
-            return -2
+    private struct FileURIQuoteState {
+        var candidateClose = -1
+        var nestedQuotes = 0
+
+        mutating func step(_ nsText: NSString, at pos: Int, schemeEnd: Int, quote: unichar) -> Bool {
+            if quote == 0x22 {
+                candidateClose = pos
+                return true
+            }
+            let canClose = pos + 1 == nsText.length || !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos + 1))
+            let prevChar: unichar = pos > schemeEnd ? nsText.character(at: pos - 1) : 0
+            if canClose {
+                candidateClose = pos
+                if nestedQuotes > 0 {
+                    nestedQuotes -= 1
+                    return false
+                }
+                return prevChar != 0x73 && prevChar != 0x53
+            }
+            let prevIsWord = pos > schemeEnd && VaultLineTracker.isLetterOrDigit(prevChar)
+            guard !prevIsWord else { return false }
+            if candidateClose >= 0 && nestedQuotes == 0 && VaultLineTracker.isFileScheme(nsText, at: pos + 1) {
+                return true
+            }
+            nestedQuotes += 1
+            return false
         }
-        let canClose = pos + 1 == nsText.length || !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos + 1))
-        return canClose ? pos : -1
     }
 
     static func redactFileURIs(in text: String, vaultPrefix: String) -> String {

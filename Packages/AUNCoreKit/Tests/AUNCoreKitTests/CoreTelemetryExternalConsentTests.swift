@@ -170,14 +170,20 @@ struct CoreTelemetryExternalConsentTests {
             CoreTelemetryService.sanitizeLocalPaths("\"file:///tmp/Secret\" progress 1/2")
                 == "\"[redacted-path]\" progress 1/2"
         )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/a' progress 1/2 'file:///tmp/b'")
-                == "'[redacted-path]' progress 1/2 '[redacted-path]'"
-        )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("'Studio 2's Acquisition.qzx'")
-                == "[redacted-path]"
-        )
+        let extraCases: [(String, String)] = [
+            ("'file:///tmp/a' progress 1/2 'file:///tmp/b'", "'[redacted-path]' progress 1/2 '[redacted-path]'"),
+            ("'file:///tmp/a' progress users' 1/2", "'[redacted-path]' progress users' 1/2"),
+            ("'file:///tmp/docs' progress 1/2 'file:///tmp/b'", "'[redacted-path]' progress 1/2 '[redacted-path]'"),
+            ("'file:///tmp/Artists' Private 'Collection'", "'[redacted-path]'"),
+            ("'file:///tmp/Artists' Private 'Collection' Name'", "'[redacted-path]'"),
+            ("'file:///tmp/Artists' Private 'Collection", "'[redacted-path]"),
+            ("'file:///tmp/Studio 'Private' Project'", "'[redacted-path]'"),
+            ("'Private.qzx'2 Acquisition.qzx'", "[redacted-path]"),
+            ("'Studio 2's Acquisition.qzx'", "[redacted-path]"),
+        ]
+        for (input, expected) in extraCases {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
+        }
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("'Studio 2' Acquisition.qzx'")
                 == "[redacted-path]"
@@ -247,6 +253,10 @@ struct CoreTelemetryExternalConsentTests {
         #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedClosers) == repeatedClosers)
         let embeddedQueries = "/tmp;" + String(repeating: "https://host?x;", count: 5_000)
         #expect(CoreTelemetryService.sanitizeLocalPaths(embeddedQueries) == "[redacted-path]")
+        let longWindowsPath = "C:\\Private" + String(repeating: " folder", count: 20_000)
+        #expect(CoreTelemetryService.sanitizeLocalPaths(longWindowsPath) == "[redacted-path]")
+        let longFractionURLs = String(repeating: "1", count: 50_000) + "/" + String(repeating: "https://a;", count: 2_000)
+        #expect(CoreTelemetryService.sanitizeLocalPaths(longFractionURLs) == "[redacted-path]")
     }
 
     @Test("Startup live(defaults:) clears stored AUNTelemetryEnabled when initial consent activation fails")
