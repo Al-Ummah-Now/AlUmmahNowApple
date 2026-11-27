@@ -150,36 +150,19 @@ struct CoreTelemetryExternalConsentTests {
 
     @Test("Scrubs quoted file URIs, apostrophes, and backslash paths")
     func scrubsQuotedFileURIsAndBackslashPaths() {
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/O'Brien Secret'")
-                == "'[redacted-path]'"
-        )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/O'Brien Secret")
-                == "'[redacted-path]"
-        )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/James' Private Name'")
-                == "'[redacted-path]'"
-        )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/Project'2 Secret'")
-                == "'[redacted-path]'"
-        )
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("\"file:///tmp/Secret\" progress 1/2")
-                == "\"[redacted-path]\" progress 1/2"
-        )
         let extraCases: [(String, String)] = [
-            ("'file:///tmp/a' progress 1/2 'file:///tmp/b'", "'[redacted-path]' progress 1/2 '[redacted-path]'"),
-            ("'file:///tmp/a' progress 1/2", "'[redacted-path]' progress 1/2"),
-            ("'file:///tmp/a' progress users' 1/2", "'[redacted-path]' 1/2"),
-            ("'file:///tmp/O' Connor Private'", "'[redacted-path]'"),
-            ("'file:///tmp/docs' progress 1/2 'file:///tmp/b'", "'[redacted-path]' progress 1/2 '[redacted-path]'"),
-            ("'file:///tmp/Artists' Private 'Collection'", "'[redacted-path]'"),
-            ("'file:///tmp/Artists' Private 'Collection' Name'", "'[redacted-path]'"),
+            ("'file:///tmp/O'Brien Secret'", "'[redacted-path]"),
+            ("'file:///tmp/O'Brien Secret", "'[redacted-path]"),
+            ("'file:///tmp/James' Private Name'", "'[redacted-path]"),
+            ("'file:///tmp/Project'2 Secret'", "'[redacted-path]"),
+            ("\"file:///tmp/Secret\" progress 1/2", "\"[redacted-path]\" progress 1/2"),
+            ("'file:///tmp/O' Connor Private", "'[redacted-path]"),
+            ("'file:///tmp/O' Connor Private'", "'[redacted-path]"),
+            ("'file:///tmp/O'Connor' Private'Collection Plan", "'[redacted-path]"),
+            ("'file:///tmp/Artists' Private 'Collection'", "'[redacted-path]"),
             ("'file:///tmp/Artists' Private 'Collection", "'[redacted-path]"),
-            ("'file:///tmp/Studio 'Private' Project'", "'[redacted-path]'"),
+            ("'file:///tmp/O' Connor Private (https://private.example/Acquisition.mov)", "'[redacted-path]"),
+            ("status 'ready' (https://example.com/api)", "status 'ready' (https://example.com/api)"),
             ("/tmp/Private\u{2028}Acquisition Plan", "[redacted-path]"),
             ("'Private.qzx'2 Acquisition.qzx'", "[redacted-path]"),
             ("'Studio 2's Acquisition.qzx'", "[redacted-path]"),

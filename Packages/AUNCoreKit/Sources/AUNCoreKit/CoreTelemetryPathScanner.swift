@@ -115,6 +115,11 @@ extension CoreTelemetryService {
         private mutating func handleClosingQuote(_ nsText: NSString, ch: unichar) -> Bool {
             guard !escapedBackslash && openQuote != 0 && ch == openQuote else { return false }
             if Self.isInnerApostrophe(nsText, at: cursor, ch: ch) { return false }
+            if ch == 0x27 && hasPathOnLine {
+                // Single-quoted paths may contain unescaped apostrophes; fail closed on this line.
+                escapedBackslash = false
+                return true
+            }
             if pathQuote == ch || !hasPathOnLine {
                 resetLineState()
             } else {
@@ -199,8 +204,20 @@ extension CoreTelemetryService {
             guard (len == 3 || len == 4) && CoreTelemetryService.isASCIIDigit(nsText.character(at: afterSlash)) else {
                 return false
             }
-            let prefix = nsText.substring(with: NSRange(location: start, length: len)).uppercased()
-            return prefix == "HTTP" || prefix == "TLS" || prefix == "SSL"
+            if len == 4 {
+                return matchesASCIIUpper(nsText, at: start, target: [0x48, 0x54, 0x54, 0x50])
+            }
+            return matchesASCIIUpper(nsText, at: start, target: [0x54, 0x4C, 0x53])
+                || matchesASCIIUpper(nsText, at: start, target: [0x53, 0x53, 0x4C])
+        }
+
+        private static func matchesASCIIUpper(_ nsText: NSString, at start: Int, target: [unichar]) -> Bool {
+            for offset in 0..<target.count {
+                let raw = nsText.character(at: start + offset)
+                let upper = (raw >= 0x61 && raw <= 0x7A) ? (raw - 0x20) : raw
+                if upper != target[offset] { return false }
+            }
+            return true
         }
 
         private static func canOpenQuote(_ nsText: NSString, at pos: Int, ch: unichar) -> Bool {
@@ -385,14 +402,16 @@ extension CoreTelemetryService {
         return extLen >= 1 && extLen <= 16 && extStart > start && nsText.character(at: extStart - 1) == 0x2E
     }
 
+    /// Double-quoted file:// URIs terminate at the next unescaped '"'. Unquoted and single-quoted
+    /// file:// URIs fail closed to the next vaulted URL or line break so unescaped apostrophes
+    /// inside filenames (e.g. "O' Connor") can never leak suffixes.
     private static func fileURISpanEnd(
-        _ nsText: NSString, after schemeEnd: Int, quote: unichar, vaultPrefix: NSString
+        _ nsText: NSString, after schemeEnd: Int, isDoubleQuoted: Bool, vaultPrefix: NSString
     ) -> (rawEnd: Int, trimmedEnd: Int) {
         let totalLength = nsText.length
         var rawEnd = schemeEnd
         var stoppedAtVault = false
         var escapedBackslash = false
-        var state = FileURIQuoteState()
         while rawEnd < totalLength {
             let ch = nsText.character(at: rawEnd)
             let atVault = ch == 0x1E && matchesPrefix(nsText, at: rawEnd, prefix: vaultPrefix)
@@ -400,14 +419,11 @@ extension CoreTelemetryService {
                 stoppedAtVault = atVault
                 break
             }
-            if quote != 0 && ch == quote && !escapedBackslash {
-                if state.step(nsText, at: rawEnd, schemeEnd: schemeEnd, quote: quote) { break }
+            if isDoubleQuoted && ch == 0x22 && !escapedBackslash {
+                break
             }
             escapedBackslash = (ch == 0x5C) ? !escapedBackslash : false
             rawEnd += 1
-        }
-        if state.candidateClose >= 0 && !state.hasUnclosedOpenAfterClose {
-            return (state.candidateClose, state.candidateClose)
         }
         guard stoppedAtVault else { return (rawEnd, rawEnd) }
         var trimmedEnd = rawEnd
@@ -422,34 +438,6 @@ extension CoreTelemetryService {
         return (rawEnd, trimmedEnd)
     }
 
-    private struct FileURIQuoteState {
-        var candidateClose = -1
-        var hasUnclosedOpenAfterClose = false
-
-        mutating func step(_ nsText: NSString, at pos: Int, schemeEnd: Int, quote: unichar) -> Bool {
-            if quote == 0x22 {
-                candidateClose = pos
-                return true
-            }
-            // Single-quoted file:// URIs may contain unescaped literal apostrophes
-            // (e.g. "O' Connor" or "Artists' Private 'Collection'"); fail closed to the
-            // last closing quote before the next file:// URI, vaulted URL, or line break.
-            let canClose = pos + 1 == nsText.length || !VaultLineTracker.isLetterOrDigit(nsText.character(at: pos + 1))
-            if canClose {
-                candidateClose = pos
-                hasUnclosedOpenAfterClose = false
-                return false
-            }
-            let prevIsWord = pos > schemeEnd && VaultLineTracker.isLetterOrDigit(nsText.character(at: pos - 1))
-            guard !prevIsWord else { return false }
-            if candidateClose >= 0 && !hasUnclosedOpenAfterClose && VaultLineTracker.isFileScheme(nsText, at: pos + 1) {
-                return true
-            }
-            hasUnclosedOpenAfterClose = true
-            return false
-        }
-    }
-
     static func redactFileURIs(in text: String, vaultPrefix: String) -> String {
         let nsText = text as NSString
         let nsPrefix = vaultPrefix as NSString
@@ -460,9 +448,10 @@ extension CoreTelemetryService {
         var pos = 0
         while pos < totalLength {
             if VaultLineTracker.isFileScheme(nsText, at: pos) {
-                let prev = pos > 0 ? nsText.character(at: pos - 1) : 0
-                let quote: unichar = (prev == 0x22 || prev == 0x27) ? prev : 0
-                let (rawEnd, trimmedEnd) = fileURISpanEnd(nsText, after: pos + 7, quote: quote, vaultPrefix: nsPrefix)
+                let isDoubleQuoted = pos > 0 && nsText.character(at: pos - 1) == 0x22
+                let (rawEnd, trimmedEnd) = fileURISpanEnd(
+                    nsText, after: pos + 7, isDoubleQuoted: isDoubleQuoted, vaultPrefix: nsPrefix
+                )
                 if result.isEmpty { result.reserveCapacity(text.count) }
                 result += nsText.substring(with: NSRange(location: copyStart, length: pos - copyStart))
                 result += "[redacted-path]"
