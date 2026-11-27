@@ -7,6 +7,11 @@ extension CoreTelemetryService {
         let stopPos: Int
     }
 
+    private struct QuotedScanStep {
+        let found: Int
+        let nextPos: Int
+    }
+
     static func redactDoubleQuotedLocalPaths(in text: String) -> String {
         guard text.contains("\"") else { return text }
         let nsText = text as NSString
@@ -25,8 +30,11 @@ extension CoreTelemetryService {
                 continue
             }
             let sliceStart = span.lastVaultEnd > idx + 1 ? span.lastVaultEnd : idx + 1
-            let pathPos = sliceStart < span.close ? findLocalPathStartInQuoted(nsText, start: sliceStart, end: span.close) : -1
+            var pathPos = sliceStart < span.close ? findLocalPathStartInQuoted(nsText, start: sliceStart, end: span.close) : -1
             if pathPos >= 0 {
+                if pathPos > sliceStart && isOddBackslashesBefore(nsText, at: pathPos, minPos: sliceStart) {
+                    pathPos -= 1
+                }
                 if result.isEmpty { result.reserveCapacity(text.count) }
                 result += nsText.substring(with: NSRange(location: copied, length: pathPos - copied))
                 result += "[redacted-path]"
@@ -71,60 +79,100 @@ extension CoreTelemetryService {
         var tokenStart = -1
         var pos = start
         while pos < end {
-            let ch = nsText.character(at: pos)
-            if ch == 0x5C && pos + 1 < end && nsText.character(at: pos + 1) == 0x22 {
-                tokenStart = -1
-                pos += 2
-                continue
-            }
-            if isWindowsDriveAt(nsText, at: pos, len: end) && hasNonWhitespaceAfter(nsText, pos: pos + 3, end: end) {
-                return pos
-            }
-            if tokenStart < 0 && isQuotedLocalPathStart(nsText, at: pos, end: end) { return pos }
-            if let found = stepQuotedPathToken(nsText, pos: pos, end: end, ch: ch, tokenStart: &tokenStart) {
-                return found
-            }
-            pos += 1
+            let step = stepQuotedPathScanner(nsText, pos: pos, end: end, tokenStart: &tokenStart)
+            if step.found >= 0 { return step.found }
+            pos = step.nextPos
         }
         return -1
     }
 
-    private static func stepQuotedPathToken(
+    private static func stepQuotedPathScanner(
+        _ nsText: NSString, pos: Int, end: Int, tokenStart: inout Int
+    ) -> QuotedScanStep {
+        let ch = nsText.character(at: pos)
+        if ch == 0x5C && pos + 1 < end && nsText.character(at: pos + 1) == 0x22 {
+            tokenStart = -1
+            return QuotedScanStep(found: -1, nextPos: pos + 2)
+        }
+        if isWindowsDriveAt(nsText, at: pos, len: end) {
+            return checkTrailingNonWS(nsText, matchPos: pos, afterPos: pos + 3, end: end, tokenStart: &tokenStart)
+        }
+        if ch == 0x2F || (ch == 0x5C && pos + 1 < end && nsText.character(at: pos + 1) == 0x2F) {
+            let step = ch == 0x5C ? 2 : 1
+            return checkSlashRun(nsText, pos: pos, afterPos: pos + step, end: end, tokenStart: &tokenStart)
+        }
+        if tokenStart < 0 && isQuotedHomeOrUncPrefix(nsText, at: pos, end: end, ch: ch) {
+            return checkTrailingNonWS(nsText, matchPos: pos, afterPos: pos + 2, end: end, tokenStart: &tokenStart)
+        }
+        return stepPlainQuotedChar(nsText, pos: pos, end: end, ch: ch, tokenStart: &tokenStart)
+    }
+
+    private static func stepPlainQuotedChar(
         _ nsText: NSString, pos: Int, end: Int, ch: unichar, tokenStart: inout Int
-    ) -> Int? {
+    ) -> QuotedScanStep {
         if VaultLineTracker.isWhitespace(ch) || isQuotedPathDelimiter(ch) {
             tokenStart = -1
-        } else if ch == 0x2F || ch == 0x5C {
-            if tokenStart >= 0 && hasNonWhitespaceAfter(nsText, pos: pos + 1, end: end) { return tokenStart }
-            tokenStart = -1
+        } else if ch == 0x5C {
+            if tokenStart >= 0 {
+                return checkTrailingNonWS(
+                    nsText, matchPos: tokenStart, afterPos: pos + 1, end: end, tokenStart: &tokenStart
+                )
+            }
         } else if tokenStart < 0 {
             tokenStart = pos
         }
-        return nil
+        return QuotedScanStep(found: -1, nextPos: pos + 1)
     }
 
-    private static func isQuotedLocalPathStart(_ nsText: NSString, at pos: Int, end: Int) -> Bool {
-        let ch = nsText.character(at: pos)
-        if ch == 0x2F {
-            var next = pos + 1
-            while next < end && nsText.character(at: next) == 0x2F { next += 1 }
-            while next < end && isHorizontalSpace(nsText.character(at: next)) { next += 1 }
-            return next < end && !VaultLineTracker.isWhitespace(nsText.character(at: next))
-                && nsText.character(at: next) != 0x2F
+    private static func checkSlashRun(
+        _ nsText: NSString, pos: Int, afterPos: Int, end: Int, tokenStart: inout Int
+    ) -> QuotedScanStep {
+        if tokenStart >= 0 {
+            return checkTrailingNonWS(nsText, matchPos: tokenStart, afterPos: afterPos, end: end, tokenStart: &tokenStart)
         }
-        if ch == 0x7E && pos + 1 < end && nsText.character(at: pos + 1) == 0x2F {
-            return hasNonWhitespaceAfter(nsText, pos: pos + 2, end: end)
+        let nextRoot = scanSlashRunEnd(nsText, pos: afterPos, end: end)
+        if nextRoot < end && !VaultLineTracker.isWhitespace(nsText.character(at: nextRoot)) {
+            return QuotedScanStep(found: pos, nextPos: nextRoot)
         }
-        if ch == 0x5C && pos + 1 < end && nsText.character(at: pos + 1) == 0x5C {
-            return hasNonWhitespaceAfter(nsText, pos: pos + 2, end: end)
-        }
-        return false
+        return QuotedScanStep(found: -1, nextPos: nextRoot)
     }
 
-    private static func hasNonWhitespaceAfter(_ nsText: NSString, pos: Int, end: Int) -> Bool {
+    private static func checkTrailingNonWS(
+        _ nsText: NSString, matchPos: Int, afterPos: Int, end: Int, tokenStart: inout Int
+    ) -> QuotedScanStep {
+        let next = nextNonHorizontalSpace(nsText, pos: afterPos, end: end)
+        if next < end && !VaultLineTracker.isWhitespace(nsText.character(at: next)) {
+            return QuotedScanStep(found: matchPos, nextPos: next)
+        }
+        tokenStart = -1
+        return QuotedScanStep(found: -1, nextPos: next)
+    }
+
+    private static func isQuotedHomeOrUncPrefix(_ nsText: NSString, at pos: Int, end: Int, ch: unichar) -> Bool {
+        guard pos + 1 < end else { return false }
+        let nextCh = nsText.character(at: pos + 1)
+        return (ch == 0x7E && nextCh == 0x2F) || (ch == 0x5C && nextCh == 0x5C)
+    }
+
+    private static func scanSlashRunEnd(_ nsText: NSString, pos: Int, end: Int) -> Int {
+        var next = pos
+        while next < end {
+            let ch = nsText.character(at: next)
+            if ch == 0x2F || isHorizontalSpace(ch) {
+                next += 1
+            } else if ch == 0x5C && next + 1 < end && nsText.character(at: next + 1) == 0x2F {
+                next += 2
+            } else {
+                break
+            }
+        }
+        return next
+    }
+
+    private static func nextNonHorizontalSpace(_ nsText: NSString, pos: Int, end: Int) -> Int {
         var idx = pos
         while idx < end && isHorizontalSpace(nsText.character(at: idx)) { idx += 1 }
-        return idx < end && !VaultLineTracker.isWhitespace(nsText.character(at: idx))
+        return idx
     }
 
     private static func isHorizontalSpace(_ ch: unichar) -> Bool {

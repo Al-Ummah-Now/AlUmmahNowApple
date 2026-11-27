@@ -398,14 +398,10 @@ extension CoreTelemetryService {
     private static let preKeywordPathRules: [(regex: NSRegularExpression, template: String)] = {
         let absTail = #"[^\r\n\u001E\s](?:[^\r\n\u001E]*[^\r\n\u001E\s])?"#
         let absNonQuoteTail = #"[^\r\n\u001E\s"](?:[^\r\n\u001E]*[^\r\n\u001E\s])?"#
-        let relTail = #"[^\r\n\u001E\u001F\s](?:[^\r\n\u001E\u001F]*[^\r\n\u001E\u001F\s])?"#
+        let relNonQuoteTail = #"[^\r\n\u001E\u001F\s"](?:[^\r\n\u001E\u001F]*[^\r\n\u001E\u001F\s])?"#
         let specs: [(String, String)] = [
             (#"(?:[A-Za-z]:[\\/]|\\\\)[^\S\r\n]*"# + absNonQuoteTail, "[redacted-path]"),
-            (
-                #"(^|[\s(\[{"'=,:;<>)\u001F])[^\s\\/"'<>()\[{:,;=\u001E\u001F]+\\[^\r\n\u001E\u001F\s"]"#
-                    + #"(?:[^\r\n\u001E\u001F]*[^\r\n\u001E\u001F\s])?"#,
-                "$1[redacted-path]"
-            ),
+            (#"(^|[\s(\[{"'=,:;<>)\u001F])[^\s\\/"'<>()\[{:,;=\u001E\u001F]+\\"# + relNonQuoteTail, "$1[redacted-path]"),
             (#"["']/[ \t]+[^\r\n\u001E\s"][^\r\n\u001E]*"#, "[redacted-path]"),
             (
                 #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/(?=[^\S\r\n]*[^\s"])|//+(?=[^\S\r\n]*[^\s/"])|/(?=[^\S\r\n]*[^\s/"]))[^\S\r\n]*"#
@@ -415,7 +411,7 @@ extension CoreTelemetryService {
             (
                 #"(^|[\s(\[{)\]}<>"'=,:;\u001F])(?!(?<!['"])(?:HTTP|TLS|SSL)/\d)"#
                     + #"(?!(?<!['"])\d+/\d+(?:$|[\s)\]},;:!?]|\.(?![A-Za-z0-9])))"#
-                    + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/"# + relTail,
+                    + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/"# + relNonQuoteTail,
                 "$1[redacted-path]"
             ),
         ]

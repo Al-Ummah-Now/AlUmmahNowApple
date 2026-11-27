@@ -364,5 +364,13 @@ struct CoreTelemetryURLContinuationTests {
                 == "[\"hello \\\"world\\\"\",\"public\"]"
         )
         #expect(CoreTelemetryService.sanitizeLocalPaths("[\"/\",\"public\"]") == "[\"/\",\"public\"]")
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[\"\\/private/secret\",\"public\"]")
+                == "[\"[redacted-path]\",\"public\"]"
+        )
+        #expect(CoreTelemetryService.sanitizeLocalPaths("[\"\\/\",\"public\"]") == "[\"\\/\",\"public\"]")
+        #expect(CoreTelemetryService.sanitizeLocalPaths("[\"relative/\",\"public\"]") == "[\"relative/\",\"public\"]")
+        let manySlashes = "[\"\(String(repeating: "/", count: 10_000))\",\"public\"]"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(manySlashes) == manySlashes)
     }
 }
