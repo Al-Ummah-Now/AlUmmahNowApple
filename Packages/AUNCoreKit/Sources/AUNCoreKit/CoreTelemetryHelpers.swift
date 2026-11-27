@@ -69,11 +69,17 @@ extension CoreTelemetryService {
     /// preserving valid non-`file` RFC 3986 URLs and stack symbols.
     public static func sanitizeLocalPaths(_ text: String) -> String {
         guard !text.isEmpty else { return text }
+        var withoutFileURIs = text
+        if let fileRegex = Self.fileURIRegex {
+            let range = NSRange(withoutFileURIs.startIndex..<withoutFileURIs.endIndex, in: withoutFileURIs)
+            withoutFileURIs = fileRegex.stringByReplacingMatches(
+                in: withoutFileURIs, options: [], range: range, withTemplate: "[redacted-path]")
+        }
         var prefix = "\u{001E}AUNURL"
-        while text.contains(prefix) {
+        while withoutFileURIs.contains(prefix) {
             prefix += "X"
         }
-        var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: text, prefix: prefix)
+        var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: withoutFileURIs, prefix: prefix)
         for rule in Self.pathRedactionRules {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
             scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
@@ -129,12 +135,17 @@ extension CoreTelemetryService {
         return host.withCString { inet_pton(AF_INET6, $0, &addr) == 1 }
     }
 
+    private static let fileURIRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"(?<![A-Za-z0-9+.-])file://[^\r\n]+"#,
+        options: [.caseInsensitive]
+    )
+
     private static let urlVaultRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern:
             #"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]+://(?:\[([^\]\s"'<>\\{}\r\n]+)\]|"#
             + #"(?:[A-Za-z0-9._~!$&'*+;=-]|%[0-9A-Fa-f]{2})+)(?::\d+)?"#
-            + #"(?:[/?#](?:[^\s"<>\\{},()\[\]\r\n]|\([^\s"<>\\{},;()\[\]/:\\]+\)|"#
-            + #"\[[^\s"<>\\{},;()\[\]/:\\]+\])*|(?=$|[\s"'<>\\{},;()\[\]]))"#,
+            + #"(?:[/?#](?:[^\s"<>\\{},()\[\]\r\n]|\([^\s"<>\\{},()\[\]/:\\]+\)|"#
+            + #"\[[^\s"<>\\{},()\[\]/:\\]+\])*|(?=$|[\s"'<>\\{},;()\[\]]))"#,
         options: [.caseInsensitive]
     )
 
@@ -154,7 +165,6 @@ extension CoreTelemetryService {
 
     private static let pathRedactionRules: [(regex: NSRegularExpression, template: String)] = {
         let specs: [(String, String)] = [
-            (#"(?<![A-Za-z0-9+.-])file://[^\r\n]+"#, "[redacted-path]"),
             (#"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n]+(\))"#, "$1[redacted-path]$2"),
             (#"(\()(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/[^()\r\n]+(\))"#, "$1[redacted-path]$2"),
             (#"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n]+"#, "[redacted-path]"),
@@ -175,7 +185,7 @@ extension CoreTelemetryService {
             ),
             (#"(\b(?:file|path|filename|filepath)\s*[:=]\s*)(?!\u001E)[^\r\n\u001E\u001F]+"#, "$1[redacted-path]"),
             (
-                #"(^|[\r\n:=;\u001F])([ \t]*)[^\r\n:=;\u001E\u001F]*\.(?:"# + bareFilenameExtensions + #")\b(?!\()"#,
+                #"(^|[\r\n:=;\u001F])([ \t]*)[^\r\n:=;\u001E\u001F]*\.(?!ts:\d+)(?:"# + bareFilenameExtensions + #")\b(?!\()"#,
                 "$1$2[redacted-path]"
             ),
         ]

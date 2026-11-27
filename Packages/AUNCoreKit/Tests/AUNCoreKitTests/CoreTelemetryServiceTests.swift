@@ -491,7 +491,9 @@ struct CoreTelemetryExternalConsentTests {
             "https://example.com/?path=/api/items",
             "https://[2001:db8::1]/v1/items",
             "https://example.com/a(b)/items",
+            "https://example.com/a(b;c)/items",
             "open(https://example.com/a(b)/items)",
+            "Failure: Main.ts:42",
             "https://example.com/a'b/items",
             "https://foo!bar.example/api",
             "https://one;two.example/api",
@@ -505,6 +507,10 @@ struct CoreTelemetryExternalConsentTests {
         for item in preserved {
             #expect(CoreTelemetryService.sanitizeLocalPaths(item) == item)
         }
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api;file:///storage/emulated/0/Secret.mov")
+                == "https://example.com/api;[redacted-path]"
+        )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,open(C://Secret/Acquisition.mov)")
                 == "https://example.com/api,open([redacted-path])"

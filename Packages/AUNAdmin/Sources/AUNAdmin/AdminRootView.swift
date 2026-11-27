@@ -89,6 +89,7 @@ struct AdminSignInView: View {
                 .accessibilityIdentifier("sign-in")
             }
             NoticeLine(key: session.notice)
+            AdminSignedOutDiagnosticsControl(session: session)
         }
     }
 }
@@ -111,6 +112,7 @@ struct LockView: View {
             .buttonStyle(FanousButtonStyle(.primary))
             .accessibilityIdentifier("unlock")
             NoticeLine(key: session.notice)
+            AdminSignedOutDiagnosticsControl(session: session)
         }
         .task { await session.unlock(reason: l10n("admin.lock.reason")) }
     }
@@ -138,6 +140,56 @@ struct GateView: View {
             Button(l10n("admin.signOut")) { Task { await session.signOut() } }
                 .buttonStyle(FanousButtonStyle(.secondary))
                 .accessibilityIdentifier("sign-out")
+            AdminSignedOutDiagnosticsControl(session: session)
+        }
+    }
+}
+
+/// Lets a previously opted-in admin revoke telemetry consent and purge buffered data while signed out, locked, or gated.
+private struct AdminSignedOutDiagnosticsControl: View {
+    @Environment(\.l10n) private var l10n
+    @Environment(AppSettings.self) private var settings
+    let session: AdminSession
+    @State private var diagnosticsMessage: String?
+
+    private var diagnosticsBinding: Binding<Bool> {
+        Binding(
+            get: { settings.telemetryEnabled },
+            set: { enabled in
+                let telemetry = session.services.telemetry
+                if enabled {
+                    if telemetry.setConsent(.full) {
+                        settings.telemetryEnabled = true
+                        diagnosticsMessage = nil
+                    } else {
+                        if settings.telemetryEnabled { settings.telemetryEnabled = false }
+                        diagnosticsMessage = l10n("diagnostics.enableError")
+                    }
+                } else {
+                    let purged = telemetry.setConsent(.off)
+                    if settings.telemetryEnabled { settings.telemetryEnabled = false }
+                    diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
+                }
+            }
+        )
+    }
+
+    var body: some View {
+        if settings.telemetryEnabled || session.services.telemetry.lastPurgeFailed || diagnosticsMessage != nil {
+            VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
+                Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
+                    .accessibilityIdentifier("admin-signedout-diagnostics")
+                if let message = diagnosticsMessage
+                    ?? (session.services.telemetry.lastPurgeFailed ? l10n("diagnostics.purgeWarning") : nil)
+                {
+                    Text(message)
+                        .fanousFont(.caption)
+                        .foregroundStyle(Fanous.errorText)
+                        .accessibilityIdentifier("admin-signedout-diagnostics-warning")
+                }
+            }
+            .multilineTextAlignment(.leading)
+            .padding(.top, FanousScale.spacingSm)
         }
     }
 }

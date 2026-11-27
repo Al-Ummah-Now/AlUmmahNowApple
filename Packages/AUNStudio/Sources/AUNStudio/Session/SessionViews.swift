@@ -29,6 +29,7 @@ struct SignInView: View {
                 }
                 NoticeView(session: session)
                 SignedOutDeletions(session: session)
+                SignedOutDiagnosticsControl(session: session)
             }
             .multilineTextAlignment(.center)
             .padding(FanousScale.spacingXl)
@@ -39,6 +40,55 @@ struct SignInView: View {
         }
         .defaultScrollAnchor(.center)
         .fanousPage()
+    }
+}
+
+/// Lets a previously opted-in user revoke telemetry consent and purge buffered data while signed out.
+private struct SignedOutDiagnosticsControl: View {
+    @Environment(\.l10n) private var l10n
+    @Environment(AppSettings.self) private var settings
+    let session: StudioSession
+    @State private var diagnosticsMessage: String?
+
+    private var diagnosticsBinding: Binding<Bool> {
+        Binding(
+            get: { settings.telemetryEnabled },
+            set: { enabled in
+                let telemetry = session.services.telemetry
+                if enabled {
+                    if telemetry.setConsent(.full) {
+                        settings.telemetryEnabled = true
+                        diagnosticsMessage = nil
+                    } else {
+                        if settings.telemetryEnabled { settings.telemetryEnabled = false }
+                        diagnosticsMessage = l10n("diagnostics.enableError")
+                    }
+                } else {
+                    let purged = telemetry.setConsent(.off)
+                    if settings.telemetryEnabled { settings.telemetryEnabled = false }
+                    diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
+                }
+            }
+        )
+    }
+
+    var body: some View {
+        if settings.telemetryEnabled || session.services.telemetry.lastPurgeFailed || diagnosticsMessage != nil {
+            VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
+                Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
+                    .accessibilityIdentifier("signin-diagnostics")
+                if let message = diagnosticsMessage
+                    ?? (session.services.telemetry.lastPurgeFailed ? l10n("diagnostics.purgeWarning") : nil)
+                {
+                    Text(message)
+                        .fanousFont(.caption)
+                        .foregroundStyle(Fanous.errorText)
+                        .accessibilityIdentifier("signin-diagnostics-warning")
+                }
+            }
+            .multilineTextAlignment(.leading)
+            .padding(.top, FanousScale.spacingSm)
+        }
     }
 }
 
