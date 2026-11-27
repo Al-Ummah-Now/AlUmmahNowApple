@@ -214,7 +214,10 @@ extension CoreTelemetryService.VaultLineTracker {
     }
 
     static func isEmailLeadingWrapper(_ ch: unichar) -> Bool {
-        ch == 0x27 || ch == 0x7B || ch == 0x7D
+        if ch == 0x27 || ch == 0x7B || ch == 0x7D { return true }
+        guard ch >= 0x80, !isSurrogate(ch), let scalar = UnicodeScalar(ch) else { return false }
+        let cat = scalar.properties.generalCategory
+        return cat == .openPunctuation || cat == .initialPunctuation
     }
 
     private static func isEmailLocalPunct(_ ch: unichar) -> Bool {
@@ -230,23 +233,8 @@ extension CoreTelemetryService.VaultLineTracker {
         guard ch >= 0x80 else { return false }
         if isSurrogate(ch) { return true }
         guard let scalar = UnicodeScalar(ch) else { return false }
-        if CharacterSet.whitespacesAndNewlines.contains(scalar)
-            || CharacterSet.controlCharacters.contains(scalar)
-        {
-            return false
-        }
-        switch ch {
-        case 0x3001, 0x3002, 0xFF0C, 0xFF1B, 0xFF1A, 0x060C, 0x061B:
-            return false
-        default:
-            break
-        }
-        switch scalar.properties.generalCategory {
-        case .openPunctuation, .closePunctuation, .initialPunctuation, .finalPunctuation:
-            return false
-        default:
-            return true
-        }
+        return !CharacterSet.whitespacesAndNewlines.contains(scalar)
+            && !CharacterSet.controlCharacters.contains(scalar)
     }
 
     static func isPunycodeTLD(_ nsText: NSString, start: Int, end: Int, allASCII: Bool) -> Bool {
