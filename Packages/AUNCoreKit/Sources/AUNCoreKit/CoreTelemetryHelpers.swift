@@ -258,7 +258,7 @@ extension CoreTelemetryService {
         var rebuilt = ""
         var copied = 0
         var searchFrom = 0
-        var inSingleQuote = false
+        var quoteState = 0
         var contLimits = ContinuationLimits()
         while searchFrom < totalLen {
             let found = nsText.range(
@@ -278,7 +278,8 @@ extension CoreTelemetryService {
                 searchFrom = sep + 3
                 continue
             }
-            inSingleQuote = Self.advanceSingleQuoteState(nsText, from: copied, to: span.start, inSingleQuote: inSingleQuote)
+            quoteState = Self.advanceQuoteState(nsText, from: copied, to: span.start, quoteState: quoteState)
+            let inSingleQuote = (quoteState & 1) != 0
             let baseURL = nsText.substring(with: NSRange(location: span.start, length: span.baseEnd - span.start))
             let (url, tail): (String, String)
             if span.hasQueryOrFragment {
@@ -299,7 +300,7 @@ extension CoreTelemetryService {
             var finalTail = tail
             rebuilt += nsText.substring(with: NSRange(location: copied, length: span.start - copied))
             let contInput = URLContinuationInput(
-                span: span, rawURL: baseURL, baseTail: tail, inSingleQuote: inSingleQuote
+                span: span, rawURL: baseURL, baseTail: tail, quoteState: quoteState
             )
             if let ext = Self.extendURLContinuation(nsText, input: contInput, limits: &contLimits) {
                 endPos = ext.endPos
@@ -313,7 +314,7 @@ extension CoreTelemetryService {
                 rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
             }
             let nsTail = finalTail as NSString
-            inSingleQuote = Self.advanceSingleQuoteState(nsTail, from: 0, to: nsTail.length, inSingleQuote: inSingleQuote)
+            quoteState = Self.advanceQuoteState(nsTail, from: 0, to: nsTail.length, quoteState: quoteState)
             tracker.onVaultedURL(matchEnd: endPos)
             copied = endPos
             searchFrom = endPos

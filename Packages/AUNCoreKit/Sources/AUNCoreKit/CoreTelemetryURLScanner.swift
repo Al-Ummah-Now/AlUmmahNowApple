@@ -173,10 +173,58 @@ extension CoreTelemetryService {
         var pos = start + 1
         while pos < len {
             let ch = nsText.character(at: pos)
-            if VaultLineTracker.isWhitespace(ch) || ch == 0x22 || ch == 0x3C || ch == 0x3E { break }
+            if VaultLineTracker.isWhitespace(ch) || ch == 0x3C || ch == 0x3E { break }
+            if ch == 0x22 {
+                var bs = 0
+                while pos - 1 - bs > start && nsText.character(at: pos - 1 - bs) == 0x5C { bs += 1 }
+                if (bs & 1) == 0 { break }
+                if pos + 1 >= len || isEscapedQuoteQueryBoundary(nsText.character(at: pos + 1)) {
+                    pos -= 1
+                    break
+                }
+            }
             pos += 1
         }
         return pos
+    }
+
+    private static func isEscapedQuoteQueryBoundary(_ ch: unichar) -> Bool {
+        VaultLineTracker.isWhitespace(ch) || ch == 0x7D || ch == 0x5D || ch == 0x29
+            || ch == 0x2C || ch == 0x3B || ch == 0x3C || ch == 0x3E
+    }
+
+    static func advanceQuoteState(
+        _ nsText: NSString, from start: Int, to end: Int, quoteState: Int
+    ) -> Int {
+        var inSingle = (quoteState & 1) != 0
+        var inDouble = (quoteState & 2) != 0
+        var idx = start
+        let len = nsText.length
+        while idx < end {
+            let ch = nsText.character(at: idx)
+            if ch == 0x0D || ch == 0x0A {
+                inSingle = false
+                inDouble = false
+            } else if ch == 0x5C && (inSingle || inDouble) && idx + 1 < end {
+                let next = nsText.character(at: idx + 1)
+                if next != 0x0D && next != 0x0A {
+                    idx += 2
+                    continue
+                }
+            } else if ch == 0x22 && !inSingle {
+                inDouble.toggle()
+            } else if ch == 0x27 && !inDouble && !isContractionApostrophe(nsText, at: idx, len: len) {
+                inSingle.toggle()
+            }
+            idx += 1
+        }
+        return (inSingle ? 1 : 0) | (inDouble ? 2 : 0)
+    }
+
+    static func isContractionApostrophe(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+        pos > 0 && pos + 1 < len
+            && Self.isASCIIAlphaNum(nsText.character(at: pos - 1))
+            && Self.isASCIIAlphaNum(nsText.character(at: pos + 1))
     }
 
     private static func isURLEndBoundary(_ nsText: NSString, at pos: Int, len: Int) -> Bool {

@@ -98,36 +98,6 @@ extension CoreTelemetryService {
         let endPos: Int
     }
 
-    static func advanceSingleQuoteState(
-        _ nsText: NSString, from start: Int, to end: Int, inSingleQuote: Bool
-    ) -> Bool {
-        var open = inSingleQuote
-        var idx = start
-        let len = nsText.length
-        while idx < end {
-            let ch = nsText.character(at: idx)
-            if ch == 0x0D || ch == 0x0A {
-                open = false
-            } else if ch == 0x5C && open && idx + 1 < end {
-                let next = nsText.character(at: idx + 1)
-                if next != 0x0D && next != 0x0A {
-                    idx += 2
-                    continue
-                }
-            } else if ch == 0x27 && !isContractionApostrophe(nsText, at: idx, len: len) {
-                open.toggle()
-            }
-            idx += 1
-        }
-        return open
-    }
-
-    private static func isContractionApostrophe(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
-        pos > 0 && pos + 1 < len
-            && Self.isASCIIAlphaNum(nsText.character(at: pos - 1))
-            && Self.isASCIIAlphaNum(nsText.character(at: pos + 1))
-    }
-
     struct ContinuationLimits {
         var failedContMax = 0
         var unclosedDoubleQuoteEnd = 0
@@ -162,14 +132,15 @@ extension CoreTelemetryService {
         let span: URLScanMatch
         let rawURL: String
         let baseTail: String
-        let inSingleQuote: Bool
+        let quoteState: Int
+        var inSingleQuote: Bool { (quoteState & 1) != 0 }
+        var inDoubleQuote: Bool { (quoteState & 2) != 0 }
     }
 
     private struct ContinuationContext {
         let input: URLContinuationInput
         let webhookProbe: String?
-        let allowDoubleQuotes: Bool
-        let allowSingleQuotes: Bool
+        let quoteFlags: Int
         let pathEnd: Int
     }
 
@@ -178,14 +149,15 @@ extension CoreTelemetryService {
     ) -> URLContinuationResult? {
         let span = input.span
         guard !span.hasQueryOrFragment && span.totalEnd < nsText.length else { return nil }
-        guard isURLContinuationStarter(nsText.character(at: span.totalEnd)) else { return nil }
+        let outerQuote = resolveOuterQuote(nsText, spanStart: span.start, inDoubleQuote: input.inDoubleQuote)
+        guard isURLContinuationStarter(nsText, at: span.totalEnd, inDoubleQuote: outerQuote == 0x22) else { return nil }
         let probeInput = input.rawURL + "x"
         let probe = Self.redactURLPathSecrets(probeInput)
         let webhookProbe = (probe != probeInput && probe.hasSuffix("[redacted]")) ? probe : nil
         if webhookProbe == nil && span.totalEnd < limits.failedContMax { return nil }
-        let outerQuote = resolveOuterQuote(nsText, spanStart: span.start)
         var scanState = ContinuationScanState(
             allowDoubleQuotes: span.totalEnd >= limits.unclosedDoubleQuoteEnd && outerQuote != 0x22,
+            allowEscapedDoubleQuotes: span.totalEnd >= limits.unclosedDoubleQuoteEnd && outerQuote == 0x22,
             allowSingleQuotes: span.totalEnd >= limits.unclosedSingleQuoteEnd,
             outerQuote: outerQuote, stopAtSchemes: webhookProbe == nil
         )
@@ -193,10 +165,7 @@ extension CoreTelemetryService {
             nsText, start: span.totalEnd, webhookProbe: webhookProbe, state: &scanState, limits: &limits
         )
         let ctx = ContinuationContext(
-            input: input, webhookProbe: webhookProbe,
-            allowDoubleQuotes: scanState.allowDoubleQuotes && scanState.quoteChar != 0x22,
-            allowSingleQuotes: scanState.allowSingleQuotes && scanState.quoteChar != 0x27,
-            pathEnd: pathEnd
+            input: input, webhookProbe: webhookProbe, quoteFlags: buildQuoteFlags(scanState), pathEnd: pathEnd
         )
         if let qfResult = extendURLContinuationQuery(nsText, ctx: ctx) { return qfResult }
         if let secretResult = extendURLContinuationSecret(nsText, ctx: ctx) { return secretResult }
@@ -204,10 +173,18 @@ extension CoreTelemetryService {
         return nil
     }
 
-    private static func resolveOuterQuote(_ nsText: NSString, spanStart: Int) -> unichar {
-        guard spanStart > 0 else { return 0 }
-        let ch = nsText.character(at: spanStart - 1)
-        return (ch == 0x27 || ch == 0x22) ? ch : 0
+    private static func resolveOuterQuote(_ nsText: NSString, spanStart: Int, inDoubleQuote: Bool) -> unichar {
+        if inDoubleQuote || (spanStart > 0 && nsText.character(at: spanStart - 1) == 0x22) { return 0x22 }
+        return (spanStart > 0 && nsText.character(at: spanStart - 1) == 0x27) ? 0x27 : 0
+    }
+
+    private static func buildQuoteFlags(_ state: ContinuationScanState) -> Int {
+        var flags = 0
+        if state.allowDoubleQuotes && state.quoteChar != 0x22 { flags |= 1 }
+        if state.allowSingleQuotes && state.quoteChar != 0x27 { flags |= 2 }
+        if state.allowEscapedDoubleQuotes && state.quoteChar != 1 { flags |= 4 }
+        if state.outerQuote == 0x22 { flags |= 8 }
+        return flags
     }
 
     private static func scanWithUnclosedFallback(
@@ -222,6 +199,7 @@ extension CoreTelemetryService {
         recordUnclosedQuote(state.quoteChar, pathEnd: firstEnd, limits: &limits)
         state = ContinuationScanState(
             allowDoubleQuotes: state.quoteChar == 0x22 ? false : state.allowDoubleQuotes,
+            allowEscapedDoubleQuotes: state.quoteChar == 1 ? false : state.allowEscapedDoubleQuotes,
             allowSingleQuotes: state.quoteChar == 0x27 ? false : state.allowSingleQuotes,
             outerQuote: state.outerQuote, stopAtSchemes: true
         )
@@ -229,7 +207,7 @@ extension CoreTelemetryService {
     }
 
     private static func recordUnclosedQuote(_ quoteChar: unichar, pathEnd: Int, limits: inout ContinuationLimits) {
-        if quoteChar == 0x22 && pathEnd > limits.unclosedDoubleQuoteEnd {
+        if (quoteChar == 0x22 || quoteChar == 1) && pathEnd > limits.unclosedDoubleQuoteEnd {
             limits.unclosedDoubleQuoteEnd = pathEnd
         } else if quoteChar == 0x27 && pathEnd > limits.unclosedSingleQuoteEnd {
             limits.unclosedSingleQuoteEnd = pathEnd
@@ -403,8 +381,12 @@ extension CoreTelemetryService {
         return ch == "." || ch == ";" || ch == "," || (ch == "'" && precededByQuote)
     }
 
-    private static func isURLContinuationStarter(_ ch: unichar) -> Bool {
-        ch == 0x2C || ch == 0x28 || ch == 0x5B || ch == 0x29 || ch == 0x5D || ch == 0x7B || ch == 0x7D
+    private static func isURLContinuationStarter(_ nsText: NSString, at pos: Int, inDoubleQuote: Bool) -> Bool {
+        let ch = nsText.character(at: pos)
+        if ch == 0x2C || ch == 0x28 || ch == 0x5B || ch == 0x29 || ch == 0x5D || ch == 0x7B || ch == 0x7D { return true }
+        guard inDoubleQuote && ch == 0x5C && pos + 1 < nsText.length else { return false }
+        let next = nsText.character(at: pos + 1)
+        return next == 0x22 || next == 0x5C || next == 0x2F
     }
 
     private static func isURLSchemePrefixBoundary(_ ch: unichar) -> Bool {
@@ -427,6 +409,7 @@ extension CoreTelemetryService {
 
     private struct ContinuationScanState {
         let allowDoubleQuotes: Bool
+        let allowEscapedDoubleQuotes: Bool
         let allowSingleQuotes: Bool
         let outerQuote: unichar
         let stopAtSchemes: Bool
@@ -455,11 +438,14 @@ extension CoreTelemetryService {
         _ nsText: NSString, pos: Int, len: Int, state: inout ContinuationScanState
     ) -> Int {
         let ch = nsText.character(at: pos)
-        if ch == 0x0D || ch == 0x0A { return -1 }
+        if ch == 0x0D || ch == 0x0A || (ch == 0x22 && state.outerQuote == 0x22) { return -1 }
         if ch == 0x3F || ch == 0x23 { state.sawInnerQF = true }
         if ch == 0x5C && pos + 1 < len {
             let escaped = nsText.character(at: pos + 1)
-            if escaped != 0x0D && escaped != 0x0A { return pos + 2 }
+            if escaped != 0x0D && escaped != 0x0A {
+                if state.quoteChar == 1 && escaped == 0x22 { state.quoteChar = 0 }
+                return pos + 2
+            }
         }
         if ch == state.quoteChar { state.quoteChar = 0 }
         return pos + 1
@@ -480,12 +466,25 @@ extension CoreTelemetryService {
             return -1
         }
         let ch = nsText.character(at: pos)
+        if ch == 0x5C && state.outerQuote == 0x22 { return stepJSONEscapeContinuation(nsText, pos: pos, state: &state) }
         if VaultLineTracker.isWhitespace(ch) || isURLContinuationStopChar(ch) { return -1 }
         if ch == 0x22 || ch == 0x27 {
             return stepUnquotedQuoteChar(nsText, pos: pos, start: start, ch: ch, state: &state)
         }
         updateURLContinuationGroupStack(ch, stack: &state.groupStack)
         return pos + 1
+    }
+
+    private static func stepJSONEscapeContinuation(
+        _ nsText: NSString, pos: Int, state: inout ContinuationScanState
+    ) -> Int {
+        guard pos + 1 < nsText.length else { return -1 }
+        let esc = nsText.character(at: pos + 1)
+        if esc == 0x22 {
+            if state.allowEscapedDoubleQuotes && !state.groupStack.isEmpty { state.quoteChar = 1 }
+            return pos + 2
+        }
+        return (!state.stopAtSchemes && (esc == 0x5C || esc == 0x2F)) ? pos + 2 : -1
     }
 
     private static func stepUnquotedQuoteChar(
@@ -549,8 +548,19 @@ extension CoreTelemetryService {
         while idx < ctx.pathEnd {
             let ch = nsText.character(at: idx)
             if quoteChar != 0 {
-                if ch == 0x5C && idx + 1 < ctx.pathEnd { idx += 2; continue }
+                if ch == 0x5C && idx + 1 < ctx.pathEnd {
+                    if quoteChar == 1 && nsText.character(at: idx + 1) == 0x22 { quoteChar = 0 }
+                    idx += 2
+                    continue
+                }
                 if ch == quoteChar { quoteChar = 0 }
+            } else if (ctx.quoteFlags & 8) != 0 && ch == 0x5C && idx + 1 < ctx.pathEnd {
+                let esc = nsText.character(at: idx + 1)
+                if esc == 0x22 || esc == 0x5C || esc == 0x2F {
+                    if openGroups > 0 && (ctx.quoteFlags & 4) != 0 && esc == 0x22 { quoteChar = 1 }
+                    idx += 2
+                    continue
+                }
             } else if canOpenCloserQuote(nsText, at: idx, openGroups: openGroups, ctx: ctx) {
                 quoteChar = ch
             } else {
@@ -566,8 +576,8 @@ extension CoreTelemetryService {
     ) -> Bool {
         guard openGroups > 0 else { return false }
         let ch = nsText.character(at: idx)
-        if ch == 0x22 { return ctx.allowDoubleQuotes }
-        return ch == 0x27 && ctx.allowSingleQuotes && idx > ctx.input.span.start
+        if ch == 0x22 { return (ctx.quoteFlags & 1) != 0 }
+        return ch == 0x27 && (ctx.quoteFlags & 2) != 0 && idx > ctx.input.span.start
             && !Self.isASCIIAlphaNum(nsText.character(at: idx - 1))
     }
 
