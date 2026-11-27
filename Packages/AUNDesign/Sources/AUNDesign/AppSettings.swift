@@ -32,7 +32,11 @@ public final class AppSettings {
     public private(set) var themeChosen: Bool
     /// Opt-in diagnostics & crash reports. Always defaults to `false`.
     public var telemetryEnabled: Bool {
-        didSet { defaults.set(telemetryEnabled, forKey: Keys.telemetryEnabled) }
+        didSet {
+            if telemetryEnabled != oldValue {
+                defaults.set(telemetryEnabled, forKey: Keys.telemetryEnabled)
+            }
+        }
     }
 
     private enum Keys {

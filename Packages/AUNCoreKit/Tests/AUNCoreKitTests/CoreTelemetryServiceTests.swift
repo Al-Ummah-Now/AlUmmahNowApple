@@ -224,12 +224,12 @@ struct CoreTelemetryServiceTests {
 
         service.addBreadcrumb(
             category: "io",
-            message: "Opened /workspace/E\u{0301}lodie/Very Secret Client Project Name.mov",
+            message: "Opened /workspace/E\u{0301}lodie/Very Secret Client Project Name.mov\nFailed '/data/user/0/O'Brien.mov'\nRead \"/Users/O'Brien/Final.mov\"",
             level: .info
         )
         service.reportCrash(
             kind: "IOException",
-            message: #"Failed reading /workspace/alice/Private (Confidential).mov; "C:\Users\Alice Smith\Private Draft.mp4""#,
+            message: #"Failed reading /Private (Client).mov\n/Private Client\n/private-key\n/workspace/alice/Project;Acquisition.mov\n"C:\Users\Alice Smith\Private Draft.mp4""#,
             stack: "at Player.open() in /workspace/Élodie/src/Player.swift:42\nat App.run()"
         )
 
@@ -237,13 +237,47 @@ struct CoreTelemetryServiceTests {
         #expect(!json.localizedCaseInsensitiveContains("alice"))
         #expect(!json.localizedCaseInsensitiveContains("smith"))
         #expect(!json.localizedCaseInsensitiveContains("lodie"))
+        #expect(!json.localizedCaseInsensitiveContains("brien"))
+        #expect(!json.localizedCaseInsensitiveContains("private"))
+        #expect(!json.localizedCaseInsensitiveContains("acquisition"))
+        #expect(!json.localizedCaseInsensitiveContains("client).mov"))
         #expect(!json.localizedCaseInsensitiveContains("name.mov"))
-        #expect(!json.localizedCaseInsensitiveContains("confidential"))
         #expect(!json.localizedCaseInsensitiveContains("draft.mp4"))
         #expect(!json.contains("workspace"))
         #expect(json.contains(":42"))
         #expect(json.contains("App.run()"))
         #expect(json.contains("[redacted-path]"))
+    }
+
+    @Test("Revoking after close() still revokes native consent and removes sibling temp files")
+    func revokeAfterCloseRevokesNativeAndTempFiles() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bufferPath = dir.appendingPathComponent("telemetry-buffer.json").path
+        let tempPath = dir.appendingPathComponent(".telemetry-buffer.json.9999.tmp").path
+
+        let service = try CoreTelemetryService(
+            platform: "macos",
+            appVersion: "1.0.0",
+            osVersion: "macOS 15.0",
+            deviceClass: "desktop",
+            locale: "en",
+            videosAPIBaseURL: nil,
+            userAgent: "AlUmmahNowMac/1.0.0",
+            bufferPath: bufferPath,
+            initialEnabled: true
+        )
+        service.track("screen_view", properties: ["screen": "home"])
+        service.persist()
+        try Data("stale".utf8).write(to: URL(fileURLWithPath: tempPath))
+        #expect(FileManager.default.fileExists(atPath: bufferPath))
+        #expect(FileManager.default.fileExists(atPath: tempPath))
+
+        service.close()
+        #expect(service.setConsent(.off))
+        #expect(service.nativeConsentForTesting == .denied)
+        #expect(!FileManager.default.fileExists(atPath: bufferPath))
+        #expect(!FileManager.default.fileExists(atPath: tempPath))
     }
 
     @Test("Resolve ingest URL requires HTTPS, strips path/query/fragment, and rejects credentials")

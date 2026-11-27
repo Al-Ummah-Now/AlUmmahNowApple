@@ -82,6 +82,7 @@ struct SettingsMenu: View {
     let environment: AppEnvironment
     var telemetry: any TelemetryServicing = NullTelemetryService.shared
     var onOpenBlockedList: (() -> Void)?
+    @State private var showingPurgeWarning = false
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
@@ -90,12 +91,13 @@ struct SettingsMenu: View {
                 if enabled {
                     if telemetry.setConsent(.full) {
                         settings.telemetryEnabled = true
-                    } else {
+                    } else if settings.telemetryEnabled {
                         settings.telemetryEnabled = false
                     }
                 } else {
-                    _ = telemetry.setConsent(.off)
-                    settings.telemetryEnabled = false
+                    let purged = telemetry.setConsent(.off)
+                    if settings.telemetryEnabled { settings.telemetryEnabled = false }
+                    if !purged { showingPurgeWarning = true }
                 }
             }
         )
@@ -158,6 +160,11 @@ struct SettingsMenu: View {
                 .accessibilityLabel(l10n("common.settings"))
         }
         .accessibilityIdentifier("settings-menu")
+        .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
+            Button(l10n("common.dismiss"), role: .cancel) {}
+        } message: {
+            Text(l10n("diagnostics.purgeWarning"))
+        }
     }
 }
 

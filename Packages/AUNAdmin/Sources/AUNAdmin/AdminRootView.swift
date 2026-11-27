@@ -281,6 +281,7 @@ struct AccountMenu: View {
     @Environment(AppSettings.self) private var settings
     let session: AdminSession
     @Binding var confirmSignOut: Bool
+    @State private var showingPurgeWarning = false
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
@@ -288,10 +289,15 @@ struct AccountMenu: View {
             set: { enabled in
                 let telemetry = session.services.telemetry
                 if enabled {
-                    settings.telemetryEnabled = telemetry.setConsent(.full)
+                    if telemetry.setConsent(.full) {
+                        settings.telemetryEnabled = true
+                    } else if settings.telemetryEnabled {
+                        settings.telemetryEnabled = false
+                    }
                 } else {
-                    _ = telemetry.setConsent(.off)
-                    settings.telemetryEnabled = false
+                    let purged = telemetry.setConsent(.off)
+                    if settings.telemetryEnabled { settings.telemetryEnabled = false }
+                    if !purged { showingPurgeWarning = true }
                 }
             }
         )
@@ -319,5 +325,10 @@ struct AccountMenu: View {
             Label(l10n("admin.account"), systemImage: "person.crop.circle")
         }
         .accessibilityIdentifier("account-menu")
+        .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
+            Button(l10n("common.dismiss"), role: .cancel) {}
+        } message: {
+            Text(l10n("diagnostics.purgeWarning"))
+        }
     }
 }

@@ -150,6 +150,7 @@
         @Environment(AppSettings.self) private var settings
         @Environment(\.l10n) private var l10n
         var telemetry: any TelemetryServicing = NullTelemetryService.shared
+        @State private var showingPurgeWarning = false
 
         var body: some View {
             HStack(spacing: 24) {
@@ -166,17 +167,21 @@
                     "\(l10n("diagnostics.toggle")): \(l10n(settings.telemetryEnabled ? "diagnostics.on" : "diagnostics.off"))"
                 ) {
                     if settings.telemetryEnabled {
-                        _ = telemetry.setConsent(.off)
+                        let purged = telemetry.setConsent(.off)
                         settings.telemetryEnabled = false
+                        if !purged { showingPurgeWarning = true }
                     } else if telemetry.setConsent(.full) {
                         settings.telemetryEnabled = true
-                    } else {
-                        settings.telemetryEnabled = false
                     }
                 }
                 .accessibilityIdentifier("diagnostics-toggle")
             }
             .padding(.bottom, 40)
+            .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
+                Button(l10n("common.dismiss"), role: .cancel) {}
+            } message: {
+                Text(l10n("diagnostics.purgeWarning"))
+            }
         }
     }
 
