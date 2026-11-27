@@ -113,32 +113,54 @@ extension CoreTelemetryService {
         var copied = 0
         for span in spans {
             let innerStart = span.open + 1
-            let innerLen = span.close - innerStart
-            guard innerLen > 0 && containsAssignDelimiter(nsCur, start: innerStart, end: span.close) else { continue }
-            let inner = nsCur.substring(with: NSRange(location: innerStart, length: innerLen))
-            let scrubbed = regex.stringByReplacingMatches(
-                in: inner, options: [], range: NSRange(location: 0, length: (inner as NSString).length),
-                withTemplate: "$1[redacted-path]"
-            )
-            guard scrubbed != inner else { continue }
-            if result.isEmpty { result.reserveCapacity(nsCur.length) }
-            result += nsCur.substring(with: NSRange(location: copied, length: innerStart - copied))
-            result += scrubbed
-            copied = span.close
+            guard innerStart < span.close && containsAssignCandidate(nsCur, start: innerStart, end: span.close) else {
+                continue
+            }
+            let (decoded, rawOffsets) = decodeQuotedSpanWithOffsets(nsCur, start: innerStart, end: span.close)
+            let nsDec = decoded as NSString
+            let matches = regex.matches(in: decoded, options: [], range: NSRange(location: 0, length: nsDec.length))
+            for match in matches {
+                let g1 = match.range(at: 1)
+                let rawG1End = rawOffsets[g1.location + g1.length]
+                let rawEnd = rawOffsets[match.range.location + match.range.length]
+                if result.isEmpty { result.reserveCapacity(nsCur.length) }
+                result += nsCur.substring(with: NSRange(location: copied, length: rawG1End - copied))
+                result += "[redacted-path]"
+                copied = rawEnd
+            }
         }
         guard copied > 0 else { return nsCur as String }
         result += nsCur.substring(from: copied)
         return result
     }
 
-    private static func containsAssignDelimiter(_ nsText: NSString, start: Int, end: Int) -> Bool {
+    private static func containsAssignCandidate(_ nsText: NSString, start: Int, end: Int) -> Bool {
         var idx = start
         while idx < end {
             let ch = nsText.character(at: idx)
-            if ch == 0x3A || ch == 0x3D { return true }
+            if ch == 0x3A || ch == 0x3D || (ch == 0x5C && idx + 5 < end && nsText.character(at: idx + 1) == 0x75) {
+                return true
+            }
             idx += 1
         }
         return false
+    }
+
+    private static func decodeQuotedSpanWithOffsets(_ nsText: NSString, start: Int, end: Int) -> (String, [Int]) {
+        let cap = end - start
+        var units = [unichar](repeating: 0, count: cap)
+        var offsets = [Int](repeating: 0, count: cap + 1)
+        var count = 0
+        var pos = start
+        while pos < end {
+            offsets[count] = pos
+            let dec = decodeJsonCharAt(nsText, pos: pos, end: end)
+            units[count] = dec.ch
+            count += 1
+            pos += dec.len
+        }
+        offsets[count] = end
+        return (String(utf16CodeUnits: units, count: count), offsets)
     }
 
     private static func buildMaskedDoubleQuotes(_ nsText: NSString, spans: [QuotedPathSpan]) -> String {
@@ -328,13 +350,13 @@ extension CoreTelemetryService {
         if let driveAfter = matchDecodedWindowsDrive(nsText, pos: pos, end: end, dec0: dec0) {
             return checkTrailingNonWS(nsText, matchPos: pos, afterPos: driveAfter, end: end, tokenStart: &tokenStart)
         }
-        if dec0.ch == 0x2F {
-            return checkSlashRun(nsText, pos: pos, afterPos: pos + dec0.len, end: end, tokenStart: &tokenStart)
+        if dec0.ch == 0x2F || (dec0.ch == 0x5C && (tokenStart >= 0 || dec0.len > 1)) {
+            return checkSepRun(nsText, pos: pos, end: end, dec0: dec0, tokenStart: &tokenStart)
         }
-        if tokenStart < 0, let prefixAfter = matchDecodedHomeOrUnc(nsText, pos: pos, end: end, dec0: dec0) {
+        if tokenStart < 0, let prefixAfter = matchDecodedHome(nsText, pos: pos, end: end, dec0: dec0) {
             return checkTrailingNonWS(nsText, matchPos: pos, afterPos: prefixAfter, end: end, tokenStart: &tokenStart)
         }
-        return stepPlainQuotedChar(nsText, pos: pos, end: end, dec0: dec0, tokenStart: &tokenStart)
+        return stepPlainQuotedChar(pos: pos, dec0: dec0, tokenStart: &tokenStart)
     }
 
     private static func matchDecodedWindowsDrive(
@@ -349,39 +371,34 @@ extension CoreTelemetryService {
         return (dec2.ch == 0x2F || dec2.ch == 0x5C) ? p2 + dec2.len : nil
     }
 
-    private static func matchDecodedHomeOrUnc(
+    private static func matchDecodedHome(
         _ nsText: NSString, pos: Int, end: Int, dec0: DecodedJsonChar
     ) -> Int? {
-        guard (dec0.ch == 0x7E || dec0.ch == 0x5C) && pos + dec0.len < end else { return nil }
+        guard dec0.ch == 0x7E && pos + dec0.len < end else { return nil }
         let p1 = pos + dec0.len
         let dec1 = decodeJsonCharAt(nsText, pos: p1, end: end)
-        return ((dec0.ch == 0x7E && dec1.ch == 0x2F) || (dec0.ch == 0x5C && dec1.ch == 0x5C)) ? p1 + dec1.len : nil
+        return dec1.ch == 0x2F ? p1 + dec1.len : nil
     }
 
     private static func stepPlainQuotedChar(
-        _ nsText: NSString, pos: Int, end: Int, dec0: DecodedJsonChar, tokenStart: inout Int
+        pos: Int, dec0: DecodedJsonChar, tokenStart: inout Int
     ) -> QuotedScanStep {
         if isDecodedWhitespace(dec0.ch) || isQuotedPathDelimiter(dec0.ch) {
             tokenStart = -1
-        } else if dec0.ch == 0x5C {
-            if tokenStart >= 0 {
-                return checkTrailingNonWS(
-                    nsText, matchPos: tokenStart, afterPos: pos + dec0.len, end: end, tokenStart: &tokenStart
-                )
-            }
         } else if tokenStart < 0 {
             tokenStart = pos
         }
         return QuotedScanStep(found: -1, nextPos: pos + dec0.len)
     }
 
-    private static func checkSlashRun(
-        _ nsText: NSString, pos: Int, afterPos: Int, end: Int, tokenStart: inout Int
+    private static func checkSepRun(
+        _ nsText: NSString, pos: Int, end: Int, dec0: DecodedJsonChar, tokenStart: inout Int
     ) -> QuotedScanStep {
+        let afterPos = pos + dec0.len
         if tokenStart >= 0 {
             return checkTrailingNonWS(nsText, matchPos: tokenStart, afterPos: afterPos, end: end, tokenStart: &tokenStart)
         }
-        let (nextRoot, stopCh) = scanSlashRunEnd(nsText, pos: afterPos, end: end)
+        let (nextRoot, stopCh) = scanCharRunEnd(nsText, pos: afterPos, end: end, runChar: dec0.ch)
         if nextRoot < end && !isDecodedWhitespace(stopCh) {
             return QuotedScanStep(found: pos, nextPos: nextRoot)
         }
@@ -399,11 +416,11 @@ extension CoreTelemetryService {
         return QuotedScanStep(found: -1, nextPos: next)
     }
 
-    private static func scanSlashRunEnd(_ nsText: NSString, pos: Int, end: Int) -> (Int, unichar) {
+    private static func scanCharRunEnd(_ nsText: NSString, pos: Int, end: Int, runChar: unichar) -> (Int, unichar) {
         var next = pos
         while next < end {
             let dec = decodeJsonCharAt(nsText, pos: next, end: end)
-            if dec.ch == 0x2F || isHorizontalSpace(dec.ch) {
+            if dec.ch == runChar || isHorizontalSpace(dec.ch) {
                 next += dec.len
             } else {
                 return (next, dec.ch)

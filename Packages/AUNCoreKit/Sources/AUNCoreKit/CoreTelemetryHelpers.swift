@@ -180,7 +180,7 @@ extension CoreTelemetryService {
             var segEnd = segStart
             while segEnd < len {
                 let ch = nsText.character(at: segEnd)
-                if ch == 0x0A || ch == 0x0D || ch == 0x1E || ch == 0x1F { break }
+                if ch == 0x0A || ch == 0x0D || ch == 0x1E || ch == 0x1F || ch == 0x22 { break }
                 segEnd += 1
             }
             if let (lastDot, lastExtEnd) = Self.findLastUnquotedFilenameExt(nsText, segStart: segStart, segEnd: segEnd, len: len),

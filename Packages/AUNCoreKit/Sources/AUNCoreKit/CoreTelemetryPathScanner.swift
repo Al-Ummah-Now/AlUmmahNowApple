@@ -363,7 +363,11 @@ extension CoreTelemetryService {
         var segStart = 0
         while segStart < len {
             var segEnd = segStart
-            while segEnd < len && !isQuotedSegStop(nsText.character(at: segEnd)) { segEnd += 1 }
+            while segEnd < len && nsText.character(at: segEnd) != 0x22
+                && !isQuotedSegStop(nsText.character(at: segEnd))
+            {
+                segEnd += 1
+            }
             redactSingleQuotesInSegment(
                 nsText, range: segStart..<segEnd, hasAt: hasAt, result: &result, copied: &copied
             )
