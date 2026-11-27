@@ -331,6 +331,22 @@ struct CoreTelemetryAuthSanitizerTests {
                 == "https://example.test/webhook/[redacted]"
         )
         #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/users/{id}/profile?token=opaqueSecret123")
+                == "https://example.com/users/{id}/profile?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/users/{private/Secret.mov}?token=opaqueSecret123")
+                == "https://example.com/users/{[redacted-path]?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken{tag:\"opaqueSecret123\"}")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api{tag:\"value\"}?token=opaqueSecret123")
+                == "https://example.com/api{tag:\"value\"}?[redacted]"
+        )
+        #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://api.telegram." + "org/bot123:%2FopaqueSecret123/sendMessage")
                 == "https://api.telegram.org/bot123:[redacted]/sendMessage"
         )

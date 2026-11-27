@@ -125,7 +125,8 @@ extension CoreTelemetryService {
         let len = nsText.length
         guard !span.hasQueryOrFragment && span.totalEnd >= failedContMax && span.totalEnd < len else { return nil }
         guard isURLContinuationStarter(nsText.character(at: span.totalEnd)) else { return nil }
-        let pathEnd = scanURLContinuation(nsText, start: span.totalEnd, len: len)
+        let allowGroupQuotes = !(span.start > 0 && nsText.character(at: span.start - 1) == 0x22)
+        let pathEnd = scanURLContinuation(nsText, start: span.totalEnd, len: len, allowGroupQuotes: allowGroupQuotes)
         if let qfResult = extendURLContinuationQuery(
             nsText, span: span, rawURL: rawURL, baseTail: baseTail, pathEnd: pathEnd
         ) {
@@ -215,8 +216,9 @@ extension CoreTelemetryService {
             || ch == 0x27
     }
 
-    private static func isURLContinuationStopChar(_ ch: unichar) -> Bool {
-        ch == 0x22 || ch == 0x3C || ch == 0x3E || ch == 0x5C || ch == 0x3F || ch == 0x23 || ch == 0x0D || ch == 0x0A
+    private static func isURLContinuationStopChar(_ ch: unichar, allowQuote: Bool) -> Bool {
+        if ch == 0x22 { return !allowQuote }
+        return ch == 0x3C || ch == 0x3E || ch == 0x5C || ch == 0x3F || ch == 0x23 || ch == 0x0D || ch == 0x0A
     }
 
     private static func isURLScheme(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
@@ -229,22 +231,43 @@ extension CoreTelemetryService {
             && nsText.character(at: idx + 2) == 0x2F
     }
 
-    private static func scanURLContinuation(_ nsText: NSString, start: Int, len: Int) -> Int {
+    private static func scanURLContinuation(_ nsText: NSString, start: Int, len: Int, allowGroupQuotes: Bool) -> Int {
         var pos = start
+        var groupDepth = 0
         while pos < len {
-            if VaultLineTracker.isFileScheme(nsText, at: pos) || Self.isWindowsDriveAt(nsText, at: pos, len: len) {
-                break
-            }
-            if pos > start && isURLContinuationSeparator(nsText.character(at: pos - 1))
-                && isURLScheme(nsText, at: pos, len: len)
-            {
-                break
-            }
             let ch = nsText.character(at: pos)
-            if VaultLineTracker.isWhitespace(ch) || isURLContinuationStopChar(ch) { break }
+            if shouldBreakURLContinuation(
+                nsText, pos: pos, start: start, len: len, allowQuote: allowGroupQuotes && groupDepth > 0
+            ) {
+                break
+            }
+            updateURLContinuationGroupDepth(ch, depth: &groupDepth)
             pos += 1
         }
         return pos
+    }
+
+    private static func shouldBreakURLContinuation(
+        _ nsText: NSString, pos: Int, start: Int, len: Int, allowQuote: Bool
+    ) -> Bool {
+        if VaultLineTracker.isFileScheme(nsText, at: pos) || Self.isWindowsDriveAt(nsText, at: pos, len: len) {
+            return true
+        }
+        if pos > start && isURLContinuationSeparator(nsText.character(at: pos - 1))
+            && isURLScheme(nsText, at: pos, len: len)
+        {
+            return true
+        }
+        let ch = nsText.character(at: pos)
+        return VaultLineTracker.isWhitespace(ch) || isURLContinuationStopChar(ch, allowQuote: allowQuote)
+    }
+
+    private static func updateURLContinuationGroupDepth(_ ch: unichar, depth: inout Int) {
+        if ch == 0x28 || ch == 0x5B || ch == 0x7B {
+            depth += 1
+        } else if (ch == 0x29 || ch == 0x5D || ch == 0x7D) && depth > 0 {
+            depth -= 1
+        }
     }
 
     private static func trimWebhookContinuationEnd(

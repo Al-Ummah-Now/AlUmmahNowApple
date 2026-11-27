@@ -110,12 +110,20 @@ extension CoreTelemetryService {
     ) -> Int {
         if isURLPathTerminator(nsText, pos: pos, len: len) { return -1 }
         let ch = nsText.character(at: pos)
-        if ch == 0x28 || ch == 0x5B {
+        if isURLGroupOpener(ch) {
             return pushURLPathGroup(nsText, pos: pos, len: len, ch: ch, openGroups: &openGroups)
         }
-        if ch == 0x29 || ch == 0x5D { return popURLPathGroup(ch, openGroups: &openGroups) ? pos + 1 : -1 }
-        if !openGroups.isEmpty && ch == 0x3A { return -1 }
+        if isURLGroupCloser(ch) { return popURLPathGroup(ch, openGroups: &openGroups) ? pos + 1 : -1 }
+        if !openGroups.isEmpty && (ch == 0x3A || (ch == 0x2F && openGroups.contains { $0.ch == 0x7B })) { return -1 }
         return pos + 1
+    }
+
+    private static func isURLGroupOpener(_ ch: unichar) -> Bool {
+        ch == 0x28 || ch == 0x5B || ch == 0x7B
+    }
+
+    private static func isURLGroupCloser(_ ch: unichar) -> Bool {
+        ch == 0x29 || ch == 0x5D || ch == 0x7D
     }
 
     private static func isURLPathTerminator(_ nsText: NSString, pos: Int, len: Int) -> Bool {
@@ -133,7 +141,7 @@ extension CoreTelemetryService {
     }
 
     private static func popURLPathGroup(_ ch: unichar, openGroups: inout [(pos: Int, ch: unichar)]) -> Bool {
-        let expected: unichar = ch == 0x29 ? 0x28 : 0x5B
+        let expected: unichar = ch == 0x29 ? 0x28 : (ch == 0x5D ? 0x5B : 0x7B)
         guard openGroups.last?.ch == expected else { return false }
         openGroups.removeLast()
         return true
@@ -197,8 +205,7 @@ extension CoreTelemetryService {
     }
 
     static func isURLPathStopChar(_ ch: unichar) -> Bool {
-        ch == 0x22 || ch == 0x3C || ch == 0x3E || ch == 0x5C || ch == 0x7B || ch == 0x7D
-            || ch == 0x3F || ch == 0x23 || ch == 0x0A || ch == 0x0D
+        ch == 0x22 || ch == 0x3C || ch == 0x3E || ch == 0x5C || ch == 0x3F || ch == 0x23 || ch == 0x0A || ch == 0x0D
     }
 
     private static func isURLEndBoundaryChar(_ ch: unichar) -> Bool {
