@@ -129,6 +129,23 @@ struct CoreTelemetryExternalConsentTests {
         )
         #expect(CoreTelemetryService.sanitizeLocalPaths("progress 1/2.") == "progress 1/2.")
         #expect(CoreTelemetryService.sanitizeLocalPaths("progress (1/2.)") == "progress (1/2.)")
+        #expect(CoreTelemetryService.sanitizeLocalPaths("progress (1/2 )") == "progress (1/2 )")
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("progress (1/2...) (https://example.com/api)")
+                == "progress (1/2...) (https://example.com/api)"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/a(b/c)")
+                == "https://example.com/a(b/c)"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/O'Brien Secret'")
+                == "'[redacted-path]'"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("'Studio 2's Acquisition.qzx'")
+                == "[redacted-path]"
+        )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("progress 1/2. (https://example.com/api)")
                 == "progress 1/2. (https://example.com/api)"
@@ -170,6 +187,10 @@ struct CoreTelemetryExternalConsentTests {
         #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedKeywords) == repeatedKeywords)
         let repeatedQuotes = String(repeating: "'a ", count: 20_000) + "."
         #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedQuotes) == repeatedQuotes)
+        let repeatedEquals = String(repeating: "=", count: 50_000)
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedEquals) == repeatedEquals)
+        let leadingSpaces = String(repeating: " ", count: 50_000) + "x.qzx"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(leadingSpaces) == leadingSpaces)
     }
 
     @Test("Startup live(defaults:) clears stored AUNTelemetryEnabled when initial consent activation fails")

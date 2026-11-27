@@ -157,9 +157,9 @@ extension CoreTelemetryService {
             return pos == 0 || !isLetterOrDigit(nsText.character(at: pos - 1))
         }
 
-        private static func isInnerApostrophe(_ nsText: NSString, at pos: Int, ch: unichar) -> Bool {
+        static func isInnerApostrophe(_ nsText: NSString, at pos: Int, ch: unichar) -> Bool {
             ch == 0x27 && pos > 0 && pos + 1 < nsText.length
-                && isLetter(nsText.character(at: pos - 1)) && isLetter(nsText.character(at: pos + 1))
+                && isLetterOrDigit(nsText.character(at: pos - 1)) && isLetter(nsText.character(at: pos + 1))
         }
 
         private static func isLetter(_ ch: unichar) -> Bool {
@@ -263,7 +263,8 @@ extension CoreTelemetryService {
         var escapedBackslash = false
         while rawEnd < totalLength {
             let ch = nsText.character(at: rawEnd)
-            if ch == 0x0A || ch == 0x0D || (quote != 0 && ch == quote && !escapedBackslash) { break }
+            let innerApostrophe = rawEnd > schemeEnd && VaultLineTracker.isInnerApostrophe(nsText, at: rawEnd, ch: ch)
+            if ch == 0x0A || ch == 0x0D || (quote != 0 && ch == quote && !escapedBackslash && !innerApostrophe) { break }
             if ch == 0x1E && matchesPrefix(nsText, at: rawEnd, prefix: vaultPrefix) {
                 stoppedAtVault = true
                 break
