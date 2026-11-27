@@ -127,6 +127,10 @@ struct CoreTelemetryExternalConsentTests {
             CoreTelemetryService.sanitizeLocalPaths("progress 1/2 (https://example.com/api)")
                 .contains("https://example.com/api")
         )
+        #expect(
+            !CoreTelemetryService.sanitizeLocalPaths("opening \"1/2 (https://private.example/Acquisition.mov)\"")
+                .contains("private.example")
+        )
     }
 
     @Test("Queued flush re-checks UserDefaults via live(defaults:) before entering native flush")

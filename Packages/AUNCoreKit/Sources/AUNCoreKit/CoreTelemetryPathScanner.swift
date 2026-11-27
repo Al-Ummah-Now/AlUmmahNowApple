@@ -84,7 +84,7 @@ extension CoreTelemetryService {
         }
 
         private mutating func processLineChar(_ nsText: NSString, ch: unichar) {
-            if pathQuote != 0 && ch == pathQuote && !escapedBackslash {
+            if !escapedBackslash && isClosingQuoteChar(nsText, ch: ch) {
                 resetLineState()
                 return
             }
@@ -95,6 +95,11 @@ extension CoreTelemetryService {
             }
             updateRunState(nsText, ch: ch)
             escapedBackslash = (ch == 0x5C) ? !escapedBackslash : false
+        }
+
+        private func isClosingQuoteChar(_ nsText: NSString, ch: unichar) -> Bool {
+            if pathQuote != 0 && ch == pathQuote { return true }
+            return !inWrapperRun && tokenStart > 0 && (ch == 0x22 || ch == 0x27) && nsText.character(at: tokenStart - 1) == ch
         }
 
         private mutating func captureOpeningQuote(_ nsText: NSString, at pos: Int) {
@@ -152,7 +157,8 @@ extension CoreTelemetryService {
             if isProto, let firstDigit = after.first, firstDigit.isASCII && firstDigit.isNumber {
                 return true
             }
-            return before.allSatisfy { $0.isASCII && $0.isNumber } && after.allSatisfy { $0.isASCII && $0.isNumber }
+            let quoted = start > 0 && (nsText.character(at: start - 1) == 0x22 || nsText.character(at: start - 1) == 0x27)
+            return !quoted && before.allSatisfy { $0.isASCII && $0.isNumber } && after.allSatisfy { $0.isASCII && $0.isNumber }
         }
 
         static func isFileScheme(_ nsText: NSString, at pos: Int) -> Bool {
