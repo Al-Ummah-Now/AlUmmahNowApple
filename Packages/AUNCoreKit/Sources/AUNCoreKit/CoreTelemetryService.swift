@@ -21,6 +21,8 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
     private var _closed = false
     private var _lastPurgeFailed = false
     private var _inFlightFlushes = 0
+    private var _consentEpoch: UInt64 = 0
+    private var _revokedFlushesRemaining = 0
     private var _flushWaiters: [UUID: Task<Void, Never>] = [:]
 
     /// Optional hook used by unit tests to inject a deterministic slow native flush.
@@ -91,6 +93,9 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
             if consent == .off {
                 return revokeLocked()
             }
+            if _revokedFlushesRemaining > 0 {
+                return (false, [])
+            }
             if _lastPurgeFailed {
                 guard Self.removeBufferAndTempFiles(at: bufferPath) else {
                     return (false, [])
@@ -151,9 +156,10 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
     public func reportCrash(kind: String, message: String, stack: String?, fromPreviousSession: Bool) {
         let safeKind = kind.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "UnhandledException" : kind
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        let safeMessage = trimmed.isEmpty ? "Unhandled exception" : Self.sanitizeLocalPaths(trimmed)
+        let safeMessage = trimmed.isEmpty ? "Unhandled exception" : Self.sanitizeLocalPaths(trimmed, preserveStackLocations: false)
         let report = TelemetryCrashReport(
-            kind: safeKind, message: safeMessage, stack: stack.map(Self.sanitizeLocalPaths),
+            kind: safeKind, message: safeMessage,
+            stack: stack.map { Self.sanitizeLocalPaths($0, preserveStackLocations: true) },
             occurredAtMs: Int64(Date().timeIntervalSince1970 * 1000),
             fromPreviousSession: fromPreviousSession, propertiesJson: nil
         )
@@ -187,8 +193,9 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
             let cancelled = ensureExternalConsentLocked()
             guard !_closed, _consent != .off else { return (nil, cancelled) }
             _inFlightFlushes += 1
+            let flushEpoch = _consentEpoch
             let task = Task<Void, Never> { [self] in
-                defer { self.releaseInFlightFlush(id: flushID) }
+                defer { self.releaseInFlightFlush(id: flushID, epoch: flushEpoch) }
                 let stillAllowed = self.lock.withLock { !self._closed && !self._revoked && self._consent != .off }
                 guard stillAllowed && !Task.isCancelled else { return }
                 do {
@@ -233,6 +240,8 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
     private func revokeLocked() -> (Bool, [Task<Void, Never>]) {
         _consent = .off
         _revoked = true
+        _consentEpoch &+= 1
+        _revokedFlushesRemaining = _inFlightFlushes
         let waiters = Array(_flushWaiters.values)
         _flushWaiters.removeAll()
         do {
@@ -255,12 +264,15 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
         for waiter in waiters { waiter.cancel() }
     }
 
-    private func releaseInFlightFlush(id: UUID) {
+    private func releaseInFlightFlush(id: UUID, epoch: UInt64) {
         lock.withLock {
             _flushWaiters.removeValue(forKey: id)
             _inFlightFlushes = max(0, _inFlightFlushes - 1)
-            if _revoked, bufferPath != nil {
-                _lastPurgeFailed = !Self.removeBufferAndTempFiles(at: bufferPath)
+            if epoch != _consentEpoch {
+                _revokedFlushesRemaining = max(0, _revokedFlushesRemaining - 1)
+                if bufferPath != nil {
+                    _lastPurgeFailed = !Self.removeBufferAndTempFiles(at: bufferPath)
+                }
             }
         }
     }

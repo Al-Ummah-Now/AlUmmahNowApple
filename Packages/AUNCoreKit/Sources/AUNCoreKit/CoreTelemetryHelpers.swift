@@ -67,30 +67,47 @@ extension CoreTelemetryService {
     }
 
     /// Scrubs local filesystem paths and `file://` URIs before crash or breadcrumb text enters telemetry.
-    public static func sanitizeLocalPaths(_ text: String) -> String {
+    /// Line numbers are preserved only when `preserveStackLocations` is `true` (stack traces) and the
+    /// location terminates the frame line.
+    public static func sanitizeLocalPaths(_ text: String, preserveStackLocations: Bool = false) -> String {
         guard !text.isEmpty else { return text }
+        let rules = preserveStackLocations ? Self.stackPathRules : Self.messagePathRules
         var result = text
-        for regex in Self.pathRegexes {
+        for (regex, template) in rules {
             let range = NSRange(result.startIndex..<result.endIndex, in: result)
-            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "[redacted-path]")
+            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: template)
         }
         return result
     }
 
-    private static let pathRegexes: [NSRegularExpression] = {
-        let stackSuffix = #"(?=(?::line\s+\d+|:\d+(?::\d+)?)(?:[)\]]*(?=\r|\n|$)|\s+in\s+[\p{L}_][\p{L}\p{N}_.$<>]*\()|[\r\n"]|$)"#
-        let winSuffix = #"(?=(?::line\s+\d+|:\d+(?::\d+)?)(?:[)\]]*(?=\r|\n|$)|\s+in\s+[\p{L}_][\p{L}\p{N}_.$<>]*\()|[\r\n"<>|]|$)"#
-        let patterns = [
-            // Double-quoted paths (may contain apostrophes, semicolons, spaces, Unicode, or parentheses)
-            #""(?:file://|(?:[A-Za-z]:[\\/]|\\\\)|~/(?!\s)|/(?=[^\s/"]))[^"\r\n]*""#,
-            // Unquoted file:// URIs (preserving trailing :line N / :N in stacks)
-            #"file://[^\r\n"]+?"# + stackSuffix,
-            // Unquoted Windows drive or UNC paths through end of clause
-            #"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n"<>|]+?"# + winSuffix,
-            // Unquoted Unix ~/ or root paths (including punctuation, angle brackets, pipes, colons, semicolons)
-            #"(?<![\p{L}\p{M}\p{N}._:/-])(?:~/|/(?=[^\s/"]))[^\r\n"]+?"# + stackSuffix,
+    private static let messagePathRules: [(NSRegularExpression, String)] = {
+        let patterns: [(String, String)] = [
+            (#""(?:file://|(?:[A-Za-z]:[\\/]|\\\\)|~/(?!\s)|/(?=[^\s/"]))[^"\r\n]*""#, "[redacted-path]"),
+            (#"file://[^\r\n"]+"#, "[redacted-path]"),
+            (#"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n"<>|]+"#, "[redacted-path]"),
+            (#"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|/(?=[^\s/"]))[^\r\n"]+"#, "[redacted-path]"),
         ]
-        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
+        return patterns.compactMap { pattern, template in
+            (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])).map { ($0, template) }
+        }
+    }()
+
+    private static let stackPathRules: [(NSRegularExpression, String)] = {
+        let endOfFrame = #"(?::line\s+\d+|:\d+(?::\d+)?)(?:[)\]]*|\s+in\s+[\p{L}_][\p{L}\p{N}_.$<>]*\(\))(?=\r|\n|$)"#
+        let stackSuffix = "(?=\(endOfFrame)|[\\r\\n\"]|$)"
+        let winSuffix = "(?=\(endOfFrame)|[\\r\\n\"<>|]|$)"
+        let patterns: [(String, String)] = [
+            (
+                #""(?:file://|(?:[A-Za-z]:[\\/]|\\\\)|~/(?!\s)|/(?=[^\s/"]))[^"\r\n]*?((?::line\s+\d+|:\d+(?::\d+)?)?)""#,
+                "[redacted-path]$1"
+            ),
+            (#"file://[^\r\n"]+?"# + stackSuffix, "[redacted-path]"),
+            (#"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n"<>|]+?"# + winSuffix, "[redacted-path]"),
+            (#"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|/(?=[^\s/"]))[^\r\n"]+?"# + stackSuffix, "[redacted-path]"),
+        ]
+        return patterns.compactMap { pattern, template in
+            (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])).map { ($0, template) }
+        }
     }()
 
     static func serializeProperties(_ properties: [String: String]) -> String? {

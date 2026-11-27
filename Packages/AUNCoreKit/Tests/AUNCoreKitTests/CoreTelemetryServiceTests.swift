@@ -234,6 +234,8 @@ struct CoreTelemetryServiceTests {
             /Private Client
             /private-key
             /Users/alice/Secret<Project>.mov
+            /Users/alice/Draft:77 in open() Acquisition.mov
+            error 42:/home/alice/private.mov
             /workspace/alice/Project|Acquisition.mov
             /workspace/alice/Project;Acquisition.mov
             '/workspace/alice/Project:2026;Acquisition.mov'
@@ -243,6 +245,7 @@ struct CoreTelemetryServiceTests {
             """,
             stack: """
             at Player.open() in /workspace/Élodie/src/Player.swift:42
+            "/home/alice/source.swift:88"
             file:///Users/alice/Player.swift:55
             at /Users/alice/Player.swift:77 in open()
             at App.run()
@@ -257,6 +260,7 @@ struct CoreTelemetryServiceTests {
         #expect(!json.localizedCaseInsensitiveContains("private"))
         #expect(!json.localizedCaseInsensitiveContains("acquisition"))
         #expect(!json.localizedCaseInsensitiveContains("project>.mov"))
+        #expect(!json.localizedCaseInsensitiveContains("source.swift"))
         #expect(!json.localizedCaseInsensitiveContains("client).mov"))
         #expect(!json.localizedCaseInsensitiveContains("name.mov"))
         #expect(!json.localizedCaseInsensitiveContains("draft.mp4"))
@@ -264,6 +268,7 @@ struct CoreTelemetryServiceTests {
         #expect(json.contains("[redacted-path]:42"))
         #expect(json.contains("[redacted-path]:55"))
         #expect(json.contains("[redacted-path]:77 in open()"))
+        #expect(json.contains("[redacted-path]:88"))
         #expect(json.contains("App.run()"))
         #expect(json.contains("[redacted-path]"))
     }
