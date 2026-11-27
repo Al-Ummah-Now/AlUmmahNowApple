@@ -107,7 +107,7 @@ extension CoreTelemetryService {
     }
 
     private static func redactEmails(in text: String) -> String {
-        guard text.contains("@") || text.contains("%40") else { return text }
+        guard VaultLineTracker.hasEmailAt(text) else { return text }
         let nsText = text as NSString
         let len = nsText.length
         var result = ""

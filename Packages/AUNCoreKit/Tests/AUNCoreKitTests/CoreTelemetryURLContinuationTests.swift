@@ -565,6 +565,16 @@ extension CoreTelemetryURLContinuationTests {
             ("[\"al\\u0069\\u0063e@example.com ok\"]", "[\"[redacted-email] ok\"]"),
             ("[\"prefix\\nal\\u0069\\u0063e@example.com\"]", "[\"prefix\\n[redacted-email]\"]"),
             ("[\"\\u0020al\\u0069\\u0063e@example.com ok\"]", "[\"\\u0020[redacted-email] ok\"]"),
+            ("[\"alice\\u0040example.com ok\"]", "[\"[redacted-email] ok\"]"),
+            ("[\"al\\u0069\\u0063e\\u0040example\\u002e\\u0063om ok\"]", "[\"[redacted-email] ok\"]"),
+            (
+                "[\"see <https://example.com/api?token=first secondSecret> public\"]",
+                "[\"see <https://example.com/api?[redacted]> public\"]"
+            ),
+            (
+                "[\"https://example.com/docs/[redacted] public\",\"sibling\"]",
+                "[\"https://example.com/docs/[redacted] public\",\"sibling\"]"
+            ),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)

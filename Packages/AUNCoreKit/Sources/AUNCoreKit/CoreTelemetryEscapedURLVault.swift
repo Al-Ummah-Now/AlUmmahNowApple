@@ -19,8 +19,38 @@ extension CoreTelemetryService {
         let wrappedInAngle = urlStart > 0 && nsText.character(at: urlStart - 1) == 0x3C
         let stopOnLess = !inDoubleQuote && !wrappedInAngle
         let stopOnGreater = !inDoubleQuote || wrappedInAngle
-        let allowInlineSpace = inDoubleQuote && !wrappedInAngle
-        return (stopOnLess ? 1 : 0) | (stopOnGreater ? 2 : 0) | (allowInlineSpace ? 4 : 0)
+        return (stopOnLess ? 1 : 0) | (stopOnGreater ? 2 : 0) | (inDoubleQuote ? 4 : 0)
+    }
+
+    static func emailUnicodeAtLength(_ nsText: NSString, at pos: Int, len: Int) -> Int {
+        guard
+            pos + 5 < len && nsText.character(at: pos) == 0x5C
+                && nsText.character(at: pos + 1) == 0x75
+                && nsText.character(at: pos + 2) == 0x30
+                && nsText.character(at: pos + 3) == 0x30
+                && nsText.character(at: pos + 4) == 0x34
+                && nsText.character(at: pos + 5) == 0x30
+                && !VaultLineTracker.isPrecededByOddBackslashes(nsText, at: pos, minPos: 0)
+        else { return 0 }
+        return 6
+    }
+
+    static func classifyEscapedDomainChar(_ nsText: NSString, at pos: Int, len: Int) -> VaultLineTracker.DomainCharKind? {
+        guard pos + 5 < len && nsText.character(at: pos) == 0x5C && nsText.character(at: pos + 1) == 0x75,
+            let code = parseHex4(nsText, pos: pos + 2)
+        else { return nil }
+        if code < 0x80 {
+            if isASCIILetter(code) { return .letter }
+            if isASCIIDigit(code) { return .digit }
+            if code == 0x2E { return .dot }
+            return code == 0x2D ? .hyphen : .other
+        }
+        if VaultLineTracker.isEmailDomainDot(code) { return .dot }
+        if let scalar = UnicodeScalar(code) {
+            if CharacterSet.letters.contains(scalar) { return .letter }
+            if CharacterSet.decimalDigits.contains(scalar) { return .digit }
+        }
+        return .other
     }
 
     // swiftlint:disable:next function_parameter_count
@@ -54,11 +84,12 @@ extension CoreTelemetryService {
         let nextCh = nsText.character(at: span.totalEnd)
         guard nextCh != 0x22 && nextCh != 0x0A && nextCh != 0x0D else { return nil }
         let secretURL: String
-        if redactedURL.hasSuffix("[redacted]") {
+        if redactedURL != rawURL && redactedURL.hasSuffix("[redacted]") {
             secretURL = redactedURL
         } else {
-            let probe = redactURLPathSecrets(rawURL + "x")
-            guard probe.hasSuffix("[redacted]") else { return nil }
+            let probeInput = rawURL + "x"
+            let probe = redactURLPathSecrets(probeInput)
+            guard probe != probeInput && probe.hasSuffix("[redacted]") else { return nil }
             secretURL = probe
         }
         var pos = span.totalEnd

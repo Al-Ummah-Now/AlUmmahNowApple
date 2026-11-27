@@ -282,7 +282,7 @@ extension CoreTelemetryService.VaultLineTracker {
         {
             return 3  // "%40"
         }
-        return 0
+        return CoreTelemetryService.emailUnicodeAtLength(nsText, at: pos, len: len)
     }
 
     static func findEmailLocalStart(_ nsText: NSString, at atPos: Int, minPos: Int, len: Int) -> Int {
@@ -461,6 +461,7 @@ extension CoreTelemetryService.VaultLineTracker {
     }
 
     private static func classifyDomainChar(_ nsText: NSString, at pos: Int, len: Int) -> (DomainCharKind, Int) {
+        if let escKind = CoreTelemetryService.classifyEscapedDomainChar(nsText, at: pos, len: len) { return (escKind, 6) }
         let ch = nsText.character(at: pos)
         if ch < 0x80 {
             if CoreTelemetryService.isASCIILetter(ch) { return (.letter, 1) }
@@ -477,7 +478,7 @@ extension CoreTelemetryService.VaultLineTracker {
     }
 
     static func hasEmailAt(_ text: String) -> Bool {
-        text.contains("@") || text.contains("%40")
+        text.contains("@") || text.contains("%40") || text.contains("\\u0040")
     }
 
     static func containsWhitespace(_ nsText: NSString, from start: Int, to end: Int) -> Bool {
