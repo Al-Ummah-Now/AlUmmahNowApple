@@ -92,6 +92,13 @@ extension CoreTelemetryAuthScanner {
     static func isNewline(_ ch: unichar) -> Bool { ch == 0x0A || ch == 0x0D }
     static func isJsonDelimiter(_ ch: unichar) -> Bool { ch == 0x2C || ch == 0x7D || ch == 0x5D }
 
+    static func isPrecededByBraceOrComma(_ nsText: NSString, before pos: Int) -> Bool {
+        let idx = skipJsonWhitespaceBackward(nsText, from: pos - 1)
+        guard idx >= 0 else { return false }
+        let ch = nsText.character(at: idx)
+        return ch == 0x7B || ch == 0x2C
+    }
+
     static func findEnclosingJsonObjectStart(
         _ nsText: NSString, before pos: Int, state: inout AuthScanState
     ) -> Int {

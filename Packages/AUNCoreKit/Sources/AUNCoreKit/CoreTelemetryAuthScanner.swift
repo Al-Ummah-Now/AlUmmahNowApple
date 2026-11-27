@@ -144,7 +144,7 @@ enum CoreTelemetryAuthScanner {
             if ch == quote {
                 return finishQuotedAuthKey(
                     nsText, keyRange: pos..<(idx + 1), decoded: decoded,
-                    flags: (quote == 0x22 && !hasInvalidJsonEscape, sawEscape), state: &state
+                    flags: (quote == 0x22, !hasInvalidJsonEscape, sawEscape), state: &state
                 )
             }
             guard decoded.count < 19 else { return nil }
@@ -164,17 +164,19 @@ enum CoreTelemetryAuthScanner {
 
     private static func finishQuotedAuthKey(
         _ nsText: NSString, keyRange: Range<Int>, decoded: [unichar],
-        flags: (allowJson: Bool, sawEscape: Bool), state: inout AuthScanState
+        flags: (isDoubleQuote: Bool, validEscapes: Bool, sawEscape: Bool), state: inout AuthScanState
     ) -> AuthKeyMatch? {
         let key = String(utf16CodeUnits: decoded, count: decoded.count).lowercased()
         let canonical: String? =
             key == "authorization" ? "Authorization" : (key == "proxy-authorization" ? "Proxy-Authorization" : nil)
         guard let canonical else { return nil }
-        let openBrace = flags.allowJson ? findEnclosingJsonObjectStart(nsText, before: keyRange.lowerBound, state: &state) : -1
+        let hasPrefix = flags.isDoubleQuote && isPrecededByBraceOrComma(nsText, before: keyRange.lowerBound)
+        let allowJson = flags.isDoubleQuote && flags.validEscapes
+        let openBrace = allowJson ? findEnclosingJsonObjectStart(nsText, before: keyRange.lowerBound, state: &state) : -1
         let authState = openBrace >= 0 ? classifyTopLevelJsonContainer(nsText, openPos: openBrace, state: &state) : -1
         return AuthKeyMatch(
             keyStart: keyRange.lowerBound, keyEnd: keyRange.upperBound,
-            isJsonCandidate: authState == 0, hasJsonPrefix: openBrace >= 0,
+            isJsonCandidate: authState == 0, hasJsonPrefix: hasPrefix,
             failedTopEnd: authState > 0 ? authState : -1, normalizedKey: flags.sawEscape ? canonical : nil
         )
     }

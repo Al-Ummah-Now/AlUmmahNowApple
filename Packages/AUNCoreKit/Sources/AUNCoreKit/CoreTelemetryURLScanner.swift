@@ -103,7 +103,7 @@ extension CoreTelemetryService {
             if next < 0 { break }
             pos = next
         }
-        if let firstUnclosed = openGroups.first?.pos { return (firstUnclosed, true) }
+        if !allowCommas, let firstUnclosed = openGroups.first?.pos { return (firstUnclosed, true) }
         return (pos, false)
     }
 
@@ -113,7 +113,11 @@ extension CoreTelemetryService {
         if VaultLineTracker.isFileScheme(nsText, at: pos) || isWindowsDriveAt(nsText, at: pos, len: len) { return -1 }
         let ch = nsText.character(at: pos)
         if VaultLineTracker.isWhitespace(ch) || isURLPathStopChar(ch) { return -1 }
-        if ch == 0x2C && (!allowCommas || shouldStopAtURLComma(nsText, at: pos, len: len)) { return -1 }
+        if ch == 0x2C
+            && (!allowCommas || (openGroups.isEmpty && shouldStopAtURLComma(nsText, at: pos, len: len)))
+        {
+            return -1
+        }
         if ch == 0x28 || ch == 0x5B {
             if startsEmbeddedPathInsideGroup(nsText, nextPos: pos + 1, len: len) { return -1 }
             openGroups.append((pos, ch))
