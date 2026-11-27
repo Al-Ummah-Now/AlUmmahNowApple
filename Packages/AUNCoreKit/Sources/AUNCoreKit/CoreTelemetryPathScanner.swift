@@ -42,6 +42,7 @@ extension CoreTelemetryService {
         private var cursor = 0
         private var hasPathOnLine = false
         private var pathQuote: unichar = 0
+        private var escapedBackslash = false
         private var tokenStart = -1
         private var tokenEnd = -1
         private var tokenHasPathSep = false
@@ -50,7 +51,7 @@ extension CoreTelemetryService {
 
         mutating func isEmbeddedInPath(_ nsText: NSString, matchStart: Int) -> Bool {
             advance(nsText, to: matchStart)
-            let curTokenIsPath = tokenHasPathSep && !Self.isProtocolToken(nsText, start: tokenStart, end: tokenEnd)
+            let curTokenIsPath = tokenHasPathSep && !Self.isNonPathSlashToken(nsText, start: tokenStart, end: tokenEnd)
             return pathQuote != 0 || curTokenIsPath || (hasPathOnLine && (!wsBeforeRun || inWrapperRun))
         }
 
@@ -62,6 +63,7 @@ extension CoreTelemetryService {
         private mutating func resetLineState() {
             hasPathOnLine = false
             pathQuote = 0
+            escapedBackslash = false
             tokenStart = -1
             tokenEnd = -1
             tokenHasPathSep = false
@@ -82,36 +84,31 @@ extension CoreTelemetryService {
         }
 
         private mutating func processLineChar(_ nsText: NSString, ch: unichar) {
-            if pathQuote != 0 && ch == pathQuote {
-                closeQuotedPath()
+            if pathQuote != 0 && ch == pathQuote && !escapedBackslash {
+                resetLineState()
                 return
             }
             let atTokenStart = tokenStart < 0 || inWrapperRun
             if Self.isFileScheme(nsText, at: cursor) || Self.startsLocalPath(nsText, at: cursor, atTokenStart: atTokenStart) {
                 hasPathOnLine = true
-                if cursor > 0 {
-                    let prev = nsText.character(at: cursor - 1)
-                    if prev == 0x22 || prev == 0x27 { pathQuote = prev }
-                }
+                captureOpeningQuote(nsText, at: cursor)
             }
             updateRunState(nsText, ch: ch)
+            escapedBackslash = (ch == 0x5C) ? !escapedBackslash : false
         }
 
-        private mutating func closeQuotedPath() {
-            pathQuote = 0
-            hasPathOnLine = false
-            tokenStart = -1
-            tokenEnd = -1
-            tokenHasPathSep = false
-            inWrapperRun = false
-            wsBeforeRun = false
+        private mutating func captureOpeningQuote(_ nsText: NSString, at pos: Int) {
+            guard pathQuote == 0 && pos > 0 else { return }
+            let prev = nsText.character(at: pos - 1)
+            if prev == 0x22 || prev == 0x27 { pathQuote = prev }
         }
 
         private mutating func updateRunState(_ nsText: NSString, ch: unichar) {
             if Self.isWhitespace(ch) {
                 if !inWrapperRun {
-                    if tokenHasPathSep && !Self.isProtocolToken(nsText, start: tokenStart, end: tokenEnd) {
+                    if tokenHasPathSep && !Self.isNonPathSlashToken(nsText, start: tokenStart, end: tokenEnd) {
                         hasPathOnLine = true
+                        captureOpeningQuote(nsText, at: tokenStart)
                     }
                     tokenStart = -1
                     tokenEnd = -1
@@ -143,16 +140,19 @@ extension CoreTelemetryService {
                 && isPathSep(nsText.character(at: pos + 2))
         }
 
-        private static func isProtocolToken(_ nsText: NSString, start: Int, end: Int) -> Bool {
+        private static func isNonPathSlashToken(_ nsText: NSString, start: Int, end: Int) -> Bool {
             guard start >= 0 && end > start else { return false }
             let token = nsText.substring(with: NSRange(location: start, length: end - start))
             guard !token.contains("\\"), let slashIdx = token.firstIndex(of: "/") else { return false }
-            let afterSlash = token[token.index(after: slashIdx)...]
-            guard let firstDigit = afterSlash.first, firstDigit.isASCII && firstDigit.isNumber,
-                !afterSlash.contains("/")
-            else { return false }
-            let proto = token[..<slashIdx].uppercased()
-            return proto == "HTTP" || proto == "TLS" || proto == "SSL"
+            let before = token[..<slashIdx]
+            let after = token[token.index(after: slashIdx)...]
+            guard !before.isEmpty, !after.isEmpty, !after.contains("/") else { return false }
+            let upper = before.uppercased()
+            let isProto = upper == "HTTP" || upper == "TLS" || upper == "SSL"
+            if isProto, let firstDigit = after.first, firstDigit.isASCII && firstDigit.isNumber {
+                return true
+            }
+            return before.allSatisfy { $0.isASCII && $0.isNumber } && after.allSatisfy { $0.isASCII && $0.isNumber }
         }
 
         static func isFileScheme(_ nsText: NSString, at pos: Int) -> Bool {
@@ -203,13 +203,15 @@ extension CoreTelemetryService {
         let totalLength = nsText.length
         var rawEnd = schemeEnd
         var stoppedAtVault = false
+        var escapedBackslash = false
         while rawEnd < totalLength {
             let ch = nsText.character(at: rawEnd)
-            if ch == 0x0A || ch == 0x0D || (quote != 0 && ch == quote) { break }
+            if ch == 0x0A || ch == 0x0D || (quote != 0 && ch == quote && !escapedBackslash) { break }
             if ch == 0x1E && matchesPrefix(nsText, at: rawEnd, prefix: vaultPrefix) {
                 stoppedAtVault = true
                 break
             }
+            escapedBackslash = (ch == 0x5C) ? !escapedBackslash : false
             rawEnd += 1
         }
         guard stoppedAtVault else { return (rawEnd, rawEnd) }

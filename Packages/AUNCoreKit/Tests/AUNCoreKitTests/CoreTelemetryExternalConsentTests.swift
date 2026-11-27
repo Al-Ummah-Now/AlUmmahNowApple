@@ -56,6 +56,7 @@ struct CoreTelemetryExternalConsentTests {
             ("file:///private/Project Folder/( https://Secret/Acquisition.mov)", "[redacted-path]"),
             ("file:///private/Project Folder/ (https://Secret/Acquisition.mov)", "[redacted-path]"),
             ("\"file:///private/My Folder (https://Secret/Acquisition.mov)\"", "\"[redacted-path]\""),
+            ("\"file:///private/Client \\\"Internal\\\" Acquisition\"", "\"[redacted-path]\""),
             ("\"file:///a.mov\" (https://example.com/api)", "\"[redacted-path]\" (https://example.com/api)"),
             ("file:///private/Folder/ https://example.com/api", "[redacted-path] https://example.com/api"),
             ("file:///private/My\u{00A0}Acquisition", "[redacted-path]"),
@@ -71,21 +72,9 @@ struct CoreTelemetryExternalConsentTests {
                 "file:///a.mov; https://example.com/ /private/foo(https://Secret/Acquisition.mov)",
                 "[redacted-path] https://example.com/ [redacted-path]"
             ),
-            ("/private/foo(https://Secret/Acquisition.mov)", "[redacted-path]"),
-            ("/private/Client Files (https://Secret/Acquisition.mov)", "[redacted-path]"),
-            ("/private/Transfer to (https://Secret/Acquisition.mov)", "[redacted-path]"),
-            ("relative/Client Files (https://Secret/Acquisition.mov)", "[redacted-path]"),
-            ("path=/private/Client Files (https://Secret/Acquisition.mov)", "path=[redacted-path]"),
-            ("/private/Secret\u{001E}https://Secret/Acquisition.mov", "[redacted-path]"),
-            ("/private/Secret\u{001E}Acquisition", "[redacted-path]"),
-            ("/private/Secret^Acquisition", "[redacted-path]"),
-            ("TLS/1.3(https://example.com/api)", "TLS/1.3(https://example.com/api)"),
-            ("HTTP/2(https://example.com/api)", "HTTP/2(https://example.com/api)"),
             ("file://   https://example.com/api", "[redacted-path]   https://example.com/api"),
             ("file:///storage/emulated/0/Secret.mov and (https://example.com/api)", "[redacted-path]"),
             ("https://example.com/ (https://other.com/api)", "https://example.com/ (https://other.com/api)"),
-            ("/private/Project Folder/(https://Secret/Acquisition.mov)", "[redacted-path]"),
-            ("/private/Project Folder/( https://Secret/Acquisition.mov)", "[redacted-path]"),
             ("(relative/Secret.mov and https://example.com/api)", "([redacted-path] https://example.com/api)"),
             ("Bearer abcdefg", "Bearer [redacted]"),
             ("file:///storage/emulated/0/https://Secret/Acquisition.mov", "[redacted-path]"),
@@ -109,6 +98,35 @@ struct CoreTelemetryExternalConsentTests {
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
+    }
+
+    @Test("Scrubs spaced local paths and sentinels while preserving protocol tokens and fractions")
+    func scrubsSpacedPathsAndPreservesProtocols() {
+        let cases: [(String, String)] = [
+            ("/private/Project Folder/(https://Secret/Acquisition.mov)", "[redacted-path]"),
+            ("/private/Project Folder/( https://Secret/Acquisition.mov)", "[redacted-path]"),
+            ("/private/foo(https://Secret/Acquisition.mov)", "[redacted-path]"),
+            ("/private/Client Files (https://Secret/Acquisition.mov)", "[redacted-path]"),
+            ("/private/Transfer to (https://Secret/Acquisition.mov)", "[redacted-path]"),
+            ("relative/Client Files (https://Secret/Acquisition.mov)", "[redacted-path]"),
+            ("path=/private/Client Files (https://Secret/Acquisition.mov)", "path=[redacted-path]"),
+            ("/private/Secret\u{001E}https://Secret/Acquisition.mov", "[redacted-path]"),
+            ("/private/Secret\u{001E}Acquisition", "[redacted-path]"),
+            ("/private/Secret^Acquisition", "[redacted-path]"),
+            ("TLS/1.3(https://example.com/api)", "TLS/1.3(https://example.com/api)"),
+            ("HTTP/2(https://example.com/api)", "HTTP/2(https://example.com/api)"),
+        ]
+        for (input, expected) in cases {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
+        }
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("\"relative/My Clip.mov\" and (https://example.com/api)")
+                .contains("https://example.com/api")
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("progress 1/2 (https://example.com/api)")
+                .contains("https://example.com/api")
+        )
     }
 
     @Test("Queued flush re-checks UserDefaults via live(defaults:) before entering native flush")
