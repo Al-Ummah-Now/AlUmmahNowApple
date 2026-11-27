@@ -95,56 +95,79 @@ extension CoreTelemetryAuthScanner {
     static func isPrecededByJsonMemberDelimiter(
         _ nsText: NSString, before pos: Int, state: inout AuthScanState
     ) -> Bool {
-        var idx = pos - 1
-        while idx >= 0 && (isHorizSpace(nsText.character(at: idx)) || isNewline(nsText.character(at: idx))) { idx -= 1 }
+        var idx = skipJsonWhitespaceBackward(nsText, from: pos - 1)
         guard idx >= 0 else { return false }
-        let ch = nsText.character(at: idx)
-        if ch == 0x7B { return true }
-        guard ch == 0x2C else { return false }
-        return isPrecededByJsonValue(nsText, before: idx, state: &state)
+        if nsText.character(at: idx) == 0x7B { return true }
+        guard nsText.character(at: idx) == 0x2C else { return false }
+        if let cached = state.memberCommaValid[idx] { return cached }
+        var visited: [Int] = []
+        var result = false
+        while idx >= 0 && nsText.character(at: idx) == 0x2C {
+            if let known = state.memberCommaValid[idx] {
+                result = known
+                break
+            }
+            visited.append(idx)
+            let beforeKey = stepBackOverJsonMember(nsText, beforeComma: idx, state: &state)
+            guard beforeKey >= 0 else { break }
+            if nsText.character(at: beforeKey) == 0x7B {
+                result = true
+                break
+            }
+            idx = beforeKey
+        }
+        for commaPos in visited { state.memberCommaValid[commaPos] = result }
+        return result
     }
 
-    private static func isPrecededByJsonValue(
-        _ nsText: NSString, before commaPos: Int, state: inout AuthScanState
-    ) -> Bool {
-        var prev = commaPos - 1
-        while prev >= 0 && (isHorizSpace(nsText.character(at: prev)) || isNewline(nsText.character(at: prev))) {
-            prev -= 1
-        }
-        guard prev >= 0 else { return false }
+    private static func stepBackOverJsonMember(
+        _ nsText: NSString, beforeComma commaPos: Int, state: inout AuthScanState
+    ) -> Int {
+        let prev = skipJsonWhitespaceBackward(nsText, from: commaPos - 1)
+        guard prev >= 0 else { return -1 }
+        let valueStart = findJsonValueStartBackward(nsText, end: prev, state: &state)
+        guard valueStart > 0 else { return -1 }
+        return findDelimiterBeforeJsonMemberKeyColon(nsText, before: valueStart)
+    }
+
+    private static func findJsonValueStartBackward(
+        _ nsText: NSString, end prev: Int, state: inout AuthScanState
+    ) -> Int {
         let ch = nsText.character(at: prev)
-        if ch == 0x22 {
-            let strStart = scanJsonStringStartBackward(nsText, from: prev)
-            return strStart >= 0 && isPrecededByColon(nsText, before: strStart)
-        }
-        if ch == 0x7D {
-            let objStart = scanContainerStartBackward(nsText, closePos: prev, isBrace: true, state: &state)
-            return objStart >= 0 && isPrecededByColon(nsText, before: objStart)
-        }
-        if ch == 0x5D {
-            let arrStart = scanContainerStartBackward(nsText, closePos: prev, isBrace: false, state: &state)
-            return arrStart >= 0 && isPrecededByColon(nsText, before: arrStart)
-        }
+        if ch == 0x22 { return scanJsonStringStartBackward(nsText, from: prev) }
+        if ch == 0x7D { return scanContainerStartBackward(nsText, closePos: prev, isBrace: true, state: &state) }
+        if ch == 0x5D { return scanContainerStartBackward(nsText, closePos: prev, isBrace: false, state: &state) }
         if ch >= 0x30 && ch <= 0x39 {
             var start = prev
             while start >= 0 && !isJsonValuePrefixStop(nsText.character(at: start)) { start -= 1 }
             let token = nsText.substring(with: NSRange(location: start + 1, length: prev - start))
-            return isJsonNumber(token) && isPrecededByColon(nsText, before: start + 1)
+            return isJsonNumber(token) ? start + 1 : -1
         }
-        return matchesJsonKeywordEndingAt(nsText, end: prev, keyword: "true")
-            || matchesJsonKeywordEndingAt(nsText, end: prev, keyword: "false")
-            || matchesJsonKeywordEndingAt(nsText, end: prev, keyword: "null")
+        return findJsonKeywordStartEndingAt(nsText, end: prev)
     }
 
-    private static func isPrecededByColon(_ nsText: NSString, before pos: Int) -> Bool {
+    private static func findJsonKeywordStartEndingAt(_ nsText: NSString, end: Int) -> Int {
+        for keyword in ["true", "false", "null"] {
+            let kwLen = keyword.utf16.count
+            let start = end - kwLen + 1
+            if start > 0 && nsText.substring(with: NSRange(location: start, length: kwLen)) == keyword {
+                return start
+            }
+        }
+        return -1
+    }
+
+    private static func findDelimiterBeforeJsonMemberKeyColon(_ nsText: NSString, before pos: Int) -> Int {
         let colonPos = skipJsonWhitespaceBackward(nsText, from: pos - 1)
-        guard colonPos > 0 && nsText.character(at: colonPos) == 0x3A else { return false }
+        guard colonPos > 0 && nsText.character(at: colonPos) == 0x3A else { return -1 }
         let keyEnd = skipJsonWhitespaceBackward(nsText, from: colonPos - 1)
-        guard keyEnd > 0 && nsText.character(at: keyEnd) == 0x22 else { return false }
+        guard keyEnd > 0 && nsText.character(at: keyEnd) == 0x22 else { return -1 }
         let keyStart = scanJsonStringStartBackward(nsText, from: keyEnd)
-        guard keyStart > 0 else { return false }
+        guard keyStart > 0 else { return -1 }
         let beforeKey = skipJsonWhitespaceBackward(nsText, from: keyStart - 1)
-        return beforeKey >= 0 && (nsText.character(at: beforeKey) == 0x7B || nsText.character(at: beforeKey) == 0x2C)
+        guard beforeKey >= 0 else { return -1 }
+        let ch = nsText.character(at: beforeKey)
+        return (ch == 0x7B || ch == 0x2C) ? beforeKey : -1
     }
 
     private static func skipJsonWhitespaceBackward(_ nsText: NSString, from start: Int) -> Int {
@@ -167,7 +190,7 @@ extension CoreTelemetryAuthScanner {
         var idx = closeQuotePos - 1
         while idx >= 0 {
             let ch = nsText.character(at: idx)
-            if isNewline(ch) { return -1 }
+            if ch < 0x20 { return -1 }
             if ch == 0x22 && !isEscapedQuote(nsText, at: idx) { return idx }
             idx -= 1
         }
@@ -226,14 +249,6 @@ extension CoreTelemetryAuthScanner {
 
     private static func isJsonValuePrefixStop(_ ch: unichar) -> Bool {
         isHorizSpace(ch) || isNewline(ch) || ch == 0x3A || ch == 0x2C || ch == 0x5B
-    }
-
-    private static func matchesJsonKeywordEndingAt(_ nsText: NSString, end: Int, keyword: String) -> Bool {
-        let kwLen = keyword.utf16.count
-        let start = end - kwLen + 1
-        guard start >= 0 else { return false }
-        guard nsText.substring(with: NSRange(location: start, length: kwLen)) == keyword else { return false }
-        return isPrecededByColon(nsText, before: start)
     }
 
     static func isJsonMemberContinuationDelimiter(_ nsText: NSString, at pos: Int) -> Bool {
@@ -310,7 +325,7 @@ extension CoreTelemetryAuthScanner {
         var escaped = false
         while idx < len {
             let ch = nsText.character(at: idx)
-            if isNewline(ch) { return -(idx + 1) }
+            if ch < 0x20 { return -(idx + 1) }
             if ch == 0x22 && !escaped { return idx + 1 }
             escaped = ch == 0x5C && !escaped
             idx += 1

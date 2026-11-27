@@ -73,7 +73,7 @@ extension CoreTelemetryService {
 
     private static let urlPathSecretRules: [(NSRegularExpression?, String)] = [
         (
-            try? NSRegularExpression(pattern: #"((?:^|/)webhooks?/[^/\s?#]+/)[^/\s?#]+"#, options: [.caseInsensitive]),
+            try? NSRegularExpression(pattern: #"((?:^|/)webhooks?/)[^\s?#]+"#, options: [.caseInsensitive]),
             "$1[redacted]"
         ),
         (

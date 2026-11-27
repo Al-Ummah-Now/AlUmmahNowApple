@@ -37,6 +37,19 @@ struct CoreTelemetryAuthSanitizerTests {
                 == "note: \"hi\", \"Authorization\": \"[redacted]\" [redacted]"
         )
         #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "request, \"note\": \"hi\", \"Authorization\": \"firstValue\" } opaqueSecret123"
+            ) == "request, \"note\": \"hi\", \"Authorization\": \"[redacted]\" [redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"bad\tkey\":\"hi\",\"Authorization\":\"firstValue\" } opaqueSecret123")
+                == "{\"bad\tkey\":\"hi\",\"Authorization\":\"[redacted]\" [redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"a\":1,\"b\":\"hi\",\"Authorization\":\"opaqueSecret123\"}")
+                == "{\"a\":1,\"b\":\"hi\",\"Authorization\":\"[redacted]\"}"
+        )
+        #expect(
             CoreTelemetryService.sanitizeLocalPaths("{\"a\":{\"b\":1},\"Authorization\":\"opaqueSecret123\"}")
                 == "{\"a\":{\"b\":1},\"Authorization\":\"[redacted]\"}"
         )
@@ -50,7 +63,11 @@ struct CoreTelemetryAuthSanitizerTests {
         #expect(scrubbedNested.hasSuffix(",\"Authorization\":\"[redacted]\"}"))
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://discord." + "com/api/webhooks/123456789/fakeWebhookToken")
-                == "https://discord.com/api/webhooks/123456789/[redacted]"
+                == "https://discord.com/api/webhooks/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken")
+                == "https://example.test/webhook/[redacted]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://hooks.slack." + "com/services/T0000/B0000/fakeWebhookToken")

@@ -31,6 +31,7 @@ enum CoreTelemetryAuthScanner {
         var copied = 0
         var braceMap: [Int: Int] = [:]
         var closeToOpenMap: [Int: Int] = [:]
+        var memberCommaValid: [Int: Bool] = [:]
         var failedBraceBack = -1
         var failedBracketBack = -1
 
@@ -115,7 +116,7 @@ enum CoreTelemetryAuthScanner {
         var idx = pos + 1
         while idx < limit {
             let ch = nsText.character(at: idx)
-            if isNewline(ch) { return nil }
+            if ch < 0x20 { return nil }
             if ch == quote {
                 let key = String(utf16CodeUnits: decoded, count: decoded.count).lowercased()
                 let isJson = quote == 0x22 && isPrecededByJsonMemberDelimiter(nsText, before: pos, state: &state)
