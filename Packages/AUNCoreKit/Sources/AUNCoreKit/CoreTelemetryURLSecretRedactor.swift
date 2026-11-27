@@ -207,20 +207,26 @@ extension CoreTelemetryService {
     }
 
     private static func isURLContinuationStarter(_ ch: unichar) -> Bool {
-        ch == 0x2C || ch == 0x28 || ch == 0x5B || ch == 0x29 || ch == 0x5D
+        ch == 0x2C || ch == 0x28 || ch == 0x5B || ch == 0x29 || ch == 0x5D || ch == 0x7B || ch == 0x7D
     }
 
     private static func isURLContinuationSeparator(_ ch: unichar) -> Bool {
-        ch == 0x2C || ch == 0x3B || ch == 0x28 || ch == 0x5B || ch == 0x29 || ch == 0x5D || ch == 0x27
+        ch == 0x2C || ch == 0x3B || ch == 0x28 || ch == 0x5B || ch == 0x29 || ch == 0x5D || ch == 0x7B || ch == 0x7D
+            || ch == 0x27
     }
 
-    private static func isWebURLScheme(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
-        let schemes = ["https://", "http://", "wss://", "ws://", "ftp://"]
-        for scheme in schemes where pos + scheme.utf16.count <= len {
-            let range = NSRange(location: pos, length: scheme.utf16.count)
-            if nsText.compare(scheme, options: .caseInsensitive, range: range) == .orderedSame { return true }
-        }
-        return false
+    private static func isURLContinuationStopChar(_ ch: unichar) -> Bool {
+        ch == 0x22 || ch == 0x3C || ch == 0x3E || ch == 0x5C || ch == 0x3F || ch == 0x23 || ch == 0x0D || ch == 0x0A
+    }
+
+    private static func isURLScheme(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+        guard pos < len && Self.isASCIILetter(nsText.character(at: pos)) else { return false }
+        var idx = pos + 1
+        while idx < len && VaultLineTracker.isURLSchemeChar(nsText.character(at: idx)) { idx += 1 }
+        guard idx - pos >= 2 && idx + 2 < len else { return false }
+        return nsText.character(at: idx) == 0x3A
+            && nsText.character(at: idx + 1) == 0x2F
+            && nsText.character(at: idx + 2) == 0x2F
     }
 
     private static func scanURLContinuation(_ nsText: NSString, start: Int, len: Int) -> Int {
@@ -230,12 +236,12 @@ extension CoreTelemetryService {
                 break
             }
             if pos > start && isURLContinuationSeparator(nsText.character(at: pos - 1))
-                && isWebURLScheme(nsText, at: pos, len: len)
+                && isURLScheme(nsText, at: pos, len: len)
             {
                 break
             }
             let ch = nsText.character(at: pos)
-            if VaultLineTracker.isWhitespace(ch) || Self.isURLPathStopChar(ch) { break }
+            if VaultLineTracker.isWhitespace(ch) || isURLContinuationStopChar(ch) { break }
             pos += 1
         }
         return pos
@@ -244,38 +250,42 @@ extension CoreTelemetryService {
     private static func trimWebhookContinuationEnd(
         _ nsText: NSString, urlStart: Int, minEnd: Int, scanEnd: Int
     ) -> Int {
-        var (excessParens, excessBrackets) = countExcessGroupClosers(nsText, from: urlStart, to: scanEnd)
+        var excess = countExcessGroupClosers(nsText, from: urlStart, to: scanEnd)
         let precededByQuote = urlStart > 0 && nsText.character(at: urlStart - 1) == 0x27
         var end = scanEnd
-        while end > minEnd {
-            let ch = nsText.character(at: end - 1)
-            if ch == 0x2C || ch == 0x3B || (ch == 0x27 && precededByQuote) {
-                end -= 1
-            } else if ch == 0x29 && excessParens > 0 {
-                excessParens -= 1
-                end -= 1
-            } else if ch == 0x5D && excessBrackets > 0 {
-                excessBrackets -= 1
-                end -= 1
-            } else {
-                break
-            }
+        while end > minEnd
+            && consumeTrailingContinuationCloser(nsText.character(at: end - 1), precededByQuote: precededByQuote, excess: &excess)
+        {
+            end -= 1
         }
         return end
     }
 
-    private static func countExcessGroupClosers(_ nsText: NSString, from start: Int, to end: Int) -> (Int, Int) {
-        var excessParens = 0
-        var excessBrackets = 0
+    private static func consumeTrailingContinuationCloser(
+        _ ch: unichar, precededByQuote: Bool, excess: inout (Int, Int, Int)
+    ) -> Bool {
+        if ch == 0x2C || ch == 0x3B || (ch == 0x27 && precededByQuote) { return true }
+        if ch == 0x29 && excess.0 > 0 { excess.0 -= 1; return true }
+        if ch == 0x5D && excess.1 > 0 { excess.1 -= 1; return true }
+        if ch == 0x7D && excess.2 > 0 { excess.2 -= 1; return true }
+        return false
+    }
+
+    private static func countExcessGroupClosers(_ nsText: NSString, from start: Int, to end: Int) -> (Int, Int, Int) {
+        var parens = 0
+        var brackets = 0
+        var braces = 0
         for idx in start..<end {
             switch nsText.character(at: idx) {
-            case 0x28: excessParens -= 1
-            case 0x29: excessParens += 1
-            case 0x5B: excessBrackets -= 1
-            case 0x5D: excessBrackets += 1
+            case 0x28: parens -= 1
+            case 0x29: parens += 1
+            case 0x5B: brackets -= 1
+            case 0x5D: brackets += 1
+            case 0x7B: braces -= 1
+            case 0x7D: braces += 1
             default: break
             }
         }
-        return (excessParens, excessBrackets)
+        return (parens, brackets, braces)
     }
 }

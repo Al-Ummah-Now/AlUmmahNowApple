@@ -294,6 +294,42 @@ struct CoreTelemetryAuthSanitizerTests {
             CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,https://other.com/x?token=opaqueSecret123")
                 == "https://example.com/api,https://other.com/x?[redacted]"
         )
+    }
+
+    @Test("Handles RFC 3986 schemes and closing delimiters in URL continuations")
+    func handlesRFC3986SchemesAndClosingDelimitersInURLContinuations() {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,ssh://other.com/x?token=opaqueSecret123")
+                == "https://example.com/api,ssh://other.com/x?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api)private/Secret?token=opaqueSecret123")
+                == "https://example.com/api)[redacted-path]?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api]private/Secret?token=opaqueSecret123")
+                == "https://example.com/api][redacted-path]?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api}?token=opaqueSecret123")
+                == "https://example.com/api}?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/users/{id}?token=opaqueSecret123")
+                == "https://example.com/users/{id}?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api}private/Secret?token=opaqueSecret123")
+                == "https://example.com/api}[redacted-path]?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{https://example.test/webhook/fakeToken}")
+                == "{https://example.test/webhook/[redacted]}"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken{tag:opaqueSecret123}")
+                == "https://example.test/webhook/[redacted]"
+        )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://api.telegram." + "org/bot123:%2FopaqueSecret123/sendMessage")
                 == "https://api.telegram.org/bot123:[redacted]/sendMessage"
