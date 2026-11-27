@@ -178,6 +178,9 @@
             }
             .padding(.bottom, 40)
             .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
+                Button(l10n("common.retry")) {
+                    if !telemetry.setConsent(.off) { showingPurgeWarning = true }
+                }
                 Button(l10n("common.dismiss"), role: .cancel) {}
             } message: {
                 Text(l10n("diagnostics.purgeWarning"))

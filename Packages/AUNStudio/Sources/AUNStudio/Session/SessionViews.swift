@@ -85,6 +85,14 @@ private struct SignedOutDiagnosticsControl: View {
                         .foregroundStyle(Fanous.errorText)
                         .accessibilityIdentifier("signin-diagnostics-warning")
                 }
+                if !settings.telemetryEnabled && session.services.telemetry.lastPurgeFailed {
+                    Button(l10n("common.retry")) {
+                        let purged = session.services.telemetry.setConsent(.off)
+                        diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
+                    }
+                    .buttonStyle(FanousButtonStyle(.secondary))
+                    .accessibilityIdentifier("signin-diagnostics-retry-purge")
+                }
             }
             .multilineTextAlignment(.leading)
             .padding(.top, FanousScale.spacingSm)

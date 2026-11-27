@@ -61,11 +61,20 @@ struct AccountsView: View {
                         Text(l10n("diagnostics.description"))
                             .fanousFont(.caption)
                             .foregroundStyle(Fanous.textSecondary)
-                        if let diagnosticsMessage {
-                            Text(diagnosticsMessage)
+                        if let message = diagnosticsMessage
+                            ?? (session.services.telemetry.lastPurgeFailed ? l10n("diagnostics.purgeWarning") : nil)
+                        {
+                            Text(message)
                                 .fanousFont(.caption)
                                 .foregroundStyle(Fanous.errorText)
                                 .accessibilityIdentifier("accounts-diagnostics-warning")
+                        }
+                        if !settings.telemetryEnabled && session.services.telemetry.lastPurgeFailed {
+                            Button(l10n("common.retry")) {
+                                let purged = session.services.telemetry.setConsent(.off)
+                                diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
+                            }
+                            .accessibilityIdentifier("accounts-diagnostics-retry-purge")
                         }
                     }
                     .padding(.vertical, 2)

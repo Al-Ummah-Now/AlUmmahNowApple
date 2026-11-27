@@ -488,7 +488,7 @@ struct CoreTelemetryExternalConsentTests {
     func preservesValidRFC3986URLs() {
         let preserved = [
             "https://videos.api.alummahnow.net/v1/items",
-            "https://example.com/?path=/api/items",
+            "https://example.com/api?page=2&sort=asc",
             "https://[2001:db8::1]/v1/items",
             "https://example.com/a(b)/items",
             "https://example.com/a(b;c)/items",
@@ -510,6 +510,22 @@ struct CoreTelemetryExternalConsentTests {
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.com/api;file:///storage/emulated/0/Secret.mov")
                 == "https://example.com/api;[redacted-path]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api;C://Secret/Acquisition.mov")
+                == "https://example.com/api;[redacted-path]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/?path=/Users/alice/Secret.mov")
+                == "https://example.com/?path=[redacted-path]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/api?path=/storage/emulated/0/Secret.mov")
+                == "https://example.com/api?path=[redacted-path]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("file:///storage/emulated/0/Secret.mov and https://example.com/api")
+                == "[redacted-path] https://example.com/api"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.com/api,open(C://Secret/Acquisition.mov)")

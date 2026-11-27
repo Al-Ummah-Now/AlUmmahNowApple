@@ -187,6 +187,14 @@ private struct AdminSignedOutDiagnosticsControl: View {
                         .foregroundStyle(Fanous.errorText)
                         .accessibilityIdentifier("admin-signedout-diagnostics-warning")
                 }
+                if !settings.telemetryEnabled && session.services.telemetry.lastPurgeFailed {
+                    Button(l10n("common.retry")) {
+                        let purged = session.services.telemetry.setConsent(.off)
+                        diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
+                    }
+                    .buttonStyle(FanousButtonStyle(.secondary))
+                    .accessibilityIdentifier("admin-signedout-diagnostics-retry-purge")
+                }
             }
             .multilineTextAlignment(.leading)
             .padding(.top, FanousScale.spacingSm)
@@ -378,6 +386,9 @@ struct AccountMenu: View {
         }
         .accessibilityIdentifier("account-menu")
         .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
+            Button(l10n("common.retry")) {
+                if !session.services.telemetry.setConsent(.off) { showingPurgeWarning = true }
+            }
             Button(l10n("common.dismiss"), role: .cancel) {}
         } message: {
             Text(l10n("diagnostics.purgeWarning"))
