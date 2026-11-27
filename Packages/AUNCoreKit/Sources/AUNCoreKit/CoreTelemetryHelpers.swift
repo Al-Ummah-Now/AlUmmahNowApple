@@ -89,13 +89,17 @@ extension CoreTelemetryService {
     private struct VaultLineTracker {
         private var cursor = 0
         private var hasFileURIOnLine = false
+        private var fileURIQuote: unichar = 0
         private var lastNonWSOrWrapperChar: unichar = 0
         private var inWrapperRun = false
         private var wsBeforeRun = false
 
         mutating func isEmbeddedInPath(_ nsText: NSString, matchStart: Int) -> Bool {
             advance(nsText, to: matchStart)
-            return !wsBeforeRun && (hasFileURIOnLine || Self.isPathSep(lastNonWSOrWrapperChar))
+            let afterPathSep = Self.isPathSep(lastNonWSOrWrapperChar)
+            return fileURIQuote != 0
+                || (!wsBeforeRun && (hasFileURIOnLine || afterPathSep))
+                || (hasFileURIOnLine && inWrapperRun && afterPathSep)
         }
 
         private mutating func advance(_ nsText: NSString, to target: Int) {
@@ -103,14 +107,26 @@ extension CoreTelemetryService {
                 let ch = nsText.character(at: cursor)
                 if ch == 0x0A || ch == 0x0D {
                     hasFileURIOnLine = false
+                    fileURIQuote = 0
                     lastNonWSOrWrapperChar = 0
                     inWrapperRun = false
                     wsBeforeRun = false
                 } else {
-                    if !hasFileURIOnLine && Self.isFileScheme(nsText, at: cursor) {
+                    let closedFileQuote = fileURIQuote != 0 && ch == fileURIQuote
+                    if closedFileQuote {
+                        fileURIQuote = 0
+                    } else if Self.isFileScheme(nsText, at: cursor) {
                         hasFileURIOnLine = true
+                        if cursor > 0 {
+                            let prev = nsText.character(at: cursor - 1)
+                            if prev == 0x22 || prev == 0x27 { fileURIQuote = prev }
+                        }
                     }
-                    if Self.isWhitespace(ch) {
+                    if closedFileQuote {
+                        lastNonWSOrWrapperChar = ch
+                        inWrapperRun = false
+                        wsBeforeRun = false
+                    } else if Self.isWhitespace(ch) {
                         if !inWrapperRun { wsBeforeRun = true }
                     } else if Self.isOpeningWrapper(ch) {
                         inWrapperRun = true
@@ -142,7 +158,10 @@ extension CoreTelemetryService {
         }
 
         private static func isWhitespace(_ ch: unichar) -> Bool {
-            ch == 0x20 || ch == 0x09 || ch == 0x0A || ch == 0x0D || ch == 0x0B || ch == 0x0C || ch == 0xA0
+            if ch < 0x80 {
+                return ch == 0x20 || ch == 0x09 || ch == 0x0A || ch == 0x0D || ch == 0x0B || ch == 0x0C
+            }
+            return UnicodeScalar(ch).map { CharacterSet.whitespacesAndNewlines.contains($0) } ?? false
         }
 
         private static func isOpeningWrapper(_ ch: unichar) -> Bool {
@@ -315,7 +334,11 @@ extension CoreTelemetryService {
 
     private static let pathRedactionRules: [(regex: NSRegularExpression, template: String)] = {
         let specs: [(String, String)] = [
-            (#"(?<![A-Za-z0-9+.-])file://(?:(?!\s+(?:[\(\[\{"']\s*)*\u001E)[^\r\n\u001E])+"#, "[redacted-path]"),
+            (
+                #"(?<![A-Za-z0-9+.-])file://(?>[^\s\r\n\u001E]+)"#
+                    + #"(?:(?>[^\S\r\n]+)(?!(?:[\(\[\{"'](?>[^\S\r\n]*)){0,2}\u001E)(?>[^\s\r\n\u001E]+))*"#,
+                "[redacted-path]"
+            ),
             (#"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n\u001E]+(\))"#, "$1[redacted-path]$2"),
             (
                 #"(\()(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/[^()\r\n\u001E]+(\))"#,
