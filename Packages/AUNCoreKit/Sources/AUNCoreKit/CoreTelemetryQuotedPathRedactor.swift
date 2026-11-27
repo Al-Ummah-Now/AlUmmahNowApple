@@ -463,7 +463,7 @@ extension CoreTelemetryService {
     }
 
     private static func isURLStructuralEscape(_ ch: unichar) -> Bool {
-        ch == 0x3A || ch == 0x2F || ch == 0x3F || ch == 0x23 || ch == 0x26 || ch == 0x3D || ch == 0x40
+        ch >= 0x20 && ch <= 0x7E && ch != 0x22 && ch != 0x5C
     }
 
     private static func decodeURLEscapesForVault(_ nsText: NSString, start: Int, end: Int) -> String {

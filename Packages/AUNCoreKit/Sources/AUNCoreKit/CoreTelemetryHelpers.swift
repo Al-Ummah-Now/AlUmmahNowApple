@@ -245,9 +245,9 @@ extension CoreTelemetryService {
 
     static func vaultNonFileURLs(in text: String, prefix: String) -> (String, [String]) {
         var vaultedURLs: [String] = []
-        let scrubbed = Self.vaultNonFileURLsInto(text, prefix: prefix, vaultedURLs: &vaultedURLs)
-        let withEscaped = Self.vaultJsonEscapedURLsInBalancedQuotes(scrubbed, prefix: prefix, vaultedURLs: &vaultedURLs)
-        return (withEscaped, vaultedURLs)
+        let withEscaped = Self.vaultJsonEscapedURLsInBalancedQuotes(text, prefix: prefix, vaultedURLs: &vaultedURLs)
+        let scrubbed = Self.vaultNonFileURLsInto(withEscaped, prefix: prefix, vaultedURLs: &vaultedURLs)
+        return (scrubbed, vaultedURLs)
     }
 
     static func vaultNonFileURLsInto(_ text: String, prefix: String, vaultedURLs: inout [String]) -> String {

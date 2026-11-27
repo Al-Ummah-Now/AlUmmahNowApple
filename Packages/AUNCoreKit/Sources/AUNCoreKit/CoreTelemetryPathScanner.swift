@@ -533,6 +533,7 @@ extension CoreTelemetryService {
         let nsPrefix = vaultPrefix as NSString
         let totalLength = nsText.length
         guard totalLength >= 7 else { return text }
+        var checkedQuotes = false
         var quoteSpans: [QuotedPathSpan]?
         var spanIdx = 0
         var result = ""
@@ -540,8 +541,9 @@ extension CoreTelemetryService {
         var pos = 0
         while pos < totalLength {
             if VaultLineTracker.isFileScheme(nsText, at: pos) {
-                if quoteSpans == nil && text.contains("\"") {
-                    quoteSpans = collectBalancedDoubleQuoteSpans(nsText)
+                if !checkedQuotes {
+                    checkedQuotes = true
+                    if text.contains("\"") { quoteSpans = collectBalancedDoubleQuoteSpans(nsText) }
                 }
                 if let spans = quoteSpans {
                     while spanIdx < spans.count && spans[spanIdx].close <= pos { spanIdx += 1 }

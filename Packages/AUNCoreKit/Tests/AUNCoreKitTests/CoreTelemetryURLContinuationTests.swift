@@ -419,6 +419,20 @@ extension CoreTelemetryURLContinuationTests {
             ("[\"secret\\u002epdf pending\"]", "[\"[redacted-path] pending\"]"),
             ("[\"secret\\u002epdf\"]", "[\"[redacted-path]\"]"),
             ("[\"read Private\\\"Merger.custom pending\"]", "[\"read [redacted-path] pending\"]"),
+            ("Failed reading /Users/alice/My \"Secret\" Folder/file.mov", "Failed reading [redacted-path]"),
+        ]
+        for (input, expected) in cases {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
+        }
+        let manyPublic = "[\(Array(repeating: "\"public\"", count: 2000).joined(separator: ","))]"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(manyPublic) == manyPublic)
+        let manyNewlines = "[\(Array(repeating: "\"hello\\nworld\"", count: 2000).joined(separator: ","))]"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(manyNewlines) == manyNewlines)
+    }
+
+    @Test("Bounds quoted file URIs, handles apostrophes, and vaults JSON-escaped URLs")
+    func quotedFileURIsApostrophesAndEscapedURLs() {
+        let cases: [(String, String)] = [
             ("[\"file \\u0027Acquisition\\u0027\"]", "[\"file [redacted-path]\"]"),
             ("[\"file \\\"Acquisition\\\"\"]", "[\"file [redacted-path]\"]"),
             ("[\"file \\u0022Acquisition\\u0022\"]", "[\"file [redacted-path]\"]"),
@@ -448,14 +462,24 @@ extension CoreTelemetryURLContinuationTests {
                 "[\"https:\\/\\/example.com\\/api\\u003ftoken=opaqueSecret123\",\"public\"]",
                 "[\"https://example.com/api?[redacted]\",\"public\"]"
             ),
-            ("Failed reading /Users/alice/My \"Secret\" Folder/file.mov", "Failed reading [redacted-path]"),
+            (
+                "[\"https://example.com/api\\u0023opaqueSecret123\"]",
+                "[\"https://example.com/api#[redacted]\"]"
+            ),
+            (
+                "[\"https://example.com/api\\u003ftoken=opaqueSecret123\"]",
+                "[\"https://example.com/api?[redacted]\"]"
+            ),
+            (
+                "[\"https://example.test/webhook/fake\\u0054oken\"]",
+                "[\"https://example.test/webhook/[redacted]\"]"
+            ),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
-        let manyPublic = "[\(Array(repeating: "\"public\"", count: 2000).joined(separator: ","))]"
-        #expect(CoreTelemetryService.sanitizeLocalPaths(manyPublic) == manyPublic)
-        let manyNewlines = "[\(Array(repeating: "\"hello\\nworld\"", count: 2000).joined(separator: ","))]"
-        #expect(CoreTelemetryService.sanitizeLocalPaths(manyNewlines) == manyNewlines)
+        let manyFileURIs = Array(repeating: "open file:///Users/Alice/Secret.mov", count: 2000).joined(separator: "\n")
+        let expectedFileURIs = Array(repeating: "open [redacted-path]", count: 2000).joined(separator: "\n")
+        #expect(CoreTelemetryService.sanitizeLocalPaths(manyFileURIs) == expectedFileURIs)
     }
 }
