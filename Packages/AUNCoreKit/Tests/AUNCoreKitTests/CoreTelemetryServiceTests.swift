@@ -287,6 +287,12 @@ struct CoreTelemetryServiceTests {
             42:/ Secret/Acquisition.mov:77
             error 42://SecretHost/Acquisition.mov
             open(path\\\\unc\\Secret\\Acquisition.mov)
+            open(pathC:\\Secret\\Acquisition.mov)
+            Could not find file 'Secret.mov'
+            Could not find file 'private/Secret.mov'
+            Could not find file './Secret.mov'
+            Could not find file 'O'Brien.mov'
+            Could not find file 'SecretBareName'
             open //storage/emulated/0/Private.mov
             error 42:/home/alice/private.mov
             /workspace/alice/Project|Acquisition.mov
@@ -317,8 +323,6 @@ struct CoreTelemetryServiceTests {
         }
         #expect(!json.contains(":99") && !json.contains(":66") && !json.contains(":55") && !json.contains("workspace"))
         #expect(json.contains("Player.open() + 42") && json.contains("App.run()") && json.contains("[redacted-path]"))
-        #expect(CoreTelemetryService.sanitizeLocalPaths("https://videos.api.alummahnow.net/v1/items") == "https://videos.api.alummahnow.net/v1/items")
-        #expect(CoreTelemetryService.sanitizeLocalPaths("git+http2://example.com/repo") == "git+http2://example.com/repo")
     }
 
     @Test("Re-enabling stays blocked until all pre-revocation flushes finish and purge")
@@ -466,5 +470,62 @@ struct CoreTelemetryServiceTests {
         #expect(CoreTelemetryService.resolveIngestURL("http://127.0.0.1:3086") == nil)
         #expect(CoreTelemetryService.resolveIngestURL("") == nil)
         #expect(CoreTelemetryService.resolveIngestURL(nil as String?) == nil)
+    }
+}
+
+@Suite("CoreTelemetryExternalConsent")
+struct CoreTelemetryExternalConsentTests {
+    @Test("Preserves valid RFC 3986 URLs and HTTP status lines while redacting local paths")
+    func preservesValidRFC3986URLs() {
+        let preserved = [
+            "https://videos.api.alummahnow.net/v1/items",
+            "https://example.com/?path=/api/items",
+            "git+http2://example.com/repo",
+            "profile://example.com/repo",
+            "x://example.com/repo",
+            "a123456789012345678901234567890123://example.com/repo",
+            "HTTP/1.1 503 Service Unavailable",
+        ]
+        for item in preserved {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(item) == item)
+        }
+    }
+
+    @Test("Queued flush re-checks UserDefaults via live(defaults:) before entering native flush")
+    func queuedFlushReChecksLiveDefaultsBeforeNativeFlush() async throws {
+        let suiteName = "net.alummahnow.telemetry.test.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(true, forKey: "AUNTelemetryEnabled")
+
+        let env = AppEnvironment(name: "test", apiBaseURL: URL(string: "http://127.0.0.1:1")!)
+        let service = try #require(
+            CoreTelemetryService.live(
+                environment: env,
+                defaults: defaults,
+                userAgentPrefix: "AlUmmahNowTest",
+                bufferFilename: "test-\(UUID().uuidString).json"
+            ) as? CoreTelemetryService
+        )
+        defer { _ = service.setConsent(.off) }
+
+        service.track("screen_view", properties: ["screen": "home"])
+        #expect(service.pendingCount == 1)
+
+        let flagLock = NSLock()
+        nonisolated(unsafe) var flushEntered = false
+        nonisolated(unsafe) let defaultsRef = defaults
+        service.beforeFlushExecuteForTesting = {
+            defaultsRef.set(false, forKey: "AUNTelemetryEnabled")
+        }
+        service.flushOverrideForTesting = {
+            flagLock.withLock { flushEntered = true }
+        }
+
+        await service.flush()
+
+        #expect(!flagLock.withLock { flushEntered })
+        #expect(service.consent == .off)
+        #expect(service.pendingCount == 0)
     }
 }

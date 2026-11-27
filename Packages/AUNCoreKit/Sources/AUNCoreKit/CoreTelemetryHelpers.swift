@@ -65,25 +65,75 @@ extension CoreTelemetryService {
         return "https://\(formattedHost)\(portSegment)/api/v1/telemetry/batches"
     }
 
-    /// Scrubs local filesystem paths and `file://` URIs before crash or breadcrumb text enters telemetry.
+    /// Scrubs local filesystem paths, relative paths, bare filenames, and `file://` URIs while
+    /// preserving valid non-`file` RFC 3986 URLs and stack symbols.
     public static func sanitizeLocalPaths(_ text: String) -> String {
         guard !text.isEmpty else { return text }
-        var result = text
-        for regex in Self.pathRegexes {
-            let range = NSRange(result.startIndex..<result.endIndex, in: result)
-            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "[redacted-path]")
+        var prefix = "\u{001E}AUNURL"
+        while text.contains(prefix) {
+            prefix += "X"
         }
-        return result
+        var vaultedURLs: [String] = []
+        var scrubbed = text
+        if let urlRegex = Self.urlVaultRegex {
+            let nsText = scrubbed as NSString
+            let matches = urlRegex.matches(in: scrubbed, options: [], range: NSRange(location: 0, length: nsText.length))
+            var rebuilt = ""
+            var cursor = 0
+            for match in matches {
+                let raw = nsText.substring(with: match.range)
+                if raw.lowercased().hasPrefix("file://") { continue }
+                rebuilt += nsText.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+                let idx = vaultedURLs.count
+                vaultedURLs.append(raw)
+                rebuilt += "\(prefix)\(idx)\u{001F}"
+                cursor = match.range.location + match.range.length
+            }
+            if !vaultedURLs.isEmpty {
+                rebuilt += nsText.substring(from: cursor)
+                scrubbed = rebuilt
+            }
+        }
+        for rule in Self.pathRedactionRules {
+            let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
+            scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
+        }
+        for (idx, original) in vaultedURLs.enumerated() {
+            scrubbed = scrubbed.replacingOccurrences(of: "\(prefix)\(idx)\u{001F}", with: original)
+        }
+        return scrubbed
     }
 
-    private static let pathRegexes: [NSRegularExpression] = {
-        let patterns = [
-            #"file://[^\r\n]+"#,
-            #"(?:(?<![\p{L}\p{N}])[A-Za-z]:[\\/]|\\\\)[^\r\n]+"#,
-            #"["']/[ \t]+[^\r\n]+"#,
-            #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|(?<![A-Za-z][A-Za-z0-9+.-]{0,31}:)//+(?=[ \t]*[^\s/])|/(?=[ \t]*[^\s/]))[^\r\n]+"#,
+    private static let urlVaultRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*://[^\s"'<>()\[\]{}\r\n]+"#,
+        options: [.caseInsensitive]
+    )
+
+    private static let bareFilenameExtensions =
+        "mov|mp4|m4v|mkv|webm|avi|ts|m3u8|mpd|mp3|m4a|wav|aac|flac|ogg|opus|" +
+        "jpg|jpeg|png|gif|webp|heic|svg|pdf|txt|md|rtf|doc|docx|xls|xlsx|ppt|pptx|" +
+        "csv|json|xml|yaml|yml|toml|ini|cfg|conf|log|srt|vtt|ass|ssa|" +
+        "zip|tar|gz|tgz|bz2|xz|7z|rar|dmg|pkg|msi|exe|apk|aab|ipa|" +
+        "pem|key|crt|cer|p12|pfx|jks|keystore|db|sqlite|sqlite3|bin|dat|tmp|bak|proj|aun"
+
+    private static let pathRedactionRules: [(regex: NSRegularExpression, template: String)] = {
+        let specs: [(String, String)] = [
+            (#"(?<![A-Za-z0-9+.-])file://[^\r\n]+"#, "[redacted-path]"),
+            (#"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n]+"#, "[redacted-path]"),
+            (#"(^|[\s(\[{"'=,:;])[^\s\\/"'<>]+\\[^\r\n]+"#, "$1[redacted-path]"),
+            (#"["']/[ \t]+[^\r\n]+"#, "[redacted-path]"),
+            (#"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|//+(?=[ \t]*[^\s/])|/(?=[ \t]*[^\s/]))[^\r\n]+"#, "[redacted-path]"),
+            (#"(^|[\s(\[{"'=,:;])(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:]+/[^\r\n]+"#, "$1[redacted-path]"),
+            (#""[^"\r\n/\\]*\.[A-Za-z0-9]{1,16}""#, "[redacted-path]"),
+            (#"'(?:[^'\r\n/\\]|'(?=\p{L}))*\.[A-Za-z0-9]{1,16}'"#, "[redacted-path]"),
+            (#"(\b(?:file|path|directory|folder|document)\s+)(['"])(?!\u001E)[^'"\r\n]+\2"#, "$1[redacted-path]"),
+            (#"(\b(?:file|path|filename|filepath)\s*[:=]\s*)(?!\u001E)[^\r\n]+"#, "$1[redacted-path]"),
+            (#"(?<![\p{L}\p{N}._-])[\p{L}\p{N}_-]+\.(?:"# + bareFilenameExtensions + #")\b(?!\s*\()"#, "[redacted-path]"),
         ]
-        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
+        return specs.compactMap { pattern, template in
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+            return (regex, template)
+        }
     }()
 
     static func serializeProperties(_ properties: [String: String]) -> String? {

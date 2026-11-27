@@ -27,6 +27,8 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
 
     /// Optional hook used by unit tests to inject a deterministic slow native flush.
     var flushOverrideForTesting: (@Sendable () async throws -> Void)?
+    /// Optional hook run inside the queued flush task immediately before the pre-flush consent re-check.
+    var beforeFlushExecuteForTesting: (@Sendable () -> Void)?
 
     public init(
         platform: String,
@@ -185,6 +187,7 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
         guard !Task.isCancelled else { return }
         let flushID = UUID()
         let override = flushOverrideForTesting
+        let beforeExecute = beforeFlushExecuteForTesting
         let clientRef = client
 
         // Create AND register the flush task while holding `lock` so close() / setConsent(.off)
@@ -196,7 +199,13 @@ public final class CoreTelemetryService: TelemetryServicing, @unchecked Sendable
             let flushEpoch = _consentEpoch
             let task = Task<Void, Never> { [self] in
                 defer { self.releaseInFlightFlush(id: flushID, epoch: flushEpoch) }
-                let stillAllowed = self.lock.withLock { !self._closed && !self._revoked && self._consent != .off }
+                beforeExecute?()
+                let (stillAllowed, lateCancelled): (Bool, [Task<Void, Never>]) = self.lock.withLock {
+                    let cancelledNow = self.ensureExternalConsentLocked()
+                    let allowed = !self._closed && !self._revoked && self._consent != .off
+                    return (allowed, cancelledNow)
+                }
+                for waiter in lateCancelled { waiter.cancel() }
                 guard stillAllowed && !Task.isCancelled else { return }
                 do {
                     if let override {
