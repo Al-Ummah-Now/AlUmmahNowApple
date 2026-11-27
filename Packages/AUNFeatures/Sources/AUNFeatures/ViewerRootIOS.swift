@@ -6,6 +6,7 @@
     /// iPhone and iPad shell.
     public struct ViewerRootView: View {
         @Environment(\.l10n) private var l10n
+        @Environment(\.scenePhase) private var scenePhase
         @State private var path: [ViewerDestination] = []
         @State private var showingBlocked = false
         private let core: CoreBridge
@@ -23,7 +24,7 @@
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            SettingsMenu(environment: core.environment) { showingBlocked = true }
+                            SettingsMenu(environment: core.environment, telemetry: core.telemetry) { showingBlocked = true }
                         }
                     }
                     .fanousNavigationBar()
@@ -33,6 +34,11 @@
             }
             .sheet(isPresented: $showingBlocked) {
                 BlockedListSheet(store: .shared)
+            }
+            .task { await core.telemetry.flush() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { core.telemetry.persist() }
+                if phase == .active { Task { await core.telemetry.flush() } }
             }
             .onOpenURL { url in
                 if let destination = ViewerLinks.destination(for: url) { path = [destination] }

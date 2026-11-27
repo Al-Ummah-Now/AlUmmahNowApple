@@ -22,6 +22,8 @@ public struct StudioServices: Sendable {
     /// Account deletion, and how far each one that started here got. Without them nothing is ever deleted.
     public var deletion: any DeletionServicing = UnavailableDeletionService()
     public var deletionRecords: any DeletionRecordStoring = MemoryDeletionRecords()
+    /// Opt-in telemetry & crash reporting (off by default).
+    public var telemetry: any TelemetryServicing = NullTelemetryService.shared
     /// False for fixtures: their upload queue lives in a temporary file.
     public var persistsUploads = true
 

@@ -21,11 +21,18 @@ public struct StudioRootView: View {
             case .signedIn: StudioShell(session: session)
             }
         }
-        .task { await session.start() }
+        .task {
+            await session.start()
+            await session.services.telemetry.flush()
+        }
         // Back in the foreground: what became of a deletion whose answer was lost may be known now.
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active, session.openDeletions.contains(where: { $0.stage == .deleteSent }) else { return }
-            Task { await session.checkDeletions() }
+            if phase == .background { session.services.telemetry.persist() }
+            guard phase == .active else { return }
+            Task { await session.services.telemetry.flush() }
+            if session.openDeletions.contains(where: { $0.stage == .deleteSent }) {
+                Task { await session.checkDeletions() }
+            }
         }
         // Universal links on the videos host (`/studio/…`, `/app/studio/…`); the viewer's links are not Studio's.
         .onOpenURL { url in

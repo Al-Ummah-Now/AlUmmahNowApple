@@ -98,6 +98,7 @@ targets:
       - package: AUNFeatures
       - package: AUNDesign
       - package: AUNCoreBridge
+      - package: AUNCoreKit
     scheme:
       testTargets:
         - ViewerIOSUITests
@@ -125,6 +126,7 @@ targets:
       - package: AUNFeatures
       - package: AUNDesign
       - package: AUNCoreBridge
+      - package: AUNCoreKit
     scheme:
       testTargets:
         - ViewerTVUITests
@@ -154,6 +156,7 @@ targets:
       - package: AUNFeatures
       - package: AUNDesign
       - package: AUNCoreBridge
+      - package: AUNCoreKit
     scheme:
       testTargets:
         - ViewerMacUITests

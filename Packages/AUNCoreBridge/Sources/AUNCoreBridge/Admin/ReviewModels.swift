@@ -415,11 +415,16 @@ public struct AdminServices: Sendable {
     public var accounts: any AccountServicing
     public var review: any ReviewServicing
     public var push: any PushRegistering
+    public var telemetry: any TelemetryServicing
 
-    public init(accounts: any AccountServicing, review: any ReviewServicing, push: any PushRegistering) {
+    public init(
+        accounts: any AccountServicing, review: any ReviewServicing, push: any PushRegistering,
+        telemetry: any TelemetryServicing = NullTelemetryService.shared
+    ) {
         self.accounts = accounts
         self.review = review
         self.push = push
+        self.telemetry = telemetry
     }
 }
 

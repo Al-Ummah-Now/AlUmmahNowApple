@@ -118,9 +118,33 @@ public struct ConfirmSheet: View {
 struct AccountsView: View {
     @Environment(\.l10n) private var l10n
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppSettings.self) private var settings
     let session: StudioSession
     @State private var leaving: StudioAccount?
     @State private var deleting: StudioAccount?
+    @State private var diagnosticsMessage: String?
+
+    private var diagnosticsBinding: Binding<Bool> {
+        Binding(
+            get: { settings.telemetryEnabled },
+            set: { enabled in
+                let telemetry = session.services.telemetry
+                if enabled {
+                    if telemetry.setConsent(.full) {
+                        settings.telemetryEnabled = true
+                        diagnosticsMessage = nil
+                    } else {
+                        settings.telemetryEnabled = false
+                        diagnosticsMessage = l10n("diagnostics.enableError")
+                    }
+                } else {
+                    let purged = telemetry.setConsent(.off)
+                    settings.telemetryEnabled = false
+                    diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
+                }
+            }
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -140,6 +164,23 @@ struct AccountsView: View {
                     }
                     .disabled(session.isSigningIn || session.isDeletingAccount)
                     .accessibilityIdentifier("account-add")
+                }
+                .studioRows()
+                Section {
+                    VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
+                        Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
+                            .accessibilityIdentifier("accounts-diagnostics")
+                        Text(l10n("diagnostics.description"))
+                            .fanousFont(.caption)
+                            .foregroundStyle(Fanous.textSecondary)
+                        if let diagnosticsMessage {
+                            Text(diagnosticsMessage)
+                                .fanousFont(.caption)
+                                .foregroundStyle(Fanous.errorText)
+                                .accessibilityIdentifier("accounts-diagnostics-warning")
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
                 .studioRows()
                 Section {
