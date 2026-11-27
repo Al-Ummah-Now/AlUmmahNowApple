@@ -62,6 +62,15 @@ struct CoreTelemetryQuotedEscapedTests {
                 "{\"message\":\"see https://example.com/public issue #123\"}",
                 "{\"message\":\"see https://example.com/public issue #123\"}"
             ),
+        ]
+        for (input, expected) in cases {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
+        }
+    }
+
+    @Test("Redacts escaped auth separators, cookies, basic splits, and inner escaped bearer/path boundaries")
+    func redactsEscapedAuthSeparatorsCookiesAndBearerBoundaries() {
+        let cases: [(String, String)] = [
             ("\"Authorization\\u003a secret\"", "\"Authorization\\u003a [redacted]\""),
             ("\"Authorization\\u003dsecret\"", "\"Authorization\\u003d[redacted]\""),
             ("headers=\"Authorization\\u003a opaqueSecret123\"", "headers=\"Authorization\\u003a [redacted]\""),
@@ -69,10 +78,40 @@ struct CoreTelemetryQuotedEscapedTests {
                 "headers=\"Authorization\\u003d opaqueSecret123\" status=ok",
                 "headers=\"Authorization\\u003d [redacted]\" status=ok"
             ),
+            ("received (\"Authorization\\u003a opaqueSecret123\")", "received (\"Authorization\\u003a [redacted]\")"),
+            ("Authorization\\u003a opaqueSecret123", "[redacted-path]"),
+            ("{\"msg\":\"Basic YWI6\\u00632VjcmV0\"}", "{\"msg\":\"Basic [redacted]\"}"),
+            (
+                "{\"m\":\"literal=\\\"test\\\\stuff\\\"tail\",\"next\":1}",
+                "{\"m\":\"literal=\\\"[redacted-path]\\\"tail\",\"next\":1}"
+            ),
+            (
+                "{\"m\":\"{\\\"path\\\":\\\"/Users/Alice/Secret.mov\\\"}\",\"next\":1}",
+                "{\"m\":\"{\\\"path\\\":\\\"[redacted-path]\\\"}\",\"next\":1}"
+            ),
+            (
+                "received \"Authorizatio\\u006e: opaqueSecret123\"",
+                "received \"Authorizatio\\u006e: [redacted]\""
+            ),
+            ("Cookie: session=opaqueSecret123", "Cookie: [redacted]"),
+            ("Set-Cookie: session=opaqueSecret123; HttpOnly\r\nNext: ok", "Set-Cookie: [redacted]\r\nNext: ok"),
+            (
+                "{\"Cooki\\u0065\":\"session=opaqueSecret123\",\"status\":\"ok\"}",
+                "{\"Cookie\":\"[redacted]\",\"status\":\"ok\"}"
+            ),
+            (
+                "{\"m\":\"\\\"Bearer opaqueSecret123\\\"tail\",\"next\":1}",
+                "{\"m\":\"\\\"Bearer [redacted]\\\"tail\",\"next\":1}"
+            ),
+            (
+                "{\"m\":\"Bearer secret\\nX-Public: ok\"}",
+                "{\"m\":\"Bearer [redacted]\\nX-Public: ok\"}"
+            ),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
+        #expect(CoreTelemetryService.sanitizeLocalPaths("Bearer " + String(repeating: "A", count: 10000)) == "Bearer [redacted]")
     }
 
     @Test("Scales linearly on unclosed angles/spaced hashes and sanitizes serialized property keys and values")
@@ -88,17 +127,33 @@ struct CoreTelemetryQuotedEscapedTests {
             "detail": "Authorization: Bearer secret",
             "path": "/Users/Alice/Secret.mov",
             "/Users/Alice/Acquisition.mov": "1",
+            "/Users/Bob/Merger.mov": "2",
             "Authorization": "opaqueSecret123",
+            "Cookie": "session=opaqueSecret123",
+            "Set-Cookie": "sid=opaqueSecret456",
             "screen": "home",
         ])
         #expect(props != nil)
         #expect(props?.contains("secret") == false)
+        #expect(props?.contains("session=") == false)
         #expect(props?.contains("Alice") == false)
+        #expect(props?.contains("Bob") == false)
         #expect(props?.contains("Acquisition") == false)
+        #expect(props?.contains("Merger") == false)
         #expect(props?.contains("\"[redacted-path]\":\"1\"") == true)
+        #expect(props?.contains("\"[redacted-path]#2\":\"2\"") == true)
         #expect(props?.contains("\"detail\":\"Authorization: Bearer [redacted]\"") == true)
         #expect(props?.contains("\"path\":\"[redacted-path]\"") == true)
         #expect(props?.contains("\"Authorization\":\"[redacted]\"") == true)
+        #expect(props?.contains("\"Cookie\":\"[redacted]\"") == true)
+        #expect(props?.contains("\"Set-Cookie\":\"[redacted]\"") == true)
         #expect(props?.contains("\"screen\":\"home\"") == true)
+        var manyColliding: [String: String] = [:]
+        manyColliding.reserveCapacity(5000)
+        for idx in 0..<5000 { manyColliding["/home/alice/private-\(idx)"] = "\(idx)" }
+        let manyJson = CoreTelemetryService.serializeProperties(manyColliding)
+        #expect(manyJson != nil)
+        #expect(manyJson?.contains("alice") == false)
+        #expect(manyJson?.contains("\"[redacted-path]#5000\":") == true)
     }
 }

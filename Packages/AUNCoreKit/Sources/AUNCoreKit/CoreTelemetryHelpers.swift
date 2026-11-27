@@ -439,20 +439,35 @@ extension CoreTelemetryService {
         options: [.caseInsensitive]
     )
 
+    private static func resolveUniquePropertyKey(
+        _ map: [String: String], base: String, nextSuffix: inout [String: Int]
+    ) -> String {
+        if map[base] == nil { return base }
+        var suffix = nextSuffix[base] ?? 2
+        while map["\(base)#\(suffix)"] != nil { suffix += 1 }
+        nextSuffix[base] = suffix + 1
+        return "\(base)#\(suffix)"
+    }
+
     static func serializeProperties(_ properties: [String: String]) -> String? {
         guard !properties.isEmpty else { return nil }
         var sanitized: [String: String] = [:]
+        var nextSuffix: [String: Int] = [:]
         sanitized.reserveCapacity(properties.count)
-        for (key, value) in properties {
+        for (key, value) in properties.sorted(by: { $0.key < $1.key }) {
             let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedKey.isEmpty else { continue }
             let lowered = trimmedKey.lowercased()
-            if lowered == "authorization" || lowered == "proxy-authorization" {
-                sanitized[key] = "[redacted]"
+            if lowered == "authorization" || lowered == "proxy-authorization"
+                || lowered == "cookie" || lowered == "set-cookie"
+            {
+                let uniqueKey = resolveUniquePropertyKey(sanitized, base: key, nextSuffix: &nextSuffix)
+                sanitized[uniqueKey] = "[redacted]"
             } else {
                 let safeKey = Self.sanitizeLocalPaths(key)
                 guard !safeKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                sanitized[safeKey] = Self.sanitizeLocalPaths(value)
+                let uniqueKey = resolveUniquePropertyKey(sanitized, base: safeKey, nextSuffix: &nextSuffix)
+                sanitized[uniqueKey] = Self.sanitizeLocalPaths(value)
             }
         }
         guard !sanitized.isEmpty,

@@ -7,13 +7,6 @@ enum CoreTelemetryAuthScanner {
         "OAuth", "Negotiate", "Mutual", "HOBA", "Vapid", "SCRAM-SHA-256", "AWS4-HMAC-SHA256",
     ]
 
-    static let bearerTokenRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern:
-            #"\b(Bearer)[\s\p{Zs}]+(?!\[redacted\](?=$|[\s\p{Zs}"',;)\]}]|\\(?:[nrtbf"]|u00(?:20|09|0[aAdD]|[aA]0))))"#
-            + #"(?:\\[^\r\n\s\p{Zs}]|[^\s\p{Zs}\\"',;)\]}]|\\(?=$|[\s\p{Zs}\r\n]))+"#,
-        options: [.caseInsensitive]
-    )
-
     static let basicTokenRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern: #"\b(Basic)[\s\p{Zs}]+([A-Za-z0-9+/_-]{2,}={0,2})(?![A-Za-z0-9+/_=-])"#,
         options: [.caseInsensitive]
@@ -21,12 +14,10 @@ enum CoreTelemetryAuthScanner {
 
     static func redactAuthCredentials(in text: String) -> String {
         var result = redactAuthHeaders(in: text)
-        if let bearerRegex = bearerTokenRegex {
-            let range = NSRange(result.startIndex..<result.endIndex, in: result)
-            result = bearerRegex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "$1 [redacted]")
-        }
-        result = redactBasicTokens(in: result)
-        return redactEscapedTokensInBalancedQuotes(in: result)
+        result = redactBearerTokens(in: result)
+        result = redactEscapedBearerInBalancedQuotes(in: result)
+        result = redactEscapedBasicInBalancedQuotes(in: result)
+        return redactBasicTokens(in: result)
     }
 
     struct AuthScanState {
@@ -68,12 +59,12 @@ enum CoreTelemetryAuthScanner {
         let normalizedKey: String?
     }
 
-    private static func mayContainAuthHeader(_ text: String, maxDepth: Int) -> Bool {
-        text.contains(":") || text.contains("=") || (maxDepth > 0 && text.contains("\"") && text.contains("\\u"))
+    private static func mayContainAuthHeader(_ text: String) -> Bool {
+        text.contains(":") || text.contains("=") || text.contains("\\u")
     }
 
     private static func redactAuthHeaders(in text: String, maxDepth: Int = 4) -> String {
-        guard mayContainAuthHeader(text, maxDepth: maxDepth) else { return text }
+        guard mayContainAuthHeader(text) else { return text }
         let nsText = text as NSString
         var state = AuthScanState()
         scanAuthHeaders(nsText, maxDepth: maxDepth, state: &state)
@@ -89,11 +80,14 @@ enum CoreTelemetryAuthScanner {
             guard let keyMatch = matchAuthHeaderKey(nsText, at: idx, len: len, state: &state) else {
                 if maxDepth > 0 && nsText.character(at: idx) == 0x22
                     && !CoreTelemetryService.VaultLineTracker.isPrecededByOddBackslashes(nsText, at: idx, minPos: state.copied),
-                    let close = findBalancedJsonStringEnd(nsText, open: idx, len: len)
+                    let close = findDoubleQuotedSpanEnd(nsText, open: idx, len: len)
                 {
-                    redactAuthHeadersInBalancedSpan(
+                    let changed = redactAuthHeadersInBalancedSpan(
                         nsText, innerStart: idx + 1, close: close, nextDepth: maxDepth - 1, state: &state)
-                    idx = close + 1
+                    let reenterClose =
+                        !changed && !isJsonStringStartBoundary(nsText, open: idx)
+                        && isJsonStringStartBoundary(nsText, open: close)
+                    idx = reenterClose ? close : close + 1
                     continue
                 }
                 idx += 1
@@ -101,21 +95,20 @@ enum CoreTelemetryAuthScanner {
             }
             let allowNl = keyMatch.isJsonCandidate || keyMatch.hasJsonPrefix
             let sep = skipAuthWhitespace(nsText, from: keyMatch.keyEnd, len: len, allowNewlines: allowNl)
-            guard sep < len && (nsText.character(at: sep) == 0x3A || nsText.character(at: sep) == 0x3D) else {
+            guard let (sepLen, isColon) = matchAuthSeparator(nsText, at: sep, len: len) else {
                 idx = keyMatch.keyEnd
                 continue
             }
-            let isColon = nsText.character(at: sep) == 0x3A
             let ctx = AuthValueContext(
-                isJsonMember: keyMatch.isJsonCandidate && isColon,
-                allowTruncatedObj: keyMatch.hasJsonPrefix && isColon,
-                failedTopEnd: isColon ? keyMatch.failedTopEnd : -1
+                isJsonMember: keyMatch.isJsonCandidate && isColon && sepLen == 1,
+                allowTruncatedObj: keyMatch.hasJsonPrefix && isColon && sepLen == 1,
+                failedTopEnd: isColon && sepLen == 1 ? keyMatch.failedTopEnd : -1
             )
             let valStart = skipAuthWhitespace(
-                nsText, from: sep + 1, len: len, allowNewlines: ctx.isJsonMember || ctx.allowTruncatedObj
+                nsText, from: sep + sepLen, len: len, allowNewlines: ctx.isJsonMember || ctx.allowTruncatedObj
             )
             guard valStart < len && !isNewline(nsText.character(at: valStart)) else {
-                idx = sep + 1
+                idx = sep + sepLen
                 continue
             }
             if let normalized = keyMatch.normalizedKey {
@@ -127,6 +120,8 @@ enum CoreTelemetryAuthScanner {
         }
     }
 
+    private static let unquotedAuthHeaderNames = ["proxy-authorization", "authorization", "set-cookie", "cookie"]
+
     private static func matchAuthHeaderKey(
         _ nsText: NSString, at pos: Int, len: Int, state: inout AuthScanState
     ) -> AuthKeyMatch? {
@@ -135,21 +130,16 @@ enum CoreTelemetryAuthScanner {
             return matchQuotedAuthKey(nsText, at: pos, quote: ch, state: &state)
         }
         if pos > 0 && isAuthKeyWordChar(nsText.character(at: pos - 1)) { return nil }
-        if matchesASCII(nsText, at: pos, literal: "proxy-authorization", len: len),
-            pos + 19 == len || !isAuthKeyWordChar(nsText.character(at: pos + 19))
-        {
-            return AuthKeyMatch(
-                keyStart: pos, keyEnd: pos + 19, isJsonCandidate: false,
-                hasJsonPrefix: false, failedTopEnd: -1, normalizedKey: nil
-            )
-        }
-        if matchesASCII(nsText, at: pos, literal: "authorization", len: len),
-            pos + 13 == len || !isAuthKeyWordChar(nsText.character(at: pos + 13))
-        {
-            return AuthKeyMatch(
-                keyStart: pos, keyEnd: pos + 13, isJsonCandidate: false,
-                hasJsonPrefix: false, failedTopEnd: -1, normalizedKey: nil
-            )
+        for name in unquotedAuthHeaderNames {
+            let nameLen = name.utf16.count
+            if matchesASCII(nsText, at: pos, literal: name, len: len),
+                pos + nameLen == len || !isAuthKeyWordChar(nsText.character(at: pos + nameLen))
+            {
+                return AuthKeyMatch(
+                    keyStart: pos, keyEnd: pos + nameLen, isJsonCandidate: false,
+                    hasJsonPrefix: false, failedTopEnd: -1, normalizedKey: nil
+                )
+            }
         }
         return nil
     }
@@ -194,7 +184,13 @@ enum CoreTelemetryAuthScanner {
     ) -> AuthKeyMatch? {
         let key = String(utf16CodeUnits: decoded, count: decoded.count).lowercased()
         let canonical: String? =
-            key == "authorization" ? "Authorization" : (key == "proxy-authorization" ? "Proxy-Authorization" : nil)
+            switch key {
+            case "authorization": "Authorization"
+            case "proxy-authorization": "Proxy-Authorization"
+            case "cookie": "Cookie"
+            case "set-cookie": "Set-Cookie"
+            default: nil
+            }
         guard let canonical else { return nil }
         let hasPrefix = flags.isDoubleQuote && isPrecededByBraceOrComma(nsText, before: keyRange.lowerBound)
         let allowJson = flags.isDoubleQuote && flags.validEscapes

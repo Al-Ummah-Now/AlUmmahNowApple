@@ -222,14 +222,9 @@ extension CoreTelemetryService {
     private static func redactPlainQuotedSpan(
         _ nsText: NSString, start: Int, close: Int, result: inout String, copied: inout Int
     ) {
-        guard start < close else { return }
-        var pathPos = findLocalPathStartInQuoted(nsText, start: start, end: close)
-        guard pathPos >= 0 else { return }
-        if pathPos > start && isOddBackslashesBefore(nsText, at: pathPos, minPos: start) { pathPos -= 1 }
-        if result.isEmpty { result.reserveCapacity(nsText.length) }
-        result += nsText.substring(with: NSRange(location: copied, length: pathPos - copied))
-        result += "[redacted-path]"
-        copied = close
+        redactQuotedLocalPathSegment(
+            nsText, range: start..<close, trimTrailingSpaces: false, result: &result, copied: &copied
+        )
     }
 
     private static func redactQuotedNonVaultSegments(
@@ -241,18 +236,13 @@ extension CoreTelemetryService {
                 of: "\u{001E}", options: [], range: NSRange(location: segStart, length: close - segStart)
             )
             let segEnd = vaultRange.location != NSNotFound ? vaultRange.location : close
-            var pathPos = segStart < segEnd ? findLocalPathStartInQuoted(nsText, start: segStart, end: segEnd) : -1
-            if pathPos >= 0 {
-                if pathPos > segStart && isOddBackslashesBefore(nsText, at: pathPos, minPos: segStart) { pathPos -= 1 }
-                var redactEnd = segEnd
-                if vaultRange.location != NSNotFound {
-                    while redactEnd > pathPos && isHorizontalSpace(nsText.character(at: redactEnd - 1)) { redactEnd -= 1 }
-                }
-                if result.isEmpty { result.reserveCapacity(nsText.length) }
-                result += nsText.substring(with: NSRange(location: copied, length: pathPos - copied))
-                result += "[redacted-path]"
-                copied = redactEnd
-            }
+            redactQuotedLocalPathSegment(
+                nsText,
+                range: segStart..<segEnd,
+                trimTrailingSpaces: vaultRange.location != NSNotFound,
+                result: &result,
+                copied: &copied
+            )
             guard vaultRange.location != NSNotFound else { break }
             let afterVault = vaultRange.location + 1
             let endRange = nsText.range(
@@ -263,10 +253,47 @@ extension CoreTelemetryService {
         }
     }
 
+    private static func redactQuotedLocalPathSegment(
+        _ nsText: NSString,
+        range: Range<Int>,
+        trimTrailingSpaces: Bool,
+        result: inout String,
+        copied: inout Int
+    ) {
+        var cursor = range.lowerBound
+        let segEnd = range.upperBound
+        while cursor < segEnd {
+            var pathPos = findLocalPathStartInQuoted(nsText, start: cursor, end: segEnd)
+            guard pathPos >= 0 else { return }
+            if pathPos > cursor && isOddBackslashesBefore(nsText, at: pathPos, minPos: cursor) { pathPos -= 1 }
+            let innerClose = CoreTelemetryQuotedPathHelpers.findInnerEscapedQuoteClose(
+                nsText, pathPos: pathPos, minPos: cursor, segEnd: segEnd
+            )
+            let redactEnd = resolveQuotedRedactEnd(
+                nsText, pathPos: pathPos, innerClose: innerClose, segEnd: segEnd, trimTrailingSpaces: trimTrailingSpaces
+            )
+            if result.isEmpty { result.reserveCapacity(nsText.length) }
+            result += nsText.substring(with: NSRange(location: copied, length: pathPos - copied))
+            result += "[redacted-path]"
+            copied = redactEnd
+            guard innerClose >= 0 else { return }
+            cursor = innerClose + (nsText.character(at: innerClose + 1) == 0x22 ? 2 : 6)
+        }
+    }
+
+    private static func resolveQuotedRedactEnd(
+        _ nsText: NSString, pathPos: Int, innerClose: Int, segEnd: Int, trimTrailingSpaces: Bool
+    ) -> Int {
+        if innerClose >= 0 { return innerClose }
+        var redactEnd = segEnd
+        if trimTrailingSpaces {
+            while redactEnd > pathPos && isHorizontalSpace(nsText.character(at: redactEnd - 1)) { redactEnd -= 1 }
+        }
+        return redactEnd
+    }
+
     private static func isOddBackslashesBefore(_ nsText: NSString, at pos: Int, minPos: Int) -> Bool {
-        var bs = 0
-        while pos - 1 - bs >= minPos && nsText.character(at: pos - 1 - bs) == 0x5C { bs += 1 }
-        return (bs & 1) == 1
+        CoreTelemetryQuotedPathHelpers.isOddBackslashesBefore(nsText, at: pos, minPos: minPos)
     }
 
     private static func findDoubleQuotedPathEnd(_ nsText: NSString, open: Int, len: Int) -> QuotedPathSpan {

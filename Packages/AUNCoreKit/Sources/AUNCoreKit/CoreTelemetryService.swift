@@ -126,20 +126,24 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     }
 
     public func track(_ name: String, properties: [String: String]) {
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, consent == .full else { return }
+        let safeName = Self.sanitizeLocalPaths(name)
+        guard !safeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let json = Self.serializeProperties(properties)
         withActiveConsent(requiresFull: true) {
-            do { _ = try client.track(name: name, propertiesJson: json) } catch {
+            do { _ = try client.track(name: safeName, propertiesJson: json) } catch {
                 AUNLog.network.warning("Telemetry track skipped: \(error)")
             }
         }
     }
 
     public func trackError(_ code: String, properties: [String: String]) {
-        guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, consent == .full else { return }
+        let safeCode = Self.sanitizeLocalPaths(code)
+        guard !safeCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let json = Self.serializeProperties(properties)
         withActiveConsent(requiresFull: true) {
-            do { _ = try client.trackError(code: code, propertiesJson: json) } catch {
+            do { _ = try client.trackError(code: safeCode, propertiesJson: json) } catch {
                 AUNLog.network.warning("Telemetry error skipped: \(error)")
             }
         }

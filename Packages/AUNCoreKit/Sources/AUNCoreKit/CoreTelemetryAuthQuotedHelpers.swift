@@ -1,28 +1,196 @@
 import Foundation
 
 extension CoreTelemetryAuthScanner {
-    static func redactEscapedTokensInBalancedQuotes(in text: String) -> String {
-        guard text.contains("\"") && text.contains("\\") else { return text }
-        let afterBearer = redactEscapedTokenPass(in: text, isBasic: false)
-        return redactEscapedTokenPass(in: afterBearer, isBasic: true)
+    static func matchAuthSeparator(_ nsText: NSString, at pos: Int, len: Int) -> (Int, Bool)? {
+        guard pos < len else { return nil }
+        let ch = nsText.character(at: pos)
+        if ch == 0x3A || ch == 0x3D { return (1, ch == 0x3A) }
+        guard
+            ch == 0x5C && pos + 5 < len && nsText.character(at: pos + 1) == 0x75
+                && !CoreTelemetryService.VaultLineTracker.isPrecededByOddBackslashes(nsText, at: pos, minPos: 0),
+            let code = CoreTelemetryService.parseHex4(nsText, pos: pos + 2),
+            code == 0x3A || code == 0x3D
+        else { return nil }
+        return (6, code == 0x3A)
     }
 
-    private static func redactEscapedTokenPass(in text: String, isBasic: Bool) -> String {
-        guard let regex = isBasic ? basicTokenRegex : bearerTokenRegex else { return text }
+    static func redactBearerTokens(in text: String) -> String {
+        guard text.range(of: "bearer", options: [.caseInsensitive]) != nil else { return text }
+        let nsText = text as NSString
+        let ranges = findBearerTokenRanges(nsText)
+        guard !ranges.isEmpty else { return text }
+        var result = ""
+        result.reserveCapacity(text.count)
+        var copied = 0
+        for (start, end) in ranges {
+            result += nsText.substring(with: NSRange(location: copied, length: start - copied))
+            result += nsText.substring(with: NSRange(location: start, length: 6)) + " [redacted]"
+            copied = end
+        }
+        result += nsText.substring(from: copied)
+        return result
+    }
+
+    private static func findBearerTokenRanges(_ nsText: NSString) -> [(Int, Int)] {
+        let len = nsText.length
+        var ranges: [(Int, Int)] = []
+        var inEscapedQuote = false
+        var idx = 0
+        while idx < len {
+            if let nextIdx = stepBearerQuoteState(nsText, at: idx, len: len, inEscapedQuote: &inEscapedQuote) {
+                idx = nextIdx
+                continue
+            }
+            guard matchesBearerPrefix(nsText, at: idx, len: len) else {
+                idx += 1
+                continue
+            }
+            var wsEnd = idx + 6
+            while wsEnd < len && CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: wsEnd)) {
+                wsEnd += 1
+            }
+            guard wsEnd < len else { break }
+            if isRedactedBearerPlaceholder(nsText, at: wsEnd, len: len, stopAtEscapedQuote: inEscapedQuote) {
+                idx = wsEnd + 10
+                continue
+            }
+            let tokEnd = scanBearerTokenEnd(nsText, from: wsEnd, len: len, stopAtEscapedQuote: inEscapedQuote)
+            if tokEnd > wsEnd {
+                ranges.append((idx, tokEnd))
+                idx = tokEnd
+            } else {
+                idx = wsEnd
+            }
+        }
+        return ranges
+    }
+
+    private static func stepBearerQuoteState(
+        _ nsText: NSString, at pos: Int, len: Int, inEscapedQuote: inout Bool
+    ) -> Int? {
+        let ch = nsText.character(at: pos)
+        if ch == 0x5C && pos + 1 < len {
+            let next = nsText.character(at: pos + 1)
+            if next == 0x22 {
+                inEscapedQuote.toggle()
+                return pos + 2
+            }
+            if next == 0x75 && pos + 5 < len, let code = CoreTelemetryService.parseHex4(nsText, pos: pos + 2) {
+                if code == 0x22 { inEscapedQuote.toggle() }
+                return pos + 6
+            }
+            return pos + 2
+        }
+        if ch == 0x22 || ch == 0x0A || ch == 0x0D {
+            inEscapedQuote = false
+            return pos + 1
+        }
+        return nil
+    }
+
+    private static func matchesBearerPrefix(_ nsText: NSString, at idx: Int, len: Int) -> Bool {
+        guard idx + 6 < len else { return false }
+        let wordBefore = idx > 0 && isBearerWordChar(nsText.character(at: idx - 1))
+        return !wordBefore && matchesASCII(nsText, at: idx, literal: "bearer", len: len)
+            && CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: idx + 6))
+    }
+
+    private static func isBearerWordChar(_ ch: unichar) -> Bool {
+        CoreTelemetryService.isASCIIAlphaNum(ch) || ch == 0x5F
+    }
+
+    private static func isRedactedBearerPlaceholder(
+        _ nsText: NSString, at pos: Int, len: Int, stopAtEscapedQuote: Bool
+    ) -> Bool {
+        guard pos + 10 <= len && nsText.substring(with: NSRange(location: pos, length: 10)) == "[redacted]" else {
+            return false
+        }
+        let after = pos + 10
+        guard after < len else { return true }
+        let ch = nsText.character(at: after)
+        if CoreTelemetryService.VaultLineTracker.isWhitespace(ch) || isBearerStopPunct(ch) { return true }
+        return isBearerEscapeBoundary(nsText, at: after, len: len, stopAtEscapedQuote: stopAtEscapedQuote)
+    }
+
+    private static func isBearerEscapeBoundary(
+        _ nsText: NSString, at pos: Int, len: Int, stopAtEscapedQuote: Bool
+    ) -> Bool {
+        guard nsText.character(at: pos) == 0x5C && pos + 1 < len else { return false }
+        let esc = nsText.character(at: pos + 1)
+        if esc == 0x6E || esc == 0x72 || esc == 0x74 || esc == 0x62 || esc == 0x66 { return true }
+        if stopAtEscapedQuote && esc == 0x22 { return true }
+        guard esc == 0x75 && pos + 5 < len, let code = CoreTelemetryService.parseHex4(nsText, pos: pos + 2) else {
+            return false
+        }
+        return CoreTelemetryService.VaultLineTracker.isWhitespace(code) || (stopAtEscapedQuote && code == 0x22)
+    }
+
+    private static func isBearerStopPunct(_ ch: unichar) -> Bool {
+        ch == 0x22 || ch == 0x27 || ch == 0x2C || ch == 0x3B || ch == 0x29 || ch == 0x5D || ch == 0x7D
+    }
+
+    private static func scanBearerTokenEnd(
+        _ nsText: NSString, from start: Int, len: Int, stopAtEscapedQuote: Bool
+    ) -> Int {
+        var pos = start
+        while pos < len {
+            let ch = nsText.character(at: pos)
+            if ch == 0x5C {
+                if pos + 1 >= len || CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: pos + 1)) {
+                    pos += 1
+                    break
+                }
+                if isBearerEscapeBoundary(nsText, at: pos, len: len, stopAtEscapedQuote: stopAtEscapedQuote) { break }
+                let next = nsText.character(at: pos + 1)
+                pos += (next == 0x75 && pos + 5 < len && CoreTelemetryService.parseHex4(nsText, pos: pos + 2) != nil) ? 6 : 2
+                continue
+            }
+            if CoreTelemetryService.VaultLineTracker.isWhitespace(ch) || isBearerStopPunct(ch) { break }
+            pos += 1
+        }
+        return pos
+    }
+
+    static func redactEscapedBearerInBalancedQuotes(in text: String) -> String {
+        guard text.contains("\"") && text.contains("\\") else { return text }
         let nsText = text as NSString
         let spans = CoreTelemetryService.collectBalancedDoubleQuoteSpans(nsText)
         guard !spans.isEmpty else { return text }
-        let keyword = isBasic ? "basic" : "bearer"
         var result = ""
         var copied = 0
         for span in spans {
             let innerStart = span.open + 1
             guard innerStart < span.close, hasBackslash(nsText, start: innerStart, end: span.close) else { continue }
-            applyEscapedTokenSpan(
-                nsText, range: innerStart..<span.close,
-                config: (regex, keyword, isBasic),
-                result: &result, copied: &copied
-            )
+            let (decoded, rawOffsets) = CoreTelemetryService.decodeQuotedSpanWithOffsets(
+                nsText, start: innerStart, end: span.close)
+            guard decoded.range(of: "bearer", options: [.caseInsensitive]) != nil else { continue }
+            let nsDecoded = decoded as NSString
+            for (mStart, mEnd) in findBearerTokenRanges(nsDecoded) {
+                let rawStart = rawOffsets[mStart]
+                let rawEnd = rawOffsets[mEnd]
+                guard rawStart >= copied else { continue }
+                if result.isEmpty { result.reserveCapacity(text.count) }
+                result += nsText.substring(with: NSRange(location: copied, length: rawStart - copied))
+                result += nsDecoded.substring(with: NSRange(location: mStart, length: 6)) + " [redacted]"
+                copied = rawEnd
+            }
+        }
+        guard copied > 0 else { return text }
+        result += nsText.substring(from: copied)
+        return result
+    }
+
+    static func redactEscapedBasicInBalancedQuotes(in text: String) -> String {
+        guard text.contains("\"") && text.contains("\\"), let regex = basicTokenRegex else { return text }
+        let nsText = text as NSString
+        let spans = CoreTelemetryService.collectBalancedDoubleQuoteSpans(nsText)
+        guard !spans.isEmpty else { return text }
+        var result = ""
+        var copied = 0
+        for span in spans {
+            let innerStart = span.open + 1
+            guard innerStart < span.close, hasBackslash(nsText, start: innerStart, end: span.close) else { continue }
+            applyEscapedBasicSpan(nsText, range: innerStart..<span.close, regex: regex, result: &result, copied: &copied)
         }
         guard copied > 0 else { return text }
         result += nsText.substring(from: copied)
@@ -33,21 +201,21 @@ extension CoreTelemetryAuthScanner {
         nsText.range(of: "\\", options: [], range: NSRange(location: start, length: end - start)).location != NSNotFound
     }
 
-    private static func applyEscapedTokenSpan(
+    private static func applyEscapedBasicSpan(
         _ nsText: NSString,
         range: Range<Int>,
-        config: (regex: NSRegularExpression, keyword: String, isBasic: Bool),
+        regex: NSRegularExpression,
         result: inout String,
         copied: inout Int
     ) {
         let (decoded, rawOffsets) = CoreTelemetryService.decodeQuotedSpanWithOffsets(
             nsText, start: range.lowerBound, end: range.upperBound
         )
-        guard decoded.range(of: config.keyword, options: [.caseInsensitive]) != nil else { return }
+        guard decoded.range(of: "basic", options: [.caseInsensitive]) != nil else { return }
         let nsDecoded = decoded as NSString
-        let matches = config.regex.matches(in: decoded, options: [], range: NSRange(location: 0, length: nsDecoded.length))
+        let matches = regex.matches(in: decoded, options: [], range: NSRange(location: 0, length: nsDecoded.length))
         for match in matches {
-            if config.isBasic && !isBasicCredentialToken(nsDecoded.substring(with: match.range(at: 2))) { continue }
+            if !isBasicCredentialToken(nsDecoded.substring(with: match.range(at: 2))) { continue }
             let rawStart = rawOffsets[match.range.location]
             let rawEnd = rawOffsets[match.range.location + match.range.length]
             guard rawStart >= copied else { continue }
@@ -59,39 +227,32 @@ extension CoreTelemetryAuthScanner {
         }
     }
 
-    static func findBalancedJsonStringEnd(_ nsText: NSString, open: Int, len: Int) -> Int? {
+    static func isJsonStringStartBoundary(_ nsText: NSString, open: Int) -> Bool {
         let prev = skipJsonWhitespaceBackward(nsText, from: open - 1)
-        if prev >= 0 {
-            let pCh = nsText.character(at: prev)
-            if pCh != 0x3A && pCh != 0x3D && pCh != 0x5B && pCh != 0x2C && pCh != 0x7B { return nil }
-        }
+        guard prev >= 0 else { return true }
+        let pCh = nsText.character(at: prev)
+        return pCh == 0x3A || pCh == 0x3D || pCh == 0x5B || pCh == 0x2C || pCh == 0x7B || pCh == 0x28
+    }
+
+    static func findDoubleQuotedSpanEnd(_ nsText: NSString, open: Int, len: Int) -> Int? {
         var pos = open + 1
         var escaped = false
         while pos < len {
             let ch = nsText.character(at: pos)
             if ch == 0x0A || ch == 0x0D { return nil }
-            if ch == 0x22 && !escaped {
-                return isJsonStringEndBoundary(nsText, afterPos: pos + 1, len: len) ? pos : nil
-            }
+            if ch == 0x22 && !escaped { return pos }
             escaped = ch == 0x5C && !escaped
             pos += 1
         }
         return nil
     }
 
-    private static func isJsonStringEndBoundary(_ nsText: NSString, afterPos: Int, len: Int) -> Bool {
-        guard afterPos < len else { return true }
-        if CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: afterPos)) { return true }
-        let after = skipJsonWhitespaceForward(nsText, from: afterPos, len: len)
-        guard after < len else { return true }
-        let aCh = nsText.character(at: after)
-        return aCh == 0x2C || aCh == 0x7D || aCh == 0x5D || aCh == 0x3A || aCh == 0x3B || aCh == 0x29
-    }
-
     static func redactAuthHeadersInBalancedSpan(
         _ nsText: NSString, innerStart: Int, close: Int, nextDepth: Int, state: inout AuthScanState
-    ) {
-        guard innerStart < close && containsAuthHeaderCandidate(nsText, start: innerStart, end: close) else { return }
+    ) -> Bool {
+        guard innerStart < close && containsAuthHeaderCandidate(nsText, start: innerStart, end: close) else {
+            return false
+        }
         let decoded: String
         let rawOffsets: [Int]?
         if hasBackslash(nsText, start: innerStart, end: close) {
@@ -100,15 +261,18 @@ extension CoreTelemetryAuthScanner {
             decoded = nsText.substring(with: NSRange(location: innerStart, length: close - innerStart))
             rawOffsets = nil
         }
-        guard decoded.contains(":") || decoded.contains("=") else { return }
+        guard decoded.contains(":") || decoded.contains("=") else { return false }
         var innerState = AuthScanState()
         innerState.edits = []
         scanAuthHeaders(decoded as NSString, maxDepth: nextDepth, state: &innerState)
-        for (eStart, eEnd, eRepl) in innerState.edits ?? [] {
+        let edits = innerState.edits ?? []
+        guard !edits.isEmpty else { return false }
+        for (eStart, eEnd, eRepl) in edits {
             let rawStart = rawOffsets?[eStart] ?? (innerStart + eStart)
             let rawEnd = rawOffsets?[eEnd] ?? (innerStart + eEnd)
             state.appendRedacted(nsText, start: rawStart, end: rawEnd, replacement: escapeJsonStringContent(eRepl))
         }
+        return true
     }
 
     private static func containsAuthHeaderCandidate(_ nsText: NSString, start: Int, end: Int) -> Bool {
