@@ -229,7 +229,16 @@ struct CoreTelemetryServiceTests {
         )
         service.reportCrash(
             kind: "IOException",
-            message: #"Failed reading /Private (Client).mov\n/Private Client\n/private-key\n/workspace/alice/Project;Acquisition.mov\n"C:\Users\Alice Smith\Private Draft.mp4""#,
+            message: """
+            Failed reading /Private (Client).mov
+            /Private Client
+            /private-key
+            /workspace/alice/Project;Acquisition.mov
+            '/workspace/alice/Project:2026;Acquisition.mov'
+            /!Acquisition.mov
+            "/!Acquisition.mov"
+            "C:\\Users\\Alice Smith\\Private Draft.mp4"
+            """,
             stack: "at Player.open() in /workspace/Élodie/src/Player.swift:42\nat App.run()"
         )
 

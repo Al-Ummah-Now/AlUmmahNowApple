@@ -80,13 +80,13 @@ extension CoreTelemetryService {
     private static let pathRegexes: [NSRegularExpression] = {
         let patterns = [
             // Double-quoted paths (may contain apostrophes, semicolons, spaces, Unicode, or parentheses)
-            #""(?:file://|(?:[A-Za-z]:[\\/]|\\\\)|~/(?!\s)|/(?=[\p{L}\p{M}\p{N}._~]))[^"\r\n]*""#,
+            #""(?:file://|(?:[A-Za-z]:[\\/]|\\\\)|~/(?!\s)|/(?=[^\s/"]))[^"\r\n]*""#,
             // Unquoted file:// URIs
             #"file://[^\r\n"<>|]+"#,
-            // Unquoted Windows drive or UNC paths through end of clause (preserving :line N / :N in stacks)
-            #"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n"<>|]+?(?=(?::line\b|:\d+\b|[\r\n"<>|]|$))"#,
-            // Unquoted Unix ~/ or root paths (including single-segment and apostrophe/semicolon filenames)
-            #"(?<![\p{L}\p{M}\p{N}._:/-])(?:~/|/(?=[\p{L}\p{M}\p{N}._~]))[^\r\n"<>|]+?(?=(?::line\b|:\d+\b|[\r\n"<>|]|$))"#,
+            // Unquoted Windows drive or UNC paths through end of clause (preserving trailing :line N / :N in stacks)
+            #"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n"<>|]+?(?=(?::line\s+\d+|:\d+(?::\d+)?)[)\]]*(?=\r|\n|$)|[\r\n"<>|]|$)"#,
+            // Unquoted Unix ~/ or root paths (including single-segment, punctuation-prefixed, and colon/semicolon filenames)
+            #"(?<![\p{L}\p{M}\p{N}._:/-])(?:~/|/(?=[^\s/"<>|]))[^\r\n"<>|]+?(?=(?::line\s+\d+|:\d+(?::\d+)?)[)\]]*(?=\r|\n|$)|[\r\n"<>|]|$)"#,
         ]
         return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
     }()
