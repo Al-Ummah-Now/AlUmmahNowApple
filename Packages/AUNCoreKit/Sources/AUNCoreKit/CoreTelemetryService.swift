@@ -146,7 +146,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     }
 
     public func addBreadcrumb(category: String, message: String, level: TelemetryBreadcrumbSeverity) {
-        guard !category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, consent != .off else { return }
         let mapped: TelemetryBreadcrumbLevel =
             switch level {
             case .debug: .debug
@@ -161,6 +161,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     }
 
     public func reportCrash(kind: String, message: String, stack: String?, fromPreviousSession: Bool) {
+        guard consent != .off else { return }
         let safeKind = kind.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "UnhandledException" : kind
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeMessage = trimmed.isEmpty ? "Unhandled exception" : Self.sanitizeLocalPaths(trimmed)

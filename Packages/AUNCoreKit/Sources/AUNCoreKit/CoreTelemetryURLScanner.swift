@@ -385,64 +385,37 @@ extension CoreTelemetryService.VaultLineTracker {
         return false
     }
 
-    static func findEmailTailAt(_ nsText: NSString, from pos: Int, len: Int) -> Int {
+    static func findEmailTailEnd(_ nsText: NSString, from pos: Int, len: Int) -> Int {
         var idx = pos
         while idx < len && isEmailLocalChar(nsText, at: idx, len: len) { idx += 1 }
         guard idx < len else { return -1 }
         let atLen = emailAtLength(nsText, at: idx, len: len)
-        return atLen > 0 && findEmailDomainEnd(nsText, domStart: idx + atLen, len: len) > 0 ? idx : -1
+        return atLen > 0 ? findEmailDomainEnd(nsText, domStart: idx + atLen, len: len) : -1
     }
 
-    static func findEmailTailEnd(_ nsText: NSString, from pos: Int, len: Int) -> Int {
-        let atPos = findEmailTailAt(nsText, from: pos, len: len)
-        guard atPos >= 0 else { return -1 }
-        return findEmailDomainEnd(nsText, domStart: atPos + emailAtLength(nsText, at: atPos, len: len), len: len)
-    }
+    private static let authCredentialRules: [(regex: NSRegularExpression, template: String)] = {
+        let specs: [(String, NSRegularExpression.Options, String)] = [
+            (#"(\b(?:Proxy-)?Authorization\s*:\s*(?:[A-Za-z0-9._-]+\s+)?)[^\r\n]+"#, [.caseInsensitive], "$1[redacted]"),
+            (#"\bBearer\s+\S+"#, [.caseInsensitive], "Bearer [redacted]"),
+            (
+                #"\b[Bb]asic\s+(?=[A-Za-z0-9+/]{8,}={0,2}(?=$|[\s"',;)\]}]))(?=[A-Za-z0-9+/]*[0-9+/A-Z])[A-Za-z0-9+/]+={0,2}"#,
+                [],
+                "Basic [redacted]"
+            ),
+        ]
+        return specs.compactMap { pattern, options, template in
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return nil }
+            return (regex, template)
+        }
+    }()
 
-    static func redactBareFilenames(in text: String, using regex: NSRegularExpression) -> String {
-        guard text.contains(".") else { return text }
-        let nsText = text as NSString
-        let len = nsText.length
-        if !hasEmailAt(text) {
-            return regex.stringByReplacingMatches(
-                in: text, options: [], range: NSRange(location: 0, length: len), withTemplate: "$1$2[redacted-path]"
-            )
+    static func redactAuthCredentials(in text: String) -> String {
+        var result = text
+        for rule in authCredentialRules {
+            let range = NSRange(result.startIndex..<result.endIndex, in: result)
+            result = rule.regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: rule.template)
         }
-        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: len))
-        guard !matches.isEmpty else { return text }
-        var result = ""
-        var copied = 0
-        for match in matches where match.range.location >= copied {
-            if let resolved = resolveNonEmailBareMatch(nsText, text: text, match: match, regex: regex) {
-                if result.isEmpty { result.reserveCapacity(text.count) }
-                let loc = resolved.range.location
-                result += nsText.substring(with: NSRange(location: copied, length: loc - copied))
-                result += nsText.substring(with: resolved.range(at: 1))
-                result += nsText.substring(with: resolved.range(at: 2))
-                result += "[redacted-path]"
-                copied = loc + resolved.range.length
-            }
-        }
-        guard copied > 0 else { return text }
-        result += nsText.substring(from: copied)
         return result
-    }
-
-    private static func resolveNonEmailBareMatch(
-        _ nsText: NSString, text: String, match: NSTextCheckingResult, regex: NSRegularExpression
-    ) -> NSTextCheckingResult? {
-        let len = nsText.length
-        var current: NSTextCheckingResult? = match
-        while let cur = current {
-            let curEnd = cur.range.location + cur.range.length
-            let emailAt = findEmailTailAt(nsText, from: curEnd, len: len)
-            if emailAt < 0 { return cur }
-            let localStart = findEmailLocalStart(nsText, at: emailAt, minPos: match.range.location, len: len)
-            guard localStart > match.range.location else { return nil }
-            let slice = NSRange(location: match.range.location, length: localStart - match.range.location)
-            current = regex.firstMatch(in: text, options: [], range: slice)
-        }
-        return nil
     }
 
     static func redactQuotedEmails(in text: String) -> String {

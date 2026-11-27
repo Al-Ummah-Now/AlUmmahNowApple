@@ -248,10 +248,22 @@ struct CoreTelemetryExternalConsentTests {
             ("file alice.txt@localhost", "file [redacted-email]"),
             ("file Private Project alice.txt@example.com", "file [redacted-path]"),
             ("'alice.txt'@example.com", "[redacted-path]"),
+            ("alice@internal.pdf.example.org", "[redacted-email]"),
+            ("alice.txt@example.zip.private", "[redacted-email]"),
+            ("Authorization: Basic YWxpY2U6c2VjcmV0", "Authorization: Basic [redacted]"),
+            ("Proxy-Authorization: Basic YWxpY2U6c2VjcmV0", "Proxy-Authorization: Basic [redacted]"),
+            ("Authorization: Digest username=\"alice\", response=\"deadbeef\"", "Authorization: Digest [redacted]"),
+            ("{\"Authorization\": \"Basic YWxpY2U6c2VjcmV0\"}", "{\"Authorization\": \"Basic [redacted]\"}"),
+            ("Basic auth failed", "Basic auth failed"),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
+        let repeatedFilenameEmails = String(repeating: "alice.txt@example.org ", count: 5_000)
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(repeatedFilenameEmails)
+                == String(repeating: "[redacted-email] ", count: 5_000)
+        )
     }
 
     @Test("Scrubs quoted/wrapped embedded URLs and scales linearly on adversarial inputs")

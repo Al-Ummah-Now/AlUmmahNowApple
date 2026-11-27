@@ -101,17 +101,17 @@ extension CoreTelemetryService {
             scrubbed = kwAssign.stringByReplacingMatches(
                 in: scrubbed, options: [], range: range, withTemplate: "$1[redacted-path]")
         }
-        if let bareRegex = Self.bareFilenameRegex {
-            scrubbed = VaultLineTracker.redactBareFilenames(in: scrubbed, using: bareRegex)
+        scrubbed = Self.redactEmails(in: scrubbed)
+        if scrubbed.contains("."), let bareRegex = Self.bareFilenameRegex {
+            let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
+            scrubbed = bareRegex.stringByReplacingMatches(
+                in: scrubbed, options: [], range: range, withTemplate: "$1$2[redacted-path]")
         }
         scrubbed = Self.restoreVaultedURLs(in: scrubbed, prefix: Self.vaultPrefix, vaultedURLs: vaultedURLs)
-        scrubbed = Self.redactEmails(in: scrubbed)
-        if let bearerRegex = Self.bearerTokenRegex {
-            let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
-            scrubbed = bearerRegex.stringByReplacingMatches(
-                in: scrubbed, options: [], range: range, withTemplate: "Bearer [redacted]"
-            )
+        if !vaultedURLs.isEmpty {
+            scrubbed = Self.redactEmails(in: scrubbed)
         }
+        scrubbed = VaultLineTracker.redactAuthCredentials(in: scrubbed)
         return hadSentinels ? Self.unescapeSentinels(scrubbed) : scrubbed
     }
 
@@ -448,10 +448,6 @@ extension CoreTelemetryService {
         pattern: #"(^|[\r\n:=;\u001F])([ \t]*)(?=[^\r\n:=;\u001E\u001F \t])[^\r\n:=;\u001E\u001F]*\."#
             + #"(?!ts:\d+)(?:"# + bareFilenameExtensions + #")\b(?!\()"#,
         options: [.caseInsensitive]
-    )
-
-    private static let bearerTokenRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"\bBearer\s+\S+"#, options: [.caseInsensitive]
     )
 
     static func serializeProperties(_ properties: [String: String]) -> String? {
