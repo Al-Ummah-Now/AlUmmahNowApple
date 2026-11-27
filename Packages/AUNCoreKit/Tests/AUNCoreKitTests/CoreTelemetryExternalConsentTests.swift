@@ -62,6 +62,12 @@ struct CoreTelemetryExternalConsentTests {
             ("file:///a.mov and ( https://example.com/api)", "[redacted-path] ( https://example.com/api)"),
             ("file:///a.mov and (((https://example.com/api)))", "[redacted-path] (((https://example.com/api)))"),
             ("file:// Secret Acquisition", "[redacted-path]"),
+            ("file:///private/Secret\u{001E}Acquisition", "[redacted-path]"),
+            (
+                "file:///a.mov; https://example.com/ (https://other.example/api)",
+                "[redacted-path] https://example.com/ (https://other.example/api)"
+            ),
+            ("file://   https://example.com/api", "[redacted-path]   https://example.com/api"),
             ("file:///storage/emulated/0/Secret.mov and (https://example.com/api)", "[redacted-path] (https://example.com/api)"),
             ("https://example.com/ (https://other.com/api)", "https://example.com/ (https://other.com/api)"),
             ("/private/Project Folder/(https://Secret/Acquisition.mov)", "[redacted-path]"),

@@ -74,7 +74,7 @@ extension CoreTelemetryService {
             prefix += "X"
         }
         var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: text, prefix: prefix)
-        scrubbed = Self.redactFileURIs(in: scrubbed)
+        scrubbed = Self.redactFileURIs(in: scrubbed, vaultPrefix: prefix)
         for rule in Self.pathRedactionRules {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
             scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
@@ -101,6 +101,10 @@ extension CoreTelemetryService {
             return fileURIQuote != 0
                 || (!wsBeforeRun && (hasFileURIOnLine || afterPathSep))
                 || (hasFileURIOnLine && inWrapperRun && afterPathSep)
+        }
+
+        mutating func onVaultedURL() {
+            hasFileURIOnLine = false
         }
 
         private mutating func advance(_ nsText: NSString, to target: Int) {
@@ -174,17 +178,31 @@ extension CoreTelemetryService {
         }
     }
 
-    private static func fileURISpanEnd(_ nsText: NSString, after schemeEnd: Int) -> (rawEnd: Int, trimmedEnd: Int) {
+    private static func matchesPrefix(_ nsText: NSString, at pos: Int, prefix: NSString) -> Bool {
+        let len = prefix.length
+        guard pos + len <= nsText.length else { return false }
+        for offset in 0..<len where nsText.character(at: pos + offset) != prefix.character(at: offset) {
+            return false
+        }
+        return true
+    }
+
+    private static func fileURISpanEnd(
+        _ nsText: NSString, after schemeEnd: Int, vaultPrefix: NSString
+    ) -> (rawEnd: Int, trimmedEnd: Int) {
         let totalLength = nsText.length
         var rawEnd = schemeEnd
+        var stoppedAtVault = false
         while rawEnd < totalLength {
             let ch = nsText.character(at: rawEnd)
-            if ch == 0x0A || ch == 0x0D || ch == 0x1E { break }
+            if ch == 0x0A || ch == 0x0D { break }
+            if ch == 0x1E && matchesPrefix(nsText, at: rawEnd, prefix: vaultPrefix) {
+                stoppedAtVault = true
+                break
+            }
             rawEnd += 1
         }
-        guard rawEnd < totalLength && nsText.character(at: rawEnd) == 0x1E else {
-            return (rawEnd, rawEnd)
-        }
+        guard stoppedAtVault else { return (rawEnd, rawEnd) }
         var trimmedEnd = rawEnd
         while trimmedEnd > schemeEnd {
             let prev = nsText.character(at: trimmedEnd - 1)
@@ -197,25 +215,24 @@ extension CoreTelemetryService {
         return (rawEnd, trimmedEnd)
     }
 
-    private static func redactFileURIs(in text: String) -> String {
+    private static func redactFileURIs(in text: String, vaultPrefix: String) -> String {
         let nsText = text as NSString
+        let nsPrefix = vaultPrefix as NSString
         let totalLength = nsText.length
-        guard totalLength > 7 else { return text }
+        guard totalLength >= 7 else { return text }
         var result = ""
         var copyStart = 0
         var pos = 0
         while pos < totalLength {
             if VaultLineTracker.isFileScheme(nsText, at: pos) {
-                let (rawEnd, trimmedEnd) = fileURISpanEnd(nsText, after: pos + 7)
-                if trimmedEnd > pos + 7 {
-                    if result.isEmpty { result.reserveCapacity(text.count) }
-                    result += nsText.substring(with: NSRange(location: copyStart, length: pos - copyStart))
-                    result += "[redacted-path]"
-                    result += nsText.substring(with: NSRange(location: trimmedEnd, length: rawEnd - trimmedEnd))
-                    copyStart = rawEnd
-                    pos = rawEnd
-                    continue
-                }
+                let (rawEnd, trimmedEnd) = fileURISpanEnd(nsText, after: pos + 7, vaultPrefix: nsPrefix)
+                if result.isEmpty { result.reserveCapacity(text.count) }
+                result += nsText.substring(with: NSRange(location: copyStart, length: pos - copyStart))
+                result += "[redacted-path]"
+                result += nsText.substring(with: NSRange(location: trimmedEnd, length: rawEnd - trimmedEnd))
+                copyStart = rawEnd
+                pos = rawEnd
+                continue
             }
             pos += 1
         }
@@ -258,6 +275,7 @@ extension CoreTelemetryService {
             rebuilt += nsText.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
             let idx = vaultedURLs.count
             vaultedURLs.append(url)
+            tracker.onVaultedURL()
             rebuilt += "\(prefix)\(idx)\u{001F}\(tail)"
             cursor = match.range.location + match.range.length
         }
