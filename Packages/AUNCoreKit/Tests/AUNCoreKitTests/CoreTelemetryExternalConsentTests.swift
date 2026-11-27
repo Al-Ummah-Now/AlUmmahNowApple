@@ -363,6 +363,13 @@ struct CoreTelemetryExternalConsentTests {
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
+        let paddedUnmatched =
+            "Authorization: {\nAuthorization: {\nAuthorization: {\nAuthorization: {\n"
+            + String(repeating: "x", count: 5_000)
+            + "\n{\"Authorization\":{\n\"token\":\"opaqueSecret123\"\n},\"status\":\"safe\"}"
+        let scrubbedPadded = CoreTelemetryService.sanitizeLocalPaths(paddedUnmatched)
+        #expect(!scrubbedPadded.contains("opaqueSecret123"))
+        #expect(scrubbedPadded.hasSuffix("{\"Authorization\":\"[redacted]\",\"status\":\"safe\"}"))
     }
 }
 

@@ -29,11 +29,7 @@ enum CoreTelemetryAuthScanner {
     private struct AuthScanState {
         var result = ""
         var copied = 0
-        var objScanBudget: Int
-
-        init(len: Int) {
-            self.objScanBudget = max(len * 2, 4096)
-        }
+        var braceMap: [Int: Int]?
 
         mutating func appendRedacted(_ nsText: NSString, start: Int, end: Int, replacement: String) {
             if result.isEmpty { result.reserveCapacity(nsText.length) }
@@ -54,7 +50,7 @@ enum CoreTelemetryAuthScanner {
         guard text.contains(":") || text.contains("=") else { return text }
         let nsText = text as NSString
         let len = nsText.length
-        var state = AuthScanState(len: len)
+        var state = AuthScanState()
         var idx = 0
         while idx < len {
             guard let keyMatch = matchAuthHeaderKey(nsText, at: idx, len: len) else {
@@ -478,39 +474,49 @@ extension CoreTelemetryAuthScanner {
         _ nsText: NSString, from bracePos: Int, state: inout AuthScanState
     ) -> Int? {
         let len = nsText.length
-        guard state.objScanBudget > 0 && bracePos < len && nsText.character(at: bracePos) == 0x7B else { return nil }
-        var depth = 0
-        var idx = bracePos
+        guard bracePos < len && nsText.character(at: bracePos) == 0x7B else { return nil }
+        if state.braceMap == nil {
+            state.braceMap = buildJsonBraceMatchMap(nsText)
+        }
+        return state.braceMap?[bracePos]
+    }
+
+    private static func buildJsonBraceMatchMap(_ nsText: NSString) -> [Int: Int] {
+        let len = nsText.length
+        var map: [Int: Int] = [:]
+        var stack: [Int] = []
+        var noCloseQuoteBefore = -1
+        var idx = 0
         while idx < len {
             let ch = nsText.character(at: idx)
-            if ch == 0x22 {
-                guard let afterString = scanJsonStringEnd(nsText, from: idx + 1, len: len) else { break }
-                idx = afterString
-                continue
-            }
-            if ch == 0x7B {
-                depth += 1
-            } else if ch == 0x7D {
-                depth -= 1
-                if depth == 0 { return idx + 1 }
+            if ch == 0x22 && idx >= noCloseQuoteBefore {
+                let strEnd = scanJsonStringEnd(nsText, from: idx + 1, len: len)
+                if strEnd > 0 {
+                    idx = strEnd
+                    continue
+                }
+                noCloseQuoteBefore = -strEnd - 1
+            } else if ch == 0x7B {
+                stack.append(idx)
+            } else if ch == 0x7D, let openPos = stack.popLast() {
+                map[openPos] = idx + 1
             }
             idx += 1
         }
-        state.objScanBudget -= max(1, idx - bracePos)
-        return nil
+        return map
     }
 
-    private static func scanJsonStringEnd(_ nsText: NSString, from start: Int, len: Int) -> Int? {
+    private static func scanJsonStringEnd(_ nsText: NSString, from start: Int, len: Int) -> Int {
         var idx = start
         var escaped = false
         while idx < len {
             let ch = nsText.character(at: idx)
-            if isNewline(ch) { return nil }
+            if isNewline(ch) { return -(idx + 1) }
             if ch == 0x22 && !escaped { return idx + 1 }
             escaped = ch == 0x5C && !escaped
             idx += 1
         }
-        return nil
+        return -(len + 1)
     }
 
     private static func isJsonPrimitiveStop(_ ch: unichar) -> Bool {
