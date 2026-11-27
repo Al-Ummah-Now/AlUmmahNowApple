@@ -298,6 +298,15 @@ struct CoreTelemetryExternalConsentTests {
                 "{\"Authorization\": \"opaqueSecret123\", \"status\": \"safe\"}",
                 "{\"Authorization\": \"[redacted]\", \"status\": \"safe\"}"
             ),
+        ]
+        for (input, expected) in cases {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
+        }
+    }
+
+    @Test("Scrubs JSON object, primitive, escaped-key, and standalone Basic credentials")
+    func scrubsJsonObjectPrimitiveAndBasicCredentials() {
+        let cases: [(String, String)] = [
             (
                 "{\"Authorization\":\"opaqueSecret123\"\n  , \"status\":\"safe\"\n}",
                 "{\"Authorization\":\"[redacted]\"\n  , \"status\":\"safe\"\n}"
@@ -309,6 +318,19 @@ struct CoreTelemetryExternalConsentTests {
                 "{\"Authorization\":\"[redacted]\",\"status\":\"safe\"}"
             ),
             ("{\"Authorization\":null,\"status\":\"safe\"}", "{\"Authorization\":null,\"status\":\"safe\"}"),
+            ("\"Authorization\": \"firstValue\" ]opaqueSecret123", "\"Authorization\": \"[redacted]\" [redacted]"),
+            (
+                "{\"Authorization\":{\"token\":\"secret\"},\"status\":\"safe\"}",
+                "{\"Authorization\":\"[redacted]\",\"status\":\"safe\"}"
+            ),
+            (
+                "{\"Authorization\":{\n\"token\":\"opaqueSecret123\"\n},\"status\":\"safe\"}",
+                "{\"Authorization\":\"[redacted]\",\"status\":\"safe\"}"
+            ),
+            (
+                "{\"Authorization\":[{\"token\":\"start],opaqueSecret123\"}],\"status\":\"safe\"}",
+                "{\"Authorization\":[\"[redacted]\"],\"status\":\"safe\"}"
+            ),
             ("Authorization: [firstValue]\r\nNextHeader: safe", "Authorization: [[redacted]]\r\nNextHeader: safe"),
             ("{\n  \"Authorization\": \"opaqueSecret123\"\n  }", "{\n  \"Authorization\": \"[redacted]\"\n  }"),
             ("Authorization:\r\n\topaqueSecret123", "Authorization:\r\n\t[redacted]"),

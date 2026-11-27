@@ -26,10 +26,27 @@ enum CoreTelemetryAuthScanner {
         return redactBasicTokens(in: result)
     }
 
+    private struct AuthScanState {
+        var result = ""
+        var copied = 0
+        var objScanBudget: Int
+
+        init(len: Int) {
+            self.objScanBudget = max(len * 2, 4096)
+        }
+
+        mutating func appendRedacted(_ nsText: NSString, start: Int, end: Int, replacement: String) {
+            if result.isEmpty { result.reserveCapacity(nsText.length) }
+            result += nsText.substring(with: NSRange(location: copied, length: start - copied))
+            result += replacement
+            copied = end
+        }
+    }
+
     private struct AuthKeyMatch {
         let keyStart: Int
         let keyEnd: Int
-        let allowNewlines: Bool
+        let isJsonCandidate: Bool
         let normalizedKey: String?
     }
 
@@ -37,38 +54,34 @@ enum CoreTelemetryAuthScanner {
         guard text.contains(":") || text.contains("=") else { return text }
         let nsText = text as NSString
         let len = nsText.length
-        var result = ""
-        var copied = 0
+        var state = AuthScanState(len: len)
         var idx = 0
         while idx < len {
             guard let keyMatch = matchAuthHeaderKey(nsText, at: idx, len: len) else {
                 idx += 1
                 continue
             }
-            let sep = skipAuthWhitespace(nsText, from: keyMatch.keyEnd, len: len, allowNewlines: keyMatch.allowNewlines)
+            let sep = skipAuthWhitespace(nsText, from: keyMatch.keyEnd, len: len, allowNewlines: keyMatch.isJsonCandidate)
             guard sep < len && (nsText.character(at: sep) == 0x3A || nsText.character(at: sep) == 0x3D) else {
                 idx = keyMatch.keyEnd
                 continue
             }
-            let valStart = skipAuthWhitespace(nsText, from: sep + 1, len: len, allowNewlines: keyMatch.allowNewlines)
+            let isJsonMember = keyMatch.isJsonCandidate && nsText.character(at: sep) == 0x3A
+            let valStart = skipAuthWhitespace(nsText, from: sep + 1, len: len, allowNewlines: isJsonMember)
             guard valStart < len && !isNewline(nsText.character(at: valStart)) else {
                 idx = sep + 1
                 continue
             }
             if let normalized = keyMatch.normalizedKey {
                 let quote = nsText.substring(with: NSRange(location: keyMatch.keyStart, length: 1))
-                if result.isEmpty { result.reserveCapacity(len) }
-                result += nsText.substring(with: NSRange(location: copied, length: keyMatch.keyStart - copied))
-                result += "\(quote)\(normalized)\(quote)"
-                copied = keyMatch.keyEnd
+                state.appendRedacted(
+                    nsText, start: keyMatch.keyStart, end: keyMatch.keyEnd, replacement: "\(quote)\(normalized)\(quote)")
             }
-            idx = redactAuthHeaderValue(
-                nsText, valStart: valStart, allowNewlines: keyMatch.allowNewlines, result: &result, copied: &copied
-            )
+            idx = redactAuthHeaderValue(nsText, valStart: valStart, isJsonMember: isJsonMember, state: &state)
         }
-        guard copied > 0 else { return text }
-        result += nsText.substring(from: copied)
-        return result
+        guard state.copied > 0 else { return text }
+        state.result += nsText.substring(from: state.copied)
+        return state.result
     }
 
     private static func matchAuthHeaderKey(_ nsText: NSString, at pos: Int, len: Int) -> AuthKeyMatch? {
@@ -80,12 +93,12 @@ enum CoreTelemetryAuthScanner {
         if matchesASCII(nsText, at: pos, literal: "proxy-authorization", len: len),
             pos + 19 == len || !isAuthKeyWordChar(nsText.character(at: pos + 19))
         {
-            return AuthKeyMatch(keyStart: pos, keyEnd: pos + 19, allowNewlines: false, normalizedKey: nil)
+            return AuthKeyMatch(keyStart: pos, keyEnd: pos + 19, isJsonCandidate: false, normalizedKey: nil)
         }
         if matchesASCII(nsText, at: pos, literal: "authorization", len: len),
             pos + 13 == len || !isAuthKeyWordChar(nsText.character(at: pos + 13))
         {
-            return AuthKeyMatch(keyStart: pos, keyEnd: pos + 13, allowNewlines: false, normalizedKey: nil)
+            return AuthKeyMatch(keyStart: pos, keyEnd: pos + 13, isJsonCandidate: false, normalizedKey: nil)
         }
         return nil
     }
@@ -103,15 +116,16 @@ enum CoreTelemetryAuthScanner {
             if isNewline(ch) { return nil }
             if ch == quote {
                 let key = String(utf16CodeUnits: decoded, count: decoded.count).lowercased()
+                let isJson = quote == 0x22 && isPrecededByJsonMemberDelimiter(nsText, before: pos)
                 if key == "authorization" {
                     return AuthKeyMatch(
-                        keyStart: pos, keyEnd: idx + 1, allowNewlines: true,
+                        keyStart: pos, keyEnd: idx + 1, isJsonCandidate: isJson,
                         normalizedKey: sawEscape ? "Authorization" : nil
                     )
                 }
                 if key == "proxy-authorization" {
                     return AuthKeyMatch(
-                        keyStart: pos, keyEnd: idx + 1, allowNewlines: true,
+                        keyStart: pos, keyEnd: idx + 1, isJsonCandidate: isJson,
                         normalizedKey: sawEscape ? "Proxy-Authorization" : nil
                     )
                 }
@@ -160,35 +174,30 @@ enum CoreTelemetryAuthScanner {
     }
 
     private static func redactAuthHeaderValue(
-        _ nsText: NSString, valStart: Int, allowNewlines: Bool, result: inout String, copied: inout Int
+        _ nsText: NSString, valStart: Int, isJsonMember: Bool, state: inout AuthScanState
     ) -> Int {
         let ch = nsText.character(at: valStart)
         if ch == 0x22 || ch == 0x27 {
-            let afterQuote = redactQuotedAuthString(
-                nsText, quotePos: valStart, quote: ch, result: &result, copied: &copied
-            )
-            return redactTrailingPlainAuthContinuation(
-                nsText, afterPos: afterQuote, allowNewlines: allowNewlines, result: &result, copied: &copied
-            )
+            let afterQuote = redactQuotedAuthString(nsText, quotePos: valStart, quote: ch, state: &state)
+            return redactTrailingPlainAuthContinuation(nsText, afterPos: afterQuote, isJsonMember: isJsonMember, state: &state)
         }
         if ch == 0x5B {
-            let afterArray = redactAuthArrayValue(
-                nsText, start: valStart + 1, allowNewlines: allowNewlines, result: &result, copied: &copied
-            )
-            return redactTrailingPlainAuthContinuation(
-                nsText, afterPos: afterArray, allowNewlines: allowNewlines, result: &result, copied: &copied
-            )
+            let afterArray = redactAuthArrayValue(nsText, start: valStart + 1, isJsonMember: isJsonMember, state: &state)
+            return redactTrailingPlainAuthContinuation(nsText, afterPos: afterArray, isJsonMember: isJsonMember, state: &state)
         }
-        if allowNewlines,
-            let afterPrim = tryRedactJsonPrimitiveAuthValue(nsText, from: valStart, result: &result, copied: &copied)
-        {
+        if ch == 0x7B, let objEnd = scanBalancedJsonObjectEnd(nsText, from: valStart, state: &state) {
+            state.appendRedacted(
+                nsText, start: valStart, end: objEnd, replacement: isJsonMember ? "\"[redacted]\"" : "[redacted]")
+            return redactTrailingPlainAuthContinuation(nsText, afterPos: objEnd, isJsonMember: isJsonMember, state: &state)
+        }
+        if isJsonMember, let afterPrim = tryRedactJsonPrimitiveAuthValue(nsText, from: valStart, state: &state) {
             return afterPrim
         }
-        return redactPlainAuthSpan(nsText, from: valStart, result: &result, copied: &copied)
+        return redactPlainAuthSpan(nsText, from: valStart, state: &state)
     }
 
     private static func tryRedactJsonPrimitiveAuthValue(
-        _ nsText: NSString, from valStart: Int, result: inout String, copied: inout Int
+        _ nsText: NSString, from valStart: Int, state: inout AuthScanState
     ) -> Int? {
         let len = nsText.length
         var tokenEnd = valStart
@@ -198,39 +207,30 @@ enum CoreTelemetryAuthScanner {
         let isNull = token == "null"
         guard isNull || token == "true" || token == "false" || isJsonNumber(token) else { return nil }
         let next = skipAuthWhitespace(nsText, from: tokenEnd, len: len, allowNewlines: true)
-        guard next >= len || isJsonDelimiter(nsText.character(at: next)) else { return nil }
+        guard next >= len || isJsonMemberContinuationDelimiter(nsText, at: next) else { return nil }
         if !isNull {
-            if result.isEmpty { result.reserveCapacity(len) }
-            result += nsText.substring(with: NSRange(location: copied, length: valStart - copied))
-            result += "\"[redacted]\""
-            copied = tokenEnd
+            state.appendRedacted(nsText, start: valStart, end: tokenEnd, replacement: "\"[redacted]\"")
         }
         return tokenEnd
     }
 
-    private static func redactPlainAuthSpan(
-        _ nsText: NSString, from valStart: Int, result: inout String, copied: inout Int
-    ) -> Int {
-        let len = nsText.length
-        let lineEnd = scanPlainAuthValueEnd(nsText, from: valStart, len: len)
+    private static func redactPlainAuthSpan(_ nsText: NSString, from valStart: Int, state: inout AuthScanState) -> Int {
+        let lineEnd = scanPlainAuthValueEnd(nsText, from: valStart, len: nsText.length)
         if let redacted = redactAuthValueBody(nsText, start: valStart, end: lineEnd) {
-            if result.isEmpty { result.reserveCapacity(len) }
-            result += nsText.substring(with: NSRange(location: copied, length: valStart - copied))
-            result += redacted
-            copied = lineEnd
+            state.appendRedacted(nsText, start: valStart, end: lineEnd, replacement: redacted)
         }
         return lineEnd
     }
 
     private static func redactTrailingPlainAuthContinuation(
-        _ nsText: NSString, afterPos: Int, allowNewlines: Bool, result: inout String, copied: inout Int
+        _ nsText: NSString, afterPos: Int, isJsonMember: Bool, state: inout AuthScanState
     ) -> Int {
-        let tailStart = findTrailingPlainAuthStart(nsText, afterPos: afterPos, allowNewlines: allowNewlines)
+        let tailStart = findTrailingPlainAuthStart(nsText, afterPos: afterPos, isJsonMember: isJsonMember)
         guard tailStart >= 0 else { return afterPos }
-        return redactPlainAuthSpan(nsText, from: tailStart, result: &result, copied: &copied)
+        return redactPlainAuthSpan(nsText, from: tailStart, state: &state)
     }
 
-    private static func findTrailingPlainAuthStart(_ nsText: NSString, afterPos: Int, allowNewlines: Bool) -> Int {
+    private static func findTrailingPlainAuthStart(_ nsText: NSString, afterPos: Int, isJsonMember: Bool) -> Int {
         let len = nsText.length
         var pos = afterPos
         while pos < len {
@@ -243,7 +243,7 @@ enum CoreTelemetryAuthScanner {
             break
         }
         guard pos < len && !isNewline(nsText.character(at: pos)) else { return -1 }
-        if allowNewlines && isJsonDelimiter(nsText.character(at: pos)) { return -1 }
+        if isJsonMember && isJsonMemberContinuationDelimiter(nsText, at: pos) { return -1 }
         return pos
     }
 
@@ -265,7 +265,7 @@ enum CoreTelemetryAuthScanner {
     }
 
     private static func redactAuthArrayValue(
-        _ nsText: NSString, start: Int, allowNewlines: Bool, result: inout String, copied: inout Int
+        _ nsText: NSString, start: Int, isJsonMember: Bool, state: inout AuthScanState
     ) -> Int {
         let len = nsText.length
         var depth = 1
@@ -279,17 +279,18 @@ enum CoreTelemetryAuthScanner {
                 depth -= 1
                 idx += 1
             } else if ch == 0x22 || ch == 0x27 {
-                idx = redactQuotedAuthString(nsText, quotePos: idx, quote: ch, result: &result, copied: &copied)
+                idx = redactQuotedAuthString(nsText, quotePos: idx, quote: ch, state: &state)
+            } else if ch == 0x7B, let objEnd = scanBalancedJsonObjectEnd(nsText, from: idx, state: &state) {
+                state.appendRedacted(nsText, start: idx, end: objEnd, replacement: isJsonMember ? "\"[redacted]\"" : "[redacted]")
+                idx = objEnd
             } else if isHorizSpace(ch) || ch == 0x2C {
                 idx += 1
             } else if isNewline(ch) {
-                let next = nextAfterArrayNewline(nsText, at: idx, len: len, allowNewlines: allowNewlines)
+                let next = nextAfterArrayNewline(nsText, at: idx, len: len, allowNewlines: isJsonMember)
                 if next < 0 { return idx }
                 idx = next
             } else {
-                idx = redactUnquotedArrayElement(
-                    nsText, from: idx, allowNewlines: allowNewlines, result: &result, copied: &copied
-                )
+                idx = redactUnquotedArrayElement(nsText, from: idx, isJsonMember: isJsonMember, state: &state)
             }
         }
         return idx
@@ -301,7 +302,7 @@ enum CoreTelemetryAuthScanner {
     }
 
     private static func redactUnquotedArrayElement(
-        _ nsText: NSString, from start: Int, allowNewlines: Bool, result: inout String, copied: inout Int
+        _ nsText: NSString, from start: Int, isJsonMember: Bool, state: inout AuthScanState
     ) -> Int {
         let len = nsText.length
         var elemEnd = start
@@ -314,17 +315,15 @@ enum CoreTelemetryAuthScanner {
         while trimEnd > start && isHorizSpace(nsText.character(at: trimEnd - 1)) { trimEnd -= 1 }
         let isNull = trimEnd - start == 4 && nsText.substring(with: NSRange(location: start, length: 4)) == "null"
         if trimEnd > start && !isNull, let redacted = redactAuthValueBody(nsText, start: start, end: trimEnd) {
-            if result.isEmpty { result.reserveCapacity(len) }
-            result += nsText.substring(with: NSRange(location: copied, length: start - copied))
-            result += allowNewlines ? "\"\(redacted)\"" : redacted
-            result += nsText.substring(with: NSRange(location: trimEnd, length: elemEnd - trimEnd))
-            copied = elemEnd
+            let wrapped = isJsonMember ? "\"\(redacted)\"" : redacted
+            let suffix = nsText.substring(with: NSRange(location: trimEnd, length: elemEnd - trimEnd))
+            state.appendRedacted(nsText, start: start, end: elemEnd, replacement: wrapped + suffix)
         }
         return elemEnd
     }
 
     private static func redactQuotedAuthString(
-        _ nsText: NSString, quotePos: Int, quote: unichar, result: inout String, copied: inout Int
+        _ nsText: NSString, quotePos: Int, quote: unichar, state: inout AuthScanState
     ) -> Int {
         let len = nsText.length
         var idx = quotePos + 1
@@ -337,10 +336,7 @@ enum CoreTelemetryAuthScanner {
         }
         let innerStart = quotePos + 1
         if let redacted = redactAuthValueBody(nsText, start: innerStart, end: idx) {
-            if result.isEmpty { result.reserveCapacity(len) }
-            result += nsText.substring(with: NSRange(location: copied, length: innerStart - copied))
-            result += redacted
-            copied = idx
+            state.appendRedacted(nsText, start: innerStart, end: idx, replacement: redacted)
         }
         return idx < len && nsText.character(at: idx) == quote ? idx + 1 : idx
     }
@@ -456,6 +452,66 @@ extension CoreTelemetryAuthScanner {
     private static func isHorizSpace(_ ch: unichar) -> Bool { ch == 0x20 || ch == 0x09 }
     private static func isNewline(_ ch: unichar) -> Bool { ch == 0x0A || ch == 0x0D }
     private static func isJsonDelimiter(_ ch: unichar) -> Bool { ch == 0x2C || ch == 0x7D || ch == 0x5D }
+
+    private static func isPrecededByJsonMemberDelimiter(_ nsText: NSString, before pos: Int) -> Bool {
+        var idx = pos - 1
+        while idx >= 0 {
+            let ch = nsText.character(at: idx)
+            if isHorizSpace(ch) || isNewline(ch) {
+                idx -= 1
+                continue
+            }
+            return ch == 0x7B || ch == 0x2C
+        }
+        return false
+    }
+
+    private static func isJsonMemberContinuationDelimiter(_ nsText: NSString, at pos: Int) -> Bool {
+        let ch = nsText.character(at: pos)
+        if ch == 0x7D { return true }
+        guard ch == 0x2C else { return false }
+        let next = skipAuthWhitespace(nsText, from: pos + 1, len: nsText.length, allowNewlines: true)
+        return next < nsText.length && nsText.character(at: next) == 0x22
+    }
+
+    private static func scanBalancedJsonObjectEnd(
+        _ nsText: NSString, from bracePos: Int, state: inout AuthScanState
+    ) -> Int? {
+        let len = nsText.length
+        guard state.objScanBudget > 0 && bracePos < len && nsText.character(at: bracePos) == 0x7B else { return nil }
+        var depth = 0
+        var idx = bracePos
+        while idx < len {
+            let ch = nsText.character(at: idx)
+            if ch == 0x22 {
+                guard let afterString = scanJsonStringEnd(nsText, from: idx + 1, len: len) else { break }
+                idx = afterString
+                continue
+            }
+            if ch == 0x7B {
+                depth += 1
+            } else if ch == 0x7D {
+                depth -= 1
+                if depth == 0 { return idx + 1 }
+            }
+            idx += 1
+        }
+        state.objScanBudget -= max(1, idx - bracePos)
+        return nil
+    }
+
+    private static func scanJsonStringEnd(_ nsText: NSString, from start: Int, len: Int) -> Int? {
+        var idx = start
+        var escaped = false
+        while idx < len {
+            let ch = nsText.character(at: idx)
+            if isNewline(ch) { return nil }
+            if ch == 0x22 && !escaped { return idx + 1 }
+            escaped = ch == 0x5C && !escaped
+            idx += 1
+        }
+        return nil
+    }
 
     private static func isJsonPrimitiveStop(_ ch: unichar) -> Bool {
         isHorizSpace(ch) || isNewline(ch) || isJsonDelimiter(ch)
