@@ -162,17 +162,31 @@ enum CoreTelemetryAuthScanner {
     private static func redactAuthHeaderValue(
         _ nsText: NSString, valStart: Int, allowNewlines: Bool, result: inout String, copied: inout Int
     ) -> Int {
-        let len = nsText.length
         let ch = nsText.character(at: valStart)
         if ch == 0x22 || ch == 0x27 {
-            return redactQuotedAuthString(nsText, quotePos: valStart, quote: ch, result: &result, copied: &copied)
-        }
-        if ch == 0x5B {
-            return redactAuthArrayValue(
-                nsText, start: valStart + 1, allowNewlines: allowNewlines, result: &result, copied: &copied
+            let afterQuote = redactQuotedAuthString(
+                nsText, quotePos: valStart, quote: ch, result: &result, copied: &copied
+            )
+            return redactTrailingPlainAuthContinuation(
+                nsText, afterPos: afterQuote, allowNewlines: allowNewlines, result: &result, copied: &copied
             )
         }
-        var lineEnd = scanPlainAuthValueEnd(nsText, from: valStart, len: len)
+        if ch == 0x5B {
+            let afterArray = redactAuthArrayValue(
+                nsText, start: valStart + 1, allowNewlines: allowNewlines, result: &result, copied: &copied
+            )
+            return redactTrailingPlainAuthContinuation(
+                nsText, afterPos: afterArray, allowNewlines: allowNewlines, result: &result, copied: &copied
+            )
+        }
+        return redactPlainAuthSpan(nsText, from: valStart, result: &result, copied: &copied)
+    }
+
+    private static func redactPlainAuthSpan(
+        _ nsText: NSString, from valStart: Int, result: inout String, copied: inout Int
+    ) -> Int {
+        let len = nsText.length
+        let lineEnd = scanPlainAuthValueEnd(nsText, from: valStart, len: len)
         if let redacted = redactAuthValueBody(nsText, start: valStart, end: lineEnd) {
             if result.isEmpty { result.reserveCapacity(len) }
             result += nsText.substring(with: NSRange(location: copied, length: valStart - copied))
@@ -180,6 +194,36 @@ enum CoreTelemetryAuthScanner {
             copied = lineEnd
         }
         return lineEnd
+    }
+
+    private static func redactTrailingPlainAuthContinuation(
+        _ nsText: NSString, afterPos: Int, allowNewlines: Bool, result: inout String, copied: inout Int
+    ) -> Int {
+        let tailStart = findTrailingPlainAuthStart(nsText, afterPos: afterPos, allowNewlines: allowNewlines)
+        guard tailStart >= 0 else { return afterPos }
+        return redactPlainAuthSpan(nsText, from: tailStart, result: &result, copied: &copied)
+    }
+
+    private static func findTrailingPlainAuthStart(_ nsText: NSString, afterPos: Int, allowNewlines: Bool) -> Int {
+        let len = nsText.length
+        var pos = afterPos
+        var sawFold = false
+        while pos < len {
+            while pos < len && isHorizSpace(nsText.character(at: pos)) { pos += 1 }
+            let fold = advanceObsFold(nsText, at: pos, len: len)
+            if fold > pos {
+                sawFold = true
+                pos = fold
+                continue
+            }
+            break
+        }
+        guard pos < len && !isNewline(nsText.character(at: pos)) else { return -1 }
+        let next = nsText.character(at: pos)
+        let isCloser = next == 0x7D || next == 0x5D
+        if sawFold { return allowNewlines && isCloser ? -1 : pos }
+        if isCloser || (allowNewlines && next == 0x2C) { return -1 }
+        return pos
     }
 
     private static func scanPlainAuthValueEnd(_ nsText: NSString, from start: Int, len: Int) -> Int {
@@ -295,7 +339,9 @@ enum CoreTelemetryAuthScanner {
         }
         return nsText.substring(with: NSRange(location: start, length: idx - start)) + "[redacted]"
     }
+}
 
+extension CoreTelemetryAuthScanner {
     private static func redactBasicTokens(in text: String) -> String {
         guard let regex = basicTokenRegex else { return text }
         let nsText = text as NSString
