@@ -78,8 +78,8 @@ struct CoreAccountServiceTests {
     }
 
     @Test func errorsMapOntoTheBridge() {
-        #expect(CoreError(AunError.Unauthorized(detail: "x")) == .signInRequired)
-        #expect(CoreError(AunError.Forbidden(detail: "x")) == .forbidden)
+        #expect(CoreError(AunError.Unauthorized(code: nil, detail: "x")) == .signInRequired)
+        #expect(CoreError(AunError.Forbidden(code: nil, detail: "x")) == .forbidden)
         #expect(CoreError(AunError.Http(status: 503, code: nil, detail: "x")) == .http(status: 503))
         #expect(CoreError(AunError.Offline) == .offline)
         #expect(CoreError(AunError.Cancelled) == .cancelled)

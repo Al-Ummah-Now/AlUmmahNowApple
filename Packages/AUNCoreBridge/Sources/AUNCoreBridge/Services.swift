@@ -135,10 +135,12 @@ public struct CoreBridge: Sendable {
     public var auth: any AuthSessionProviding
     public var uploads: any UploadEngine
     public var siteTheme: any SiteThemeServicing
+    public var telemetry: any TelemetryServicing
 
     public init(
         environment: AppEnvironment, catalog: any CatalogServicing, live: any LiveServicing, auth: any AuthSessionProviding,
-        uploads: any UploadEngine, siteTheme: any SiteThemeServicing
+        uploads: any UploadEngine, siteTheme: any SiteThemeServicing,
+        telemetry: any TelemetryServicing = NullTelemetryService.shared
     ) {
         self.environment = environment
         self.catalog = catalog
@@ -146,6 +148,7 @@ public struct CoreBridge: Sendable {
         self.auth = auth
         self.uploads = uploads
         self.siteTheme = siteTheme
+        self.telemetry = telemetry
     }
 
     /// Interim implementation in Swift. The Rust XCFramework replaces this one factory.

@@ -4,15 +4,18 @@ import Foundation
 public enum ViewerBootstrap {
     /// `-AUNUseFixtures YES` selects hermetic data for UI tests; `-AUNFixturePlayable YES` makes its videos play a
     /// bundled clip (store screenshots), `-AUNFixtureLive YES` puts live streams on air.
-    public static func makeCore(defaults: UserDefaults = .standard, info: [String: Any]? = Bundle.main.infoDictionary)
-        -> CoreBridge
-    {
+    public static func makeCore(
+        defaults: UserDefaults = .standard, info: [String: Any]? = Bundle.main.infoDictionary,
+        telemetry: any TelemetryServicing = NullTelemetryService.shared
+    ) -> CoreBridge {
         if defaults.bool(forKey: "AUNUseFixtures") {
             return .fixtures(
                 playable: defaults.bool(forKey: "AUNFixturePlayable"), live: defaults.bool(forKey: "AUNFixtureLive"),
                 language: AppLanguage(rawValue: defaults.string(forKey: "AUNLanguage") ?? "") ?? .en)
         }
-        return .temporaryNative(environment: .fromInfoDictionary(info))
+        var bridge = CoreBridge.temporaryNative(environment: .fromInfoDictionary(info))
+        bridge.telemetry = telemetry
+        return bridge
     }
 }
 

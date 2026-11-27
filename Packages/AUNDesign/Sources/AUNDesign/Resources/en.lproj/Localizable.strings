@@ -592,3 +592,9 @@
 "studio.terms.versionLoaded" = "The latest Terms are loaded. Please review them and agree again.";
 
 "player.quranCredit.accessibility" = "Source: Quran Foundation, opens in browser";
+"diagnostics.toggle" = "Diagnostics & crash reports";
+"diagnostics.description" = "Off by default. Shares scrubbed crash reports and basic usage metrics to help fix bugs. Never includes personal data or viewing history.";
+"diagnostics.on" = "On";
+"diagnostics.off" = "Off";
+"diagnostics.purgeWarning" = "Diagnostics turned off, but cached diagnostic files could not be removed from disk.";
+"diagnostics.enableError" = "Couldn't enable diagnostics on this device.";

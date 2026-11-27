@@ -40,8 +40,8 @@ extension CoreError {
     /// Media errors keep Core's detail for the log: a refused edit is `invalid`, a locked track a `conflict`.
     init(media error: AunError) {
         switch error {
-        case .InvalidInput(let detail): self = .invalid(detail)
-        case .Conflict(let detail): self = .conflict(detail)
+        case .InvalidInput(_, let detail): self = .invalid(detail)
+        case .Conflict(_, let detail): self = .conflict(detail)
         case .NotFound: self = .notFound
         case .Cancelled: self = .cancelled
         case .Unsupported(let detail), .Storage(let detail), .Platform(let detail), .Internal(let detail):

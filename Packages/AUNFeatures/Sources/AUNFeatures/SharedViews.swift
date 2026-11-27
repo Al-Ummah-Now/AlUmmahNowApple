@@ -80,7 +80,26 @@ struct SettingsMenu: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.l10n) private var l10n
     let environment: AppEnvironment
+    var telemetry: any TelemetryServicing = NullTelemetryService.shared
     var onOpenBlockedList: (() -> Void)?
+
+    private var diagnosticsBinding: Binding<Bool> {
+        Binding(
+            get: { settings.telemetryEnabled },
+            set: { enabled in
+                if enabled {
+                    if telemetry.setConsent(.full) {
+                        settings.telemetryEnabled = true
+                    } else {
+                        settings.telemetryEnabled = false
+                    }
+                } else {
+                    _ = telemetry.setConsent(.off)
+                    settings.telemetryEnabled = false
+                }
+            }
+        )
+    }
 
     var body: some View {
         Menu {
@@ -94,6 +113,11 @@ struct SettingsMenu: View {
                     Text(l10n("theme.\(theme.rawValue)")).tag(theme)
                 }
             }
+            Divider()
+            Toggle(isOn: diagnosticsBinding) {
+                Label(l10n("diagnostics.toggle"), systemImage: "waveform.path.ecg")
+            }
+            .accessibilityIdentifier("settings-diagnostics")
             #if os(iOS) || os(macOS)
                 if let onOpenBlockedList {
                     Divider()

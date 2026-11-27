@@ -34,7 +34,11 @@ public enum AdminBootstrap {
         }
         let native = NativeReviewService(
             adminAPI: environment.adminAPIBaseURL, videosAPI: environment.apiBaseURL, accounts: accounts)
-        return AdminServices(accounts: accounts, review: native, push: native)
+        let telemetry = CoreTelemetryService.live(
+            environment: environment, bundle: bundle, defaults: defaults,
+            userAgentPrefix: "AlUmmahNow-Admin-Apple", bufferFilename: "admin-telemetry-buffer.json")
+        CrashTelemetryHook.install(service: telemetry)
+        return AdminServices(accounts: accounts, review: native, push: native, telemetry: telemetry)
     }
 
     /// A stable id for this install (the push registry key): 8–64 of [A-Za-z0-9_-].

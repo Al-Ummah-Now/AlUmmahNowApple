@@ -30,10 +30,15 @@ public final class AppSettings {
     }
     /// False until a mode is stored: the window then follows the device, and ``adoptDeviceScheme(_:)`` stores it.
     public private(set) var themeChosen: Bool
+    /// Opt-in diagnostics & crash reports. Always defaults to `false`.
+    public var telemetryEnabled: Bool {
+        didSet { defaults.set(telemetryEnabled, forKey: Keys.telemetryEnabled) }
+    }
 
     private enum Keys {
         static let language = "AUNLanguage"
         static let theme = "AUNTheme"
+        static let telemetryEnabled = "AUNTelemetryEnabled"
     }
 
     public init(defaults: UserDefaults = .standard, preferredLanguages: [String] = Locale.preferredLanguages) {
@@ -45,6 +50,7 @@ public final class AppSettings {
         let stored = defaults.string(forKey: Keys.theme).flatMap(AppTheme.init(rawValue:))
         theme = stored ?? .dark
         themeChosen = stored != nil
+        telemetryEnabled = defaults.bool(forKey: Keys.telemetryEnabled)
     }
 
     /// The device's mode at first launch becomes the stored choice, once.

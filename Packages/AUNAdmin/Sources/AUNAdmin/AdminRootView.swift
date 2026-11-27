@@ -39,7 +39,10 @@ public struct AdminRootView: View {
         }
         .fanousPage()
         .adminPrivacy(capture)
-        .task { await session.start() }
+        .task {
+            await session.start()
+            await session.services.telemetry.flush()
+        }
         .onAppear {
             LaunchClock.rootAppeared()
             // Light and Dark only: the first launch follows the device, then the last explicit choice.
@@ -47,8 +50,12 @@ public struct AdminRootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
-            case .background: session.enteredBackground()
-            case .active: session.becameActive()
+            case .background:
+                session.services.telemetry.persist()
+                session.enteredBackground()
+            case .active:
+                Task { await session.services.telemetry.flush() }
+                session.becameActive()
             default: break
             }
         }
@@ -275,6 +282,21 @@ struct AccountMenu: View {
     let session: AdminSession
     @Binding var confirmSignOut: Bool
 
+    private var diagnosticsBinding: Binding<Bool> {
+        Binding(
+            get: { settings.telemetryEnabled },
+            set: { enabled in
+                let telemetry = session.services.telemetry
+                if enabled {
+                    settings.telemetryEnabled = telemetry.setConsent(.full)
+                } else {
+                    _ = telemetry.setConsent(.off)
+                    settings.telemetryEnabled = false
+                }
+            }
+        )
+    }
+
     var body: some View {
         @Bindable var settings = settings
         Menu {
@@ -287,6 +309,9 @@ struct AccountMenu: View {
                 Text(l10n("theme.light")).tag(AppTheme.light)
                 Text(l10n("theme.dark")).tag(AppTheme.dark)
             }
+            Divider()
+            Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
+                .accessibilityIdentifier("admin-diagnostics")
             Divider()
             Button(l10n("admin.signOut"), role: .destructive) { confirmSignOut = true }
                 .accessibilityIdentifier("sign-out")

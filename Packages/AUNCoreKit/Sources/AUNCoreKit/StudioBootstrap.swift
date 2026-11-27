@@ -50,6 +50,11 @@ public enum StudioBootstrap {
             services.deletion = NativeDeletionService(
                 apiBaseURL: environment.apiBaseURL, authIssuer: environment.authIssuer, proofs: proofs)
             services.deletionRecords = KeychainDeletionRecords(service: "\(bundleID).deletions")
+            let telemetry = CoreTelemetryService.live(
+                environment: environment, bundle: bundle, defaults: defaults,
+                userAgentPrefix: "AlUmmahNow-Studio-Apple", bufferFilename: "studio-telemetry-buffer.json")
+            CrashTelemetryHook.install(service: telemetry)
+            services.telemetry = telemetry
             return withMediaEngines(services)
         } catch {
             AUNLog.studio.fault("Studio services could not start: \(error)")
