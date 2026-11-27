@@ -125,37 +125,70 @@ struct CoreTelemetryExternalConsentTests {
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("progress 1/2 (https://example.com/api)")
-                .contains("https://example.com/api")
+                == "progress 1/2 (https://example.com/api)"
         )
+        #expect(CoreTelemetryService.sanitizeLocalPaths("progress 1/2.") == "progress 1/2.")
+        #expect(CoreTelemetryService.sanitizeLocalPaths("progress (1/2.)") == "progress (1/2.)")
         #expect(
-            !CoreTelemetryService.sanitizeLocalPaths("opening \"1/2 (https://private.example/Acquisition.mov)\"")
-                .contains("private.example")
+            CoreTelemetryService.sanitizeLocalPaths("progress 1/2. (https://example.com/api)")
+                == "progress 1/2. (https://example.com/api)"
         )
+        #expect(CoreTelemetryService.sanitizeLocalPaths("opening 1/2.mov") == "opening [redacted-path]")
         #expect(
-            !CoreTelemetryService.sanitizeLocalPaths(
-                "opening \"/tmp/Project 'draft' (https://private.example/Acquisition.mov)\""
-            ).contains("private.example")
+            CoreTelemetryService.sanitizeLocalPaths("opening\u{00A0}Acquisition.qzx")
+                == "opening\u{00A0}[redacted-path]"
         )
-        #expect(
-            !CoreTelemetryService.sanitizeLocalPaths(
-                "opening /tmp/Project 'draft' (https://private.example/Acquisition.mov)"
-            ).contains("private.example")
-        )
-        #expect(
-            !CoreTelemetryService.sanitizeLocalPaths(
-                "opening \"relative/My's (https://private.example/Acquisition.mov)\""
-            ).contains("private.example")
-        )
+    }
+
+    @Test("Scrubs quoted/wrapped embedded URLs and scales linearly on adversarial inputs")
+    func scrubsQuotedEmbeddedURLsAndScalesLinearly() {
+        let privateCases = [
+            "opening \"1/2 (https://private.example/Acquisition.mov)\"",
+            "opening \"HTTP/2 (https://private.example/Acquisition.mov)\"",
+            "opening \"My Project/Clip https://private.example/Acquisition.mov\"",
+            "opening \"(relative/My Clip.mov) https://private.example/Acquisition.mov\"",
+            "opening \"/tmp/Project 'draft' (https://private.example/Acquisition.mov)\"",
+            "opening /tmp/Project 'draft' (https://private.example/Acquisition.mov)",
+            "opening \"relative/My's (https://private.example/Acquisition.mov)\"",
+            "opening relative/My(1) (https://private.example/Acquisition.mov)",
+        ]
+        for input in privateCases {
+            #expect(!CoreTelemetryService.sanitizeLocalPaths(input).contains("private.example"))
+        }
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
                 "opening \"relative/My's Clip.mov\" (https://example.com/api)"
             ).contains("https://example.com/api")
         )
         #expect(
-            !CoreTelemetryService.sanitizeLocalPaths(
-                "opening relative/My(1) (https://private.example/Acquisition.mov)"
-            ).contains("private.example")
+            CoreTelemetryService.sanitizeLocalPaths("can't reach https://example.com/api")
+                == "can't reach https://example.com/api"
         )
+        let longAlpha = String(repeating: "a", count: 100_000)
+        #expect(CoreTelemetryService.sanitizeLocalPaths(longAlpha) == longAlpha)
+        let repeatedKeywords = String(repeating: "open ", count: 20_000) + "."
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedKeywords) == repeatedKeywords)
+        let repeatedQuotes = String(repeating: "'a ", count: 20_000) + "."
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedQuotes) == repeatedQuotes)
+    }
+
+    @Test("Startup live(defaults:) clears stored AUNTelemetryEnabled when initial consent activation fails")
+    func liveStartupConsentFailureResetsStoredPreference() throws {
+        let suiteName = "net.alummahnow.telemetry.startupfail.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(true, forKey: "AUNTelemetryEnabled")
+
+        let env = AppEnvironment(name: "test", apiBaseURL: URL(string: "http://127.0.0.1:1")!)
+        // Passing a directory path as the buffer filename forces native buffer persistence to fail on startup enable.
+        let service = CoreTelemetryService.live(
+            environment: env,
+            defaults: defaults,
+            userAgentPrefix: "AlUmmahNowTest",
+            bufferFilename: ""
+        )
+        #expect(service.consent == .off)
+        #expect(!defaults.bool(forKey: "AUNTelemetryEnabled"))
     }
 
     @Test("Queued flush re-checks UserDefaults via live(defaults:) before entering native flush")

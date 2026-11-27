@@ -154,7 +154,7 @@ private struct AdminSignedOutDiagnosticsControl: View {
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
-            get: { settings.telemetryEnabled },
+            get: { settings.telemetryEnabled && session.services.telemetry.consent != .off },
             set: { enabled in
                 let telemetry = session.services.telemetry
                 if enabled {
@@ -175,7 +175,8 @@ private struct AdminSignedOutDiagnosticsControl: View {
     }
 
     var body: some View {
-        if settings.telemetryEnabled || session.services.telemetry.lastPurgeFailed || diagnosticsMessage != nil {
+        let diagnosticsActive = settings.telemetryEnabled && session.services.telemetry.consent != .off
+        if diagnosticsActive || session.services.telemetry.lastPurgeFailed || diagnosticsMessage != nil {
             VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
                 Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
                     .accessibilityIdentifier("admin-signedout-diagnostics")
@@ -187,7 +188,7 @@ private struct AdminSignedOutDiagnosticsControl: View {
                         .foregroundStyle(Fanous.errorText)
                         .accessibilityIdentifier("admin-signedout-diagnostics-warning")
                 }
-                if !settings.telemetryEnabled && session.services.telemetry.lastPurgeFailed {
+                if session.services.telemetry.consent == .off && session.services.telemetry.lastPurgeFailed {
                     Button(l10n("common.retry")) {
                         let purged = session.services.telemetry.setConsent(.off)
                         diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
@@ -345,7 +346,7 @@ struct AccountMenu: View {
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
-            get: { settings.telemetryEnabled },
+            get: { settings.telemetryEnabled && session.services.telemetry.consent != .off },
             set: { enabled in
                 let telemetry = session.services.telemetry
                 if enabled {
@@ -376,7 +377,7 @@ struct AccountMenu: View {
             Divider()
             Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
                 .accessibilityIdentifier("admin-diagnostics")
-            if !settings.telemetryEnabled && session.services.telemetry.lastPurgeFailed {
+            if session.services.telemetry.consent == .off && session.services.telemetry.lastPurgeFailed {
                 Button(l10n("common.retry")) {
                     if !session.services.telemetry.setConsent(.off) { showingPurgeWarning = true }
                 }

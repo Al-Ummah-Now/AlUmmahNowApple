@@ -41,6 +41,7 @@ extension CoreTelemetryService {
     struct VaultLineTracker {
         private var cursor = 0
         private var hasPathOnLine = false
+        private var openQuote: unichar = 0
         private var pathQuote: unichar = 0
         private var escapedBackslash = false
         private var tokenStart = -1
@@ -51,7 +52,9 @@ extension CoreTelemetryService {
 
         mutating func isEmbeddedInPath(_ nsText: NSString, matchStart: Int) -> Bool {
             advance(nsText, to: matchStart)
-            let curTokenIsPath = tokenHasPathSep && !Self.isNonPathSlashToken(nsText, start: tokenStart, end: tokenEnd)
+            let curTokenIsPath =
+                tokenHasPathSep
+                && !Self.isNonPathSlashToken(nsText, start: tokenStart, end: tokenEnd, insideQuote: openQuote != 0)
             return pathQuote != 0 || curTokenIsPath || (hasPathOnLine && (!wsBeforeRun || inWrapperRun))
         }
 
@@ -62,6 +65,7 @@ extension CoreTelemetryService {
 
         private mutating func resetLineState() {
             hasPathOnLine = false
+            openQuote = 0
             pathQuote = 0
             escapedBackslash = false
             tokenStart = -1
@@ -84,35 +88,39 @@ extension CoreTelemetryService {
         }
 
         private mutating func processLineChar(_ nsText: NSString, ch: unichar) {
-            if !escapedBackslash && isClosingQuoteChar(nsText, ch: ch) {
-                resetLineState()
-                return
-            }
+            if handleClosingQuote(nsText, ch: ch) { return }
             let atTokenStart = tokenStart < 0 || inWrapperRun
             if Self.isFileScheme(nsText, at: cursor) || Self.startsLocalPath(nsText, at: cursor, atTokenStart: atTokenStart) {
                 hasPathOnLine = true
-                captureOpeningQuote(nsText, at: cursor)
+                if pathQuote == 0 && openQuote != 0 { pathQuote = openQuote }
             }
             updateRunState(nsText, ch: ch)
             escapedBackslash = (ch == 0x5C) ? !escapedBackslash : false
         }
 
-        private func isClosingQuoteChar(_ nsText: NSString, ch: unichar) -> Bool {
-            if pathQuote != 0 && ch == pathQuote { return true }
-            return !hasPathOnLine && !inWrapperRun && tokenStart > 0 && (ch == 0x22 || ch == 0x27)
-                && nsText.character(at: tokenStart - 1) == ch
-        }
-
-        private mutating func captureOpeningQuote(_ nsText: NSString, at pos: Int) {
-            guard pathQuote == 0 && pos > 0 else { return }
-            let prev = nsText.character(at: pos - 1)
-            if prev == 0x22 || prev == 0x27 { pathQuote = prev }
+        private mutating func handleClosingQuote(_ nsText: NSString, ch: unichar) -> Bool {
+            guard !escapedBackslash && openQuote != 0 && ch == openQuote else { return false }
+            if Self.isInnerApostrophe(nsText, at: cursor, ch: ch) { return false }
+            if pathQuote == ch || !hasPathOnLine {
+                resetLineState()
+            } else {
+                openQuote = 0
+                tokenStart = -1
+                tokenEnd = -1
+                tokenHasPathSep = false
+                inWrapperRun = false
+                wsBeforeRun = false
+                escapedBackslash = false
+            }
+            return true
         }
 
         private mutating func promoteTokenPath(_ nsText: NSString) {
-            if tokenHasPathSep && !Self.isNonPathSlashToken(nsText, start: tokenStart, end: tokenEnd) {
+            if tokenHasPathSep
+                && !Self.isNonPathSlashToken(nsText, start: tokenStart, end: tokenEnd, insideQuote: openQuote != 0)
+            {
                 hasPathOnLine = true
-                captureOpeningQuote(nsText, at: tokenStart)
+                if pathQuote == 0 && openQuote != 0 { pathQuote = openQuote }
             }
         }
 
@@ -127,6 +135,9 @@ extension CoreTelemetryService {
                 }
             } else if Self.isOpeningWrapper(ch) {
                 if !inWrapperRun { promoteTokenPath(nsText) }
+                if !escapedBackslash && openQuote == 0 && Self.canOpenQuote(nsText, at: cursor, ch: ch) {
+                    openQuote = ch
+                }
                 inWrapperRun = true
             } else {
                 if tokenStart < 0 || inWrapperRun {
@@ -140,20 +151,50 @@ extension CoreTelemetryService {
             }
         }
 
+        private static func canOpenQuote(_ nsText: NSString, at pos: Int, ch: unichar) -> Bool {
+            if ch == 0x22 { return true }
+            guard ch == 0x27 else { return false }
+            return pos == 0 || !isLetterOrDigit(nsText.character(at: pos - 1))
+        }
+
+        private static func isInnerApostrophe(_ nsText: NSString, at pos: Int, ch: unichar) -> Bool {
+            ch == 0x27 && pos > 0 && pos + 1 < nsText.length
+                && isLetter(nsText.character(at: pos - 1)) && isLetter(nsText.character(at: pos + 1))
+        }
+
+        private static func isLetter(_ ch: unichar) -> Bool {
+            if ch < 0x80 { return (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) }
+            return UnicodeScalar(ch).map { CharacterSet.letters.contains($0) } ?? false
+        }
+
+        private static func isLetterOrDigit(_ ch: unichar) -> Bool {
+            if ch < 0x80 {
+                return (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) || (ch >= 0x30 && ch <= 0x39)
+            }
+            return UnicodeScalar(ch).map { CharacterSet.alphanumerics.contains($0) } ?? false
+        }
+
         private static func startsLocalPath(_ nsText: NSString, at pos: Int, atTokenStart: Bool) -> Bool {
             guard atTokenStart else { return false }
             let ch = nsText.character(at: pos)
             if ch == 0x2F { return true }
             if ch == 0x7E && pos + 1 < nsText.length && nsText.character(at: pos + 1) == 0x2F { return true }
             if ch == 0x5C && pos + 1 < nsText.length && nsText.character(at: pos + 1) == 0x5C { return true }
-            let isLetter = (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A)
-            return isLetter && pos + 2 < nsText.length && nsText.character(at: pos + 1) == 0x3A
+            let isAsciiLetter = (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A)
+            return isAsciiLetter && pos + 2 < nsText.length && nsText.character(at: pos + 1) == 0x3A
                 && isPathSep(nsText.character(at: pos + 2))
         }
 
-        private static func isNonPathSlashToken(_ nsText: NSString, start: Int, end: Int) -> Bool {
-            guard start >= 0 && end > start else { return false }
-            let token = nsText.substring(with: NSRange(location: start, length: end - start))
+        private static func isNonPathSlashToken(
+            _ nsText: NSString, start: Int, end: Int, insideQuote: Bool
+        ) -> Bool {
+            guard !insideQuote && start >= 0 && end > start else { return false }
+            var trimmedEnd = end
+            while trimmedEnd > start && isTrailingSentencePunct(nsText.character(at: trimmedEnd - 1)) {
+                trimmedEnd -= 1
+            }
+            guard trimmedEnd > start else { return false }
+            let token = nsText.substring(with: NSRange(location: start, length: trimmedEnd - start))
             guard !token.contains("\\"), let slashIdx = token.firstIndex(of: "/") else { return false }
             let before = token[..<slashIdx]
             let after = token[token.index(after: slashIdx)...]
@@ -163,8 +204,12 @@ extension CoreTelemetryService {
             if isProto, let firstDigit = after.first, firstDigit.isASCII && firstDigit.isNumber {
                 return true
             }
-            let quoted = start > 0 && (nsText.character(at: start - 1) == 0x22 || nsText.character(at: start - 1) == 0x27)
-            return !quoted && before.allSatisfy { $0.isASCII && $0.isNumber } && after.allSatisfy { $0.isASCII && $0.isNumber }
+            return before.allSatisfy { $0.isASCII && $0.isNumber } && after.allSatisfy { $0.isASCII && $0.isNumber }
+        }
+
+        private static func isTrailingSentencePunct(_ ch: unichar) -> Bool {
+            ch == 0x2E || ch == 0x2C || ch == 0x3B || ch == 0x3A || ch == 0x21
+                || ch == 0x3F || ch == 0x29 || ch == 0x5D || ch == 0x7D
         }
 
         static func isFileScheme(_ nsText: NSString, at pos: Int) -> Bool {

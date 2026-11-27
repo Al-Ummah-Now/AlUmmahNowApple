@@ -25,7 +25,7 @@ extension CoreTelemetryService {
             defaultsStore.bool(forKey: "AUNTelemetryEnabled")
         }
         do {
-            return try CoreTelemetryService(
+            let service = try CoreTelemetryService(
                 platform: Self.platformName(),
                 appVersion: version,
                 osVersion: osVersion,
@@ -38,7 +38,14 @@ extension CoreTelemetryService {
                 initialEnabled: initialEnabled,
                 isExternallyEnabled: externalCheck
             )
+            if initialEnabled && service.consent == .off {
+                defaults.set(false, forKey: "AUNTelemetryEnabled")
+            }
+            return service
         } catch {
+            if initialEnabled {
+                defaults.set(false, forKey: "AUNTelemetryEnabled")
+            }
             AUNLog.network.error("Telemetry unavailable, continuing with no-op service: \(error)")
             return NullTelemetryService.shared
         }
@@ -74,16 +81,174 @@ extension CoreTelemetryService {
         let (escaped, hadSentinels) = Self.escapeSentinels(text)
         var (scrubbed, vaultedURLs) = Self.vaultNonFileURLs(in: escaped, prefix: Self.vaultPrefix)
         scrubbed = Self.redactFileURIs(in: scrubbed, vaultPrefix: Self.vaultPrefix)
-        for rule in Self.pathRedactionRules {
+        for rule in Self.preKeywordPathRules {
+            let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
+            scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
+        }
+        scrubbed = Self.redactKeywordUnquotedFilenames(in: scrubbed)
+        for rule in Self.postKeywordPathRules {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
             scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
         }
         scrubbed = Self.restoreVaultedURLs(in: scrubbed, prefix: Self.vaultPrefix, vaultedURLs: vaultedURLs)
-        for rule in Self.postRestoreRedactionRules {
+        scrubbed = Self.redactEmails(in: scrubbed)
+        if let bearerRegex = Self.bearerTokenRegex {
             let range = NSRange(scrubbed.startIndex..<scrubbed.endIndex, in: scrubbed)
-            scrubbed = rule.regex.stringByReplacingMatches(in: scrubbed, options: [], range: range, withTemplate: rule.template)
+            scrubbed = bearerRegex.stringByReplacingMatches(
+                in: scrubbed, options: [], range: range, withTemplate: "Bearer [redacted]"
+            )
         }
         return hadSentinels ? Self.unescapeSentinels(scrubbed) : scrubbed
+    }
+
+    private static func redactEmails(in text: String) -> String {
+        guard text.contains("@") || text.contains("%40") else { return text }
+        let nsText = text as NSString
+        let len = nsText.length
+        var result = ""
+        var copied = 0
+        var idx = 0
+        while idx < len {
+            let atLen = Self.emailAtLength(nsText, at: idx, len: len)
+            if atLen == 0 {
+                idx += 1
+                continue
+            }
+            var localStart = idx
+            while localStart > copied && Self.isEmailLocalChar(nsText, at: localStart - 1, len: len) {
+                localStart -= 1
+            }
+            let domEnd = localStart < idx ? Self.findEmailDomainEnd(nsText, domStart: idx + atLen, len: len) : -1
+            if domEnd > 0 {
+                if result.isEmpty { result.reserveCapacity(text.count) }
+                result += nsText.substring(with: NSRange(location: copied, length: localStart - copied))
+                result += "[redacted-email]"
+                copied = domEnd
+                idx = domEnd
+            } else {
+                idx += atLen
+            }
+        }
+        guard copied > 0 else { return text }
+        result += nsText.substring(from: copied)
+        return result
+    }
+
+    private static func emailAtLength(_ nsText: NSString, at pos: Int, len: Int) -> Int {
+        let ch = nsText.character(at: pos)
+        if ch == 0x40 { return 1 }  // '@'
+        if ch == 0x25 && pos + 2 < len && nsText.character(at: pos + 1) == 0x34 && nsText.character(at: pos + 2) == 0x30 {
+            return 3  // "%40"
+        }
+        return 0
+    }
+
+    private static func isEmailLocalChar(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+        let ch = nsText.character(at: pos)
+        if (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) || (ch >= 0x30 && ch <= 0x39)
+            || ch == 0x2E || ch == 0x5F || ch == 0x2B || ch == 0x2D
+        {
+            return true
+        }
+        return ch == 0x25 && !(pos + 2 < len && nsText.character(at: pos + 1) == 0x34 && nsText.character(at: pos + 2) == 0x30)
+    }
+
+    private static func findEmailDomainEnd(_ nsText: NSString, domStart: Int, len: Int) -> Int {
+        var idx = domStart
+        var lastDot = -1
+        var lettersSinceDot = 0
+        var bestEnd = -1
+        while idx < len {
+            let ch = nsText.character(at: idx)
+            if (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) {
+                lettersSinceDot = lastDot >= 0 ? lettersSinceDot + 1 : 0
+            } else if ch == 0x2E {
+                lastDot = idx > domStart ? idx : -1
+                lettersSinceDot = 0
+            } else if (ch >= 0x30 && ch <= 0x39) || ch == 0x2D {
+                lettersSinceDot = -1
+            } else {
+                break
+            }
+            idx += 1
+            if lastDot > domStart && lettersSinceDot >= 2 && (idx == len || !Self.isASCIIWordChar(nsText.character(at: idx))) {
+                bestEnd = idx
+            }
+        }
+        return bestEnd
+    }
+
+    private static func isASCIIWordChar(_ ch: unichar) -> Bool {
+        (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) || (ch >= 0x30 && ch <= 0x39) || ch == 0x5F
+    }
+
+    private static func isASCIIAlphaNum(_ ch: unichar) -> Bool {
+        (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) || (ch >= 0x30 && ch <= 0x39)
+    }
+
+    private static func redactKeywordUnquotedFilenames(in text: String) -> String {
+        guard text.contains("."), let kwRegex = Self.keywordFilenamePrefixRegex else { return text }
+        let nsText = text as NSString
+        let len = nsText.length
+        var result = ""
+        var copied = 0
+        var segStart = 0
+        while segStart < len {
+            var segEnd = segStart
+            while segEnd < len {
+                let ch = nsText.character(at: segEnd)
+                if ch == 0x0A || ch == 0x0D || ch == 0x1E || ch == 0x1F { break }
+                segEnd += 1
+            }
+            if let (lastDot, lastExtEnd) = Self.findLastUnquotedFilenameExt(nsText, segStart: segStart, segEnd: segEnd, len: len),
+                let kwMatch = kwRegex.firstMatch(
+                    in: text, options: [], range: NSRange(location: segStart, length: lastDot - segStart)
+                )
+            {
+                let kwEnd = kwMatch.range.location + kwMatch.range.length
+                if result.isEmpty { result.reserveCapacity(text.count) }
+                result += nsText.substring(with: NSRange(location: copied, length: kwEnd - copied))
+                result += "[redacted-path]"
+                copied = lastExtEnd
+            }
+            segStart = segEnd + 1
+        }
+        guard copied > 0 else { return text }
+        result += nsText.substring(from: copied)
+        return result
+    }
+
+    private static func findLastUnquotedFilenameExt(
+        _ nsText: NSString, segStart: Int, segEnd: Int, len: Int
+    ) -> (Int, Int)? {
+        var dot = segEnd - 1
+        while dot >= segStart {
+            if nsText.character(at: dot) == 0x2E {
+                let extStart = dot + 1
+                var extEnd = extStart
+                while extEnd < segEnd && extEnd - extStart < 17 && Self.isASCIIAlphaNum(nsText.character(at: extEnd)) {
+                    extEnd += 1
+                }
+                let extLen = extEnd - extStart
+                let validBounds =
+                    extLen >= 1 && extLen <= 16
+                    && (extEnd == len
+                        || (!Self.isASCIIWordChar(nsText.character(at: extEnd)) && nsText.character(at: extEnd) != 0x28))
+                if validBounds && !Self.isSourceLineReference(nsText, extStart: extStart, extEnd: extEnd, len: len) {
+                    return (dot, extEnd)
+                }
+            }
+            dot -= 1
+        }
+        return nil
+    }
+
+    private static func isSourceLineReference(_ nsText: NSString, extStart: Int, extEnd: Int, len: Int) -> Bool {
+        guard extEnd + 1 < len && nsText.character(at: extEnd) == 0x3A else { return false }
+        let digit = nsText.character(at: extEnd + 1)
+        guard digit >= 0x30 && digit <= 0x39 else { return false }
+        let ext = nsText.substring(with: NSRange(location: extStart, length: extEnd - extStart)).lowercased()
+        return Self.sourceLineExtSet.contains(ext)
     }
 
     private static func vaultNonFileURLs(in text: String, prefix: String) -> (String, [String]) {
@@ -244,37 +409,50 @@ extension CoreTelemetryService {
         + "create|creating|load|loading|save|saving|access|accessing|unlink|"
         + "file|path|directory|folder|document|filename|filepath"
 
-    private static let sourceLineExts = "kt|java|swift|cs|cpp|cc|c|h|hpp|rs|py|js|ts|go|rb|m|mm"
+    private static let sourceLineExtSet: Set<String> = [
+        "kt", "java", "swift", "cs", "cpp", "cc", "c", "h", "hpp", "rs", "py", "js", "ts", "go", "rb", "m", "mm",
+    ]
 
-    private static let pathRedactionRules: [(regex: NSRegularExpression, template: String)] = {
+    private static let keywordFilenamePrefixRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"\b(?:"# + ioKeywordVerbs + #")\b(?:[^\S\r\n]*[:=][^\S\r\n]*|[^\S\r\n]+)"#,
+        options: [.caseInsensitive]
+    )
+
+    private static let preKeywordPathRules: [(regex: NSRegularExpression, template: String)] = {
         let specs: [(String, String)] = [
             (#"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n\u001E]+(\))"#, "$1[redacted-path]$2"),
             (
-                #"(\()(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/[^()\r\n\u001E]+(\))"#,
+                #"(\()(?!(?:HTTP|TLS|SSL)/\d)(?!\d+/\d+[.,;:!?]?\))[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/[^()\r\n\u001E]+(\))"#,
                 "$1[redacted-path]$2"
             ),
-            (#"(?:[A-Za-z]:[\\/]|\\\\)(?:(?!\s+\u001E)[^\r\n\u001E])+"#, "[redacted-path]"),
+            (#"(?:[A-Za-z]:[\\/]|\\\\)[^\S\r\n]*[^\r\n\u001E\s]+(?:[^\S\r\n]+[^\r\n\u001E\s]+)*"#, "[redacted-path]"),
             (
-                #"(^|[\s(\[{"'=,:;\u001F])[^\s\\/"'<>(),;\u001E\u001F]+\\(?:(?!\s+\u001E)[^\r\n\u001E\u001F])+"#,
+                #"(^|[\s(\[{"'=,:;\u001F])[^\s\\/"'<>(),;\u001E\u001F]+\\[^\r\n\u001E\u001F\s]+(?:[^\S\r\n]+[^\r\n\u001E\u001F\s]+)*"#,
                 "$1[redacted-path]"
             ),
             (#"["']/[ \t]+[^\r\n\u001E]+"#, "[redacted-path]"),
             (
-                #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|//+(?=[ \t]*[^\s/])|/(?=[ \t]*[^\s/]))(?:(?!\s+\u001E)[^\r\n\u001E])+"#,
+                #"(?<![\p{L}\p{M}\p{N}._/-])(?:~/|//+(?=[ \t]*[^\s/])|/(?=[ \t]*[^\s/]))[^\S\r\n]*[^\r\n\u001E\s]+(?:[^\S\r\n]+[^\r\n\u001E\s]+)*"#,
                 "[redacted-path]"
             ),
             (
-                #"(^|[\s(\[{"'=,:;\u001F])(?!HTTP/\d)(?!TLS/\d)(?!SSL/\d)[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/(?:(?!\s+\u001E)[^\r\n\u001E\u001F])+"#,
+                #"(^|[\s(\[{"'=,:;\u001F])(?!(?<!['"])(?:HTTP|TLS|SSL)/\d)"#
+                    + #"(?!(?<!['"])\d+/\d+(?:$|[\s)\]},;:!?]|\.(?![A-Za-z0-9])))"#
+                    + #"[^\s/\\"'<>()\[\]{}:,;\u001E\u001F]+/[^\r\n\u001E\u001F\s]+(?:[^\S\r\n]+[^\r\n\u001E\u001F\s]+)*"#,
                 "$1[redacted-path]"
             ),
             (#""[^"\r\n/\\]*\.[A-Za-z0-9]{1,16}""#, "[redacted-path]"),
-            (#"'(?:[^'\r\n/\\]|'(?=\p{L}))*\.[A-Za-z0-9]{1,16}'"#, "[redacted-path]"),
+            (#"(?<!\p{L})'(?:[^'\r\n/\\]|(?<=\p{L})'(?=\p{L}))*\.[A-Za-z0-9]{1,16}'"#, "[redacted-path]"),
             (#"(\b(?:file|path|directory|folder|document)\s+)(['"])(?!\u001E)[^'"\r\n]+\2"#, "$1[redacted-path]"),
-            (
-                #"(\b(?:"# + ioKeywordVerbs + #")\b(?:\s*[:=]\s*|\s+))(?!\u001E)[^\r\n\u001E\u001F]*\.(?!(?:"#
-                    + sourceLineExts + #"):\d+)[A-Za-z0-9]{1,16}\b(?!\()"#,
-                "$1[redacted-path]"
-            ),
+        ]
+        return specs.compactMap { pattern, template in
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+            return (regex, template)
+        }
+    }()
+
+    private static let postKeywordPathRules: [(regex: NSRegularExpression, template: String)] = {
+        let specs: [(String, String)] = [
             (#"(\b(?:file|path|filename|filepath)\s*[:=]\s*)(?!\u001E)[^\r\n\u001E\u001F]+"#, "$1[redacted-path]"),
             (
                 #"(^|[\r\n:=;\u001F])([ \t]*)[^\r\n:=;\u001E\u001F]*\.(?!ts:\d+)(?:"# + bareFilenameExtensions + #")\b(?!\()"#,
@@ -287,16 +465,9 @@ extension CoreTelemetryService {
         }
     }()
 
-    private static let postRestoreRedactionRules: [(regex: NSRegularExpression, template: String)] = {
-        let specs: [(String, String)] = [
-            (#"(?:[A-Za-z0-9._+-]|%(?!40))+(?:@|%40)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#, "[redacted-email]"),
-            (#"\bBearer\s+\S+"#, "Bearer [redacted]"),
-        ]
-        return specs.compactMap { pattern, template in
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
-            return (regex, template)
-        }
-    }()
+    private static let bearerTokenRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"\bBearer\s+\S+"#, options: [.caseInsensitive]
+    )
 
     static func serializeProperties(_ properties: [String: String]) -> String? {
         guard !properties.isEmpty else { return nil }

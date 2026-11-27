@@ -61,7 +61,8 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     }
 
     public var consent: TelemetryConsent {
-        lock.withLock { _closed ? .off : _consent }
+        observationRegistrar.access(self, keyPath: \.consent)
+        return lock.withLock { _closed ? .off : _consent }
     }
 
     public var pendingCount: Int {
@@ -89,8 +90,9 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             case .off: .denied
             }
 
-        let (result, waitersToCancel, purgeChanged): (Bool, [Task<Void, Never>], Bool) = lock.withLock {
+        let (result, waitersToCancel, purgeChanged, consentChanged): (Bool, [Task<Void, Never>], Bool, Bool) = lock.withLock {
             let priorPurgeFailed = _lastPurgeFailed
+            let priorConsent = _closed ? .off : _consent
             let outcome: (Bool, [Task<Void, Never>])
             if _closed {
                 outcome = consent == .off ? revokeLocked() : (false, [])
@@ -115,9 +117,10 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
                     outcome = (false, waiters)
                 }
             }
-            return (outcome.0, outcome.1, _lastPurgeFailed != priorPurgeFailed)
+            let currentConsent = _closed ? .off : _consent
+            return (outcome.0, outcome.1, _lastPurgeFailed != priorPurgeFailed, currentConsent != priorConsent)
         }
-        notifyPurgeFailureIfChanged(purgeChanged)
+        notifyStateChanges(purgeChanged: purgeChanged, consentChanged: consentChanged)
         for waiter in waitersToCancel { waiter.cancel() }
         return result
     }
@@ -194,43 +197,50 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
 
         // Create AND register the flush task while holding `lock` so close() / setConsent(.off)
         // can never miss an unregistered task.
-        let (nativeTask, cancelledWaiters, purgeChanged): (Task<Void, Never>?, [Task<Void, Never>], Bool) = lock.withLock {
-            let priorPurgeFailed = _lastPurgeFailed
-            let cancelled = ensureExternalConsentLocked()
-            guard !_closed, _consent != .off else {
-                return (nil, cancelled, _lastPurgeFailed != priorPurgeFailed)
-            }
-            _inFlightFlushes += 1
-            let flushEpoch = _consentEpoch
-            let task = Task<Void, Never> { [self] in
-                defer { self.releaseInFlightFlush(id: flushID, epoch: flushEpoch) }
-                beforeExecute?()
-                let (stillAllowed, lateCancelled, latePurgeChanged): (Bool, [Task<Void, Never>], Bool) = self.lock.withLock {
-                    let prior = self._lastPurgeFailed
-                    let cancelledNow = self.ensureExternalConsentLocked()
-                    let allowed = !self._closed && !self._revoked && self._consent != .off
-                    return (allowed, cancelledNow, self._lastPurgeFailed != prior)
+        let (nativeTask, cancelledWaiters, purgeChanged, consentChanged): (Task<Void, Never>?, [Task<Void, Never>], Bool, Bool) =
+            lock.withLock {
+                let priorPurgeFailed = _lastPurgeFailed
+                let priorConsent = _closed ? .off : _consent
+                let cancelled = ensureExternalConsentLocked()
+                guard !_closed, _consent != .off else {
+                    let currentConsent = _closed ? .off : _consent
+                    return (nil, cancelled, _lastPurgeFailed != priorPurgeFailed, currentConsent != priorConsent)
                 }
-                self.notifyPurgeFailureIfChanged(latePurgeChanged)
-                for waiter in lateCancelled { waiter.cancel() }
-                guard stillAllowed && !Task.isCancelled else { return }
-                do {
-                    if let override {
-                        try await override()
-                    } else {
-                        _ = try await clientRef.flush()
-                    }
-                } catch {
-                    let isRevoked = self.lock.withLock { self._revoked || self._closed }
-                    if !isRevoked && !Task.isCancelled {
-                        AUNLog.network.warning("Telemetry flush skipped: \(error)")
+                _inFlightFlushes += 1
+                let flushEpoch = _consentEpoch
+                let task = Task<Void, Never> { [self] in
+                    defer { self.releaseInFlightFlush(id: flushID, epoch: flushEpoch) }
+                    beforeExecute?()
+                    let (stillAllowed, lateCancelled, latePurgeChanged, lateConsentChanged):
+                        (Bool, [Task<Void, Never>], Bool, Bool) = self.lock.withLock {
+                            let prior = self._lastPurgeFailed
+                            let priorC = self._closed ? .off : self._consent
+                            let cancelledNow = self.ensureExternalConsentLocked()
+                            let allowed = !self._closed && !self._revoked && self._consent != .off
+                            let currentC = self._closed ? .off : self._consent
+                            return (allowed, cancelledNow, self._lastPurgeFailed != prior, currentC != priorC)
+                        }
+                    self.notifyStateChanges(purgeChanged: latePurgeChanged, consentChanged: lateConsentChanged)
+                    for waiter in lateCancelled { waiter.cancel() }
+                    guard stillAllowed && !Task.isCancelled else { return }
+                    do {
+                        if let override {
+                            try await override()
+                        } else {
+                            _ = try await clientRef.flush()
+                        }
+                    } catch {
+                        let isRevoked = self.lock.withLock { self._revoked || self._closed }
+                        if !isRevoked && !Task.isCancelled {
+                            AUNLog.network.warning("Telemetry flush skipped: \(error)")
+                        }
                     }
                 }
+                _flushWaiters[flushID] = task
+                let currentConsent = _closed ? .off : _consent
+                return (task, cancelled, _lastPurgeFailed != priorPurgeFailed, currentConsent != priorConsent)
             }
-            _flushWaiters[flushID] = task
-            return (task, cancelled, _lastPurgeFailed != priorPurgeFailed)
-        }
-        notifyPurgeFailureIfChanged(purgeChanged)
+        notifyStateChanges(purgeChanged: purgeChanged, consentChanged: consentChanged)
         for waiter in cancelledWaiters { waiter.cancel() }
         guard let nativeTask else { return }
 
@@ -243,14 +253,16 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
 
     /// Stops new collection and cancels in-flight flush waits without revoking consent or deleting retryable buffers.
     public func close() {
-        let waiters: [Task<Void, Never>] = lock.withLock {
-            guard !_closed else { return [] }
+        let (waiters, consentChanged): ([Task<Void, Never>], Bool) = lock.withLock {
+            guard !_closed else { return ([], false) }
+            let priorConsent = _consent
             _closed = true
             _consent = .off
             let pending = Array(_flushWaiters.values)
             _flushWaiters.removeAll()
-            return pending
+            return (pending, priorConsent != .off)
         }
+        notifyStateChanges(purgeChanged: false, consentChanged: consentChanged)
         for waiter in waiters { waiter.cancel() }
     }
 
@@ -273,14 +285,16 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     }
 
     private func withActiveConsent(requiresFull: Bool, _ work: () -> Void) {
-        let (waiters, purgeChanged): ([Task<Void, Never>], Bool) = lock.withLock {
+        let (waiters, purgeChanged, consentChanged): ([Task<Void, Never>], Bool, Bool) = lock.withLock {
             let priorPurgeFailed = _lastPurgeFailed
+            let priorConsent = _closed ? .off : _consent
             let cancelled = ensureExternalConsentLocked()
             let allowed = requiresFull ? (_consent == .full) : (_consent != .off)
             if !_closed && allowed { work() }
-            return (cancelled, _lastPurgeFailed != priorPurgeFailed)
+            let currentConsent = _closed ? .off : _consent
+            return (cancelled, _lastPurgeFailed != priorPurgeFailed, currentConsent != priorConsent)
         }
-        notifyPurgeFailureIfChanged(purgeChanged)
+        notifyStateChanges(purgeChanged: purgeChanged, consentChanged: consentChanged)
         for waiter in waiters { waiter.cancel() }
     }
 
@@ -298,13 +312,18 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             }
             return _lastPurgeFailed != priorPurgeFailed
         }
-        notifyPurgeFailureIfChanged(purgeChanged)
+        notifyStateChanges(purgeChanged: purgeChanged, consentChanged: false)
     }
 
-    private func notifyPurgeFailureIfChanged(_ changed: Bool) {
-        guard changed else { return }
-        observationRegistrar.willSet(self, keyPath: \.lastPurgeFailed)
-        observationRegistrar.didSet(self, keyPath: \.lastPurgeFailed)
+    private func notifyStateChanges(purgeChanged: Bool, consentChanged: Bool) {
+        if purgeChanged {
+            observationRegistrar.willSet(self, keyPath: \.lastPurgeFailed)
+            observationRegistrar.didSet(self, keyPath: \.lastPurgeFailed)
+        }
+        if consentChanged {
+            observationRegistrar.willSet(self, keyPath: \.consent)
+            observationRegistrar.didSet(self, keyPath: \.consent)
+        }
     }
 
     private func ensureExternalConsentLocked() -> [Task<Void, Never>] {

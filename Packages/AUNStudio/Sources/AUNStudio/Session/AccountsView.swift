@@ -14,7 +14,7 @@ struct AccountsView: View {
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
-            get: { settings.telemetryEnabled },
+            get: { settings.telemetryEnabled && session.services.telemetry.consent != .off },
             set: { enabled in
                 let telemetry = session.services.telemetry
                 if enabled {
@@ -69,7 +69,7 @@ struct AccountsView: View {
                                 .foregroundStyle(Fanous.errorText)
                                 .accessibilityIdentifier("accounts-diagnostics-warning")
                         }
-                        if !settings.telemetryEnabled && session.services.telemetry.lastPurgeFailed {
+                        if session.services.telemetry.consent == .off && session.services.telemetry.lastPurgeFailed {
                             Button(l10n("common.retry")) {
                                 let purged = session.services.telemetry.setConsent(.off)
                                 diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")

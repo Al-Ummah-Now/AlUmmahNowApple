@@ -52,7 +52,7 @@ private struct SignedOutDiagnosticsControl: View {
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
-            get: { settings.telemetryEnabled },
+            get: { settings.telemetryEnabled && session.services.telemetry.consent != .off },
             set: { enabled in
                 let telemetry = session.services.telemetry
                 if enabled {
@@ -73,7 +73,8 @@ private struct SignedOutDiagnosticsControl: View {
     }
 
     var body: some View {
-        if settings.telemetryEnabled || session.services.telemetry.lastPurgeFailed || diagnosticsMessage != nil {
+        let diagnosticsActive = settings.telemetryEnabled && session.services.telemetry.consent != .off
+        if diagnosticsActive || session.services.telemetry.lastPurgeFailed || diagnosticsMessage != nil {
             VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
                 Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
                     .accessibilityIdentifier("signin-diagnostics")
@@ -85,7 +86,7 @@ private struct SignedOutDiagnosticsControl: View {
                         .foregroundStyle(Fanous.errorText)
                         .accessibilityIdentifier("signin-diagnostics-warning")
                 }
-                if !settings.telemetryEnabled && session.services.telemetry.lastPurgeFailed {
+                if session.services.telemetry.consent == .off && session.services.telemetry.lastPurgeFailed {
                     Button(l10n("common.retry")) {
                         let purged = session.services.telemetry.setConsent(.off)
                         diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")

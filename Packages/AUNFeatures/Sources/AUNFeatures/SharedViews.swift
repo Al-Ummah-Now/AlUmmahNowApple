@@ -86,7 +86,7 @@ struct SettingsMenu: View {
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
-            get: { settings.telemetryEnabled },
+            get: { settings.telemetryEnabled && telemetry.consent != .off },
             set: { enabled in
                 if enabled {
                     settings.telemetryEnabled = true
@@ -118,7 +118,7 @@ struct SettingsMenu: View {
                 Label(l10n("diagnostics.toggle"), systemImage: "waveform.path.ecg")
             }
             .accessibilityIdentifier("settings-diagnostics")
-            if !settings.telemetryEnabled && telemetry.lastPurgeFailed {
+            if telemetry.consent == .off && telemetry.lastPurgeFailed {
                 Button(l10n("common.retry")) {
                     if !telemetry.setConsent(.off) { showingPurgeWarning = true }
                 }

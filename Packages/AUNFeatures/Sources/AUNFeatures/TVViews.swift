@@ -163,10 +163,11 @@
                     let next = ((all.firstIndex(of: settings.theme) ?? 0) + 1) % all.count
                     settings.theme = all[next]
                 }
+                let diagnosticsActive = settings.telemetryEnabled && telemetry.consent != .off
                 Button(
-                    "\(l10n("diagnostics.toggle")): \(l10n(settings.telemetryEnabled ? "diagnostics.on" : "diagnostics.off"))"
+                    "\(l10n("diagnostics.toggle")): \(l10n(diagnosticsActive ? "diagnostics.on" : "diagnostics.off"))"
                 ) {
-                    if settings.telemetryEnabled {
+                    if diagnosticsActive {
                         settings.telemetryEnabled = false
                         if !telemetry.setConsent(.off) { showingPurgeWarning = true }
                     } else {
@@ -177,7 +178,7 @@
                     }
                 }
                 .accessibilityIdentifier("diagnostics-toggle")
-                if !settings.telemetryEnabled && telemetry.lastPurgeFailed {
+                if telemetry.consent == .off && telemetry.lastPurgeFailed {
                     Button(l10n("common.retry")) {
                         if !telemetry.setConsent(.off) { showingPurgeWarning = true }
                     }
