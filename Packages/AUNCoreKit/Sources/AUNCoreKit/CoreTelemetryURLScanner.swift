@@ -139,6 +139,25 @@ extension CoreTelemetryService {
         ch == 0x29 || ch == 0x5D || ch == 0x7D
     }
 
+    static func isOuterQuoteCloser(_ nsText: NSString, at pos: Int, outerQuote: unichar) -> Bool {
+        let len = nsText.length
+        var k = pos + 1
+        while k < len && (nsText.character(at: k) == 0x20 || nsText.character(at: k) == 0x09) { k += 1 }
+        guard k < len else { return true }
+        let ch = nsText.character(at: k)
+        if isOuterQuoteClosingPunct(ch) { return true }
+        guard ch == 0x2C else { return false }
+        k += 1
+        while k < len && (nsText.character(at: k) == 0x20 || nsText.character(at: k) == 0x09) { k += 1 }
+        if k >= len { return true }
+        let next = nsText.character(at: k)
+        return next == outerQuote || next == 0x7D || next == 0x5D || next == 0x29 || next == 0x0D || next == 0x0A
+    }
+
+    private static func isOuterQuoteClosingPunct(_ ch: unichar) -> Bool {
+        ch == 0x0D || ch == 0x0A || ch == 0x7D || ch == 0x5D || ch == 0x29 || ch == 0x3B || ch == 0x3A
+    }
+
     private static func isURLPathTerminator(_ nsText: NSString, pos: Int, len: Int) -> Bool {
         if VaultLineTracker.isFileScheme(nsText, at: pos) || isWindowsDriveAt(nsText, at: pos, len: len) { return true }
         let ch = nsText.character(at: pos)

@@ -476,5 +476,25 @@ struct CoreTelemetryURLContinuationTests {
                 "['https://a.test/webhook/tok(','https://other.com/webhook/tok2('x)secret')']"
             ) == "['https://a.test/webhook/[redacted]','https://other.com/webhook/[redacted]']"
         )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "'https://example.test/webhook/fakeToken('a)first opaqueSecret123',https://other.test/x)'"
+            ) == "'https://example.test/webhook/[redacted]'"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "'https://example.test/webhook/fakeToken('a)first opaqueSecret123', more)'"
+            ) == "'https://example.test/webhook/[redacted]', more)'"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "[\"https://example.test/webhook/fakeToken(\",\")public-text\"]"
+            ) == "[\"https://example.test/webhook/[redacted]\",\")public-text\"]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "'https://example.test/webhook/fakeToken(' opaqueSecret123')'"
+            ) == "'https://example.test/webhook/[redacted]'"
+        )
     }
 }
