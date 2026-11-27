@@ -114,9 +114,33 @@ struct CoreTelemetryAuthSanitizerTests {
             CoreTelemetryService.sanitizeLocalPaths("{\"Authorization\":\"firstValue\",\"a\":[{]} opaqueSecret123")
                 == "{\"Authorization\":\"[redacted]\"[redacted]"
         )
+    }
+
+    @Test("Climbs nested JSON containers, redacts multiline truncated arrays, and scrubs grouped webhook tokens")
+    func climbsContainersRedactsMultilineArraysAndGroupedWebhooks() {
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("[{\"Authorization\":\"opaqueSecret123\"},{\"status\":\"safe\"}]")
                 == "[{\"Authorization\":\"[redacted]\"},{\"status\":\"safe\"}]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[{\"Authorization\":\"opaqueSecret123\" }\n]")
+                == "[{\"Authorization\":\"[redacted]\" }\n]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("[{\"Authorization\":\"firstValue\" }\n] opaqueSecret123")
+                == "[{\"Authorization\":\"[redacted]\" [redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"Authorization\":\"firstValue\"\n} opaqueSecret123")
+                == "{\"Authorization\":\"[redacted]\"\n[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"Authorization\":[\"firstValue\",\n\"opaqueSecret123\"")
+                == "{\"Authorization\":[\"[redacted]\",\n\"[redacted]\""
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"Authorization\":[\n\"opaqueSecret123\"\n")
+                == "{\"Authorization\":[\n\"[redacted]\"\n"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken,remainingSecret123")
@@ -124,6 +148,18 @@ struct CoreTelemetryAuthSanitizerTests {
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/,remainingSecret123")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken,(remainingSecret123)")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken,(tag:opaqueSecret123)")
+                == "https://example.test/webhook/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.test/webhook/fakeToken(tag:opaqueSecret123)")
                 == "https://example.test/webhook/[redacted]"
         )
         #expect(

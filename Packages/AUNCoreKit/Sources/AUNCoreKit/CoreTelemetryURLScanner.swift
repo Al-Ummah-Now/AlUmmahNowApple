@@ -125,20 +125,21 @@ extension CoreTelemetryService {
             openGroups.removeLast()
             return pos + 1
         }
-        return (!openGroups.isEmpty && ch == 0x3A) ? -1 : pos + 1
+        return (!allowCommas && !openGroups.isEmpty && ch == 0x3A) ? -1 : pos + 1
     }
 
     static func shouldStopAtURLComma(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
         let nextPos = pos + 1
         guard nextPos < len else { return true }
         let next = nsText.character(at: nextPos)
+        if next == 0x28 || next == 0x5B { return false }
         if VaultLineTracker.isWhitespace(next) || isURLPathStopChar(next) || isURLEndBoundaryChar(next) {
             return next != 0x2C
         }
         return startsEmbeddedPathInsideGroup(nsText, nextPos: nextPos, len: len)
     }
 
-    private static func startsEmbeddedPathInsideGroup(_ nsText: NSString, nextPos: Int, len: Int) -> Bool {
+    static func startsEmbeddedPathInsideGroup(_ nsText: NSString, nextPos: Int, len: Int) -> Bool {
         guard nextPos < len else { return true }
         let ch = nsText.character(at: nextPos)
         if ch == 0x2F || ch == 0x5C || ch == 0x3A { return true }

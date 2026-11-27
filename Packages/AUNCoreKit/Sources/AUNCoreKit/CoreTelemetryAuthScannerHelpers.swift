@@ -165,29 +165,31 @@ extension CoreTelemetryAuthScanner {
         return (ch == 0x5B || ch == 0x2C) ? beforeVal : -1
     }
 
-    static func isInsideValidTopLevelJsonContainer(
+    static func classifyTopLevelJsonContainer(
         _ nsText: NSString, openPos: Int, state: inout AuthScanState
-    ) -> Bool {
-        if let cached = state.containerValidForAuth[openPos] { return cached }
+    ) -> Int {
+        if let cached = state.containerAuthState[openPos] { return cached }
         var visited: [Int] = []
         var curOpen = openPos
-        var valid = false
+        var authState = -1
         while curOpen >= 0 {
-            if let known = state.containerValidForAuth[curOpen] {
-                valid = known
+            if let known = state.containerAuthState[curOpen] {
+                authState = known
                 break
             }
             visited.append(curOpen)
             let endPos = tryParseJsonValue(nsText, from: curOpen, state: &state)
             guard endPos > curOpen else { break }
-            if reachesLineOrTextEnd(nsText, from: endPos) {
-                valid = true
-                break
+            let parentOpen = findParentJsonContainerOpen(nsText, before: curOpen, state: &state)
+            if parentOpen >= 0 {
+                curOpen = parentOpen
+                continue
             }
-            curOpen = findParentJsonContainerOpen(nsText, before: curOpen, state: &state)
+            authState = reachesLineOrTextEnd(nsText, from: endPos) ? 0 : endPos
+            break
         }
-        for pos in visited { state.containerValidForAuth[pos] = valid }
-        return valid
+        for pos in visited { state.containerAuthState[pos] = authState }
+        return authState
     }
 
     private static func reachesLineOrTextEnd(_ nsText: NSString, from start: Int) -> Bool {
