@@ -267,15 +267,30 @@ struct CoreTelemetryExternalConsentTests {
                 "{\"Authorization\":\"Bearer testSecret\",\"status\":401}",
                 "{\"Authorization\":\"Bearer [redacted]\",\"status\":401}"
             ),
+            (
+                "{\"Authorization\":[\"Bearer testSecret\"],\"status\":401}",
+                "{\"Authorization\":[\"Bearer [redacted]\"],\"status\":401}"
+            ),
+            (
+                "{\"\\u0041uthorization\":\"opaqueSecret123\",\"status\":401}",
+                "{\"Authorization\":\"[redacted]\",\"status\":401}"
+            ),
+            ("{\"Authoriz\\u0061tion\":\"opaqueSecret123\"}", "{\"Authorization\":\"[redacted]\"}"),
+            (
+                "{\"Authorization\": \n \"opaqueSecret123\",\"status\":401}",
+                "{\"Authorization\": \n \"[redacted]\",\"status\":401}"
+            ),
             ("\"Authorization\": opaqueSecret123 nextPart", "\"Authorization\": [redacted]"),
             ("Authorization: opaqueSecret123 nextPart", "Authorization: [redacted]"),
             ("Authorization: X-Secret secondword", "Authorization: [redacted]"),
             ("Basic YTpi", "Basic [redacted]"),
             ("Basic YTpi.", "Basic [redacted]."),
             ("Basic YTo=", "Basic [redacted]"),
+            ("Basic YTp=", "Basic YTp="),
             ("Basic Og==", "Basic [redacted]"),
             ("Basic ajpqampq", "Basic [redacted]"),
             ("BASIC YWxpY2U6c2VjcmV0", "BASIC [redacted]"),
+            ("Basic YWxpY2U6Y2Fm6Q==", "Basic [redacted]"),
             ("Basic YWJjZGU=", "Basic YWJjZGU="),
             ("Basic YTpiCQ", "Basic YTpiCQ"),
             ("Basic auth failed", "Basic auth failed"),
