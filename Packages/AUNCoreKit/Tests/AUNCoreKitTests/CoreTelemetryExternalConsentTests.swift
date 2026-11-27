@@ -146,9 +146,17 @@ struct CoreTelemetryExternalConsentTests {
             CoreTelemetryService.sanitizeLocalPaths("https://example.com/a(/storage/PrivateProject)")
                 == "https://example.com/a([redacted-path])"
         )
+    }
+
+    @Test("Scrubs quoted file URIs, apostrophes, and backslash paths")
+    func scrubsQuotedFileURIsAndBackslashPaths() {
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/O'Brien Secret'")
                 == "'[redacted-path]'"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/O'Brien Secret")
+                == "'[redacted-path]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/James' Private Name'")
@@ -159,12 +167,28 @@ struct CoreTelemetryExternalConsentTests {
                 == "'[redacted-path]'"
         )
         #expect(
+            CoreTelemetryService.sanitizeLocalPaths("\"file:///tmp/Secret\" progress 1/2")
+                == "\"[redacted-path]\" progress 1/2"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("'file:///tmp/a' progress 1/2 'file:///tmp/b'")
+                == "'[redacted-path]' progress 1/2 '[redacted-path]'"
+        )
+        #expect(
             CoreTelemetryService.sanitizeLocalPaths("'Studio 2's Acquisition.qzx'")
                 == "[redacted-path]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("'Studio 2' Acquisition.qzx'")
                 == "[redacted-path]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("'Studio 'Private Acquisition.qzx'")
+                == "[redacted-path]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("status \"ready; detail \"Private Project.qzx\"")
+                == "status \"ready; detail [redacted-path]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("private]folder\\secret")
@@ -219,6 +243,10 @@ struct CoreTelemetryExternalConsentTests {
         #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedBrackets).contains("[redacted-path]"))
         let longQuotedFile = "'" + String(repeating: "b", count: 100_000) + ".pdf'"
         #expect(CoreTelemetryService.sanitizeLocalPaths(longQuotedFile) == "[redacted-path]")
+        let repeatedClosers = String(repeating: "x.qzx' ", count: 20_000)
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedClosers) == repeatedClosers)
+        let embeddedQueries = "/tmp;" + String(repeating: "https://host?x;", count: 5_000)
+        #expect(CoreTelemetryService.sanitizeLocalPaths(embeddedQueries) == "[redacted-path]")
     }
 
     @Test("Startup live(defaults:) clears stored AUNTelemetryEnabled when initial consent activation fails")

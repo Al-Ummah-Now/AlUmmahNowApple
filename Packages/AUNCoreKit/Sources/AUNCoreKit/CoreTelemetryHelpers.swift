@@ -272,11 +272,15 @@ extension CoreTelemetryService {
             )
             if found.location == NSNotFound { break }
             let sep = found.location
-            guard let span = Self.scanNonFileURL(nsText, sep: sep, minStart: copied) else {
+            guard let start = Self.findNonFileSchemeStart(nsText, sep: sep, minStart: copied) else {
                 searchFrom = sep + 3
                 continue
             }
-            if tracker.isEmbeddedInPath(nsText, matchStart: span.start) {
+            if tracker.isEmbeddedInPath(nsText, matchStart: start) {
+                searchFrom = sep + 3
+                continue
+            }
+            guard let span = Self.scanURLAfterScheme(nsText, start: start, sep: sep) else {
                 searchFrom = sep + 3
                 continue
             }
