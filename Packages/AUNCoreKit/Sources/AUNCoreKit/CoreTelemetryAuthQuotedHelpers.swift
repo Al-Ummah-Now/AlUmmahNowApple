@@ -114,16 +114,57 @@ extension CoreTelemetryAuthScanner {
         return escapedDoubleQuoteLen(nsText, at: pos, len: len)
     }
 
-    private static func isValidQuotedBearerEnd(_ nsText: NSString, innerEnd: Int, len: Int, closeLen: Int) -> Bool {
-        if closeLen > 0 { return true }
-        var tail = innerEnd
-        while tail < len {
-            let ch = nsText.character(at: tail)
-            if ch == 0x0A || ch == 0x0D { return true }
-            if !CoreTelemetryService.VaultLineTracker.isWhitespace(ch) { return false }
-            tail += 1
+    private static func skipHorizontalBearerSpaces(_ nsText: NSString, from pos: Int, len: Int, allowEscaped: Bool) -> Int {
+        var p = pos
+        while p < len {
+            let ch = nsText.character(at: p)
+            if CoreTelemetryService.VaultLineTracker.isWhitespace(ch) && ch != 0x0A && ch != 0x0D {
+                p += 1
+                continue
+            }
+            if allowEscaped && ch == 0x5C && p + 1 < len {
+                let next = nsText.character(at: p + 1)
+                if next == 0x74 {
+                    p += 2
+                    continue
+                }
+                if next == 0x75 && p + 5 < len, let code = CoreTelemetryService.parseHex4(nsText, pos: p + 2),
+                    CoreTelemetryService.VaultLineTracker.isWhitespace(code), code != 0x0A, code != 0x0D
+                {
+                    p += 6
+                    continue
+                }
+            }
+            break
         }
-        return true
+        return p
+    }
+
+    private static func isEscapedNewlineAt(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+        guard pos + 1 < len && nsText.character(at: pos) == 0x5C else { return false }
+        let esc = nsText.character(at: pos + 1)
+        if esc == 0x6E || esc == 0x72 { return true }
+        guard esc == 0x75 && pos + 5 < len, let code = CoreTelemetryService.parseHex4(nsText, pos: pos + 2) else {
+            return false
+        }
+        return code == 0x0A || code == 0x0D
+    }
+
+    private static func resolveQuotedBearerEnd(
+        _ nsText: NSString, innerEnd: Int, len: Int, openLen: Int, openCh: unichar
+    ) -> Int? {
+        let tail = skipHorizontalBearerSpaces(nsText, from: innerEnd, len: len, allowEscaped: openLen > 1)
+        let closeLen =
+            openLen == 1
+            ? (tail < len && nsText.character(at: tail) == openCh ? 1 : 0)
+            : escapedDoubleQuoteLen(nsText, at: tail, len: len)
+        if closeLen > 0 { return tail + closeLen }
+        if tail >= len || nsText.character(at: tail) == 0x0A || nsText.character(at: tail) == 0x0D
+            || (openLen > 1 && isEscapedNewlineAt(nsText, at: tail, len: len))
+        {
+            return innerEnd
+        }
+        return nil
     }
 
     private static func tryScanQuotedBearerToken(
@@ -136,21 +177,17 @@ extension CoreTelemetryAuthScanner {
         let wsCh = nsText.character(at: wsEnd)
         let openLen = openingBearerQuoteLen(nsText, at: wsEnd, wsCh: wsCh, len: len, flags: flags)
         guard openLen > 0 else { return nil }
-        let innerStart = wsEnd + openLen
+        let innerStart = skipHorizontalBearerSpaces(nsText, from: wsEnd + openLen, len: len, allowEscaped: openLen > 1)
         let stopEsc = openLen > 1
         if isRedactedBearerPlaceholder(nsText, at: innerStart, len: len, stopAtEscapedQuote: stopEsc) {
             return innerStart + 10
         }
         let innerEnd = scanBearerTokenEnd(nsText, from: innerStart, len: len, stopAtEscapedQuote: stopEsc)
-        let closeLen =
-            openLen == 1
-            ? (innerEnd < len && nsText.character(at: innerEnd) == wsCh ? 1 : 0)
-            : escapedDoubleQuoteLen(nsText, at: innerEnd, len: len)
-        if innerEnd > innerStart && isValidQuotedBearerEnd(nsText, innerEnd: innerEnd, len: len, closeLen: closeLen) {
-            ranges.append((innerStart, innerEnd, true))
-            return innerEnd + closeLen
+        if let afterEnd = resolveQuotedBearerEnd(nsText, innerEnd: innerEnd, len: len, openLen: openLen, openCh: wsCh) {
+            if innerEnd > innerStart { ranges.append((innerStart, innerEnd, true)) }
+            return afterEnd
         }
-        return innerEnd == innerStart && closeLen > 0 ? innerEnd + closeLen : wsEnd
+        return wsEnd
     }
 
     private static func stepBearerQuoteState(
@@ -235,16 +272,12 @@ extension CoreTelemetryAuthScanner {
         let wsCh = nsText.character(at: pos)
         let openLen = openingBearerQuoteLen(nsText, at: pos, wsCh: wsCh, len: len, flags: flags)
         if openLen > 0 {
-            let innerStart = pos + openLen
+            let innerStart = skipHorizontalBearerSpaces(nsText, from: pos + openLen, len: len, allowEscaped: openLen > 1)
             let stopEsc = openLen > 1
             if isRedactedBearerPlaceholder(nsText, at: innerStart, len: len, stopAtEscapedQuote: stopEsc) { return true }
             let innerEnd = scanBearerTokenEnd(nsText, from: innerStart, len: len, stopAtEscapedQuote: stopEsc)
-            let closeLen =
-                openLen == 1
-                ? (innerEnd < len && nsText.character(at: innerEnd) == wsCh ? 1 : 0)
-                : escapedDoubleQuoteLen(nsText, at: innerEnd, len: len)
             return innerEnd > innerStart
-                && isValidQuotedBearerEnd(nsText, innerEnd: innerEnd, len: len, closeLen: closeLen)
+                && resolveQuotedBearerEnd(nsText, innerEnd: innerEnd, len: len, openLen: openLen, openCh: wsCh) != nil
         }
         return isRedactedBearerPlaceholder(nsText, at: pos, len: len, stopAtEscapedQuote: flags.inEscapedQuote)
             || scanBearerTokenEnd(nsText, from: pos, len: len, stopAtEscapedQuote: flags.inEscapedQuote) > pos
@@ -315,6 +348,19 @@ extension CoreTelemetryAuthScanner {
                     break
                 }
                 if isBearerEscapeBoundary(nsText, at: pos, len: len, stopAtEscapedQuote: stopAtEscapedQuote) { break }
+                if !stopAtEscapedQuote {
+                    let escQ = escapedDoubleQuoteLen(nsText, at: pos, len: len)
+                    if escQ > 0 {
+                        let afterQ = pos + escQ
+                        if afterQ >= len
+                            || CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: afterQ))
+                            || isBearerStopPunct(nsText.character(at: afterQ))
+                            || isBearerEscapeBoundary(nsText, at: afterQ, len: len, stopAtEscapedQuote: true)
+                        {
+                            break
+                        }
+                    }
+                }
                 let next = nsText.character(at: pos + 1)
                 pos += (next == 0x75 && pos + 5 < len && CoreTelemetryService.parseHex4(nsText, pos: pos + 2) != nil) ? 6 : 2
                 continue
@@ -399,10 +445,12 @@ extension CoreTelemetryAuthScanner {
             let quotedRange = match.range(at: 3)
             let isQuoted = quotedRange.location != NSNotFound
             let tokenRange = isQuoted ? quotedRange : match.range(at: 5)
+            let openRange = match.range(at: 2)
+            let closeRange = match.range(at: 4)
+            let openQ = isQuoted && openRange.location != NSNotFound ? nsDecoded.substring(with: openRange) : ""
+            let closeQ = isQuoted && closeRange.location != NSNotFound ? nsDecoded.substring(with: closeRange) : ""
             guard tokenRange.location != NSNotFound,
-                !isQuoted
-                    || areBasicQuotesCompatible(
-                        nsDecoded.substring(with: match.range(at: 2)), nsDecoded.substring(with: match.range(at: 4))),
+                !isQuoted || areBasicQuotesCompatible(openQ, closeQ),
                 isBasicCredentialToken(nsDecoded.substring(with: tokenRange))
             else {
                 pos = match.range.location + 5
@@ -515,64 +563,5 @@ extension CoreTelemetryAuthScanner {
             let v = Int(ch)
             return "\\u\(digits[(v >> 12) & 0xF])\(digits[(v >> 8) & 0xF])\(digits[(v >> 4) & 0xF])\(digits[v & 0xF])"
         }
-    }
-
-    static func redactUnquotedArrayElement(
-        _ nsText: NSString, from start: Int, isJsonMember: Bool, state: inout AuthScanState
-    ) -> Int {
-        let len = nsText.length
-        var elemEnd = start
-        while elemEnd < len {
-            let ch = nsText.character(at: elemEnd)
-            if ch == 0x2C || ch == 0x5B || ch == 0x5D || isNewline(ch) { break }
-            elemEnd += 1
-        }
-        var trimEnd = elemEnd
-        while trimEnd > start && isHorizSpace(nsText.character(at: trimEnd - 1)) { trimEnd -= 1 }
-        let isNull = trimEnd - start == 4 && nsText.substring(with: NSRange(location: start, length: 4)) == "null"
-        if trimEnd > start && !isNull, let redacted = redactAuthValueBody(nsText, start: start, end: trimEnd) {
-            let wrapped = isJsonMember ? "\"\(redacted)\"" : redacted
-            let suffix = nsText.substring(with: NSRange(location: trimEnd, length: elemEnd - trimEnd))
-            state.appendRedacted(nsText, start: start, end: elemEnd, replacement: wrapped + suffix)
-        }
-        return elemEnd
-    }
-
-    static func redactQuotedAuthString(
-        _ nsText: NSString, quotePos: Int, quote: unichar, state: inout AuthScanState
-    ) -> Int {
-        let len = nsText.length
-        var idx = quotePos + 1
-        var escaped = false
-        while idx < len {
-            let ch = nsText.character(at: idx)
-            if isNewline(ch) || (ch == quote && !escaped) { break }
-            escaped = ch == 0x5C && !escaped
-            idx += 1
-        }
-        let innerStart = quotePos + 1
-        if let redacted = redactAuthValueBody(nsText, start: innerStart, end: idx) {
-            state.appendRedacted(nsText, start: innerStart, end: idx, replacement: redacted)
-        }
-        return idx < len && nsText.character(at: idx) == quote ? idx + 1 : idx
-    }
-
-    static func redactAuthValueBody(_ nsText: NSString, start: Int, end: Int) -> String? {
-        var idx = start
-        while idx < end && isHorizSpace(nsText.character(at: idx)) { idx += 1 }
-        guard idx < end else { return nil }
-        for scheme in knownAuthSchemes {
-            let schemeLen = scheme.utf16.count
-            if idx + schemeLen < end && matchesASCII(nsText, at: idx, literal: scheme, len: end) {
-                var after = idx + schemeLen
-                if isHorizSpace(nsText.character(at: after)) {
-                    while after < end && isHorizSpace(nsText.character(at: after)) { after += 1 }
-                    if after < end {
-                        return nsText.substring(with: NSRange(location: start, length: after - start)) + "[redacted]"
-                    }
-                }
-            }
-        }
-        return nsText.substring(with: NSRange(location: start, length: idx - start)) + "[redacted]"
     }
 }

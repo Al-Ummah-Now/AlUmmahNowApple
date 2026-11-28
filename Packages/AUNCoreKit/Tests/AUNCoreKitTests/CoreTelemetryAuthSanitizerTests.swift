@@ -461,6 +461,28 @@ extension CoreTelemetryAuthSanitizerTests {
                 == "Basic \"[redacted] "
         )
         #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Bearer \"opaqueSecret123 \"")
+                == "Bearer \"[redacted] \""
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Basic \"dTpw \"")
+                == "Basic \"[redacted] \""
+        )
+        let bearerEscapedNewline = CoreTelemetryService.sanitizeLocalPaths("Bearer \\\"opaqueSecret123\\nnext")
+        #expect(!bearerEscapedNewline.contains("opaqueSecret123"))
+        #expect(bearerEscapedNewline.hasPrefix("Bearer \\\""))
+        let basicEscapedNewline = CoreTelemetryService.sanitizeLocalPaths("Basic \\\"dTpw\\nnext")
+        #expect(!basicEscapedNewline.contains("dTpw"))
+        #expect(basicEscapedNewline.hasPrefix("Basic \\\""))
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Bearer \\\"opaqueSecret123\\\"")
+                == "Bearer \\\"[redacted]\\\""
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"msg\":\"Bearer opaqueSecret123\\\" next\"}")
+                == "{\"msg\":\"Bearer [redacted]\\\" next\"}"
+        )
+        #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.org/users/alice/@example.com")
                 == "https://[redacted-email]"
         )

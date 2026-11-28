@@ -18,8 +18,10 @@ extension CoreTelemetryAuthScanner {
             let quotedRange = match.range(at: 3)
             let isQuoted = quotedRange.location != NSNotFound
             let tokenRange = isQuoted ? quotedRange : match.range(at: 5)
-            let openQ = isQuoted ? nsText.substring(with: match.range(at: 2)) : ""
-            let closeQ = isQuoted ? nsText.substring(with: match.range(at: 4)) : ""
+            let openRange = match.range(at: 2)
+            let closeRange = match.range(at: 4)
+            let openQ = isQuoted && openRange.location != NSNotFound ? nsText.substring(with: openRange) : ""
+            let closeQ = isQuoted && closeRange.location != NSNotFound ? nsText.substring(with: closeRange) : ""
             guard tokenRange.location != NSNotFound,
                 !isQuoted || areBasicQuotesCompatible(openQ, closeQ),
                 isBasicCredentialToken(nsText.substring(with: tokenRange))
@@ -28,14 +30,16 @@ extension CoreTelemetryAuthScanner {
                 continue
             }
             if result.isEmpty { result.reserveCapacity(text.count) }
-            result += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
             if isQuoted {
-                result += "\(nsText.substring(with: match.range(at: 1))) \(openQ)[redacted]\(closeQ)"
+                result += nsText.substring(with: NSRange(location: copied, length: tokenRange.location - copied))
+                result += "[redacted]"
+                copied = tokenRange.location + tokenRange.length
             } else {
+                result += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
                 result += "\(nsText.substring(with: match.range(at: 1))) [redacted]"
+                copied = match.range.location + match.range.length
             }
-            copied = match.range.location + match.range.length
-            pos = copied
+            pos = match.range.location + match.range.length
         }
         guard copied > 0 else { return text }
         result += nsText.substring(from: copied)
@@ -465,5 +469,64 @@ extension CoreTelemetryAuthScanner {
             if actual != expected { return false }
         }
         return true
+    }
+
+    static func redactUnquotedArrayElement(
+        _ nsText: NSString, from start: Int, isJsonMember: Bool, state: inout AuthScanState
+    ) -> Int {
+        let len = nsText.length
+        var elemEnd = start
+        while elemEnd < len {
+            let ch = nsText.character(at: elemEnd)
+            if ch == 0x2C || ch == 0x5B || ch == 0x5D || isNewline(ch) { break }
+            elemEnd += 1
+        }
+        var trimEnd = elemEnd
+        while trimEnd > start && isHorizSpace(nsText.character(at: trimEnd - 1)) { trimEnd -= 1 }
+        let isNull = trimEnd - start == 4 && nsText.substring(with: NSRange(location: start, length: 4)) == "null"
+        if trimEnd > start && !isNull, let redacted = redactAuthValueBody(nsText, start: start, end: trimEnd) {
+            let wrapped = isJsonMember ? "\"\(redacted)\"" : redacted
+            let suffix = nsText.substring(with: NSRange(location: trimEnd, length: elemEnd - trimEnd))
+            state.appendRedacted(nsText, start: start, end: elemEnd, replacement: wrapped + suffix)
+        }
+        return elemEnd
+    }
+
+    static func redactQuotedAuthString(
+        _ nsText: NSString, quotePos: Int, quote: unichar, state: inout AuthScanState
+    ) -> Int {
+        let len = nsText.length
+        var idx = quotePos + 1
+        var escaped = false
+        while idx < len {
+            let ch = nsText.character(at: idx)
+            if isNewline(ch) || (ch == quote && !escaped) { break }
+            escaped = ch == 0x5C && !escaped
+            idx += 1
+        }
+        let innerStart = quotePos + 1
+        if let redacted = redactAuthValueBody(nsText, start: innerStart, end: idx) {
+            state.appendRedacted(nsText, start: innerStart, end: idx, replacement: redacted)
+        }
+        return idx < len && nsText.character(at: idx) == quote ? idx + 1 : idx
+    }
+
+    static func redactAuthValueBody(_ nsText: NSString, start: Int, end: Int) -> String? {
+        var idx = start
+        while idx < end && isHorizSpace(nsText.character(at: idx)) { idx += 1 }
+        guard idx < end else { return nil }
+        for scheme in knownAuthSchemes {
+            let schemeLen = scheme.utf16.count
+            if idx + schemeLen < end && matchesASCII(nsText, at: idx, literal: scheme, len: end) {
+                var after = idx + schemeLen
+                if isHorizSpace(nsText.character(at: after)) {
+                    while after < end && isHorizSpace(nsText.character(at: after)) { after += 1 }
+                    if after < end {
+                        return nsText.substring(with: NSRange(location: start, length: after - start)) + "[redacted]"
+                    }
+                }
+            }
+        }
+        return nsText.substring(with: NSRange(location: start, length: idx - start)) + "[redacted]"
     }
 }
