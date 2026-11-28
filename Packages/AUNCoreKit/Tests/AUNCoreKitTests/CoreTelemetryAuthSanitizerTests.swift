@@ -515,6 +515,7 @@ extension CoreTelemetryAuthSanitizerTests {
                 == "https://example.com/?[redacted]"
         )
         #expect(CoreTelemetryService.sanitizeLocalPaths(".env") == "[redacted-path]")
+        #expect(CoreTelemetryService.sanitizeLocalPaths("\\Confidential\\Payroll") == "[redacted-path]")
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
                 "{\"refresh_token\":\"opaqueSecret123\",\"access_token\":\"accSecret456\",\"id_token\":\"idSecret789\"}"
