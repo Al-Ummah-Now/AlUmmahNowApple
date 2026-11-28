@@ -105,6 +105,9 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
                 outcome = (false, [])
             } else if _lastPurgeFailed && !Self.removeBufferAndTempFiles(at: bufferPath) {
                 outcome = (false, [])
+            } else if let check = isExternallyEnabled, !check() {
+                let (_, waiters) = revokeLocked()
+                outcome = (false, waiters)
             } else {
                 _lastPurgeFailed = false
                 do {

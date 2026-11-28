@@ -516,4 +516,30 @@ extension CoreTelemetryServiceTests {
         #expect(CoreTelemetryService.resolveIngestURL("") == nil)
         #expect(CoreTelemetryService.resolveIngestURL(nil as String?) == nil)
     }
+
+    @Test("Enabling telemetry fails closed when external consent probe is false")
+    func enableFailsClosedWhenExternalConsentIsOff() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "aun-tel-ext-deny-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bufferPath = dir.appendingPathComponent("telemetry-buffer.json").path
+
+        let initDenied = try CoreTelemetryService(
+            platform: "macos", appVersion: "1.0.0", osVersion: "15.0", deviceClass: "desktop",
+            locale: "en", videosAPIBaseURL: nil, userAgent: "AUNTest/1.0",
+            bufferPath: bufferPath, initialEnabled: true, isExternallyEnabled: { false })
+        #expect(initDenied.consent == .off)
+        #expect(initDenied.nativeConsentForTesting == .denied)
+        #expect(!FileManager.default.fileExists(atPath: bufferPath))
+
+        let laterDenied = try CoreTelemetryService(
+            platform: "macos", appVersion: "1.0.0", osVersion: "15.0", deviceClass: "desktop",
+            locale: "en", videosAPIBaseURL: nil, userAgent: "AUNTest/1.0",
+            bufferPath: bufferPath, initialEnabled: false, isExternallyEnabled: { false })
+        #expect(!laterDenied.setConsent(.full))
+        #expect(laterDenied.consent == .off)
+        #expect(laterDenied.nativeConsentForTesting == .denied)
+        #expect(!FileManager.default.fileExists(atPath: bufferPath))
+    }
 }
