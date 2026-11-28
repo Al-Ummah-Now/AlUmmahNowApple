@@ -46,6 +46,7 @@ public enum CrashTelemetryHook {
     private static let lock = NSLock()
     private nonisolated(unsafe) static var installed = false
     private nonisolated(unsafe) static var activeService: (any TelemetryServicing)?
+    private nonisolated(unsafe) static var activeServiceID: ObjectIdentifier?
     private nonisolated(unsafe) static var previousHandler: (@convention(c) (NSException) -> Void)?
 
     static var isSignalTrapInstalled: Bool { aun_signal_trap_is_installed() }
@@ -53,25 +54,61 @@ public enum CrashTelemetryHook {
     public static func install(service: any TelemetryServicing) {
         lock.withLock {
             activeService = service
+            activeServiceID = (service as? CoreTelemetryService).map(ObjectIdentifier.init)
             guard !installed else { return }
             installed = true
             previousHandler = NSGetUncaughtExceptionHandler()
             NSSetUncaughtExceptionHandler { CrashTelemetryHook.handle($0) }
         }
         // Synchronize signal capture OUTSIDE CrashTelemetryHook.lock so lock order is strictly
-        // CoreTelemetryService.lock -> AUNSignalTrap.g_mutex (never inverted against revocation).
+        // CoreTelemetryService.lock -> CrashTelemetryHook.lock -> AUNSignalTrap.g_mutex.
         if let core = service as? CoreTelemetryService {
             core.syncCrashSignalCapture()
         } else {
-            aun_signal_trap_disable()
+            lock.withLock { aun_signal_trap_disable() }
         }
     }
 
-    static func updateSignalCapture(enabled: Bool, markerPath: String?) {
-        if enabled, let markerPath, !markerPath.isEmpty {
-            markerPath.withCString { aun_signal_trap_enable($0) }
-        } else {
-            aun_signal_trap_disable()
+    static func updateSignalCapture(for service: CoreTelemetryService, enabled: Bool, markerPath: String?) {
+        lock.withLock {
+            guard activeServiceID == ObjectIdentifier(service) else { return }
+            if enabled, let markerPath, !markerPath.isEmpty {
+                markerPath.withCString { aun_signal_trap_enable($0) }
+            } else {
+                aun_signal_trap_disable()
+            }
+        }
+    }
+
+    static func parseSignalMarker(at markerPath: String) -> (String, Int64)? {
+        guard
+            let raw = (try? String(contentsOfFile: markerPath, encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty
+        else { return nil }
+        let parts = raw.split(separator: " ", maxSplits: 1)
+        let signalName = String(parts[0])
+        let allowed: Set<String> = ["SIGTRAP", "SIGILL", "SIGABRT", "SIGSEGV", "SIGBUS", "SIGFPE"]
+        guard allowed.contains(signalName) else { return nil }
+        if parts.count > 1, let parsedMs = Int64(parts[1]), parsedMs > 0 {
+            return (signalName, parsedMs)
+        }
+        let mtime = (try? FileManager.default.attributesOfItem(atPath: markerPath)[.modificationDate] as? Date)
+        let fallbackMs = Int64((mtime ?? Date()).timeIntervalSince1970 * 1000)
+        return (signalName, max(1, fallbackMs))
+    }
+
+    static func bufferContainsSignalCrash(at bufferPath: String?, occurredAtMs: Int64) -> Bool {
+        guard let bufferPath, let existing = try? String(contentsOfFile: bufferPath, encoding: .utf8) else {
+            return false
+        }
+        return existing.contains("\"occurred_at_ms\":\(occurredAtMs)")
+    }
+
+    static func clearConsumedSignalMarker(for bufferPath: String?) {
+        guard let markerPath = bufferPath.map({ $0 + ".crash-signal" }), !markerPath.isEmpty else { return }
+        if !CoreTelemetryService.removeSingleFile(atPath: markerPath) {
+            _ = truncate(markerPath, 0)
         }
     }
 

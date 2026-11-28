@@ -4,7 +4,7 @@ import Testing
 
 @testable import AUNCoreKit
 
-@Suite("CoreTelemetryExternalOptOut")
+@Suite("CoreTelemetryExternalOptOut", .serialized)
 struct CoreTelemetryExternalOptOutTests {
     @Test("Direct UserDefaults opt-out purges persisted retry buffer after close() with no active flush")
     func directDefaultsOptOutPurgesClosedRetryBuffer() throws {
@@ -184,7 +184,7 @@ struct CoreTelemetryExternalOptOutTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let bufferPath = dir.appendingPathComponent("telemetry-buffer.json").path
         let markerPath = bufferPath + ".crash-signal"
-        try Data("SIGTRAP\n".utf8).write(to: URL(fileURLWithPath: markerPath))
+        try Data("SIGTRAP 1732752000123\n".utf8).write(to: URL(fileURLWithPath: markerPath))
 
         let service = try CoreTelemetryService(
             platform: "macos", appVersion: "1.0.0", osVersion: "15.0", deviceClass: "desktop",
@@ -194,9 +194,20 @@ struct CoreTelemetryExternalOptOutTests {
         let persisted = try String(contentsOfFile: bufferPath, encoding: .utf8)
         #expect(persisted.contains("FatalSignal"))
         #expect(persisted.contains("SIGTRAP"))
+        #expect(persisted.contains("1732752000123"))
         #expect(!persisted.contains("Private.mov"))
         service.close()
         #expect(!CrashTelemetryHook.isSignalTrapInstalled)
+
+        // Simulate crash between persist() and marker unlink: re-seeding the exact same marker must not duplicate.
+        try Data("SIGTRAP 1732752000123\n".utf8).write(to: URL(fileURLWithPath: markerPath))
+        let relaunched = try CoreTelemetryService(
+            platform: "macos", appVersion: "1.0.0", osVersion: "15.0", deviceClass: "desktop",
+            locale: "en", videosAPIBaseURL: nil, userAgent: "AUNTest/1.0",
+            bufferPath: bufferPath, initialEnabled: true)
+        #expect(!FileManager.default.fileExists(atPath: markerPath))
+        #expect(relaunched.pendingCount == 1)
+        relaunched.close()
     }
 
     @Test("Signal hook stays uninstalled when disabled, purges markers in unavailable fallback, and redacts user routes")

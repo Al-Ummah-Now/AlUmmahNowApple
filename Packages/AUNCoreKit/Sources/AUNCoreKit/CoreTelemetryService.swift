@@ -185,7 +185,8 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
                     _consent = consent
                     _revoked = false
                     _lastPurgeFailed = false
-                    CrashTelemetryHook.updateSignalCapture(enabled: consent != .off, markerPath: signalCrashMarkerPath)
+                    CrashTelemetryHook.updateSignalCapture(
+                        for: self, enabled: consent != .off, markerPath: signalCrashMarkerPath)
                     outcome = (true, [])
                 } catch {
                     // Fail closed in BOTH wrapper and native state.
@@ -355,7 +356,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             let priorConsent = _consent
             _closed = true
             _consent = .off
-            CrashTelemetryHook.updateSignalCapture(enabled: false, markerPath: signalCrashMarkerPath)
+            CrashTelemetryHook.updateSignalCapture(for: self, enabled: false, markerPath: signalCrashMarkerPath)
             let pending = Array(_flushWaiters.values)
             _flushWaiters.removeAll()
             return (pending, priorConsent != .off)
@@ -367,7 +368,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     private func revokeLocked() -> (Bool, [Task<Void, Never>]) {
         _consent = .off
         _revoked = true
-        CrashTelemetryHook.updateSignalCapture(enabled: false, markerPath: signalCrashMarkerPath)
+        CrashTelemetryHook.updateSignalCapture(for: self, enabled: false, markerPath: signalCrashMarkerPath)
         _consentEpoch &+= 1
         _analyticsEpoch &+= 1
         _revokedFlushesRemaining = _inFlightFlushes
@@ -470,7 +471,7 @@ extension CoreTelemetryService {
             let priorConsent = _closed ? .off : _consent
             let cancelled = ensureExternalConsentLocked()
             let enabled = !_closed && _consent != .off
-            CrashTelemetryHook.updateSignalCapture(enabled: enabled, markerPath: signalCrashMarkerPath)
+            CrashTelemetryHook.updateSignalCapture(for: self, enabled: enabled, markerPath: signalCrashMarkerPath)
             let currentConsent = _closed ? .off : _consent
             return (cancelled, _lastPurgeFailed != priorPurgeFailed, currentConsent != priorConsent)
         }
@@ -485,16 +486,13 @@ extension CoreTelemetryService {
 
     func consumePendingSignalCrashIfConsented() {
         guard let markerPath = signalCrashMarkerPath, FileManager.default.fileExists(atPath: markerPath) else { return }
-        let raw = (try? String(contentsOfFile: markerPath, encoding: .utf8))?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let allowed: Set<String> = ["SIGTRAP", "SIGILL", "SIGABRT", "SIGSEGV", "SIGBUS", "SIGFPE"]
-        guard let signalName = raw, allowed.contains(signalName) else {
-            _ = Self.removeSignalCrashMarker(for: bufferPath)
+        guard let (signalName, occurredAtMs) = CrashTelemetryHook.parseSignalMarker(at: markerPath) else {
+            CrashTelemetryHook.clearConsumedSignalMarker(for: bufferPath)
             return
         }
         let report = TelemetryCrashReport(
             kind: "FatalSignal", message: signalName, stack: nil,
-            occurredAtMs: Int64(Date().timeIntervalSince1970 * 1000),
+            occurredAtMs: occurredAtMs,
             fromPreviousSession: true, propertiesJson: nil
         )
         let (waiters, purgeChanged, consentChanged): ([Task<Void, Never>], Bool, Bool) = lock.withLock {
@@ -502,12 +500,16 @@ extension CoreTelemetryService {
             let priorConsent = _closed ? .off : _consent
             let cancelled = ensureExternalConsentLocked()
             if !_closed && _consent != .off {
-                do {
-                    _ = try client.reportCrash(report: report)
-                    try client.persist()
-                    _ = Self.removeSignalCrashMarker(for: bufferPath)
-                } catch {
-                    AUNLog.network.warning("Previous-session fatal signal crash report deferred: \(error)")
+                if CrashTelemetryHook.bufferContainsSignalCrash(at: bufferPath, occurredAtMs: occurredAtMs) {
+                    CrashTelemetryHook.clearConsumedSignalMarker(for: bufferPath)
+                } else {
+                    do {
+                        _ = try client.reportCrash(report: report)
+                        try client.persist()
+                        CrashTelemetryHook.clearConsumedSignalMarker(for: bufferPath)
+                    } catch {
+                        AUNLog.network.warning("Previous-session fatal signal crash report deferred: \(error)")
+                    }
                 }
             }
             let currentConsent = _closed ? .off : _consent
