@@ -375,9 +375,25 @@ extension CoreTelemetryAuthSanitizerTests {
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("Bearer \"hello world\"") == "Bearer \"hello world\""
         )
+    }
+
+    @Test("Handles repeated Bearer/Basic schemes, truncated quotes, and slash-local emails")
+    func handlesRepeatedBearerBasicTruncatedQuotesAndSlashEmails() {
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("Bearer Bearer \"opaqueSecret123\"")
                 == "Bearer Bearer \"[redacted]\""
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("received Bearer \"opaqueSecret123")
+                == "received Bearer \"[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Bearer Bearer \"opaqueSecret123")
+                == "Bearer Bearer \"[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("received Bearer 'opaqueSecret123")
+                == "received Bearer '[redacted]"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("Bearer Bearer opaqueSecret123")
