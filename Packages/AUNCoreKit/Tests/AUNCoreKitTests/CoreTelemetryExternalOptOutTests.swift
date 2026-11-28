@@ -128,6 +128,10 @@ struct CoreTelemetryExternalOptOutTests {
                 + "https://1drv.ms/u/s!Aq82F1ZLPx0K "
                 + "https://example.org/assets/%41bCdEfGhIjKlMnOpQrStUvWxYz0123456789 "
                 + "https://example.test/lookup/%2B%31%32%30%32%35%35%35%30%31%32%33 "
+                + "https://example.test/contact/%2B%31%20%32%30%32%20%35%35%35%20%30%31%32%33 "
+                + "https://example.test/lookup/202%C2%A0555%C2%A00123 "
+                + "https://example.test/lookup/alice%2540example.test "
+                + "https://example.test/%2572eset-password/AbCdEf123456 "
                 + "https%25253A%25252F%25252Fexample.test%25252Flogin%25253Ftoken%25253Ds3cr3t "
                 + "ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ "
                 + "https://uploads.example.test/upload/853876e8-cc19-465d-bafa-7459aba00936 "
@@ -159,12 +163,38 @@ struct CoreTelemetryExternalOptOutTests {
             "u:[redacted-email]", "cobalt-orchard", "orchard", "eyJzdWIiOiJhbGljZSJ9",
             "sig123", "cipher5678", "cipher7777", "Aq82F1ZLPx0K",
             "bCdEfGhIjKlMnOpQrStUvWxYz0123456789", "853876e8-cc19-465d-bafa-7459aba00936", "watch/v1",
-            "%2B%31%32%30%32", "s3cr3t", "ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ",
+            "%2B%31%32%30%32", "%2B%31%20%32%30%32", "202%C2%A0555", "alice%2540example.test", "AbCdEf123456",
+            "s3cr3t", "ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ",
             "AbCdEfGhIjKlMnOpQrStUvWxYzABCDE", "abc123",
         ]
         for token in forbidden {
             #expect(!raw.contains(token), "Expected redacted token: \(token)")
         }
         #expect(raw.contains("eyJunction.load.failed"))
+    }
+
+    @Test("Locale tags sanitize paths and previous-session fatal signal markers report on relaunch")
+    func localeTagSanitizationAndPreviousSessionSignalCrash() throws {
+        #expect(CoreTelemetryService.sanitizeLocaleTag("/Users/Ada/Private.mov") == "en")
+        #expect(CoreTelemetryService.sanitizeLocaleTag("ar-SA") == "ar-SA")
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "aun-tel-sigcrash-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bufferPath = dir.appendingPathComponent("telemetry-buffer.json").path
+        let markerPath = bufferPath + ".crash-signal"
+        try Data("SIGTRAP\n".utf8).write(to: URL(fileURLWithPath: markerPath))
+
+        let service = try CoreTelemetryService(
+            platform: "macos", appVersion: "1.0.0", osVersion: "15.0", deviceClass: "desktop",
+            locale: "/Users/Ada/Private.mov", videosAPIBaseURL: nil, userAgent: "AUNTest/1.0",
+            bufferPath: bufferPath, initialEnabled: true)
+        #expect(!FileManager.default.fileExists(atPath: markerPath))
+        let persisted = try String(contentsOfFile: bufferPath, encoding: .utf8)
+        #expect(persisted.contains("FatalSignal"))
+        #expect(persisted.contains("SIGTRAP"))
+        #expect(!persisted.contains("Private.mov"))
+        service.close()
     }
 }

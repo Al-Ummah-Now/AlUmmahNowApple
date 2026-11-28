@@ -16,7 +16,8 @@ extension CoreTelemetryService {
         if fixtures { return NullTelemetryService.shared }
         let version = (bundle.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0"
         let bundleID = bundle.bundleIdentifier ?? "net.alummahnow.apple"
-        let locale = defaults.string(forKey: "AUNLanguage") ?? Locale.preferredLanguages.first ?? "en"
+        let rawLocale = defaults.string(forKey: "AUNLanguage") ?? Locale.preferredLanguages.first ?? "en"
+        let locale = Self.sanitizeLocaleTag(rawLocale)
         let bufferURL = Self.defaultBufferURL(bundleID: bundleID, filename: bufferFilename)
         let osVersion = Self.osVersionString()
         nonisolated(unsafe) let defaultsStore = defaults
@@ -556,36 +557,5 @@ extension CoreTelemetryService {
         #else
             return "iOS \(v.majorVersion).\(v.minorVersion)"
         #endif
-    }
-}
-
-/// Process-wide uncaught NSException bridge (chaining any previously installed handler).
-public enum CrashTelemetryHook {
-    private static let lock = NSLock()
-    private nonisolated(unsafe) static var installed = false
-    private nonisolated(unsafe) static var activeService: (any TelemetryServicing)?
-    private nonisolated(unsafe) static var previousHandler: (@convention(c) (NSException) -> Void)?
-
-    public static func install(service: any TelemetryServicing) {
-        lock.withLock {
-            activeService = service
-            guard !installed else { return }
-            installed = true
-            previousHandler = NSGetUncaughtExceptionHandler()
-            NSSetUncaughtExceptionHandler { CrashTelemetryHook.handle($0) }
-        }
-    }
-
-    private static func handle(_ exception: NSException) {
-        let (service, previous) = lock.withLock { (activeService, previousHandler) }
-        let kind = exception.name.rawValue
-        let message = kind.isEmpty ? "Uncaught NSException" : kind
-        let stack = exception.callStackSymbols.joined(separator: "\n")
-        if let core = service as? CoreTelemetryService {
-            core.reportCrashBestEffort(kind: kind, message: message, stack: stack)
-        } else {
-            service?.reportCrash(kind: kind, message: message, stack: stack, fromPreviousSession: false)
-        }
-        previous?(exception)
     }
 }

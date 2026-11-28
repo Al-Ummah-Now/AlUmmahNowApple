@@ -187,33 +187,7 @@ extension CoreTelemetryService {
         return rebuilt
     }
 
-    static func decodeURLForPathSecretMatch(_ url: String) -> (String, [Int]) {
-        let nsURL = url as NSString
-        let len = nsURL.length
-        var decodedUnits: [unichar] = []
-        decodedUnits.reserveCapacity(len)
-        var offsets: [Int] = []
-        offsets.reserveCapacity(len + 1)
-        var idx = 0
-        while idx < len {
-            offsets.append(idx)
-            let ch = nsURL.character(at: idx)
-            if ch == 0x25, idx + 2 < len,
-                let byteVal = parseHexByte(nsURL.character(at: idx + 1), nsURL.character(at: idx + 2)),
-                isDecodablePathSecretByte(byteVal)
-            {
-                decodedUnits.append(unichar(byteVal))
-                idx += 3
-            } else {
-                decodedUnits.append(ch)
-                idx += 1
-            }
-        }
-        offsets.append(len)
-        return (String(utf16CodeUnits: decodedUnits, count: decodedUnits.count), offsets)
-    }
-
-    private static func isDecodablePathSecretByte(_ byteVal: UInt8) -> Bool {
+    static func isDecodablePathSecretByte(_ byteVal: UInt8) -> Bool {
         byteVal >= 0x21 && byteVal <= 0x7E && byteVal != 0x2F && byteVal != 0x3F && byteVal != 0x23
     }
 
@@ -346,6 +320,13 @@ extension CoreTelemetryService {
     static func isExactISODate(_ text: String) -> Bool {
         isoDateExactRegex?.firstMatch(in: text, options: [], range: NSRange(location: 0, length: (text as NSString).length))
             != nil
+    }
+
+    static func matchesUnicodePhone(_ text: String) -> Bool {
+        guard let regex = phoneInKeyRegex else { return false }
+        let ns = text as NSString
+        return regex.matches(in: text, options: [], range: NSRange(location: 0, length: ns.length))
+            .contains { isRedactedPhoneMatch(ns.substring(with: $0.range)) }
     }
 
     static func matchesIPLiteral(_ text: String) -> Bool {

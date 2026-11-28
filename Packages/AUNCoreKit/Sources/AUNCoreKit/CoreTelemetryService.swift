@@ -137,7 +137,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         let resolvedInitial = initialEnabled ?? observedDefaultsKey.flatMap { observedDefaults?.bool(forKey: $0) } ?? false
         let app = TelemetryAppInfo(
             platform: platform, appVersion: appVersion, osVersion: osVersion,
-            deviceClass: deviceClass, locale: locale
+            deviceClass: deviceClass, locale: Self.sanitizeLocaleTag(locale)
         )
         let config = TelemetryClientConfig(
             app: app, ingestUrl: Self.resolveIngestURL(videosAPIBaseURL),
@@ -160,6 +160,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         if purgeFailedDuringInit { notifyStateChanges(purgeChanged: true, consentChanged: false) }
         _ = setConsent(resolvedInitial ? .full : .off)
         if resolvedInitial, isExternallyEnabled != nil { revokeIfExternallyDisabled() }
+        consumePendingSignalCrashIfConsented()
     }
 
     deinit {
@@ -221,6 +222,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
                     _consent = consent
                     _revoked = false
                     _lastPurgeFailed = false
+                    CrashTelemetryHook.updateSignalCapture(enabled: consent != .off, markerPath: signalCrashMarkerPath)
                     outcome = (true, [])
                 } catch {
                     // Fail closed in BOTH wrapper and native state.
@@ -401,14 +403,16 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     private func revokeLocked() -> (Bool, [Task<Void, Never>]) {
         _consent = .off
         _revoked = true
+        CrashTelemetryHook.updateSignalCapture(enabled: false, markerPath: signalCrashMarkerPath)
         _consentEpoch &+= 1
         _analyticsEpoch &+= 1
         _revokedFlushesRemaining = _inFlightFlushes
         let waiters = Array(_flushWaiters.values)
         _flushWaiters.removeAll()
+        let markerRemoved = Self.removeSignalCrashMarker(for: bufferPath)
         do {
             try client.setConsent(consent: .denied)
-            _lastPurgeFailed = !Self.removeSiblingTempFiles(for: bufferPath)
+            _lastPurgeFailed = !(Self.removeSiblingTempFiles(for: bufferPath) && markerRemoved)
         } catch {
             _ = Self.removeBufferAndTempFiles(at: bufferPath)
             _lastPurgeFailed = true
@@ -468,17 +472,6 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         notifyStateChanges(purgeChanged: purgeChanged, consentChanged: false)
     }
 
-    private func notifyStateChanges(purgeChanged: Bool, consentChanged: Bool) {
-        if purgeChanged {
-            observationRegistrar.willSet(self, keyPath: \.lastPurgeFailed)
-            observationRegistrar.didSet(self, keyPath: \.lastPurgeFailed)
-        }
-        if consentChanged {
-            observationRegistrar.willSet(self, keyPath: \.consent)
-            observationRegistrar.didSet(self, keyPath: \.consent)
-        }
-    }
-
     private func ensureExternalConsentLocked(
         allowWhenClosed: Bool = false, allowUnrevokedOff: Bool = false
     ) -> [Task<Void, Never>] {
@@ -492,6 +485,43 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
 }
 
 extension CoreTelemetryService {
+    func notifyStateChanges(purgeChanged: Bool, consentChanged: Bool) {
+        if purgeChanged {
+            observationRegistrar.willSet(self, keyPath: \.lastPurgeFailed)
+            observationRegistrar.didSet(self, keyPath: \.lastPurgeFailed)
+        }
+        if consentChanged {
+            observationRegistrar.willSet(self, keyPath: \.consent)
+            observationRegistrar.didSet(self, keyPath: \.consent)
+        }
+    }
+
+    var signalCrashMarkerPath: String? {
+        bufferPath.map { $0 + ".crash-signal" }
+    }
+
+    static func removeSignalCrashMarker(for bufferPath: String?) -> Bool {
+        guard let markerPath = bufferPath.map({ $0 + ".crash-signal" }) else { return true }
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: markerPath) else { return true }
+        do {
+            try fm.removeItem(atPath: markerPath)
+            return true
+        } catch {
+            return !fm.fileExists(atPath: markerPath)
+        }
+    }
+
+    func consumePendingSignalCrashIfConsented() {
+        guard let markerPath = signalCrashMarkerPath, FileManager.default.fileExists(atPath: markerPath) else { return }
+        let raw = (try? String(contentsOfFile: markerPath, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        try? FileManager.default.removeItem(atPath: markerPath)
+        let allowed: Set<String> = ["SIGTRAP", "SIGILL", "SIGABRT", "SIGSEGV", "SIGBUS", "SIGFPE"]
+        guard let signalName = raw, allowed.contains(signalName) else { return }
+        reportCrash(kind: "FatalSignal", message: signalName, stack: nil, fromPreviousSession: true)
+    }
+
     func reportCrashBestEffort(kind: String, message: String, stack: String?) {
         guard !lock.isHeldByCurrentThread else { return }
         if let check = isExternallyEnabled, !check() { return }

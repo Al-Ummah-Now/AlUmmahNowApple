@@ -340,6 +340,58 @@ extension CoreTelemetryService {
         return rebuilt
     }
 
+    static func decodeURLForPathSecretMatch(_ url: String) -> (String, [Int]) {
+        var cur = url
+        var map: [Int]?
+        for _ in 0..<4 where cur.contains("%") {
+            let (next, stepMap, changed) = decodeURLPathOnce(cur, priorMap: map)
+            if !changed { return (cur, map ?? stepMap) }
+            cur = next
+            map = stepMap
+        }
+        return (cur, map ?? Array(0...(url as NSString).length))
+    }
+
+    private static func decodeURLPathOnce(_ url: String, priorMap: [Int]?) -> (String, [Int], Bool) {
+        let nsURL = url as NSString
+        let len = nsURL.length
+        var decodedUnits: [unichar] = []
+        decodedUnits.reserveCapacity(len)
+        var offsets: [Int] = []
+        offsets.reserveCapacity(len + 1)
+        var changed = false
+        var idx = 0
+        while idx < len {
+            offsets.append(priorMap?[idx] ?? idx)
+            let ch = nsURL.character(at: idx)
+            if ch == 0x25, idx + 2 < len,
+                let byteVal = parseHexByte(nsURL.character(at: idx + 1), nsURL.character(at: idx + 2)),
+                isDecodablePathSecretByte(byteVal)
+            {
+                decodedUnits.append(unichar(byteVal))
+                idx += 3
+                changed = true
+            } else {
+                decodedUnits.append(ch)
+                idx += 1
+            }
+        }
+        offsets.append(priorMap?[len] ?? len)
+        return (String(utf16CodeUnits: decodedUnits, count: decodedUnits.count), offsets, changed)
+    }
+
+    private static let safeLocaleTagRegex = try? NSRegularExpression(
+        pattern: #"^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8}){0,3}$"#
+    )
+
+    static func sanitizeLocaleTag(_ raw: String?) -> String {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty,
+            let regex = safeLocaleTagRegex,
+            regex.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: (trimmed as NSString).length)) != nil
+        else { return "en" }
+        return trimmed
+    }
+
     private static func decodeURLSegmentFull(_ raw: String) -> (String, [Int]) {
         let ns = raw as NSString
         let len = ns.length
@@ -353,7 +405,7 @@ extension CoreTelemetryService {
             let ch = ns.character(at: i)
             if ch == 0x25, i + 2 < len,
                 let b = parseHexByte(ns.character(at: i + 1), ns.character(at: i + 2)),
-                b >= 0x21 && b <= 0x7E && b != 0x3F && b != 0x23
+                b >= 0x20 && b <= 0x7E && b != 0x3F && b != 0x23
             {
                 units.append(unichar(b))
                 i += 3
@@ -424,7 +476,7 @@ extension CoreTelemetryService {
         var cur = seg
         for _ in 0..<4 {
             guard cur.contains("%") else { break }
-            let next = decodeURLSegmentFull(cur).0
+            let next = cur.removingPercentEncoding ?? decodeURLSegmentFull(cur).0
             if next == cur { break }
             cur = next
         }
@@ -435,6 +487,7 @@ extension CoreTelemetryService {
         let expanded = seg.contains("%") ? decodeRepeatedForCheck(seg) : seg
         return isOpaqueURLSecretSegment(expanded)
             || isDecodedPhoneURLSegment(expanded)
+            || matchesUnicodePhone(expanded)
             || matchesIPLiteral(expanded)
             || (checkEmail && isDecodedEmailURLSegment(expanded))
     }
