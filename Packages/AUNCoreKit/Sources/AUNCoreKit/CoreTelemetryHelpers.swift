@@ -442,9 +442,17 @@ extension CoreTelemetryService {
     static let maxErrorEventProperties = 49
     static let maxPropertyKeyLength = 64
 
-    private static func truncatePropertyKey(_ key: String, maxLength: Int = maxPropertyKeyLength) -> String {
-        guard key.count > maxLength else { return key }
-        return String(key.prefix(maxLength))
+    static func truncatePropertyKey(_ key: String, maxLength: Int = maxPropertyKeyLength) -> String {
+        guard key.utf16.count > maxLength else { return key }
+        var out = ""
+        var units = 0
+        for ch in key {
+            let len = ch.utf16.count
+            if units + len > maxLength { break }
+            out.append(ch)
+            units += len
+        }
+        return out
     }
 
     private static func resolveUniquePropertyKey(
@@ -455,7 +463,7 @@ extension CoreTelemetryService {
         var suffix = nextSuffix[bounded] ?? 2
         while true {
             let tag = "#\(suffix)"
-            let prefixLen = max(1, maxPropertyKeyLength - tag.count)
+            let prefixLen = max(1, maxPropertyKeyLength - tag.utf16.count)
             let candidate = truncatePropertyKey(bounded, maxLength: prefixLen) + tag
             suffix += 1
             if map[candidate] == nil {

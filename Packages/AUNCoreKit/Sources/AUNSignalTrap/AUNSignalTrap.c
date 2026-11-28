@@ -2,6 +2,7 @@
 
 #include <fcntl.h>
 #include <pthread.h>
+#include <pthread/introspection.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdatomic.h>
@@ -9,6 +10,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -21,6 +23,7 @@ enum {
 
 static pthread_key_t g_alt_stack_key;
 static pthread_once_t g_alt_stack_key_once = PTHREAD_ONCE_INIT;
+static pthread_introspection_hook_t g_prev_introspection_hook = NULL;
 
 static void aun_alt_stack_destructor(void *mem) {
     if (mem == NULL) return;
@@ -31,11 +34,39 @@ static void aun_alt_stack_destructor(void *mem) {
         off.ss_flags = SS_DISABLE;
         (void)sigaltstack(&off, NULL);
     }
-    free(mem);
+    (void)munmap(mem, AUN_ALT_STACK_SIZE);
 }
 
+static void aun_install_thread_alt_stack(void) {
+    stack_t cur_ss;
+    if (sigaltstack(NULL, &cur_ss) != 0 || (cur_ss.ss_flags & SS_DISABLE) == 0) {
+        return;
+    }
+    void *mem = pthread_getspecific(g_alt_stack_key);
+    if (mem == NULL) {
+        mem = mmap(NULL, AUN_ALT_STACK_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (mem == MAP_FAILED) {
+            return;
+        }
+        if (pthread_setspecific(g_alt_stack_key, mem) != 0) {
+            (void)munmap(mem, AUN_ALT_STACK_SIZE);
+            return;
+        }
+    }
+    stack_t ss;
+    memset(&ss, 0, sizeof(ss));
+    ss.ss_sp = mem;
+    ss.ss_size = AUN_ALT_STACK_SIZE;
+    ss.ss_flags = 0;
+    (void)sigaltstack(&ss, NULL);
+}
+
+static void aun_thread_introspection_hook(unsigned int event, pthread_t thread, void *addr, size_t size);
+
 static void aun_init_alt_stack_key(void) {
-    (void)pthread_key_create(&g_alt_stack_key, aun_alt_stack_destructor);
+    if (pthread_key_create(&g_alt_stack_key, aun_alt_stack_destructor) == 0) {
+        g_prev_introspection_hook = pthread_introspection_hook_install(aun_thread_introspection_hook);
+    }
 }
 
 static const int kFatalSignals[AUN_FATAL_SIGNAL_COUNT] = {
@@ -51,6 +82,16 @@ static int g_installed_slot = -1;
 static int g_last_slot = -1;
 static bool g_hooked[AUN_FATAL_SIGNAL_COUNT];
 static char g_marker_path[4096];
+
+static void aun_thread_introspection_hook(unsigned int event, pthread_t thread, void *addr, size_t size) {
+    if (g_prev_introspection_hook != NULL) {
+        g_prev_introspection_hook(event, thread, addr, size);
+    }
+    if (event == PTHREAD_INTROSPECTION_THREAD_START &&
+        atomic_load_explicit(&g_enabled_slot, memory_order_acquire) >= 0) {
+        aun_install_thread_alt_stack();
+    }
+}
 
 static const char *aun_signal_name(int sig) {
     switch (sig) {
@@ -194,27 +235,7 @@ void aun_signal_trap_enable(const char *marker_path) {
     int next_slot = (g_last_slot + 1) % AUN_TRAMPOLINE_SLOTS;
     g_last_slot = next_slot;
     (void)pthread_once(&g_alt_stack_key_once, aun_init_alt_stack_key);
-    stack_t cur_ss;
-    if (sigaltstack(NULL, &cur_ss) == 0 && (cur_ss.ss_flags & SS_DISABLE) != 0) {
-        void *mem = pthread_getspecific(g_alt_stack_key);
-        if (mem == NULL) {
-            mem = malloc(AUN_ALT_STACK_SIZE);
-            if (mem != NULL) {
-                if (pthread_setspecific(g_alt_stack_key, mem) != 0) {
-                    free(mem);
-                    mem = NULL;
-                }
-            }
-        }
-        if (mem != NULL) {
-            stack_t ss;
-            memset(&ss, 0, sizeof(ss));
-            ss.ss_sp = mem;
-            ss.ss_size = AUN_ALT_STACK_SIZE;
-            ss.ss_flags = 0;
-            (void)sigaltstack(&ss, NULL);
-        }
-    }
+    aun_install_thread_alt_stack();
     struct sigaction action;
     memset(&action, 0, sizeof(action));
     sigemptyset(&action.sa_mask);

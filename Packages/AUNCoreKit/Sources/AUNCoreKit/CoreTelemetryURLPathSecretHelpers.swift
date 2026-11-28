@@ -337,6 +337,10 @@ extension CoreTelemetryService {
             || ipv6InKeyRegex?.firstMatch(in: text, options: [], range: r) != nil
     }
 
+    private static let uuidInTextRegex = try? NSRegularExpression(
+        pattern: #"(?<![A-Za-z0-9])[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![A-Za-z0-9])"#
+    )
+
     static func sanitizeDiagnosticText(_ text: String) -> String {
         var pre = redactPercentEncodedURLs(text)
         pre = scrubSensitiveContainerValues(pre, replacement: redactedSentinel)
@@ -347,6 +351,7 @@ extension CoreTelemetryService {
         safe = scrubUnquotedMultiWordSensitiveValues(safe, replacement: "[redacted]")
         safe = scrubSensitiveKeyValues(safe, replacement: "[redacted]")
         safe = scrubStandaloneCredentials(safe)
+        if let regex = uuidInTextRegex { safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-id]" } }
         if let regex = ipv6InKeyRegex { safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" } }
         if let regex = ipv4InKeyRegex { safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" } }
         if let regex = windowsDriveRelativePathRegex { safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-path]" } }

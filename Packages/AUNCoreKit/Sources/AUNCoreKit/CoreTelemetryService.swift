@@ -210,7 +210,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             let captureEpoch = captureConsentEpoch(requiresFull: true)
         else { return }
-        let safeName = String(Self.sanitizePropertyKey(name).prefix(Self.maxPropertyKeyLength))
+        let safeName = Self.truncatePropertyKey(Self.sanitizePropertyKey(name))
         guard !safeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let json = Self.serializeProperties(properties, maxProperties: Self.maxEventProperties)
         beforeRecordCommitForTesting?()
@@ -225,7 +225,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             let captureEpoch = captureConsentEpoch(requiresFull: true)
         else { return }
-        let safeCode = String(Self.sanitizePropertyKey(code).prefix(Self.maxPropertyKeyLength))
+        let safeCode = Self.truncatePropertyKey(Self.sanitizePropertyKey(code))
         guard !safeCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let json = Self.serializeProperties(properties, maxProperties: Self.maxErrorEventProperties, reservedKeys: ["code"])
         beforeRecordCommitForTesting?()

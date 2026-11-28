@@ -81,11 +81,17 @@ public enum CrashTelemetryHook {
     }
 
     static func parseSignalMarker(at markerPath: String) -> (String, Int64)? {
-        guard
-            let raw = (try? String(contentsOfFile: markerPath, encoding: .utf8))?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-            !raw.isEmpty
-        else { return nil }
+        let fd = open(markerPath, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { return nil }
+        defer { _ = close(fd) }
+        var st = stat()
+        guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { return nil }
+        var buf = [UInt8](repeating: 0, count: 64)
+        let n = read(fd, &buf, buf.count)
+        guard n > 0 else { return nil }
+        guard let decoded = String(bytes: buf.prefix(n), encoding: .utf8) else { return nil }
+        let raw = decoded.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
         let parts = raw.split(separator: " ", maxSplits: 1)
         let signalName = String(parts[0])
         let allowed: Set<String> = ["SIGTRAP", "SIGILL", "SIGABRT", "SIGSEGV", "SIGBUS", "SIGFPE"]
@@ -93,8 +99,7 @@ public enum CrashTelemetryHook {
         if parts.count > 1, let parsedMs = Int64(parts[1]), parsedMs > 0 {
             return (signalName, parsedMs)
         }
-        let mtime = (try? FileManager.default.attributesOfItem(atPath: markerPath)[.modificationDate] as? Date)
-        let fallbackMs = Int64((mtime ?? Date()).timeIntervalSince1970 * 1000)
+        let fallbackMs = Int64(st.st_mtimespec.tv_sec) * 1000 + Int64(st.st_mtimespec.tv_nsec / 1_000_000)
         return (signalName, max(1, fallbackMs))
     }
 
@@ -125,7 +130,13 @@ public enum CrashTelemetryHook {
     static func clearConsumedSignalMarker(for bufferPath: String?) {
         guard let markerPath = bufferPath.map({ $0 + ".crash-signal" }), !markerPath.isEmpty else { return }
         if !CoreTelemetryService.removeSingleFile(atPath: markerPath) {
-            _ = truncate(markerPath, 0)
+            let fd = open(markerPath, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+            guard fd >= 0 else { return }
+            var st = stat()
+            if fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG {
+                _ = ftruncate(fd, 0)
+            }
+            _ = close(fd)
         }
     }
 
