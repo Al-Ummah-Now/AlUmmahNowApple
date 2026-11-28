@@ -597,4 +597,5 @@
 "diagnostics.on" = "مُفعّل";
 "diagnostics.off" = "مُعطّل";
 "diagnostics.purgeWarning" = "تم إيقاف التشخيص، لكن تعذّر حذف ملفات التشخيص المخزّنة مؤقتًا من الجهاز.";
+"diagnostics.retryPurge" = "إعادة محاولة حذف ملفات التشخيص المخزّنة";
 "diagnostics.enableError" = "تعذّر تفعيل التشخيص على هذا الجهاز.";

@@ -72,10 +72,12 @@ struct AccountsView: View {
                                 .accessibilityIdentifier("accounts-diagnostics-warning")
                         }
                         if session.services.telemetry.consent == .off && session.services.telemetry.lastPurgeFailed {
-                            Button(l10n("common.retry")) {
+                            Button(l10n("diagnostics.retryPurge")) {
                                 let purged = session.services.telemetry.setConsent(.off)
                                 diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
                             }
+                            .accessibilityLabel(l10n("diagnostics.retryPurge"))
+                            .accessibilityHint(l10n("diagnostics.purgeWarning"))
                             .accessibilityIdentifier("accounts-diagnostics-retry-purge")
                         }
                     }

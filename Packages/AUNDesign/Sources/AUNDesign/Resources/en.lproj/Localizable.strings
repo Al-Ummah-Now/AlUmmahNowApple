@@ -597,4 +597,5 @@
 "diagnostics.on" = "On";
 "diagnostics.off" = "Off";
 "diagnostics.purgeWarning" = "Diagnostics turned off, but cached diagnostic files could not be removed from disk.";
+"diagnostics.retryPurge" = "Retry removing cached diagnostics";
 "diagnostics.enableError" = "Couldn't enable diagnostics on this device.";

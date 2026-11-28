@@ -180,15 +180,23 @@
                     .accessibilityHint(l10n("diagnostics.description"))
                     .accessibilityIdentifier("diagnostics-toggle")
                     if telemetry.consent == .off && telemetry.lastPurgeFailed {
-                        Button(l10n("common.retry")) {
+                        Button(l10n("diagnostics.retryPurge")) {
                             if !telemetry.setConsent(.off) { showingPurgeWarning = true }
                         }
+                        .accessibilityLabel(l10n("diagnostics.retryPurge"))
+                        .accessibilityHint(l10n("diagnostics.purgeWarning"))
                         .accessibilityIdentifier("diagnostics-retry-purge")
                     }
                 }
                 Text(l10n("diagnostics.description"))
                     .fanousFont(.caption)
                     .foregroundStyle(Fanous.textSecondary)
+                if telemetry.consent == .off && telemetry.lastPurgeFailed {
+                    Text(l10n("diagnostics.purgeWarning"))
+                        .fanousFont(.caption)
+                        .foregroundStyle(Fanous.errorText)
+                        .accessibilityIdentifier("diagnostics-purge-warning")
+                }
             }
             .padding(.bottom, 40)
             .alert(l10n("diagnostics.toggle"), isPresented: $confirmingDiagnosticsEnable) {

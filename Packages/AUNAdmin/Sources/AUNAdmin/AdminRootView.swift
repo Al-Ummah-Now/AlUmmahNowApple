@@ -192,11 +192,13 @@ private struct AdminSignedOutDiagnosticsControl: View {
                     .accessibilityIdentifier("admin-signedout-diagnostics-warning")
             }
             if session.services.telemetry.consent == .off && session.services.telemetry.lastPurgeFailed {
-                Button(l10n("common.retry")) {
+                Button(l10n("diagnostics.retryPurge")) {
                     let purged = session.services.telemetry.setConsent(.off)
                     diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
                 }
                 .buttonStyle(FanousButtonStyle(.secondary))
+                .accessibilityLabel(l10n("diagnostics.retryPurge"))
+                .accessibilityHint(l10n("diagnostics.purgeWarning"))
                 .accessibilityIdentifier("admin-signedout-diagnostics-retry-purge")
             }
         }
@@ -393,9 +395,13 @@ struct AccountMenu: View {
             Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
                 .accessibilityIdentifier("admin-diagnostics")
             if session.services.telemetry.consent == .off && session.services.telemetry.lastPurgeFailed {
-                Button(l10n("common.retry")) {
+                Button {
                     if !session.services.telemetry.setConsent(.off) { showingPurgeWarning = true }
+                } label: {
+                    Label(l10n("diagnostics.retryPurge"), systemImage: "exclamationmark.triangle")
                 }
+                .accessibilityLabel(l10n("diagnostics.retryPurge"))
+                .accessibilityHint(l10n("diagnostics.purgeWarning"))
                 .accessibilityIdentifier("admin-diagnostics-retry-purge")
             }
             Divider()

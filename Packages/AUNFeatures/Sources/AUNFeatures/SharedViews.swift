@@ -126,9 +126,13 @@ struct SettingsMenu: View {
             }
             .accessibilityIdentifier("settings-diagnostics")
             if telemetry.consent == .off && telemetry.lastPurgeFailed {
-                Button(l10n("common.retry")) {
+                Button {
                     if !telemetry.setConsent(.off) { showingPurgeWarning = true }
+                } label: {
+                    Label(l10n("diagnostics.retryPurge"), systemImage: "exclamationmark.triangle")
                 }
+                .accessibilityLabel(l10n("diagnostics.retryPurge"))
+                .accessibilityHint(l10n("diagnostics.purgeWarning"))
                 .accessibilityIdentifier("settings-diagnostics-retry-purge")
             }
             #if os(iOS) || os(macOS)

@@ -258,7 +258,7 @@ extension CoreTelemetryService {
             + #"|[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,6}))(?:%[A-Za-z0-9_.-]+)?(?![A-Za-z0-9_]|:[0-9a-fA-F])"#
     )
     private static let phoneInKeyRegex = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9_])\+?\p{Nd}[\p{Nd}\p{Zs}\t().\p{Pd}\u2212]{6,}\p{Nd}(?![A-Za-z0-9_])"#
+        pattern: #"(?<![A-Za-z0-9])\+?\p{Nd}[\p{Nd}\p{Zs}\t().\p{Pd}\u2212]{6,}\p{Nd}(?![A-Za-z0-9])"#
     )
     private static let isoDateExactRegex = try? NSRegularExpression(
         pattern: #"^(?:\d{4}[-/.]\d{2}[-/.]\d{2}|\d{2}[-/.]\d{2}[-/.]\d{4})$"#
@@ -284,15 +284,31 @@ extension CoreTelemetryService {
 
     private static let keyValueCredentialRegex = try? NSRegularExpression(
         pattern:
-            #"(?<![A-Za-z0-9_])((?:[A-Za-z0-9_.-]*[._-])?(?:token|secret|jwt|passphrase|credential|credentials|"#
-            + #"verification[_-]?code|auth[_-]?code|recovery[_-]?code|passcode|otp|pin|"#
-            + #"client[_-]?secret|access[_-]?token|refresh[_-]?token|id[_-]?token|"#
-            + #"api[_-]?key|api[_-]?token|auth[_-]?token|session[_-]?token|security[_-]?token|"#
-            + #"private[_-]?key|secret[_-]?key|access[_-]?key|code[_-]?verifier|"#
-            + #"session[_-]?id|session[_-]?key|password|passwd|pwd)(?:\\?[\"'])?\s*[=:]\s*)"#
-            + #"(?:\\\"(?:\\\\.|[^\"\\])*\\\"|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}\]\"']+)"#,
-        options: [.caseInsensitive]
+            #"(?<![A-Za-z0-9_])([A-Za-z0-9_.-]{2,64})((?:\\?[\"'])?\s*[=:]\s*)"#
+            + #"(?:\[redacted(?:-[a-z]+)?\]|\\\"(?:\\\\.|[^\"\\])*\\\"|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}\]\"']+)"#
     )
+
+    private static func scrubSensitiveKeyValues(_ text: String) -> String {
+        guard let regex = keyValueCredentialRegex else { return text }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+        var out = ""
+        var copied = 0
+        for match in matches {
+            let key = nsText.substring(with: match.range(at: 1))
+            let lower = key.lowercased()
+            if lower == "authorization" || lower == "proxy-authorization" { continue }
+            guard hasSensitivePropertySegment(key) else { continue }
+            let sep = nsText.substring(with: match.range(at: 2))
+            out += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
+            out += key + sep + "[redacted]"
+            copied = match.range.location + match.range.length
+        }
+        guard copied > 0 else { return text }
+        out += nsText.substring(from: copied)
+        return out
+    }
 
     private static func isRedactedPhoneMatch(_ match: String) -> Bool {
         let digits = match.unicodeScalars.filter { $0.properties.generalCategory == .decimalNumber }.count
@@ -312,16 +328,9 @@ extension CoreTelemetryService {
     }
 
     static func sanitizeDiagnosticText(_ text: String) -> String {
-        var pre = text
-        if let regex = keyValueCredentialRegex {
-            let range = NSRange(location: 0, length: (pre as NSString).length)
-            pre = regex.stringByReplacingMatches(in: pre, options: [], range: range, withTemplate: "$1[redacted]")
-        }
+        let pre = scrubSensitiveKeyValues(text)
         var safe = sanitizeLocalPaths(pre)
-        if let regex = keyValueCredentialRegex {
-            let range = NSRange(location: 0, length: (safe as NSString).length)
-            safe = regex.stringByReplacingMatches(in: safe, options: [], range: range, withTemplate: "$1[redacted]")
-        }
+        safe = scrubSensitiveKeyValues(safe)
         if let regex = ipv6InKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
         }
@@ -404,15 +413,29 @@ extension CoreTelemetryService {
     }
 
     private static let sensitivePropertySegments: Set<String> = [
-        "token", "secret", "jwt", "bearer", "password", "passwd", "pwd", "passphrase",
+        "token", "secret", "jwt", "bearer", "password", "passwd", "pwd", "pass", "passphrase",
         "credential", "credentials", "otp", "pin", "passcode", "cookie",
-        "authorization", "signature", "apikey", "accesskey", "privatekey",
-        "secretkey", "sessionid", "sessionkey", "codeverifier",
+        "authorization", "auth", "signature", "sig", "apikey", "accesskey", "key", "privatekey",
+        "secretkey", "session", "sessionid", "sessionkey", "codeverifier",
         "verificationcode", "authcode", "recoverycode", "clientsecret",
         "accesstoken", "refreshtoken", "idtoken", "sessiontoken", "securitytoken",
+        "apitoken", "authtoken",
+        "email", "mail", "phone", "phonenumber", "msisdn", "mobile", "tel", "telephone",
+        "ssn", "ip", "ipaddress", "address", "street", "streetaddress", "homeaddress",
+        "card", "creditcard", "cvv", "cvc", "iban", "pan",
+        "dob", "birthdate", "dateofbirth",
+        "firstname", "lastname", "fullname", "displayname", "givenname", "familyname",
+        "username", "login", "passport",
+    ]
+
+    private static let highValueKeySubstrings: [String] = [
+        "apikey", "accesskey", "secret", "token", "password", "passwd",
+        "credential", "authorization", "privatekey", "cookie", "signature",
     ]
 
     private static func hasSensitivePropertySegment(_ key: String) -> Bool {
+        let squashed = String(key.lowercased().filter { $0.isLetter || $0.isNumber })
+        if highValueKeySubstrings.contains(where: { squashed.contains($0) }) { return true }
         let chars = Array(key)
         var segments: [String] = []
         var cur = ""
