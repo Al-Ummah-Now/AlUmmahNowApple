@@ -371,13 +371,6 @@ extension CoreTelemetryService {
         return result
     }
 
-    private static let bareFilenameExtensions =
-        "mov|mp4|m4v|mkv|webm|avi|ts|m3u8|mpd|mp3|m4a|wav|aac|flac|ogg|opus|"
-        + "jpg|jpeg|png|gif|webp|heic|svg|pdf|txt|md|rtf|doc|docx|xls|xlsx|ppt|pptx|"
-        + "csv|json|xml|yaml|yml|toml|ini|cfg|conf|log|srt|vtt|ass|ssa|"
-        + "zip|tar|gz|tgz|bz2|xz|7z|rar|dmg|pkg|msi|exe|apk|aab|ipa|"
-        + "pem|key|crt|cer|p12|pfx|jks|keystore|db|sqlite|sqlite3|bin|dat|tmp|bak|proj|aun|env"
-
     private static let ioKeywordVerbs =
         "open|opening|read|reading|write|writing|delete|deleting|remove|removing|rename|stat|"
         + "create|creating|load|loading|save|saving|access|accessing|unlink|"

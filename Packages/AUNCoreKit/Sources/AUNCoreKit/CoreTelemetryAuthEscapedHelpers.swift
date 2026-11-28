@@ -4,10 +4,16 @@ extension CoreTelemetryAuthScanner {
     static let unquotedAuthHeaderNames = [
         "authorization-signature", "authorizationsignature",
         "proxy-authorization", "authorization", "set-cookie", "cookie",
+        "x-amz-security-token", "x-amz-credential", "x-amz-signature", "x-goog-api-key",
+        "x-csrf-token", "x-xsrf-token", "x-session-token", "x-session-id",
+        "x-secret-key", "x-client-secret", "x-token",
         "x-api-key", "api-key", "api_key", "x-auth-token", "x-access-token", "x-api-token",
         "auth_token", "api_token", "access_token", "access-token",
         "refresh_token", "refresh-token", "id_token", "id-token",
-        "code_verifier", "code-verifier", "client_secret", "client-secret", "password",
+        "session_token", "session-token", "security_token", "security-token",
+        "session_key", "session-key", "session_id", "session-id",
+        "private_key", "private-key", "secret_key", "secret-key", "access_key", "access-key",
+        "code_verifier", "code-verifier", "client_secret", "client-secret", "password", "passwd",
     ]
 
     private static let jwtTokenRegex: NSRegularExpression? = try? NSRegularExpression(
@@ -28,17 +34,37 @@ extension CoreTelemetryAuthScanner {
         guard lo < hi else { return nil }
         let slice = Array(decoded[lo..<hi])
         let preserved = String(utf16CodeUnits: slice, count: slice.count)
-        let key = preserved.lowercased()
-        switch key {
-        case "authorization", "proxy-authorization", "cookie", "set-cookie",
-            "x-api-key", "api-key", "api_key", "x-auth-token", "x-access-token", "x-api-token",
-            "auth_token", "api_token", "access_token", "access-token",
-            "refresh_token", "refresh-token", "id_token", "id-token",
-            "code_verifier", "code-verifier", "client_secret", "client-secret",
-            "authorizationsignature", "authorization-signature", "password":
-            return preserved
-        default: return nil
+        return CoreTelemetryService.isKnownAuthHeaderPropertyKey(preserved) ? preserved : nil
+    }
+
+    static func matchUnquotedAuthHeaderEnd(_ nsText: NSString, at pos: Int, len: Int) -> Int? {
+        for name in unquotedAuthHeaderNames {
+            let nameLen = name.utf16.count
+            if matchesASCII(nsText, at: pos, literal: name, len: len),
+                pos + nameLen == len || !isAuthKeyWordChar(nsText.character(at: pos + nameLen))
+            {
+                return pos + nameLen
+            }
         }
+        return matchUnquotedCustomXHeaderEnd(nsText, at: pos, len: len)
+    }
+
+    static func matchUnquotedCustomXHeaderEnd(_ nsText: NSString, at pos: Int, len: Int) -> Int? {
+        guard pos + 2 < len else { return nil }
+        let c0 = nsText.character(at: pos)
+        let c1 = nsText.character(at: pos + 1)
+        guard (c0 == 0x78 || c0 == 0x58) && (c1 == 0x2D || c1 == 0x5F) else { return nil }
+        var end = pos + 2
+        let limit = min(len, pos + 48)
+        while end < limit && isCustomHeaderUnit(nsText.character(at: end)) { end += 1 }
+        if end < len && isCustomHeaderUnit(nsText.character(at: end)) { return nil }
+        let candidate = nsText.substring(with: NSRange(location: pos, length: end - pos)).lowercased()
+        return CoreTelemetryService.isSensitiveCustomHeader(candidate) ? end : nil
+    }
+
+    private static func isCustomHeaderUnit(_ ch: unichar) -> Bool {
+        (ch >= 0x61 && ch <= 0x7A) || (ch >= 0x41 && ch <= 0x5A)
+            || (ch >= 0x30 && ch <= 0x39) || ch == 0x2D || ch == 0x5F
     }
 
     static func appendTrimmedKeyUnit(
@@ -49,7 +75,7 @@ extension CoreTelemetryAuthScanner {
             if !core.isEmpty { padState.trailing = true }
             return true
         }
-        if padState.trailing || core.count >= 23 { return false }
+        if padState.trailing || core.count >= 48 { return false }
         core.append(unit)
         return true
     }

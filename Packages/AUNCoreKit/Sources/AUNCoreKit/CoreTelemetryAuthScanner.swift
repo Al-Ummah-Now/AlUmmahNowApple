@@ -155,18 +155,11 @@ enum CoreTelemetryAuthScanner {
             return matchQuotedAuthKey(nsText, at: pos, quote: ch, state: &state)
         }
         if pos > 0 && isAuthKeyWordChar(nsText.character(at: pos - 1)) { return nil }
-        for name in unquotedAuthHeaderNames {
-            let nameLen = name.utf16.count
-            if matchesASCII(nsText, at: pos, literal: name, len: len),
-                pos + nameLen == len || !isAuthKeyWordChar(nsText.character(at: pos + nameLen))
-            {
-                return AuthKeyMatch(
-                    keyStart: pos, keyEnd: pos + nameLen, isJsonCandidate: false,
-                    hasJsonPrefix: false, isTupleCandidate: false, failedTopEnd: -1, normalizedKey: nil
-                )
-            }
-        }
-        return nil
+        guard let keyEnd = matchUnquotedAuthHeaderEnd(nsText, at: pos, len: len) else { return nil }
+        return AuthKeyMatch(
+            keyStart: pos, keyEnd: keyEnd, isJsonCandidate: false,
+            hasJsonPrefix: false, isTupleCandidate: false, failedTopEnd: -1, normalizedKey: nil
+        )
     }
 
     private static func matchQuotedAuthKey(

@@ -1,8 +1,26 @@
 import Foundation
 
 extension CoreTelemetryService {
+    static let bareFilenameExtensions =
+        "mov|mp4|m4v|mkv|webm|avi|flv|wmv|ogv|3gp|ts|m3u8|mpd|mp3|m4a|wav|aac|flac|ogg|opus|wma|aiff|alac|mid|midi|"
+        + "jpg|jpeg|png|gif|webp|heic|svg|tif|tiff|bmp|ico|avif|jxl|raw|cr2|cr3|nef|arw|dng|"
+        + "blend|psd|psb|ai|eps|indd|aep|prproj|drp|fcpx|fcpxml|kdenlive|mlt|veg|xcf|kra|fig|sketch|afdesign|afphoto|"
+        + "fbx|obj|gltf|glb|stl|usd|usdz|"
+        + "pdf|txt|md|rtf|doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp|pages|numbers|keynote|epub|mobi|"
+        + "csv|json|xml|yaml|yml|toml|ini|cfg|conf|log|srt|vtt|ass|ssa|parquet|avro|orc|feather|hdf5|h5|"
+        + "zip|tar|gz|tgz|bz2|xz|7z|rar|dmg|pkg|msi|exe|apk|aab|ipa|iso|img|vhd|vhdx|vmdk|ova|ovf|"
+        + "deb|rpm|appimage|snap|flatpak|cab|jar|war|ear|whl|egg|nupkg|vsix|crx|xpi|"
+        + "pem|key|crt|cer|cert|der|p12|pfx|jks|jceks|keystore|kdbx|ovpn|ppk|pub|asc|gpg|pgp|sig|"
+        + "db|sqlite|sqlite3|sql|dump|pkl|pickle|joblib|pt|pth|onnx|safetensors|gguf|"
+        + "bin|dat|tmp|bak|old|orig|swp|swo|proj|aun|env|har|pcap|pcapng|dmp|hdmp|mdmp|heapsnapshot"
+
     private static let webhookPathTokenRegex = try? NSRegularExpression(
-        pattern: #"((?:^|/|%2[fF])webhooks?(?:/|%2[fF]))[^\s?#]+"#, options: [.caseInsensitive]
+        pattern: #"((?:^|/|%2[fF])(?:webhooks?|reset|reset-password|password-reset|forgot-password|"#
+            + #"verify|verify-email|confirm|confirm-email|activate|magic|magic-link|"#
+            + #"invite|invitations?|tokens?|auth|oauth2?|callback|sessions?|unsubscribe|"#
+            + #"secrets?|keys?|api-?keys?|credentials?|sign-?in|login|sso|redeem|claim|recovery?|passwords?)"#
+            + #"(?:/|%2[fF]))[^\s?#]+"#,
+        options: [.caseInsensitive]
     )
     private static let slackWebhookHostRegex = try? NSRegularExpression(
         pattern: #"https?://hooks\.slack(?:-gov)?\.com\.?(?::\d*)?(?=(?:/|%2[fF]))"#, options: [.caseInsensitive]
@@ -134,17 +152,40 @@ extension CoreTelemetryService {
         return nil
     }
 
+    private static let sensitiveCustomHeaderSegments: Set<String> = [
+        "token", "secret", "key", "auth", "authorization",
+        "password", "passwd", "credential", "credentials", "signature", "session", "cookie",
+    ]
+
+    static func isSensitiveCustomHeader(_ lower: String) -> Bool {
+        let count = lower.utf8.count
+        guard count >= 4 && count <= 48 && (lower.hasPrefix("x-") || lower.hasPrefix("x_")) else { return false }
+        for b in lower.utf8 {
+            let ok = (b >= 0x61 && b <= 0x7A) || (b >= 0x30 && b <= 0x39) || b == 0x2D || b == 0x5F
+            if !ok { return false }
+        }
+        return lower.split(whereSeparator: { $0 == "-" || $0 == "_" })
+            .contains { sensitiveCustomHeaderSegments.contains(String($0)) }
+    }
+
     static func isKnownAuthHeaderPropertyKey(_ trimmedKey: String) -> Bool {
-        switch trimmedKey.lowercased() {
+        let lower = trimmedKey.lowercased()
+        switch lower {
         case "authorization", "proxy-authorization", "cookie", "set-cookie",
+            "x-amz-security-token", "x-amz-credential", "x-amz-signature", "x-goog-api-key",
+            "x-csrf-token", "x-xsrf-token", "x-session-token", "x-session-id",
+            "x-secret-key", "x-client-secret", "x-token",
             "x-api-key", "api-key", "api_key", "x-auth-token", "x-access-token", "x-api-token",
             "auth_token", "api_token", "access_token", "access-token",
             "refresh_token", "refresh-token", "id_token", "id-token",
+            "session_token", "session-token", "security_token", "security-token",
+            "session_key", "session-key", "session_id", "session-id",
+            "private_key", "private-key", "secret_key", "secret-key", "access_key", "access-key",
             "code_verifier", "code-verifier", "client_secret", "client-secret",
-            "authorizationsignature", "authorization-signature", "password":
+            "authorizationsignature", "authorization-signature", "password", "passwd":
             return true
         default:
-            return false
+            return isSensitiveCustomHeader(lower)
         }
     }
 

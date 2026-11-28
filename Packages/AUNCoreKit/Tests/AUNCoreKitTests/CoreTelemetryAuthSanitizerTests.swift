@@ -516,6 +516,16 @@ extension CoreTelemetryAuthSanitizerTests {
         )
         #expect(CoreTelemetryService.sanitizeLocalPaths(".env") == "[redacted-path]")
         #expect(CoreTelemetryService.sanitizeLocalPaths("\\Confidential\\Payroll") == "[redacted-path]")
+        #expect(CoreTelemetryService.sanitizeLocalPaths("Acquisition.blend") == "[redacted-path]")
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/reset/super-secret-token")
+                == "https://example.com/reset/[redacted]")
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("X-Amz-Security-Token: secretcredential")
+                == "X-Amz-Security-Token: [redacted]")
+        #expect(
+            CoreTelemetryService.serializeProperties(["X-Amz-Security-Token": "secretcredential"])
+                == #"{"X-Amz-Security-Token":"[redacted]"}"#)
         #expect(
             CoreTelemetryService.sanitizeLocalPaths(
                 "{\"refresh_token\":\"opaqueSecret123\",\"access_token\":\"accSecret456\",\"id_token\":\"idSecret789\"}"
