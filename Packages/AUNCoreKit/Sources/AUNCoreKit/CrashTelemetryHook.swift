@@ -142,3 +142,68 @@ public enum CrashTelemetryHook {
         previous?(exception)
     }
 }
+
+extension CoreTelemetryService {
+    static func excludeBufferDirectoryFromBackup(at bufferPath: String?) {
+        guard let bufferPath, !bufferPath.isEmpty else { return }
+        var dirURL = URL(fileURLWithPath: bufferPath).deletingLastPathComponent()
+        guard FileManager.default.fileExists(atPath: dirURL.path) else { return }
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? dirURL.setResourceValues(values)
+    }
+
+    static func defaultBufferURL(bundleID: String, filename: String) -> URL? {
+        #if os(tvOS)
+            let preferred: FileManager.SearchPathDirectory = .cachesDirectory
+        #else
+            let preferred: FileManager.SearchPathDirectory = .applicationSupportDirectory
+        #endif
+        guard
+            let base = FileManager.default.urls(for: preferred, in: .userDomainMask).first
+                ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        else {
+            return nil
+        }
+        guard !filename.isEmpty else { return base }
+        return
+            base
+            .appendingPathComponent(bundleID, isDirectory: true)
+            .appendingPathComponent("Telemetry", isDirectory: true)
+            .appendingPathComponent(filename, isDirectory: false)
+    }
+
+    static func platformName() -> String {
+        #if os(macOS)
+            "macos"
+        #elseif os(tvOS)
+            "tvos"
+        #else
+            "ios"
+        #endif
+    }
+
+    static func deviceClassName() -> String {
+        #if os(macOS)
+            "desktop"
+        #elseif os(tvOS)
+            "tv"
+        #else
+            var info = utsname()
+            uname(&info)
+            let machine = withUnsafeBytes(of: &info.machine) { String(bytes: $0.prefix { $0 != 0 }, encoding: .utf8) ?? "" }
+            return machine.hasPrefix("iPad") ? "tablet" : "phone"
+        #endif
+    }
+
+    static func osVersionString() -> String {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        #if os(macOS)
+            return "macOS \(v.majorVersion).\(v.minorVersion)"
+        #elseif os(tvOS)
+            return "tvOS \(v.majorVersion).\(v.minorVersion)"
+        #else
+            return "iOS \(v.majorVersion).\(v.minorVersion)"
+        #endif
+    }
+}

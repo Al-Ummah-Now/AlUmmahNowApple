@@ -7,7 +7,9 @@
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -17,7 +19,24 @@ enum {
     AUN_ALT_STACK_SIZE = 131072,
 };
 
-static unsigned char g_alt_stack[AUN_ALT_STACK_SIZE];
+static pthread_key_t g_alt_stack_key;
+static pthread_once_t g_alt_stack_key_once = PTHREAD_ONCE_INIT;
+
+static void aun_alt_stack_destructor(void *mem) {
+    if (mem == NULL) return;
+    stack_t cur;
+    if (sigaltstack(NULL, &cur) == 0 && cur.ss_sp == mem) {
+        stack_t off;
+        memset(&off, 0, sizeof(off));
+        off.ss_flags = SS_DISABLE;
+        (void)sigaltstack(&off, NULL);
+    }
+    free(mem);
+}
+
+static void aun_init_alt_stack_key(void) {
+    (void)pthread_key_create(&g_alt_stack_key, aun_alt_stack_destructor);
+}
 
 static const int kFatalSignals[AUN_FATAL_SIGNAL_COUNT] = {
     SIGTRAP, SIGILL, SIGABRT, SIGSEGV, SIGBUS, SIGFPE,
@@ -72,10 +91,11 @@ static void aun_signal_trap_dispatch(int sig, int slot) {
     atomic_fetch_add_explicit(&g_active_handlers, 1, memory_order_acq_rel);
     if (atomic_load_explicit(&g_enabled_slot, memory_order_acquire) == slot &&
         g_marker_path[0] != '\0') {
-        int fd = open(g_marker_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        int fd = open(g_marker_path, O_WRONLY | O_CREAT | O_TRUNC | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC, 0600);
         if (fd >= 0) {
+            struct stat st;
             const char *name = aun_signal_name(sig);
-            if (name != NULL) {
+            if (name != NULL && fstat(fd, &st) == 0 && S_ISREG(st.st_mode)) {
                 struct timespec ts;
                 int64_t ms = 0;
                 if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
@@ -173,14 +193,27 @@ void aun_signal_trap_enable(const char *marker_path) {
     memcpy(g_marker_path, marker_path, len + 1);
     int next_slot = (g_last_slot + 1) % AUN_TRAMPOLINE_SLOTS;
     g_last_slot = next_slot;
+    (void)pthread_once(&g_alt_stack_key_once, aun_init_alt_stack_key);
     stack_t cur_ss;
     if (sigaltstack(NULL, &cur_ss) == 0 && (cur_ss.ss_flags & SS_DISABLE) != 0) {
-        stack_t ss;
-        memset(&ss, 0, sizeof(ss));
-        ss.ss_sp = g_alt_stack;
-        ss.ss_size = sizeof(g_alt_stack);
-        ss.ss_flags = 0;
-        (void)sigaltstack(&ss, NULL);
+        void *mem = pthread_getspecific(g_alt_stack_key);
+        if (mem == NULL) {
+            mem = malloc(AUN_ALT_STACK_SIZE);
+            if (mem != NULL) {
+                if (pthread_setspecific(g_alt_stack_key, mem) != 0) {
+                    free(mem);
+                    mem = NULL;
+                }
+            }
+        }
+        if (mem != NULL) {
+            stack_t ss;
+            memset(&ss, 0, sizeof(ss));
+            ss.ss_sp = mem;
+            ss.ss_size = AUN_ALT_STACK_SIZE;
+            ss.ss_flags = 0;
+            (void)sigaltstack(&ss, NULL);
+        }
     }
     struct sigaction action;
     memset(&action, 0, sizeof(action));

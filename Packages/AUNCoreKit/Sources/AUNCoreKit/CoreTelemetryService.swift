@@ -210,9 +210,9 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             let captureEpoch = captureConsentEpoch(requiresFull: true)
         else { return }
-        let safeName = Self.sanitizePropertyKey(name)
+        let safeName = String(Self.sanitizePropertyKey(name).prefix(Self.maxPropertyKeyLength))
         guard !safeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let json = Self.serializeProperties(properties)
+        let json = Self.serializeProperties(properties, maxProperties: Self.maxEventProperties)
         beforeRecordCommitForTesting?()
         withActiveConsent(requiresFull: true, expectedEpoch: captureEpoch) {
             do { _ = try client.track(name: safeName, propertiesJson: json) } catch {
@@ -225,9 +225,9 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             let captureEpoch = captureConsentEpoch(requiresFull: true)
         else { return }
-        let safeCode = Self.sanitizePropertyKey(code)
+        let safeCode = String(Self.sanitizePropertyKey(code).prefix(Self.maxPropertyKeyLength))
         guard !safeCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let json = Self.serializeProperties(properties)
+        let json = Self.serializeProperties(properties, maxProperties: Self.maxErrorEventProperties, reservedKeys: ["code"])
         beforeRecordCommitForTesting?()
         withActiveConsent(requiresFull: true, expectedEpoch: captureEpoch) {
             do { _ = try client.trackError(code: safeCode, propertiesJson: json) } catch {
@@ -545,6 +545,7 @@ extension CoreTelemetryService {
         )
         _ = lock.tryWithLock(timeout: 0.1) {
             guard !_closed, _consent != .off, _consentEpoch == captureEpoch else { return }
+            if let check = isExternallyEnabled, !check() { return }
             do {
                 _ = try client.reportCrash(report: report)
                 try client.persist()

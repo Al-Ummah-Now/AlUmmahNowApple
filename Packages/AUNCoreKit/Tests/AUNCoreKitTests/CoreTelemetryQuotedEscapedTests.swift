@@ -306,6 +306,9 @@ struct CoreTelemetryQuotedEscapedTests {
         let manyJson = CoreTelemetryService.serializeProperties(manyColliding)
         #expect(manyJson != nil)
         #expect(manyJson?.contains("alice") == false)
-        #expect(manyJson?.contains("\"[redacted-path]#5000\":") == true)
+        #expect(manyJson?.contains("\"[redacted-path]#50\":") == true)
+        #expect(manyJson?.contains("\"[redacted-path]#51\":") == false)
+        let longKeyJson = CoreTelemetryService.serializeProperties([String(repeating: "a", count: 65): "ok"])
+        #expect(longKeyJson == "{\"\(String(repeating: "a", count: 64))\":\"ok\"}")
     }
 }

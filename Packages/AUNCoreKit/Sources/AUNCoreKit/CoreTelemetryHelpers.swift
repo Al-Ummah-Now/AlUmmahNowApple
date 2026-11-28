@@ -438,30 +438,53 @@ extension CoreTelemetryService {
         options: [.caseInsensitive]
     )
 
+    static let maxEventProperties = 50
+    static let maxErrorEventProperties = 49
+    static let maxPropertyKeyLength = 64
+
+    private static func truncatePropertyKey(_ key: String, maxLength: Int = maxPropertyKeyLength) -> String {
+        guard key.count > maxLength else { return key }
+        return String(key.prefix(maxLength))
+    }
+
     private static func resolveUniquePropertyKey(
         _ map: [String: String], base: String, nextSuffix: inout [String: Int]
     ) -> String {
-        if map[base] == nil { return base }
-        var suffix = nextSuffix[base] ?? 2
-        while map["\(base)#\(suffix)"] != nil { suffix += 1 }
-        nextSuffix[base] = suffix + 1
-        return "\(base)#\(suffix)"
+        let bounded = truncatePropertyKey(base)
+        if map[bounded] == nil { return bounded }
+        var suffix = nextSuffix[bounded] ?? 2
+        while true {
+            let tag = "#\(suffix)"
+            let prefixLen = max(1, maxPropertyKeyLength - tag.count)
+            let candidate = truncatePropertyKey(bounded, maxLength: prefixLen) + tag
+            suffix += 1
+            if map[candidate] == nil {
+                nextSuffix[bounded] = suffix
+                return candidate
+            }
+        }
     }
 
     private static func isAuthHeaderPropertyKey(_ trimmedKey: String) -> Bool {
         isSensitivePropertyKey(trimmedKey)
     }
 
-    static func serializeProperties(_ properties: [String: String]) -> String? {
-        guard !properties.isEmpty else { return nil }
+    static func serializeProperties(
+        _ properties: [String: String],
+        maxProperties: Int = maxEventProperties,
+        reservedKeys: Set<String> = []
+    ) -> String? {
+        guard !properties.isEmpty, maxProperties > 0 else { return nil }
         var sanitized: [String: String] = [:]
         var nextSuffix: [String: Int] = [:]
-        sanitized.reserveCapacity(properties.count)
+        sanitized.reserveCapacity(min(properties.count, maxProperties))
         for (key, value) in properties.sorted(by: { $0.key < $1.key }) {
+            if sanitized.count >= maxProperties { break }
             let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedKey.isEmpty else { continue }
-            let safeKey = Self.sanitizePropertyKey(key)
+            let safeKey = truncatePropertyKey(Self.sanitizePropertyKey(key))
             guard !safeKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            guard !reservedKeys.contains(safeKey) else { continue }
             let uniqueKey = resolveUniquePropertyKey(sanitized, base: safeKey, nextSuffix: &nextSuffix)
             if isAuthHeaderPropertyKey(trimmedKey) {
                 sanitized[uniqueKey] = "[redacted]"
@@ -517,68 +540,5 @@ extension CoreTelemetryService {
     private static func isNoSuchFile(_ error: NSError) -> Bool {
         (error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError)
             || (error.domain == NSPOSIXErrorDomain && error.code == Int(ENOENT))
-    }
-
-    static func excludeBufferDirectoryFromBackup(at bufferPath: String?) {
-        guard let bufferPath, !bufferPath.isEmpty else { return }
-        var dirURL = URL(fileURLWithPath: bufferPath).deletingLastPathComponent()
-        guard FileManager.default.fileExists(atPath: dirURL.path) else { return }
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = true
-        try? dirURL.setResourceValues(values)
-    }
-
-    private static func defaultBufferURL(bundleID: String, filename: String) -> URL? {
-        #if os(tvOS)
-            let preferred: FileManager.SearchPathDirectory = .cachesDirectory
-        #else
-            let preferred: FileManager.SearchPathDirectory = .applicationSupportDirectory
-        #endif
-        guard
-            let base = FileManager.default.urls(for: preferred, in: .userDomainMask).first
-                ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-        else {
-            return nil
-        }
-        guard !filename.isEmpty else { return base }
-        return
-            base
-            .appendingPathComponent(bundleID, isDirectory: true)
-            .appendingPathComponent("Telemetry", isDirectory: true)
-            .appendingPathComponent(filename, isDirectory: false)
-    }
-
-    private static func platformName() -> String {
-        #if os(macOS)
-            "macos"
-        #elseif os(tvOS)
-            "tvos"
-        #else
-            "ios"
-        #endif
-    }
-
-    private static func deviceClassName() -> String {
-        #if os(macOS)
-            "desktop"
-        #elseif os(tvOS)
-            "tv"
-        #else
-            var info = utsname()
-            uname(&info)
-            let machine = withUnsafeBytes(of: &info.machine) { String(bytes: $0.prefix { $0 != 0 }, encoding: .utf8) ?? "" }
-            return machine.hasPrefix("iPad") ? "tablet" : "phone"
-        #endif
-    }
-
-    private static func osVersionString() -> String {
-        let v = ProcessInfo.processInfo.operatingSystemVersion
-        #if os(macOS)
-            return "macOS \(v.majorVersion).\(v.minorVersion)"
-        #elseif os(tvOS)
-            return "tvOS \(v.majorVersion).\(v.minorVersion)"
-        #else
-            return "iOS \(v.majorVersion).\(v.minorVersion)"
-        #endif
     }
 }
