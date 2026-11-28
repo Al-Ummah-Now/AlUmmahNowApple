@@ -305,7 +305,6 @@ extension CoreTelemetryService.VaultLineTracker {
         {
             return findQuotedEmailLocalStart(nsText, at: atPos, minPos: minPos)
         }
-        if atPos > minPos && nsText.character(at: atPos - 1) == 0x2F { return atPos }
         var localStart = atPos
         while true {
             while localStart > minPos && isEmailLocalChar(nsText, at: localStart - 1, len: len)
@@ -387,17 +386,18 @@ extension CoreTelemetryService.VaultLineTracker {
 
     static func findIPLiteralDomainEnd(_ nsText: NSString, domStart: Int, len: Int) -> Int {
         var close = domStart + 1
-        while close < len {
+        let maxClose = min(len, domStart + 65)
+        while close < maxClose {
             let ch = nsText.character(at: close)
             if ch == 0x5D { break }
-            if isWhitespace(ch) || ch == 0x5B || ch == 0x22 || ch == 0x27 || ch == 0x3C || ch == 0x3E
+            if isWhitespace(ch) || ch == 0x5B || ch == 0x40 || ch == 0x22 || ch == 0x27 || ch == 0x3C || ch == 0x3E
                 || ch == 0x5C || ch == 0x7B || ch == 0x7D || ch == 0x0A || ch == 0x0D
             {
                 return -1
             }
             close += 1
         }
-        guard close < len, nsText.character(at: close) == 0x5D, close > domStart + 1 else { return -1 }
+        guard close < maxClose, nsText.character(at: close) == 0x5D, close > domStart + 1 else { return -1 }
         let inner = nsText.substring(with: NSRange(location: domStart + 1, length: close - domStart - 1))
         if inner.lowercased().hasPrefix("ipv6:") {
             let v6 = String(inner.dropFirst(5))
@@ -562,15 +562,12 @@ extension CoreTelemetryService.VaultLineTracker {
         return domEnd > 0 ? domEnd : nil
     }
 
-    static func findEmailDomainEnd(_ nsText: NSString, domStart: Int, len: Int) -> Int {
+    static func findEmailDomainEnd(_ nsText: NSString, domStart: Int, len: Int, requireDot: Bool = false) -> Int {
         if domStart < len && nsText.character(at: domStart) == 0x5B {
             return findIPLiteralDomainEnd(nsText, domStart: domStart, len: len)
         }
-        var idx = domStart
-        var labelStart = domStart
-        var labelHasLetter = false
+        var (idx, labelStart, labelHasLetter, hasDot, bestEnd) = (domStart, domStart, false, false, -1)
         var lastKind: DomainCharKind = .other
-        var bestEnd = -1
         while idx < len {
             let (kind, step) = classifyDomainChar(nsText, at: idx, len: len)
             if kind == .letter {
@@ -579,6 +576,7 @@ extension CoreTelemetryService.VaultLineTracker {
                 if idx == labelStart || lastKind == .hyphen { break }
                 labelStart = idx + step
                 labelHasLetter = false
+                hasDot = true
             } else if kind == .hyphen {
                 if idx == labelStart { break }
             } else if kind != .digit {
@@ -586,9 +584,11 @@ extension CoreTelemetryService.VaultLineTracker {
             }
             lastKind = kind
             idx += step
-            if CoreTelemetryService.isValidDomainLabelEnd(
-                nsText, labelStart: labelStart, end: idx, labelHasLetter: labelHasLetter, endedHyphen: lastKind == .hyphen
-            ) {
+            if (!requireDot || hasDot)
+                && CoreTelemetryService.isValidDomainLabelEnd(
+                    nsText, labelStart: labelStart, end: idx, labelHasLetter: labelHasLetter, endedHyphen: lastKind == .hyphen
+                )
+            {
                 bestEnd = idx
             }
         }

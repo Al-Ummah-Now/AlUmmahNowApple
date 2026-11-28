@@ -9,12 +9,21 @@ extension CoreTelemetryAuthScanner {
         var result = ""
         var copied = 0
         for match in matches {
-            let token = nsText.substring(with: match.range(at: 2))
+            let quotedRange = match.range(at: 3)
+            let isQuoted = quotedRange.location != NSNotFound
+            let tokenRange = isQuoted ? quotedRange : match.range(at: 5)
+            guard tokenRange.location != NSNotFound else { continue }
+            let token = nsText.substring(with: tokenRange)
             guard isBasicCredentialToken(token) else { continue }
             if result.isEmpty { result.reserveCapacity(text.count) }
             result += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
-            result += nsText.substring(with: match.range(at: 1))
-            result += " [redacted]"
+            if isQuoted {
+                let openQ = nsText.substring(with: match.range(at: 2))
+                let closeQ = nsText.substring(with: match.range(at: 4))
+                result += "\(nsText.substring(with: match.range(at: 1))) \(openQ)[redacted]\(closeQ)"
+            } else {
+                result += "\(nsText.substring(with: match.range(at: 1))) [redacted]"
+            }
             copied = match.range.location + match.range.length
         }
         guard copied > 0 else { return text }

@@ -203,7 +203,8 @@ extension CoreTelemetryService {
                 idx += 1
                 continue
             }
-            let domEnd = VaultLineTracker.findEmailDomainEnd(nsText, domStart: idx + atLen, len: len)
+            let reqDot = idx > copied && nsText.character(at: idx - 1) == 0x2F
+            let domEnd = VaultLineTracker.findEmailDomainEnd(nsText, domStart: idx + atLen, len: len, requireDot: reqDot)
             let localStart = domEnd > 0 ? VaultLineTracker.findEmailLocalStart(nsText, at: idx, minPos: copied, len: len) : idx
             if domEnd > 0 && localStart < idx {
                 ranges.append((localStart, domEnd))

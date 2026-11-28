@@ -146,7 +146,8 @@ extension CoreTelemetryService {
                 idx += 1
                 continue
             }
-            let domEnd = VaultLineTracker.findEmailDomainEnd(nsText, domStart: idx + atLen, len: len)
+            let reqDot = idx > copied && nsText.character(at: idx - 1) == 0x2F
+            let domEnd = VaultLineTracker.findEmailDomainEnd(nsText, domStart: idx + atLen, len: len, requireDot: reqDot)
             let localStart = domEnd > 0 ? VaultLineTracker.findEmailLocalStart(nsText, at: idx, minPos: copied, len: len) : idx
             if domEnd > 0 && localStart < idx {
                 if result.isEmpty { result.reserveCapacity(text.count) }
@@ -581,9 +582,7 @@ public enum CrashTelemetryHook {
             guard !installed else { return }
             installed = true
             previousHandler = NSGetUncaughtExceptionHandler()
-            NSSetUncaughtExceptionHandler { exception in
-                CrashTelemetryHook.handle(exception)
-            }
+            NSSetUncaughtExceptionHandler { CrashTelemetryHook.handle($0) }
         }
     }
 

@@ -347,4 +347,49 @@ struct CoreTelemetryAuthSanitizerTests {
                 == "https://example.com/api{tag:\"value\"}?[redacted]"
         )
     }
+
+    @Test("Scrubs quoted Bearer/Basic credentials, slash-local emails, and linear IP literals")
+    func scrubsQuotedBearerBasicSlashEmailsAndLinearIPLiterals() {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("received Bearer \"opaqueSecret123\" during handshake")
+                == "received Bearer \"[redacted]\" during handshake"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("received Bearer 'opaqueSecret123' during handshake")
+                == "received Bearer '[redacted]' during handshake"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"m\":\"Basic \\\"dXNlcjpwYXNz\\\"\"}")
+                == "{\"m\":\"Basic \\\"[redacted]\\\"\"}"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("received Basic \"dXNlcjpwYXNz\" during handshake")
+                == "received Basic \"[redacted]\" during handshake"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("received Basic 'dXNlcjpwYXNz' during handshake")
+                == "received Basic '[redacted]' during handshake"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Bearer \"hello world\"") == "Bearer \"hello world\""
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.org/users/alice/@example.com")
+                == "https://[redacted-email]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.org/users/alice/%40example.com")
+                == "https://[redacted-email]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://registry.npmjs.org/@angular/core")
+                == "https://registry.npmjs.org/@angular/core"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://registry.npmjs.org/%40angular/core")
+                == "https://registry.npmjs.org/%40angular/core"
+        )
+        let repeatedOpen = String(repeating: "x@[", count: 10_000)
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedOpen) == repeatedOpen)
+    }
 }

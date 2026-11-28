@@ -17,7 +17,7 @@ extension CoreTelemetryAuthScanner {
     static func redactBearerTokens(in text: String) -> String {
         guard text.range(of: "bearer", options: [.caseInsensitive]) != nil else { return text }
         let nsText = text as NSString
-        let ranges = findBearerTokenRanges(nsText, allowLiteralQuoted: false)
+        let ranges = findBearerTokenRanges(nsText, allowLiteralQuoted: true, requireClosingLiteralQuote: true)
         guard !ranges.isEmpty else { return text }
         var result = ""
         result.reserveCapacity(text.count)
@@ -45,7 +45,9 @@ extension CoreTelemetryAuthScanner {
         return 0
     }
 
-    private static func findBearerTokenRanges(_ nsText: NSString, allowLiteralQuoted: Bool) -> [(Int, Int, Bool)] {
+    private static func findBearerTokenRanges(
+        _ nsText: NSString, allowLiteralQuoted: Bool, requireClosingLiteralQuote: Bool
+    ) -> [(Int, Int, Bool)] {
         let len = nsText.length
         var ranges: [(Int, Int, Bool)] = []
         var inEscapedQuote = false
@@ -66,7 +68,8 @@ extension CoreTelemetryAuthScanner {
             guard wsEnd < len else { break }
             if !inEscapedQuote,
                 let nextIdx = tryScanQuotedBearerToken(
-                    nsText, wsEnd: wsEnd, len: len, allowLiteralQuoted: allowLiteralQuoted, ranges: &ranges)
+                    nsText, wsEnd: wsEnd, len: len, allowLiteralQuoted: allowLiteralQuoted,
+                    requireClosingLiteralQuote: requireClosingLiteralQuote, ranges: &ranges)
             {
                 idx = nextIdx
                 continue
@@ -86,16 +89,18 @@ extension CoreTelemetryAuthScanner {
         return ranges
     }
 
+    // swiftlint:disable:next function_parameter_count
     private static func tryScanQuotedBearerToken(
         _ nsText: NSString,
         wsEnd: Int,
         len: Int,
         allowLiteralQuoted: Bool,
+        requireClosingLiteralQuote: Bool,
         ranges: inout [(Int, Int, Bool)]
     ) -> Int? {
-        let openLen =
-            allowLiteralQuoted && nsText.character(at: wsEnd) == 0x22
-            ? 1 : escapedDoubleQuoteLen(nsText, at: wsEnd, len: len)
+        let wsCh = nsText.character(at: wsEnd)
+        let isLiteralQuote = allowLiteralQuoted && (wsCh == 0x22 || wsCh == 0x27)
+        let openLen = isLiteralQuote ? 1 : escapedDoubleQuoteLen(nsText, at: wsEnd, len: len)
         guard openLen > 0 else { return nil }
         let innerStart = wsEnd + openLen
         let stopEsc = openLen > 1
@@ -105,9 +110,9 @@ extension CoreTelemetryAuthScanner {
         let innerEnd = scanBearerTokenEnd(nsText, from: innerStart, len: len, stopAtEscapedQuote: stopEsc)
         let closeLen =
             openLen == 1
-            ? (innerEnd < len && nsText.character(at: innerEnd) == 0x22 ? 1 : 0)
+            ? (innerEnd < len && nsText.character(at: innerEnd) == wsCh ? 1 : 0)
             : escapedDoubleQuoteLen(nsText, at: innerEnd, len: len)
-        if innerEnd > innerStart && (closeLen > 0 || openLen == 1) {
+        if innerEnd > innerStart && (closeLen > 0 || (openLen == 1 && !requireClosingLiteralQuote)) {
             ranges.append((innerStart, innerEnd, true))
             return innerEnd + closeLen
         }
@@ -214,7 +219,9 @@ extension CoreTelemetryAuthScanner {
                 nsText, start: innerStart, end: span.close)
             guard decoded.range(of: "bearer", options: [.caseInsensitive]) != nil else { continue }
             let nsDecoded = decoded as NSString
-            for (mStart, mEnd, redactedOnly) in findBearerTokenRanges(nsDecoded, allowLiteralQuoted: true) {
+            for (mStart, mEnd, redactedOnly) in findBearerTokenRanges(
+                nsDecoded, allowLiteralQuoted: true, requireClosingLiteralQuote: false)
+            {
                 let rawStart = rawOffsets[mStart]
                 let rawEnd = rawOffsets[mEnd]
                 guard rawStart >= copied else { continue }
@@ -268,14 +275,18 @@ extension CoreTelemetryAuthScanner {
         let nsDecoded = decoded as NSString
         let matches = regex.matches(in: decoded, options: [], range: NSRange(location: 0, length: nsDecoded.length))
         for match in matches {
-            if !isBasicCredentialToken(nsDecoded.substring(with: match.range(at: 2))) { continue }
-            let rawStart = rawOffsets[match.range.location]
-            let rawEnd = rawOffsets[match.range.location + match.range.length]
+            let quotedRange = match.range(at: 3)
+            let isQuoted = quotedRange.location != NSNotFound
+            let tokenRange = isQuoted ? quotedRange : match.range(at: 5)
+            guard tokenRange.location != NSNotFound else { continue }
+            if !isBasicCredentialToken(nsDecoded.substring(with: tokenRange)) { continue }
+            let targetRange = isQuoted ? tokenRange : match.range
+            let rawStart = rawOffsets[targetRange.location]
+            let rawEnd = rawOffsets[targetRange.location + targetRange.length]
             guard rawStart >= copied else { continue }
             if result.isEmpty { result.reserveCapacity(nsText.length) }
-            let scheme = nsDecoded.substring(with: match.range(at: 1))
             result += nsText.substring(with: NSRange(location: copied, length: rawStart - copied))
-            result += "\(scheme) [redacted]"
+            result += isQuoted ? "[redacted]" : "\(nsDecoded.substring(with: match.range(at: 1))) [redacted]"
             copied = rawEnd
         }
     }
