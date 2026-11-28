@@ -12,12 +12,20 @@ extension CoreTelemetryAuthScanner {
         "refresh_token", "refresh-token", "id_token", "id-token",
         "session_token", "session-token", "security_token", "security-token",
         "session_key", "session-key", "session_id", "session-id",
-        "private_key", "private-key", "secret_key", "secret-key", "access_key", "access-key",
-        "code_verifier", "code-verifier", "client_secret", "client-secret", "password", "passwd",
+        "private_key", "private-key", "privatekey", "secret_key", "secret-key", "secretkey",
+        "access_key", "access-key", "accesskey",
+        "code_verifier", "code-verifier", "codeverifier",
+        "client_secret", "client-secret", "clientsecret",
+        "accesstoken", "refreshtoken", "idtoken", "apikey", "apitoken", "authtoken",
+        "sessiontoken", "securitytoken", "sessionid", "sessionkey",
+        "verification_code", "verification-code", "verificationcode",
+        "auth_code", "auth-code", "authcode", "recovery_code", "recovery-code", "recoverycode",
+        "passcode", "otp", "pin", "passphrase", "credential", "credentials",
+        "password", "passwd",
     ]
 
     private static let jwtTokenRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]*)?"#
+        pattern: #"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+){1,3}(?![A-Za-z0-9_-])"#
     )
 
     static func redactJWTTokens(in text: String) -> String {

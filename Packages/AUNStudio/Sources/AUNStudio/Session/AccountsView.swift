@@ -11,6 +11,7 @@ struct AccountsView: View {
     @State private var leaving: StudioAccount?
     @State private var deleting: StudioAccount?
     @State private var diagnosticsMessage: String?
+    @State private var showingEnableError = false
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
@@ -24,6 +25,7 @@ struct AccountsView: View {
                     } else {
                         settings.telemetryEnabled = false
                         diagnosticsMessage = l10n("diagnostics.enableError")
+                        showingEnableError = true
                     }
                 } else {
                     if settings.telemetryEnabled { settings.telemetryEnabled = false }
@@ -136,6 +138,11 @@ struct AccountsView: View {
             DeleteAccountSheet(account: account, session: session) {
                 if session.phase == .signedOut { dismiss() }
             }
+        }
+        .alert(l10n("diagnostics.toggle"), isPresented: $showingEnableError) {
+            Button(l10n("common.dismiss"), role: .cancel) {}
+        } message: {
+            Text(l10n("diagnostics.enableError"))
         }
         #if os(macOS)
             .frame(minWidth: 420, minHeight: 360)

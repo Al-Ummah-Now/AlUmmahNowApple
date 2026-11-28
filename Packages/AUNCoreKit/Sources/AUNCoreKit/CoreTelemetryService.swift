@@ -3,6 +3,13 @@ import AunCore
 import Foundation
 import Observation
 
+private final class InitOptOutTracker: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _sawOptOut = false
+    var sawOptOut: Bool { lock.withLock { _sawOptOut } }
+    func markOptOut() { lock.withLock { _sawOptOut = true } }
+}
+
 /// Wraps `aun-core`'s `TelemetryClient` behind ``TelemetryServicing``.
 ///
 /// Privacy & safety invariants:
@@ -82,6 +89,11 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     ) throws {
         self.bufferPath = bufferPath
         self.isExternallyEnabled = isExternallyEnabled
+        let initTracker = InitOptOutTracker()
+        let initObserver = Self.observeDefaultsOptOut(observedDefaults, key: observedDefaultsKey) {
+            initTracker.markOptOut()
+        }
+        defer { if let initObserver { NotificationCenter.default.removeObserver(initObserver) } }
         let app = TelemetryAppInfo(
             platform: platform, appVersion: appVersion, osVersion: osVersion,
             deviceClass: deviceClass, locale: locale
@@ -92,22 +104,12 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             bufferPath: bufferPath, sampleRate: nil, maxBatchBytes: nil
         )
         self.client = try TelemetryClient(config: config)
-        if let observedDefaults, let observedDefaultsKey {
-            nonisolated(unsafe) let defaultsRef = observedDefaults
-            self.defaultsObserver = NotificationCenter.default.addObserver(
-                forName: UserDefaults.didChangeNotification,
-                object: nil,
-                queue: nil
-            ) { [weak self] _ in
-                if !defaultsRef.bool(forKey: observedDefaultsKey) {
-                    self?.revokeIfExternallyDisabled()
-                }
-            }
+        self.defaultsObserver = Self.observeDefaultsOptOut(observedDefaults, key: observedDefaultsKey) { [weak self] in
+            self?.revokeIfExternallyDisabled()
         }
+        if initTracker.sawOptOut { _ = Self.removeBufferAndTempFiles(at: bufferPath) }
         _ = setConsent(initialEnabled ? .full : .off)
-        if initialEnabled, isExternallyEnabled != nil {
-            revokeIfExternallyDisabled()
-        }
+        if initialEnabled, isExternallyEnabled != nil { revokeIfExternallyDisabled() }
     }
 
     deinit {

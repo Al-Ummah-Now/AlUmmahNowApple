@@ -97,13 +97,32 @@ struct CoreTelemetryExternalOptOutTests {
             bufferPath: bufferPath, initialEnabled: true)
         service.track("4155550123", properties: [:])
         service.track("peer 2001:db8::beef:cafe", properties: ["2001:db8::beef:cafe": "failed"])
-        service.addBreadcrumb(category: "4155550123", message: "Peer 192.0.2.10 called +٩٧١٥٠١٢٣٤٥٦", level: .info)
-        service.reportCrash(kind: "4155550123", message: "Peer 192.0.2.10 called +٩٧١٥٠١٢٣٤٥٦", stack: nil)
+        service.track("signin_attempt", properties: ["verificationCode": "482193", "token=cobalt-orchard": "ok"])
+        service.addBreadcrumb(
+            category: "token=cobalt-orchard",
+            message: "Remote peer 10.0.0.123. peer:2001:db8::1 Call ٠٥٠\u{2011}١٢٣\u{2011}٤٥٦٧ +𝟏𝟐𝟏𝟐𝟓𝟓𝟓𝟎𝟏𝟐𝟑",
+            level: .info
+        )
+        service.reportCrash(
+            kind: "4155550123",
+            message: #"clientSecret="cobalt orchard" eyJhbGciOiJkaXIifQ..iv1234.cipher5678.tag9012 "#
+                + "https://drive.google.com/file/u/0/d/AbCdEfGhIjKlMnOpQrStUvWxYzABCDE/view "
+                + "https://example.com/a;jsessionid=abc123",
+            stack: nil
+        )
         service.persist()
         let raw = try String(contentsOfFile: bufferPath, encoding: .utf8)
         #expect(!raw.contains("4155550123"))
-        #expect(!raw.contains("192.0.2.10"))
-        #expect(!raw.contains("٩٧١٥٠١٢٣٤٥٦"))
+        #expect(!raw.contains("10.0.0.123"))
+        #expect(!raw.contains("2001:db8"))
+        #expect(!raw.contains("١٢٣"))
+        #expect(!raw.contains("𝟏𝟐𝟏𝟐"))
         #expect(!raw.contains("beef:cafe"))
+        #expect(!raw.contains("482193"))
+        #expect(!raw.contains("cobalt-orchard"))
+        #expect(!raw.contains("orchard"))
+        #expect(!raw.contains("cipher5678"))
+        #expect(!raw.contains("AbCdEfGhIjKlMnOpQrStUvWxYzABCDE"))
+        #expect(!raw.contains("abc123"))
     }
 }

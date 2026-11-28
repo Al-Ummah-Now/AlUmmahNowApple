@@ -49,6 +49,7 @@ private struct SignedOutDiagnosticsControl: View {
     @Environment(AppSettings.self) private var settings
     let session: StudioSession
     @State private var diagnosticsMessage: String?
+    @State private var showingEnableError = false
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
@@ -62,6 +63,7 @@ private struct SignedOutDiagnosticsControl: View {
                     } else {
                         settings.telemetryEnabled = false
                         diagnosticsMessage = l10n("diagnostics.enableError")
+                        showingEnableError = true
                     }
                 } else {
                     if settings.telemetryEnabled { settings.telemetryEnabled = false }
@@ -98,6 +100,11 @@ private struct SignedOutDiagnosticsControl: View {
         }
         .multilineTextAlignment(.leading)
         .padding(.top, FanousScale.spacingSm)
+        .alert(l10n("diagnostics.toggle"), isPresented: $showingEnableError) {
+            Button(l10n("common.dismiss"), role: .cancel) {}
+        } message: {
+            Text(l10n("diagnostics.enableError"))
+        }
     }
 }
 

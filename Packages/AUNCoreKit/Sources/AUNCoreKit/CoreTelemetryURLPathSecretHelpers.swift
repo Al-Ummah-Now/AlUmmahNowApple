@@ -20,7 +20,7 @@ extension CoreTelemetryService {
             + #"invite|invitations?|tokens?|auth|oauth2?|callback|sessions?|unsubscribe|"#
             + #"secrets?|keys?|api-?keys?|credentials?|sign-?in|login|sso|redeem|claim|recovery?|passwords?|"#
             + #"share|shared|sh|s|scl|dl|link|private|join|otp|passkey|code|folders|"#
-            + #"file/d|document/d|spreadsheets/d|presentation/d)"#
+            + #"(?:file|document|spreadsheets|presentation)/(?:u/\d+/)?d)"#
             + #"(?:/|%2[fF]))[^\s?#]+"#,
         options: [.caseInsensitive]
     )
@@ -33,6 +33,11 @@ extension CoreTelemetryService {
     private static let telegramBotTokenURLRegex = try? NSRegularExpression(
         pattern: #"((?:/|%2[fF])bot\d+:)[^/\s?#]+"#, options: [.caseInsensitive]
     )
+    private static let urlMatrixParamRegex = try? NSRegularExpression(
+        pattern:
+            #"(;[a-z0-9_-]*(?:session|jsessionid|phpsessid|sid|token|secret|auth|key|pass|pwd|cred|jwt|sig|code|otp|ticket|cookie)[a-z0-9_-]*=)[^/?#;\s]+"#,
+        options: [.caseInsensitive]
+    )
 
     static func redactURLPathSecrets(_ url: String) -> String {
         var result = url
@@ -41,6 +46,9 @@ extension CoreTelemetryService {
         }
         result = redactSlackWebhookURL(result)
         if let regex = telegramBotTokenURLRegex {
+            result = replaceURLPathSecret(result, regex: regex)
+        }
+        if let regex = urlMatrixParamRegex {
             result = replaceURLPathSecret(result, regex: regex)
         }
         return result
@@ -171,20 +179,20 @@ extension CoreTelemetryService {
     }
 
     private static let jwtInKeyRegex = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?![A-Za-z0-9_-])"#
+        pattern: #"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+){1,3}(?![A-Za-z0-9_-])"#
     )
     private static let ipv4InKeyRegex = try? NSRegularExpression(
         pattern:
-            #"(?<![A-Za-z0-9_.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![A-Za-z0-9_.])"#
+            #"(?<![A-Za-z0-9_.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![A-Za-z0-9_]|\.\d)"#
     )
     private static let ipv6InKeyRegex = try? NSRegularExpression(
         pattern:
-            #"(?<![A-Za-z0-9_:])(?:(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|"#
+            #"(?<![0-9a-fA-F]:)(?<![A-Za-z0-9_])(?:(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|"#
             + #"(?:[0-9a-fA-F]{1,4}:){1,7}:(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,5})?|"#
-            + #"::(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,6}))(?:%[A-Za-z0-9_.-]+)?(?![A-Za-z0-9_:])"#
+            + #"::(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,6}))(?:%[A-Za-z0-9_.-]+)?(?![A-Za-z0-9_]|:[0-9a-fA-F])"#
     )
     private static let phoneInKeyRegex = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9_])\+?\p{Nd}[\p{Nd}\s().-]{7,}\p{Nd}(?![A-Za-z0-9_])"#
+        pattern: #"(?<![A-Za-z0-9_])\+?\p{Nd}[\p{Nd}\s().\p{Pd}]{7,}\p{Nd}(?![A-Za-z0-9_])"#
     )
     private static let opaqueSecretInKeyRegex = try? NSRegularExpression(
         pattern: #"(?<![A-Za-z0-9_])[A-Za-z0-9+/=_-]{32,}(?![A-Za-z0-9_])"#
@@ -193,8 +201,36 @@ extension CoreTelemetryService {
         pattern: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#
     )
 
+    static func observeDefaultsOptOut(
+        _ defaults: UserDefaults?, key: String?, onOptOut: @escaping @Sendable () -> Void
+    ) -> NSObjectProtocol? {
+        guard let defaults, let key else { return nil }
+        nonisolated(unsafe) let defaultsRef = defaults
+        return NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: nil
+        ) { _ in
+            if !defaultsRef.bool(forKey: key) { onOptOut() }
+        }
+    }
+
+    private static let keyValueCredentialRegex = try? NSRegularExpression(
+        pattern:
+            #"(?<![A-Za-z0-9_])(token|secret|jwt|passphrase|credential|credentials|"#
+            + #"verification[_-]?code|auth[_-]?code|recovery[_-]?code|passcode|otp|pin|"#
+            + #"client[_-]?secret|access[_-]?token|refresh[_-]?token|id[_-]?token|"#
+            + #"api[_-]?key|api[_-]?token|auth[_-]?token|session[_-]?token|security[_-]?token|"#
+            + #"private[_-]?key|secret[_-]?key|access[_-]?key|code[_-]?verifier|"#
+            + #"session[_-]?id|session[_-]?key|password|passwd)(\s*[=:]\s*)"#
+            + #"(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)"#,
+        options: [.caseInsensitive]
+    )
+
     static func sanitizeDiagnosticText(_ text: String) -> String {
         var safe = sanitizeLocalPaths(text)
+        if let regex = keyValueCredentialRegex {
+            let range = NSRange(location: 0, length: (safe as NSString).length)
+            safe = regex.stringByReplacingMatches(in: safe, options: [], range: range, withTemplate: "$1$2[redacted]")
+        }
         if let regex = ipv4InKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
         }
@@ -261,9 +297,16 @@ extension CoreTelemetryService {
             "refresh_token", "refresh-token", "id_token", "id-token",
             "session_token", "session-token", "security_token", "security-token",
             "session_key", "session-key", "session_id", "session-id",
-            "private_key", "private-key", "secret_key", "secret-key", "access_key", "access-key",
-            "code_verifier", "code-verifier", "client_secret", "client-secret",
-            "authorizationsignature", "authorization-signature", "password", "passwd":
+            "private_key", "private-key", "privatekey", "secret_key", "secret-key", "secretkey",
+            "access_key", "access-key", "accesskey",
+            "code_verifier", "code-verifier", "codeverifier",
+            "client_secret", "client-secret", "clientsecret",
+            "accesstoken", "refreshtoken", "idtoken", "apikey", "apitoken", "authtoken",
+            "sessiontoken", "securitytoken", "sessionid", "sessionkey",
+            "verification_code", "verification-code", "verificationcode",
+            "auth_code", "auth-code", "authcode", "recovery_code", "recovery-code", "recoverycode",
+            "passcode", "otp", "pin", "passphrase", "credential", "credentials",
+            "authorizationsignature", "authorization-signature", "password", "passwd", "token", "secret", "jwt":
             return true
         default:
             return isSensitiveCustomHeader(lower)
