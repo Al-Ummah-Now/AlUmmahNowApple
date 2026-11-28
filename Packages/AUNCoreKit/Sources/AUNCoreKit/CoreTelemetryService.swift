@@ -36,7 +36,36 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     /// Optional hook run right before committing a sanitized event/breadcrumb/crash under active consent.
     var beforeRecordCommitForTesting: (@Sendable () -> Void)?
 
-    public init(
+    public convenience init(
+        platform: String,
+        appVersion: String,
+        osVersion: String,
+        deviceClass: String,
+        locale: String,
+        videosAPIBaseURL: URL?,
+        userAgent: String,
+        clientHeader: String = AUNClient.value,
+        bufferPath: String?,
+        initialEnabled: Bool = false
+    ) throws {
+        try self.init(
+            platform: platform,
+            appVersion: appVersion,
+            osVersion: osVersion,
+            deviceClass: deviceClass,
+            locale: locale,
+            videosAPIBaseURL: videosAPIBaseURL,
+            userAgent: userAgent,
+            clientHeader: clientHeader,
+            bufferPath: bufferPath,
+            initialEnabled: initialEnabled,
+            isExternallyEnabled: nil,
+            observedDefaults: nil,
+            observedDefaultsKey: nil
+        )
+    }
+
+    init(
         platform: String,
         appVersion: String,
         osVersion: String,
@@ -47,7 +76,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         clientHeader: String = AUNClient.value,
         bufferPath: String?,
         initialEnabled: Bool = false,
-        isExternallyEnabled: (@Sendable () -> Bool)? = nil,
+        isExternallyEnabled: (@Sendable () -> Bool)?,
         observedDefaults: UserDefaults? = nil,
         observedDefaultsKey: String? = nil
     ) throws {
@@ -395,10 +424,9 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         }
     }
 
-    private func ensureExternalConsentLocked(allowDuringClosedFlush: Bool = false) -> [Task<Void, Never>] {
-        let activeOrClosingFlush =
-            (!_closed && _consent != .off) || (allowDuringClosedFlush && _closed && _inFlightFlushes > 0 && !_revoked)
-        guard activeOrClosingFlush, let check = isExternallyEnabled, !check() else { return [] }
+    private func ensureExternalConsentLocked(allowWhenClosed: Bool = false) -> [Task<Void, Never>] {
+        let shouldCheck = (!_closed && _consent != .off) || (allowWhenClosed && _closed && !_revoked)
+        guard shouldCheck, let check = isExternallyEnabled, !check() else { return [] }
         let (_, waiters) = revokeLocked()
         return waiters
     }
@@ -409,7 +437,7 @@ extension CoreTelemetryService {
         let (cancelled, purgeChanged, consentChanged): ([Task<Void, Never>], Bool, Bool) = lock.withLock {
             let priorPurge = _lastPurgeFailed
             let priorConsent = _closed ? .off : _consent
-            let waiters = ensureExternalConsentLocked(allowDuringClosedFlush: true)
+            let waiters = ensureExternalConsentLocked(allowWhenClosed: true)
             let currentConsent = _closed ? .off : _consent
             return (waiters, _lastPurgeFailed != priorPurge, currentConsent != priorConsent)
         }

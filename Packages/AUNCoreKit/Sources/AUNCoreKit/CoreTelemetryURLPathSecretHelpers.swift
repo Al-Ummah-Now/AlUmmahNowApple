@@ -168,6 +168,57 @@ extension CoreTelemetryService {
             .contains { sensitiveCustomHeaderSegments.contains(String($0)) }
     }
 
+    private static let phoneInKeyRegex = try? NSRegularExpression(
+        pattern: #"(?<![A-Za-z0-9_])\+?\d[\d\s().-]{7,}\d(?![A-Za-z0-9_])"#
+    )
+    private static let opaqueSecretInKeyRegex = try? NSRegularExpression(
+        pattern: #"(?<![A-Za-z0-9_])[A-Za-z0-9+/=_-]{32,}(?![A-Za-z0-9_])"#
+    )
+    private static let uuidExactRegex = try? NSRegularExpression(
+        pattern: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#
+    )
+
+    static func sanitizePropertyKey(_ key: String) -> String {
+        var safe = sanitizeLocalPaths(key)
+        if let regex = phoneInKeyRegex {
+            safe = replaceMatches(in: safe, regex: regex) { match in
+                match.utf8.filter { $0 >= 0x30 && $0 <= 0x39 }.count >= 9 ? "[redacted-phone]" : nil
+            }
+        }
+        if let regex = opaqueSecretInKeyRegex {
+            safe = replaceMatches(in: safe, regex: regex) { match in
+                let hasLetter = match.utf8.contains { ($0 >= 0x41 && $0 <= 0x5A) || ($0 >= 0x61 && $0 <= 0x7A) }
+                let hasDigit = match.utf8.contains { $0 >= 0x30 && $0 <= 0x39 }
+                let isUUID =
+                    uuidExactRegex?.firstMatch(
+                        in: match, options: [], range: NSRange(location: 0, length: (match as NSString).length)
+                    ) != nil
+                return hasLetter && hasDigit && !isUUID ? "[redacted]" : nil
+            }
+        }
+        return safe
+    }
+
+    private static func replaceMatches(
+        in text: String, regex: NSRegularExpression, transform: (String) -> String?
+    ) -> String {
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+        var out = ""
+        var copied = 0
+        for m in matches {
+            let sub = nsText.substring(with: m.range)
+            guard let repl = transform(sub) else { continue }
+            out += nsText.substring(with: NSRange(location: copied, length: m.range.location - copied))
+            out += repl
+            copied = m.range.location + m.range.length
+        }
+        guard copied > 0 else { return text }
+        out += nsText.substring(from: copied)
+        return out
+    }
+
     static func isKnownAuthHeaderPropertyKey(_ trimmedKey: String) -> Bool {
         let lower = trimmedKey.lowercased()
         switch lower {

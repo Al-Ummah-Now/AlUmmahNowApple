@@ -279,18 +279,25 @@ extension CoreTelemetryService {
                 || ch == 0x3F || ch == 0x29 || ch == 0x5D || ch == 0x7D
         }
 
+        static let localOrShareSchemes: Set<String> = [
+            "file", "content", "smb", "cifs", "afp", "nfs",
+            "sftp", "ftp", "ftps", "dav", "davs", "webdav", "webdavs",
+        ]
+
+        private static let localShareURIPrefixes: [[unichar]] = [
+            "file://", "file:/", "content://", "smb://", "cifs://", "afp://", "nfs://",
+            "sftp://", "ftps://", "ftp://", "davs://", "dav://", "webdavs://", "webdav://",
+        ].map { Array($0.utf16) }
+
         static func isFileScheme(_ nsText: NSString, at pos: Int) -> Bool {
             localURISchemeLength(nsText, at: pos) > 0
         }
 
         static func localURISchemeLength(_ nsText: NSString, at pos: Int) -> Int {
             if pos > 0 && isURLSchemeChar(nsText.character(at: pos - 1)) { return 0 }
-            let fileTarget: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F, 0x2F]  // "file://"
-            if matchesFoldedPrefix(nsText, at: pos, target: fileTarget) { return 7 }
-            let singleFileTarget: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F]  // "file:/"
-            if matchesFoldedPrefix(nsText, at: pos, target: singleFileTarget) { return 6 }
-            let contentTarget: [unichar] = [0x63, 0x6F, 0x6E, 0x74, 0x65, 0x6E, 0x74, 0x3A, 0x2F, 0x2F]  // "content://"
-            if matchesFoldedPrefix(nsText, at: pos, target: contentTarget) { return 10 }
+            for target in localShareURIPrefixes where matchesFoldedPrefix(nsText, at: pos, target: target) {
+                return target.count
+            }
             return 0
         }
 

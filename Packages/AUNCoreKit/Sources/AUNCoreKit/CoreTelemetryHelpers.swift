@@ -48,8 +48,8 @@ extension CoreTelemetryService {
             if initialEnabled {
                 defaults.set(false, forKey: "AUNTelemetryEnabled")
             }
-            AUNLog.network.error("Telemetry unavailable, continuing with no-op service: \(error)")
-            return NullTelemetryService.shared
+            AUNLog.network.error("Telemetry unavailable, continuing with purge-capable fallback: \(error)")
+            return UnavailableNativeTelemetryService(bufferPath: bufferURL?.path)
         }
     }
 
@@ -460,13 +460,12 @@ extension CoreTelemetryService {
         for (key, value) in properties.sorted(by: { $0.key < $1.key }) {
             let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedKey.isEmpty else { continue }
+            let safeKey = Self.sanitizePropertyKey(key)
+            guard !safeKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            let uniqueKey = resolveUniquePropertyKey(sanitized, base: safeKey, nextSuffix: &nextSuffix)
             if isAuthHeaderPropertyKey(trimmedKey) {
-                let uniqueKey = resolveUniquePropertyKey(sanitized, base: key, nextSuffix: &nextSuffix)
                 sanitized[uniqueKey] = "[redacted]"
             } else {
-                let safeKey = Self.sanitizeLocalPaths(key)
-                guard !safeKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                let uniqueKey = resolveUniquePropertyKey(sanitized, base: safeKey, nextSuffix: &nextSuffix)
                 sanitized[uniqueKey] = Self.sanitizeLocalPaths(value)
             }
         }

@@ -21,9 +21,9 @@ extension CoreTelemetryService {
             if VaultLineTracker.isURLSchemeChar(prev) || prev == 0x2F || prev == 0x5C { return nil }
         }
         let schemeLen = sep - start
-        if schemeLen == 4 || schemeLen == 7 {
+        if schemeLen >= 3 && schemeLen <= 7 {
             let lower = nsText.substring(with: NSRange(location: start, length: schemeLen)).lowercased()
-            if lower == "file" || lower == "content" { return nil }
+            if VaultLineTracker.localOrShareSchemes.contains(lower) { return nil }
         }
         return start
     }
