@@ -388,6 +388,15 @@ extension CoreTelemetryAuthSanitizerTests {
                 == "Bearer Basic \"[redacted]\""
         )
         #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Bearer Basic\n") == "Bearer [redacted]\n"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Bearer Bearer\n") == "Bearer [redacted]\n"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Bearer Basic auth") == "Bearer [redacted] auth"
+        )
+        #expect(
             CoreTelemetryService.sanitizeLocalPaths("Basic Basic \"dXNlcjpwYXNz\"")
                 == "Basic Basic \"[redacted]\""
         )

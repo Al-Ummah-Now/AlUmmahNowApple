@@ -66,8 +66,11 @@ extension CoreTelemetryAuthScanner {
                 wsEnd += 1
             }
             guard wsEnd < len else { break }
-            if matchesBearerOrBasicPrefix(nsText, at: wsEnd, len: len) {
-                idx = wsEnd
+            if let nextIdx = stepRepeatedBearerOrBasic(
+                nsText, prefixStart: idx, wsEnd: wsEnd, len: len,
+                flags: (inEscapedQuote, allowLiteralQuoted, requireClosingLiteralQuote), ranges: &ranges)
+            {
+                idx = nextIdx
                 continue
             }
             if !inEscapedQuote,
@@ -146,14 +149,107 @@ extension CoreTelemetryAuthScanner {
         return nil
     }
 
-    private static func matchesBearerOrBasicPrefix(_ nsText: NSString, at idx: Int, len: Int) -> Bool {
-        if idx + 6 < len && matchesASCII(nsText, at: idx, literal: "bearer", len: len)
-            && CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: idx + 6))
-        {
-            return true
+    // swiftlint:disable:next function_parameter_count
+    private static func stepRepeatedBearerOrBasic(
+        _ nsText: NSString,
+        prefixStart: Int,
+        wsEnd: Int,
+        len: Int,
+        flags: (inEscapedQuote: Bool, allowLiteralQuoted: Bool, requireClosingLiteralQuote: Bool),
+        ranges: inout [(Int, Int, Bool)]
+    ) -> Int? {
+        if matchesBearerAt(nsText, at: wsEnd, len: len) {
+            var prevBearer = prefixStart
+            var lastBearer = wsEnd
+            var afterWs = wsEnd
+            while true {
+                var nextWs = lastBearer + 6
+                while nextWs < len && CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: nextWs)) {
+                    nextWs += 1
+                }
+                if nextWs < len && matchesBearerAt(nsText, at: nextWs, len: len) {
+                    prevBearer = lastBearer
+                    lastBearer = nextWs
+                } else {
+                    afterWs = nextWs
+                    break
+                }
+            }
+            if afterWs < len
+                && (hasValidBasicCredentialAt(nsText, at: afterWs, len: len)
+                    || hasBearerTokenAt(nsText, at: afterWs, len: len, flags: flags))
+            {
+                return lastBearer
+            }
+            ranges.append((prevBearer, lastBearer + 6, false))
+            return lastBearer + 6
         }
-        return idx + 5 < len && matchesASCII(nsText, at: idx, literal: "basic", len: len)
-            && CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: idx + 5))
+        return hasValidBasicCredentialAt(nsText, at: wsEnd, len: len) ? wsEnd : nil
+    }
+
+    private static func matchesBearerAt(_ nsText: NSString, at idx: Int, len: Int) -> Bool {
+        idx + 6 < len && matchesASCII(nsText, at: idx, literal: "bearer", len: len)
+            && CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: idx + 6))
+    }
+
+    private static func hasBearerTokenAt(
+        _ nsText: NSString,
+        at pos: Int,
+        len: Int,
+        flags: (inEscapedQuote: Bool, allowLiteralQuoted: Bool, requireClosingLiteralQuote: Bool)
+    ) -> Bool {
+        guard pos < len else { return false }
+        let wsCh = nsText.character(at: pos)
+        let isLit = flags.allowLiteralQuoted && (wsCh == 0x22 || wsCh == 0x27)
+        let openLen = !flags.inEscapedQuote ? (isLit ? 1 : escapedDoubleQuoteLen(nsText, at: pos, len: len)) : 0
+        if openLen > 0 {
+            let innerStart = pos + openLen
+            let stopEsc = openLen > 1
+            if isRedactedBearerPlaceholder(nsText, at: innerStart, len: len, stopAtEscapedQuote: stopEsc) { return true }
+            let innerEnd = scanBearerTokenEnd(nsText, from: innerStart, len: len, stopAtEscapedQuote: stopEsc)
+            let closeLen =
+                openLen == 1
+                ? (innerEnd < len && nsText.character(at: innerEnd) == wsCh ? 1 : 0)
+                : escapedDoubleQuoteLen(nsText, at: innerEnd, len: len)
+            return innerEnd > innerStart && (closeLen > 0 || (openLen == 1 && !flags.requireClosingLiteralQuote))
+        }
+        return isRedactedBearerPlaceholder(nsText, at: pos, len: len, stopAtEscapedQuote: flags.inEscapedQuote)
+            || scanBearerTokenEnd(nsText, from: pos, len: len, stopAtEscapedQuote: flags.inEscapedQuote) > pos
+    }
+
+    private static func isBasicBase64Char(_ ch: unichar) -> Bool {
+        CoreTelemetryService.isASCIIAlphaNum(ch) || ch == 0x2B || ch == 0x2F || ch == 0x5F || ch == 0x2D
+    }
+
+    private static func hasValidBasicCredentialAt(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+        guard pos + 5 < len, matchesASCII(nsText, at: pos, literal: "basic", len: len),
+            CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: pos + 5))
+        else { return false }
+        var p = pos + 5
+        while p < len && CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: p)) { p += 1 }
+        guard p < len else { return false }
+        let openCh = nsText.character(at: p)
+        let openLen = (openCh == 0x22 || openCh == 0x27) ? 1 : escapedDoubleQuoteLen(nsText, at: p, len: len)
+        let tokStart = p + openLen
+        var tokEnd = tokStart
+        while tokEnd < len && isBasicBase64Char(nsText.character(at: tokEnd)) { tokEnd += 1 }
+        var eqCount = 0
+        while tokEnd < len && eqCount < 2 && nsText.character(at: tokEnd) == 0x3D {
+            tokEnd += 1
+            eqCount += 1
+        }
+        guard tokEnd - tokStart - eqCount >= 2 else { return false }
+        if tokEnd < len && (isBasicBase64Char(nsText.character(at: tokEnd)) || nsText.character(at: tokEnd) == 0x3D) {
+            return false
+        }
+        if openLen > 0 && tokEnd < len {
+            let closeOk =
+                openLen == 1
+                ? nsText.character(at: tokEnd) == openCh
+                : escapedDoubleQuoteLen(nsText, at: tokEnd, len: len) == openLen
+            guard closeOk else { return false }
+        }
+        return isBasicCredentialToken(nsText.substring(with: NSRange(location: tokStart, length: tokEnd - tokStart)))
     }
 
     private static func matchesBearerPrefix(_ nsText: NSString, at idx: Int, len: Int) -> Bool {
