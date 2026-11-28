@@ -142,6 +142,8 @@ struct AccountsView: View {
                     .accessibilityIdentifier("account-add")
                 }
                 .studioRows()
+                StudioDiagnosticsSection(telemetry: session.services.telemetry)
+                    .studioRows()
                 Section {
                     StudioSupportLinksSection(environment: session.environment, idPrefix: "accounts")
                 }

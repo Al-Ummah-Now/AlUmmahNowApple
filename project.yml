@@ -98,6 +98,7 @@ targets:
       - package: AUNFeatures
       - package: AUNDesign
       - package: AUNCoreBridge
+      - package: AUNCoreKit
     scheme:
       testTargets:
         - ViewerIOSUITests
@@ -125,6 +126,7 @@ targets:
       - package: AUNFeatures
       - package: AUNDesign
       - package: AUNCoreBridge
+      - package: AUNCoreKit
     scheme:
       testTargets:
         - ViewerTVUITests
@@ -154,6 +156,7 @@ targets:
       - package: AUNFeatures
       - package: AUNDesign
       - package: AUNCoreBridge
+      - package: AUNCoreKit
     scheme:
       testTargets:
         - ViewerMacUITests
@@ -317,7 +320,11 @@ targets:
   ViewerIOSUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests/ViewerIOS, UITests/Shared]
+    sources:
+      - path: UITests/ViewerIOS
+        excludes: [__Snapshots__]
+      - UITests/Diagnostics
+      - UITests/Shared
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: ViewerIOS, TARGETED_DEVICE_FAMILY: "1,2"}}
     dependencies: [{target: ViewerIOS}]
   ViewerTVUITests:
@@ -335,7 +342,11 @@ targets:
   StudioIOSUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests/StudioIOS, UITests/Shared]
+    sources:
+      - path: UITests/StudioIOS
+        excludes: [__Snapshots__]
+      - UITests/Diagnostics
+      - UITests/Shared
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: StudioIOS, TARGETED_DEVICE_FAMILY: "1,2"}}
     dependencies: [{target: StudioIOS}]
   StudioMacUITests:
@@ -347,7 +358,10 @@ targets:
   AdminIOSUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests/AdminIOS]
+    sources:
+      - path: UITests/AdminIOS
+        excludes: [__Snapshots__]
+      - UITests/Diagnostics
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: AdminIOS, TARGETED_DEVICE_FAMILY: "1,2"}}
     dependencies: [{target: AdminIOS}]
   AdminMacUITests:

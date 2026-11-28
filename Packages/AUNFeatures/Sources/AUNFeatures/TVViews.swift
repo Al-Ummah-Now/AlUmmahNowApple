@@ -9,6 +9,7 @@
 
     /// Apple TV shell: focus-driven, no touch affordances.
     public struct ViewerRootView: View {
+        @Environment(\.scenePhase) private var scenePhase
         @State private var path: [ViewerDestination] = []
         private let core: CoreBridge
 
@@ -29,6 +30,11 @@
                         }
                     }
             }
+            .task { await core.telemetry.flush() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { core.telemetry.persist() }
+                if phase == .active { Task { await core.telemetry.flush() } }
+            }
         }
     }
 
@@ -36,11 +42,13 @@
         @Environment(\.l10n) private var l10n
         @State private var model: HomeViewModel
         @State private var live: LiveListModel
+        let telemetry: any TelemetryServicing
         let open: (ViewerDestination) -> Void
 
         init(core: CoreBridge, open: @escaping (ViewerDestination) -> Void) {
             _model = State(initialValue: HomeViewModel(catalog: core.catalog))
             _live = State(initialValue: LiveListModel(live: core.live))
+            self.telemetry = core.telemetry
             self.open = open
         }
 
@@ -87,7 +95,7 @@
                             .scrollClipDisabled()
                         }
                     }
-                    TVSettingsRow()
+                    TVSettingsRow(telemetry: telemetry)
                 }
                 .padding(.horizontal, 60)
             }
@@ -141,6 +149,7 @@
     struct TVSettingsRow: View {
         @Environment(AppSettings.self) private var settings
         @Environment(\.l10n) private var l10n
+        var telemetry: any TelemetryServicing = NullTelemetryService.shared
 
         var body: some View {
             HStack(spacing: 24) {
@@ -153,6 +162,19 @@
                     let next = ((all.firstIndex(of: settings.theme) ?? 0) + 1) % all.count
                     settings.theme = all[next]
                 }
+                Button(
+                    "\(l10n("diagnostics.toggle")): \(l10n(settings.telemetryEnabled ? "diagnostics.on" : "diagnostics.off"))"
+                ) {
+                    if settings.telemetryEnabled {
+                        _ = telemetry.setConsent(.off)
+                        settings.telemetryEnabled = false
+                    } else if telemetry.setConsent(.full) {
+                        settings.telemetryEnabled = true
+                    } else {
+                        settings.telemetryEnabled = false
+                    }
+                }
+                .accessibilityIdentifier("diagnostics-toggle")
             }
             .padding(.bottom, 40)
         }

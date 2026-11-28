@@ -8,6 +8,7 @@
     public struct ViewerRootView: View {
         @Environment(\.l10n) private var l10n
         @Environment(\.openWindow) private var openWindow
+        @Environment(\.scenePhase) private var scenePhase
         @State private var selection: String? = "home"
         /// Something is on air or coming: the Live section is there.
         @State private var hasLive = false
@@ -35,11 +36,20 @@
                 .navigationSplitViewColumnWidth(min: 160, ideal: 200)
             } detail: {
                 detail
-                    .toolbar { ToolbarItem { SettingsMenu(environment: core.environment) { showingBlocked = true } } }
+                    .toolbar {
+                        ToolbarItem {
+                            SettingsMenu(environment: core.environment, telemetry: core.telemetry) { showingBlocked = true }
+                        }
+                    }
                     .navigationTitle(l10n("app.name"))
             }
             .sheet(isPresented: $showingBlocked) {
                 BlockedListSheet(store: .shared)
+            }
+            .task { await core.telemetry.flush() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { core.telemetry.persist() }
+                if phase == .active { Task { await core.telemetry.flush() } }
             }
             .frame(minWidth: 900, minHeight: 560)
             // A universal link reuses this window (instead of a new one) and opens the video in its own window.
