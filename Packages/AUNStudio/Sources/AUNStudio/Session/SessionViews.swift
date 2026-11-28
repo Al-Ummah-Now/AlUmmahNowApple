@@ -78,6 +78,9 @@ private struct SignedOutDiagnosticsControl: View {
             VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
                 Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
                     .accessibilityIdentifier("signin-diagnostics")
+                Text(l10n("diagnostics.description"))
+                    .fanousFont(.caption)
+                    .foregroundStyle(Fanous.textSecondary)
                 if let message = diagnosticsMessage
                     ?? (session.services.telemetry.lastPurgeFailed ? l10n("diagnostics.purgeWarning") : nil)
                 {

@@ -92,7 +92,6 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             bufferPath: bufferPath, sampleRate: nil, maxBatchBytes: nil
         )
         self.client = try TelemetryClient(config: config)
-        _ = setConsent(initialEnabled ? .full : .off)
         if let observedDefaults, let observedDefaultsKey {
             nonisolated(unsafe) let defaultsRef = observedDefaults
             self.defaultsObserver = NotificationCenter.default.addObserver(
@@ -104,6 +103,10 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
                     self?.revokeIfExternallyDisabled()
                 }
             }
+        }
+        _ = setConsent(initialEnabled ? .full : .off)
+        if initialEnabled, isExternallyEnabled != nil {
+            revokeIfExternallyDisabled()
         }
     }
 
@@ -186,7 +189,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             let captureEpoch = captureConsentEpoch(requiresFull: true)
         else { return }
-        let safeName = Self.sanitizeLocalPaths(name)
+        let safeName = Self.sanitizePropertyKey(name)
         guard !safeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let json = Self.serializeProperties(properties)
         beforeRecordCommitForTesting?()
@@ -201,7 +204,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             let captureEpoch = captureConsentEpoch(requiresFull: true)
         else { return }
-        let safeCode = Self.sanitizeLocalPaths(code)
+        let safeCode = Self.sanitizePropertyKey(code)
         guard !safeCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let json = Self.serializeProperties(properties)
         beforeRecordCommitForTesting?()
@@ -223,7 +226,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             case .warning: .warning
             case .error: .error
             }
-        let safeCategory = Self.sanitizeLocalPaths(category)
+        let safeCategory = Self.sanitizePropertyKey(category)
         let safeMessage = Self.sanitizeLocalPaths(message)
         beforeRecordCommitForTesting?()
         withActiveConsent(requiresFull: false, expectedEpoch: captureEpoch) {
@@ -234,7 +237,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     public func reportCrash(kind: String, message: String, stack: String?, fromPreviousSession: Bool) {
         guard let captureEpoch = captureConsentEpoch(requiresFull: false) else { return }
         let trimmedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines)
-        let safeKind = trimmedKind.isEmpty ? "UnhandledException" : Self.sanitizeLocalPaths(trimmedKind)
+        let safeKind = trimmedKind.isEmpty ? "UnhandledException" : Self.sanitizePropertyKey(trimmedKind)
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeMessage = trimmed.isEmpty ? "Unhandled exception" : Self.sanitizeLocalPaths(trimmed)
         let report = TelemetryCrashReport(

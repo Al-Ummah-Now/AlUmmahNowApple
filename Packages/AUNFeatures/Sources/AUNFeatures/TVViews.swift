@@ -151,41 +151,56 @@
         @Environment(\.l10n) private var l10n
         var telemetry: any TelemetryServicing = NullTelemetryService.shared
         @State private var showingPurgeWarning = false
+        @State private var confirmingDiagnosticsEnable = false
 
         var body: some View {
-            HStack(spacing: 24) {
-                Button("\(l10n("common.language")): \(l10n("language.\(settings.language.rawValue)"))") {
-                    settings.language = settings.language == .ar ? .en : .ar
-                }
-                .accessibilityIdentifier("language-toggle")
-                Button("\(l10n("common.theme")): \(l10n("theme.\(settings.theme.rawValue)"))") {
-                    let all = AppTheme.allCases
-                    let next = ((all.firstIndex(of: settings.theme) ?? 0) + 1) % all.count
-                    settings.theme = all[next]
-                }
-                let diagnosticsActive = settings.telemetryEnabled && telemetry.consent != .off
-                Button(
-                    "\(l10n("diagnostics.toggle")): \(l10n(diagnosticsActive ? "diagnostics.on" : "diagnostics.off"))"
-                ) {
-                    if diagnosticsActive {
-                        settings.telemetryEnabled = false
-                        if !telemetry.setConsent(.off) { showingPurgeWarning = true }
-                    } else {
-                        settings.telemetryEnabled = true
-                        if !telemetry.setConsent(.full) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 24) {
+                    Button("\(l10n("common.language")): \(l10n("language.\(settings.language.rawValue)"))") {
+                        settings.language = settings.language == .ar ? .en : .ar
+                    }
+                    .accessibilityIdentifier("language-toggle")
+                    Button("\(l10n("common.theme")): \(l10n("theme.\(settings.theme.rawValue)"))") {
+                        let all = AppTheme.allCases
+                        let next = ((all.firstIndex(of: settings.theme) ?? 0) + 1) % all.count
+                        settings.theme = all[next]
+                    }
+                    let diagnosticsActive = settings.telemetryEnabled && telemetry.consent != .off
+                    Button(
+                        "\(l10n("diagnostics.toggle")): \(l10n(diagnosticsActive ? "diagnostics.on" : "diagnostics.off"))"
+                    ) {
+                        if diagnosticsActive {
                             settings.telemetryEnabled = false
+                            if !telemetry.setConsent(.off) { showingPurgeWarning = true }
+                        } else {
+                            confirmingDiagnosticsEnable = true
                         }
                     }
-                }
-                .accessibilityIdentifier("diagnostics-toggle")
-                if telemetry.consent == .off && telemetry.lastPurgeFailed {
-                    Button(l10n("common.retry")) {
-                        if !telemetry.setConsent(.off) { showingPurgeWarning = true }
+                    .accessibilityHint(l10n("diagnostics.description"))
+                    .accessibilityIdentifier("diagnostics-toggle")
+                    if telemetry.consent == .off && telemetry.lastPurgeFailed {
+                        Button(l10n("common.retry")) {
+                            if !telemetry.setConsent(.off) { showingPurgeWarning = true }
+                        }
+                        .accessibilityIdentifier("diagnostics-retry-purge")
                     }
-                    .accessibilityIdentifier("diagnostics-retry-purge")
                 }
+                Text(l10n("diagnostics.description"))
+                    .fanousFont(.caption)
+                    .foregroundStyle(Fanous.textSecondary)
             }
             .padding(.bottom, 40)
+            .alert(l10n("diagnostics.toggle"), isPresented: $confirmingDiagnosticsEnable) {
+                Button(l10n("diagnostics.on")) {
+                    settings.telemetryEnabled = true
+                    if !telemetry.setConsent(.full) {
+                        settings.telemetryEnabled = false
+                    }
+                }
+                Button(l10n("common.cancel"), role: .cancel) {}
+            } message: {
+                Text(l10n("diagnostics.description"))
+            }
             .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
                 Button(l10n("common.retry")) {
                     if !telemetry.setConsent(.off) { showingPurgeWarning = true }

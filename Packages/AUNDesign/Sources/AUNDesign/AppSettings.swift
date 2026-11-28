@@ -33,7 +33,7 @@ public final class AppSettings {
     /// Opt-in diagnostics & crash reports. Always defaults to `false`.
     public var telemetryEnabled: Bool {
         didSet {
-            if telemetryEnabled != oldValue {
+            if defaults.bool(forKey: Keys.telemetryEnabled) != telemetryEnabled {
                 defaults.set(telemetryEnabled, forKey: Keys.telemetryEnabled)
             }
         }

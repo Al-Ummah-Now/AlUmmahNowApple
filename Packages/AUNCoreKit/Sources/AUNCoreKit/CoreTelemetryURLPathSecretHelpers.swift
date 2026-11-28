@@ -18,7 +18,8 @@ extension CoreTelemetryService {
         pattern: #"((?:^|/|%2[fF])(?:webhooks?|reset|reset-password|password-reset|forgot-password|"#
             + #"verify|verify-email|confirm|confirm-email|activate|magic|magic-link|"#
             + #"invite|invitations?|tokens?|auth|oauth2?|callback|sessions?|unsubscribe|"#
-            + #"secrets?|keys?|api-?keys?|credentials?|sign-?in|login|sso|redeem|claim|recovery?|passwords?)"#
+            + #"secrets?|keys?|api-?keys?|credentials?|sign-?in|login|sso|redeem|claim|recovery?|passwords?|"#
+            + #"share|shared|sh|s|dl|link|private|join|otp|passkey|code)"#
             + #"(?:/|%2[fF]))[^\s?#]+"#,
         options: [.caseInsensitive]
     )
@@ -168,8 +169,19 @@ extension CoreTelemetryService {
             .contains { sensitiveCustomHeaderSegments.contains(String($0)) }
     }
 
+    private static let jwtInKeyRegex = try? NSRegularExpression(
+        pattern: #"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?![A-Za-z0-9_-])"#
+    )
+    private static let ipv4InKeyRegex = try? NSRegularExpression(
+        pattern:
+            #"(?<![A-Za-z0-9_.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![A-Za-z0-9_.])"#
+    )
+    private static let ipv6InKeyRegex = try? NSRegularExpression(
+        pattern:
+            #"(?<![A-Za-z0-9_:])(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{0,4}|(?<![A-Za-z0-9_:])::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}(?![A-Za-z0-9_:])"#
+    )
     private static let phoneInKeyRegex = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9_])\+?\d[\d\s().-]{7,}\d(?![A-Za-z0-9_])"#
+        pattern: #"(?<![A-Za-z0-9_])\+?\p{Nd}[\p{Nd}\s().-]{7,}\p{Nd}(?![A-Za-z0-9_])"#
     )
     private static let opaqueSecretInKeyRegex = try? NSRegularExpression(
         pattern: #"(?<![A-Za-z0-9_])[A-Za-z0-9+/=_-]{32,}(?![A-Za-z0-9_])"#
@@ -180,9 +192,19 @@ extension CoreTelemetryService {
 
     static func sanitizePropertyKey(_ key: String) -> String {
         var safe = sanitizeLocalPaths(key)
+        if let regex = jwtInKeyRegex {
+            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-token]" }
+        }
+        if let regex = ipv4InKeyRegex {
+            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
+        }
+        if let regex = ipv6InKeyRegex {
+            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
+        }
         if let regex = phoneInKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { match in
-                match.utf8.filter { $0 >= 0x30 && $0 <= 0x39 }.count >= 9 ? "[redacted-phone]" : nil
+                match.unicodeScalars.filter { $0.properties.generalCategory == .decimalNumber }.count >= 9
+                    ? "[redacted-phone]" : nil
             }
         }
         if let regex = opaqueSecretInKeyRegex {

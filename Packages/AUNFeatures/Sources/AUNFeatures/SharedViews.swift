@@ -83,22 +83,27 @@ struct SettingsMenu: View {
     var telemetry: any TelemetryServicing = NullTelemetryService.shared
     var onOpenBlockedList: (() -> Void)?
     @State private var showingPurgeWarning = false
+    @State private var confirmingDiagnosticsEnable = false
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
             get: { settings.telemetryEnabled && telemetry.consent != .off },
             set: { enabled in
                 if enabled {
-                    settings.telemetryEnabled = true
-                    if !telemetry.setConsent(.full) {
-                        settings.telemetryEnabled = false
-                    }
+                    confirmingDiagnosticsEnable = true
                 } else {
                     if settings.telemetryEnabled { settings.telemetryEnabled = false }
                     if !telemetry.setConsent(.off) { showingPurgeWarning = true }
                 }
             }
         )
+    }
+
+    private func enableDiagnostics() {
+        settings.telemetryEnabled = true
+        if !telemetry.setConsent(.full) {
+            settings.telemetryEnabled = false
+        }
     }
 
     var body: some View {
@@ -164,6 +169,12 @@ struct SettingsMenu: View {
                 .accessibilityLabel(l10n("common.settings"))
         }
         .accessibilityIdentifier("settings-menu")
+        .alert(l10n("diagnostics.toggle"), isPresented: $confirmingDiagnosticsEnable) {
+            Button(l10n("diagnostics.on")) { enableDiagnostics() }
+            Button(l10n("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(l10n("diagnostics.description"))
+        }
         .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
             Button(l10n("common.retry")) {
                 if !telemetry.setConsent(.off) { showingPurgeWarning = true }

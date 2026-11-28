@@ -180,6 +180,9 @@ private struct AdminSignedOutDiagnosticsControl: View {
             VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
                 Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
                     .accessibilityIdentifier("admin-signedout-diagnostics")
+                Text(l10n("diagnostics.description"))
+                    .fanousFont(.caption)
+                    .foregroundStyle(Fanous.textSecondary)
                 if let message = diagnosticsMessage
                     ?? (session.services.telemetry.lastPurgeFailed ? l10n("diagnostics.purgeWarning") : nil)
                 {
@@ -343,6 +346,7 @@ struct AccountMenu: View {
     let session: AdminSession
     @Binding var confirmSignOut: Bool
     @State private var showingPurgeWarning = false
+    @State private var confirmingDiagnosticsEnable = false
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
@@ -350,16 +354,21 @@ struct AccountMenu: View {
             set: { enabled in
                 let telemetry = session.services.telemetry
                 if enabled {
-                    settings.telemetryEnabled = true
-                    if !telemetry.setConsent(.full) {
-                        settings.telemetryEnabled = false
-                    }
+                    confirmingDiagnosticsEnable = true
                 } else {
                     if settings.telemetryEnabled { settings.telemetryEnabled = false }
                     if !telemetry.setConsent(.off) { showingPurgeWarning = true }
                 }
             }
         )
+    }
+
+    private func enableDiagnostics() {
+        let telemetry = session.services.telemetry
+        settings.telemetryEnabled = true
+        if !telemetry.setConsent(.full) {
+            settings.telemetryEnabled = false
+        }
     }
 
     var body: some View {
@@ -390,6 +399,12 @@ struct AccountMenu: View {
             Label(l10n("admin.account"), systemImage: "person.crop.circle")
         }
         .accessibilityIdentifier("account-menu")
+        .alert(l10n("diagnostics.toggle"), isPresented: $confirmingDiagnosticsEnable) {
+            Button(l10n("diagnostics.on")) { enableDiagnostics() }
+            Button(l10n("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(l10n("diagnostics.description"))
+        }
         .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
             Button(l10n("common.retry")) {
                 if !session.services.telemetry.setConsent(.off) { showingPurgeWarning = true }
