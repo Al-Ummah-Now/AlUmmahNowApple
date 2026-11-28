@@ -179,6 +179,9 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
                 _lastPurgeFailed = false
                 do {
                     try client.setConsent(consent: mapped)
+                    if consent != .off {
+                        Self.excludeBufferDirectoryFromBackup(at: bufferPath)
+                    }
                     if _consent == .full && consent != .full {
                         _analyticsEpoch &+= 1
                     }

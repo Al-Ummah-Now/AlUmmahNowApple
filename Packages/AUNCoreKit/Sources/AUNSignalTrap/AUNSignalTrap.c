@@ -14,7 +14,10 @@
 enum {
     AUN_FATAL_SIGNAL_COUNT = 6,
     AUN_TRAMPOLINE_SLOTS = 8,
+    AUN_ALT_STACK_SIZE = 131072,
 };
+
+static unsigned char g_alt_stack[AUN_ALT_STACK_SIZE];
 
 static const int kFatalSignals[AUN_FATAL_SIGNAL_COUNT] = {
     SIGTRAP, SIGILL, SIGABRT, SIGSEGV, SIGBUS, SIGFPE,
@@ -170,10 +173,19 @@ void aun_signal_trap_enable(const char *marker_path) {
     memcpy(g_marker_path, marker_path, len + 1);
     int next_slot = (g_last_slot + 1) % AUN_TRAMPOLINE_SLOTS;
     g_last_slot = next_slot;
+    stack_t cur_ss;
+    if (sigaltstack(NULL, &cur_ss) == 0 && (cur_ss.ss_flags & SS_DISABLE) != 0) {
+        stack_t ss;
+        memset(&ss, 0, sizeof(ss));
+        ss.ss_sp = g_alt_stack;
+        ss.ss_size = sizeof(g_alt_stack);
+        ss.ss_flags = 0;
+        (void)sigaltstack(&ss, NULL);
+    }
     struct sigaction action;
     memset(&action, 0, sizeof(action));
     sigemptyset(&action.sa_mask);
-    action.sa_flags = SA_RESETHAND;
+    action.sa_flags = SA_RESETHAND | SA_ONSTACK;
     action.sa_handler = kTrampolines[next_slot];
     bool hooked_any = false;
     for (int i = 0; i < AUN_FATAL_SIGNAL_COUNT; i++) {

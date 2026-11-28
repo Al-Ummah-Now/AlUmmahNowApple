@@ -519,11 +519,33 @@ extension CoreTelemetryService {
             || (error.domain == NSPOSIXErrorDomain && error.code == Int(ENOENT))
     }
 
+    static func excludeBufferDirectoryFromBackup(at bufferPath: String?) {
+        guard let bufferPath, !bufferPath.isEmpty else { return }
+        var dirURL = URL(fileURLWithPath: bufferPath).deletingLastPathComponent()
+        guard FileManager.default.fileExists(atPath: dirURL.path) else { return }
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? dirURL.setResourceValues(values)
+    }
+
     private static func defaultBufferURL(bundleID: String, filename: String) -> URL? {
-        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+        #if os(tvOS)
+            let preferred: FileManager.SearchPathDirectory = .cachesDirectory
+        #else
+            let preferred: FileManager.SearchPathDirectory = .applicationSupportDirectory
+        #endif
+        guard
+            let base = FileManager.default.urls(for: preferred, in: .userDomainMask).first
+                ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        else {
             return nil
         }
-        return base.appendingPathComponent(bundleID, isDirectory: true).appendingPathComponent(filename, isDirectory: false)
+        guard !filename.isEmpty else { return base }
+        return
+            base
+            .appendingPathComponent(bundleID, isDirectory: true)
+            .appendingPathComponent("Telemetry", isDirectory: true)
+            .appendingPathComponent(filename, isDirectory: false)
     }
 
     private static func platformName() -> String {
