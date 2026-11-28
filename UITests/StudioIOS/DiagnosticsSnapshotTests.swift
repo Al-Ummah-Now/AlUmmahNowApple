@@ -28,6 +28,6 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         let diagnostics = DiagnosticsSnapshot.control(app, identifier: "accounts-diagnostics", language: language)
         let form = app.collectionViews.firstMatch
         for _ in 0..<3 where !(diagnostics.exists && diagnostics.isHittable) { form.swipeUp() }
-        DiagnosticsSnapshot.capture(diagnostics, app: app, language: language, theme: theme, test: self)
+        try DiagnosticsSnapshot.capture(diagnostics, app: app, language: language, theme: theme, test: self)
     }
 }

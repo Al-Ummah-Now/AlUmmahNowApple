@@ -23,6 +23,6 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         menu.tap()
 
         let diagnostics = DiagnosticsSnapshot.control(app, identifier: "settings-diagnostics", language: language)
-        DiagnosticsSnapshot.capture(diagnostics, app: app, language: language, theme: theme, test: self)
+        try DiagnosticsSnapshot.capture(diagnostics, app: app, language: language, theme: theme, test: self)
     }
 }
