@@ -347,7 +347,9 @@ struct CoreTelemetryAuthSanitizerTests {
                 == "https://example.com/api{tag:\"value\"}?[redacted]"
         )
     }
+}
 
+extension CoreTelemetryAuthSanitizerTests {
     @Test("Scrubs quoted Bearer/Basic credentials, slash-local emails, and linear IP literals")
     func scrubsQuotedBearerBasicSlashEmailsAndLinearIPLiterals() {
         #expect(
@@ -372,6 +374,30 @@ struct CoreTelemetryAuthSanitizerTests {
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("Bearer \"hello world\"") == "Bearer \"hello world\""
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Bearer Bearer \"opaqueSecret123\"")
+                == "Bearer Bearer \"[redacted]\""
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Bearer Bearer opaqueSecret123")
+                == "Bearer Bearer [redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Bearer Basic \"dXNlcjpwYXNz\"")
+                == "Bearer Basic \"[redacted]\""
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Basic Basic \"dXNlcjpwYXNz\"")
+                == "Basic Basic \"[redacted]\""
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Basic Basic dXNlcjpwYXNz")
+                == "Basic Basic [redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"m\":\"Basic Basic \\\"dXNlcjpwYXNz\\\"\"}")
+                == "{\"m\":\"Basic Basic \\\"[redacted]\\\"\"}"
         )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.org/users/alice/@example.com")

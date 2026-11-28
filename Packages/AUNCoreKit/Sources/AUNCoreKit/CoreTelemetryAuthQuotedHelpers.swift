@@ -66,6 +66,10 @@ extension CoreTelemetryAuthScanner {
                 wsEnd += 1
             }
             guard wsEnd < len else { break }
+            if matchesBearerOrBasicPrefix(nsText, at: wsEnd, len: len) {
+                idx = wsEnd
+                continue
+            }
             if !inEscapedQuote,
                 let nextIdx = tryScanQuotedBearerToken(
                     nsText, wsEnd: wsEnd, len: len, allowLiteralQuoted: allowLiteralQuoted,
@@ -140,6 +144,16 @@ extension CoreTelemetryAuthScanner {
             return pos + 1
         }
         return nil
+    }
+
+    private static func matchesBearerOrBasicPrefix(_ nsText: NSString, at idx: Int, len: Int) -> Bool {
+        if idx + 6 < len && matchesASCII(nsText, at: idx, literal: "bearer", len: len)
+            && CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: idx + 6))
+        {
+            return true
+        }
+        return idx + 5 < len && matchesASCII(nsText, at: idx, literal: "basic", len: len)
+            && CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: idx + 5))
     }
 
     private static func matchesBearerPrefix(_ nsText: NSString, at idx: Int, len: Int) -> Bool {
@@ -273,21 +287,28 @@ extension CoreTelemetryAuthScanner {
         )
         guard decoded.range(of: "basic", options: [.caseInsensitive]) != nil else { return }
         let nsDecoded = decoded as NSString
-        let matches = regex.matches(in: decoded, options: [], range: NSRange(location: 0, length: nsDecoded.length))
-        for match in matches {
+        let decLen = nsDecoded.length
+        var pos = 0
+        while pos < decLen {
+            guard let match = regex.firstMatch(in: decoded, options: [], range: NSRange(location: pos, length: decLen - pos))
+            else { break }
             let quotedRange = match.range(at: 3)
             let isQuoted = quotedRange.location != NSNotFound
             let tokenRange = isQuoted ? quotedRange : match.range(at: 5)
-            guard tokenRange.location != NSNotFound else { continue }
-            if !isBasicCredentialToken(nsDecoded.substring(with: tokenRange)) { continue }
+            guard tokenRange.location != NSNotFound, isBasicCredentialToken(nsDecoded.substring(with: tokenRange)) else {
+                pos = match.range.location + 5
+                continue
+            }
             let targetRange = isQuoted ? tokenRange : match.range
             let rawStart = rawOffsets[targetRange.location]
             let rawEnd = rawOffsets[targetRange.location + targetRange.length]
-            guard rawStart >= copied else { continue }
-            if result.isEmpty { result.reserveCapacity(nsText.length) }
-            result += nsText.substring(with: NSRange(location: copied, length: rawStart - copied))
-            result += isQuoted ? "[redacted]" : "\(nsDecoded.substring(with: match.range(at: 1))) [redacted]"
-            copied = rawEnd
+            if rawStart >= copied {
+                if result.isEmpty { result.reserveCapacity(nsText.length) }
+                result += nsText.substring(with: NSRange(location: copied, length: rawStart - copied))
+                result += isQuoted ? "[redacted]" : "\(nsDecoded.substring(with: match.range(at: 1))) [redacted]"
+                copied = rawEnd
+            }
+            pos = match.range.location + match.range.length
         }
     }
 

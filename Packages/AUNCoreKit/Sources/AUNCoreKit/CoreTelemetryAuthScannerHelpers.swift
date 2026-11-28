@@ -2,19 +2,22 @@ import Foundation
 
 extension CoreTelemetryAuthScanner {
     static func redactBasicTokens(in text: String) -> String {
-        guard let regex = basicTokenRegex else { return text }
+        guard text.range(of: "basic", options: [.caseInsensitive]) != nil, let regex = basicTokenRegex else { return text }
         let nsText = text as NSString
-        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
-        guard !matches.isEmpty else { return text }
+        let len = nsText.length
         var result = ""
         var copied = 0
-        for match in matches {
+        var pos = 0
+        while pos < len {
+            guard let match = regex.firstMatch(in: text, options: [], range: NSRange(location: pos, length: len - pos))
+            else { break }
             let quotedRange = match.range(at: 3)
             let isQuoted = quotedRange.location != NSNotFound
             let tokenRange = isQuoted ? quotedRange : match.range(at: 5)
-            guard tokenRange.location != NSNotFound else { continue }
-            let token = nsText.substring(with: tokenRange)
-            guard isBasicCredentialToken(token) else { continue }
+            guard tokenRange.location != NSNotFound, isBasicCredentialToken(nsText.substring(with: tokenRange)) else {
+                pos = match.range.location + 5
+                continue
+            }
             if result.isEmpty { result.reserveCapacity(text.count) }
             result += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
             if isQuoted {
@@ -25,6 +28,7 @@ extension CoreTelemetryAuthScanner {
                 result += "\(nsText.substring(with: match.range(at: 1))) [redacted]"
             }
             copied = match.range.location + match.range.length
+            pos = copied
         }
         guard copied > 0 else { return text }
         result += nsText.substring(from: copied)
