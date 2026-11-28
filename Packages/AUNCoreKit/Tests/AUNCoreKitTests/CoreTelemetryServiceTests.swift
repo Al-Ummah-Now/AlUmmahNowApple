@@ -455,7 +455,9 @@ struct CoreTelemetryServiceTests {
         #expect(!FileManager.default.fileExists(atPath: bufferPath))
         #expect(!FileManager.default.fileExists(atPath: tempPath))
     }
+}
 
+extension CoreTelemetryServiceTests {
     @Test("In-flight recording call drops pre-revocation event after opt-out and re-enable")
     func inFlightRecordingDropsPreRevocationEvent() throws {
         let dir = try makeTempDir()
@@ -479,6 +481,14 @@ struct CoreTelemetryServiceTests {
         service.track("consent_probe", properties: [:])
         service.trackError("consent_error", properties: [:])
         service.reportCrash(kind: "ProbeCrash", message: "stale", stack: nil, fromPreviousSession: false)
+        #expect(service.pendingCount == 0)
+
+        service.beforeRecordCommitForTesting = {
+            #expect(service.setConsent(.crashOnly))
+            #expect(service.setConsent(.full))
+        }
+        service.track("crash_only_probe", properties: [:])
+        service.trackError("crash_only_error", properties: [:])
         #expect(service.pendingCount == 0)
     }
 

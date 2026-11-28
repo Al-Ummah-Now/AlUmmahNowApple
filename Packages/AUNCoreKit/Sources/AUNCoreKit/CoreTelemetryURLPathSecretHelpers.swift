@@ -133,4 +133,115 @@ extension CoreTelemetryService {
         if ch >= 0x41 && ch <= 0x46 { return UInt8(ch - 0x41 + 10) }
         return nil
     }
+
+    static func isKnownAuthHeaderPropertyKey(_ trimmedKey: String) -> Bool {
+        switch trimmedKey.lowercased() {
+        case "authorization", "proxy-authorization", "cookie", "set-cookie",
+            "x-api-key", "api-key", "api_key", "x-auth-token", "x-access-token", "x-api-token",
+            "auth_token", "api_token", "access_token", "access-token",
+            "refresh_token", "refresh-token", "id_token", "id-token",
+            "code_verifier", "code-verifier", "client_secret", "client-secret",
+            "authorizationsignature", "authorization-signature", "password":
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func decodeDomainScalar(_ nsText: NSString, at pos: Int, len: Int) -> (UnicodeScalar, Int)? {
+        let ch = nsText.character(at: pos)
+        if ch >= 0xD800 && ch <= 0xDBFF {
+            guard pos + 1 < len else { return nil }
+            let low = nsText.character(at: pos + 1)
+            guard low >= 0xDC00 && low <= 0xDFFF else { return nil }
+            let codePoint = 0x10000 + ((Int(ch) - 0xD800) << 10) + (Int(low) - 0xDC00)
+            return UnicodeScalar(codePoint).map { ($0, 2) }
+        }
+        guard ch < 0xDC00 || ch > 0xDFFF else { return nil }
+        return UnicodeScalar(ch).map { ($0, 1) }
+    }
+
+    static func tryScanEmbeddedQueryQuote(
+        _ nsText: NSString, start: Int, pos: Int, len: Int, angleStopMask: Int
+    ) -> Int? {
+        guard (angleStopMask & 4) == 0 && pos > start else { return nil }
+        let prev = nsText.character(at: pos - 1)
+        guard prev == 0x3D || prev == 0x3F || prev == 0x26 || prev == 0x23 else { return nil }
+        let ch = nsText.character(at: pos)
+        if ch == 0x22 {
+            var bs = 0
+            while pos - 1 - bs > start && nsText.character(at: pos - 1 - bs) == 0x5C { bs += 1 }
+            guard (bs & 1) == 0 else { return nil }
+            return scanEmbeddedQueryQuoteEnd(nsText, openPos: pos, len: len, quote: 0x22, requireClose: false)
+        }
+        if ch == 0x27 {
+            let after = scanEmbeddedQueryQuoteEnd(nsText, openPos: pos, len: len, quote: 0x27, requireClose: true)
+            return after > pos ? after : nil
+        }
+        return nil
+    }
+
+    private static func scanEmbeddedQueryQuoteEnd(
+        _ nsText: NSString, openPos: Int, len: Int, quote: unichar, requireClose: Bool
+    ) -> Int {
+        var idx = openPos + 1
+        var escaped = false
+        while idx < len {
+            let c = nsText.character(at: idx)
+            if c == 0x0A || c == 0x0D { return requireClose ? openPos : idx }
+            if c == quote && !escaped { return idx + 1 }
+            escaped = c == 0x5C && !escaped
+            idx += 1
+        }
+        return requireClose ? openPos : idx
+    }
+
+    static func classifyPercentDomainChar(
+        _ nsText: NSString, at pos: Int, len: Int
+    ) -> (VaultLineTracker.DomainCharKind, Int)? {
+        guard pos + 2 < len && nsText.character(at: pos) == 0x25,
+            let b0 = parseHexByte(nsText.character(at: pos + 1), nsText.character(at: pos + 2))
+        else { return nil }
+        if b0 < 0x80 {
+            let ch = unichar(b0)
+            if isASCIILetter(ch) { return (.letter, 3) }
+            if isASCIIDigit(ch) { return (.digit, 3) }
+            if ch == 0x2E { return (.dot, 3) }
+            return (ch == 0x2D ? .hyphen : .other, 3)
+        }
+        return classifyPercentUTF8DomainChar(nsText, at: pos, len: len, firstByte: b0)
+    }
+
+    private static func classifyPercentUTF8DomainChar(
+        _ nsText: NSString, at pos: Int, len: Int, firstByte b0: UInt8
+    ) -> (VaultLineTracker.DomainCharKind, Int)? {
+        let count: Int =
+            switch b0 {
+            case 0xC2...0xDF: 2
+            case 0xE0...0xEF: 3
+            case 0xF0...0xF4: 4
+            default: 0
+            }
+        guard count > 0 && pos + count * 3 <= len else { return nil }
+        var bytes: [UInt8] = [b0]
+        for idx in 1..<count {
+            let off = pos + idx * 3
+            guard nsText.character(at: off) == 0x25,
+                let next = parseHexByte(nsText.character(at: off + 1), nsText.character(at: off + 2)),
+                next >= 0x80 && next <= 0xBF
+            else { return nil }
+            bytes.append(next)
+        }
+        guard let decoded = String(bytes: bytes, encoding: .utf8),
+            decoded.unicodeScalars.count == 1,
+            let scalar = decoded.unicodeScalars.first
+        else { return nil }
+        if scalar.value <= 0xFFFF && VaultLineTracker.isEmailDomainDot(unichar(scalar.value)) {
+            return (.dot, count * 3)
+        }
+        if CharacterSet.letters.contains(scalar) || CharacterSet.nonBaseCharacters.contains(scalar) {
+            return (.letter, count * 3)
+        }
+        return (CharacterSet.decimalDigits.contains(scalar) ? .digit : .other, count * 3)
+    }
 }

@@ -498,6 +498,40 @@ extension CoreTelemetryAuthSanitizerTests {
             CoreTelemetryService.sanitizeLocalPaths("https://registry.npmjs.org/%40angular/core")
                 == "https://registry.npmjs.org/%40angular/core"
         )
+    }
+
+    @Test("Scrubs quoted URL queries, .env, OAuth tokens, JWTs, percent emails, and Slack empty ports")
+    func scrubsQuotedQueriesDotEnvOAuthJWTPercentEmailsAndSlackEmptyPorts() {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/?access_token=\"super secret\"")
+                == "https://example.com/?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/?session_key=\"super secret\"")
+                == "https://example.com/?[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/?session_key='super secret'")
+                == "https://example.com/?[redacted]"
+        )
+        #expect(CoreTelemetryService.sanitizeLocalPaths(".env") == "[redacted-path]")
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "{\"refresh_token\":\"opaqueSecret123\",\"access_token\":\"accSecret456\",\"id_token\":\"idSecret789\"}"
+            ) == "{\"refresh_token\":\"[redacted]\",\"access_token\":\"[redacted]\",\"id_token\":\"[redacted]\"}"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTYifQ.sigSecret")
+                == "jwt=[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/users/alice%40%65xample.com")
+                == "https://[redacted-email]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/users/alice%40b%C3%BCcher.example")
+                == "https://[redacted-email]"
+        )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://hooks.slack.com:/services/T000/B000/Canary")
                 == "https://hooks.slack.com:/services/[redacted]"

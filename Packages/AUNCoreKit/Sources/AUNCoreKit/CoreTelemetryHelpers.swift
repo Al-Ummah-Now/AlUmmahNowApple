@@ -376,7 +376,7 @@ extension CoreTelemetryService {
         + "jpg|jpeg|png|gif|webp|heic|svg|pdf|txt|md|rtf|doc|docx|xls|xlsx|ppt|pptx|"
         + "csv|json|xml|yaml|yml|toml|ini|cfg|conf|log|srt|vtt|ass|ssa|"
         + "zip|tar|gz|tgz|bz2|xz|7z|rar|dmg|pkg|msi|exe|apk|aab|ipa|"
-        + "pem|key|crt|cer|p12|pfx|jks|keystore|db|sqlite|sqlite3|bin|dat|tmp|bak|proj|aun"
+        + "pem|key|crt|cer|p12|pfx|jks|keystore|db|sqlite|sqlite3|bin|dat|tmp|bak|proj|aun|env"
 
     private static let ioKeywordVerbs =
         "open|opening|read|reading|write|writing|delete|deleting|remove|removing|rename|stat|"
@@ -451,13 +451,7 @@ extension CoreTelemetryService {
     }
 
     private static func isAuthHeaderPropertyKey(_ trimmedKey: String) -> Bool {
-        switch trimmedKey.lowercased() {
-        case "authorization", "proxy-authorization", "cookie", "set-cookie",
-            "x-api-key", "api-key", "x-auth-token", "x-access-token", "x-api-token":
-            return true
-        default:
-            return false
-        }
+        isKnownAuthHeaderPropertyKey(trimmedKey)
     }
 
     static func serializeProperties(_ properties: [String: String]) -> String? {
@@ -588,9 +582,10 @@ public enum CrashTelemetryHook {
 
     private static func handle(_ exception: NSException) {
         let (service, previous) = lock.withLock { (activeService, previousHandler) }
+        let kind = exception.name.rawValue
         service?.reportCrash(
-            kind: exception.name.rawValue,
-            message: exception.reason ?? "Uncaught NSException",
+            kind: kind,
+            message: kind.isEmpty ? "Uncaught NSException" : kind,
             stack: exception.callStackSymbols.joined(separator: "\n"),
             fromPreviousSession: false
         )

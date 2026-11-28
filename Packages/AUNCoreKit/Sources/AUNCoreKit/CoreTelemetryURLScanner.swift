@@ -193,6 +193,12 @@ extension CoreTelemetryService {
             {
                 break
             }
+            if let afterEmbedded = CoreTelemetryService.tryScanEmbeddedQueryQuote(
+                nsText, start: start, pos: pos, len: len, angleStopMask: angleStopMask
+            ) {
+                pos = afterEmbedded
+                continue
+            }
             if ch == 0x22 {
                 var bs = 0
                 while pos - 1 - bs > start && nsText.character(at: pos - 1 - bs) == 0x5C { bs += 1 }
@@ -462,21 +468,9 @@ extension CoreTelemetryService.VaultLineTracker {
         ch == 0x2E || ch == 0x3002 || ch == 0xFF0E || ch == 0xFF61
     }
 
-    private static func decodeScalar(_ nsText: NSString, at pos: Int, len: Int) -> (UnicodeScalar, Int)? {
-        let ch = nsText.character(at: pos)
-        if ch >= 0xD800 && ch <= 0xDBFF {
-            guard pos + 1 < len else { return nil }
-            let low = nsText.character(at: pos + 1)
-            guard low >= 0xDC00 && low <= 0xDFFF else { return nil }
-            let codePoint = 0x10000 + ((Int(ch) - 0xD800) << 10) + (Int(low) - 0xDC00)
-            return UnicodeScalar(codePoint).map { ($0, 2) }
-        }
-        guard ch < 0xDC00 || ch > 0xDFFF else { return nil }
-        return UnicodeScalar(ch).map { ($0, 1) }
-    }
-
     static func classifyDomainChar(_ nsText: NSString, at pos: Int, len: Int) -> (DomainCharKind, Int) {
         if let esc = CoreTelemetryService.classifyEscapedDomainChar(nsText, at: pos, len: len) { return esc }
+        if let pct = CoreTelemetryService.classifyPercentDomainChar(nsText, at: pos, len: len) { return pct }
         let ch = nsText.character(at: pos)
         if ch < 0x80 {
             if CoreTelemetryService.isASCIILetter(ch) { return (.letter, 1) }
@@ -485,7 +479,9 @@ extension CoreTelemetryService.VaultLineTracker {
             return (ch == 0x2D ? .hyphen : .other, 1)
         }
         if isEmailDomainDot(ch) { return (.dot, 1) }
-        guard let (scalar, step) = decodeScalar(nsText, at: pos, len: len) else { return (.other, 1) }
+        guard let (scalar, step) = CoreTelemetryService.decodeDomainScalar(nsText, at: pos, len: len) else {
+            return (.other, 1)
+        }
         if CharacterSet.letters.contains(scalar) || CharacterSet.nonBaseCharacters.contains(scalar) {
             return (.letter, step)
         }

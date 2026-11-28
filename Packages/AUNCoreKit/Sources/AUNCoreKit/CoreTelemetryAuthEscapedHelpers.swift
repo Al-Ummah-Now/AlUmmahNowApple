@@ -1,6 +1,25 @@
 import Foundation
 
 extension CoreTelemetryAuthScanner {
+    static let unquotedAuthHeaderNames = [
+        "authorization-signature", "authorizationsignature",
+        "proxy-authorization", "authorization", "set-cookie", "cookie",
+        "x-api-key", "api-key", "api_key", "x-auth-token", "x-access-token", "x-api-token",
+        "auth_token", "api_token", "access_token", "access-token",
+        "refresh_token", "refresh-token", "id_token", "id-token",
+        "code_verifier", "code-verifier", "client_secret", "client-secret", "password",
+    ]
+
+    private static let jwtTokenRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]*)?"#
+    )
+
+    static func redactJWTTokens(in text: String) -> String {
+        guard text.contains("eyJ"), let jwtRegex = jwtTokenRegex else { return text }
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        return jwtRegex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "[redacted]")
+    }
+
     static func matchCanonicalAuthHeaderName(_ decoded: [unichar]) -> String? {
         var lo = 0
         var hi = decoded.count
@@ -12,7 +31,11 @@ extension CoreTelemetryAuthScanner {
         let key = preserved.lowercased()
         switch key {
         case "authorization", "proxy-authorization", "cookie", "set-cookie",
-            "x-api-key", "api-key", "x-auth-token", "x-access-token", "x-api-token":
+            "x-api-key", "api-key", "api_key", "x-auth-token", "x-access-token", "x-api-token",
+            "auth_token", "api_token", "access_token", "access-token",
+            "refresh_token", "refresh-token", "id_token", "id-token",
+            "code_verifier", "code-verifier", "client_secret", "client-secret",
+            "authorizationsignature", "authorization-signature", "password":
             return preserved
         default: return nil
         }
@@ -26,7 +49,7 @@ extension CoreTelemetryAuthScanner {
             if !core.isEmpty { padState.trailing = true }
             return true
         }
-        if padState.trailing || core.count >= 19 { return false }
+        if padState.trailing || core.count >= 23 { return false }
         core.append(unit)
         return true
     }

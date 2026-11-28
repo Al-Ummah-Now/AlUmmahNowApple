@@ -24,6 +24,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     private var _lastPurgeFailed = false
     private var _inFlightFlushes = 0
     private var _consentEpoch: UInt64 = 0
+    private var _analyticsEpoch: UInt64 = 0
     private var _revokedFlushesRemaining = 0
     private var _flushWaiters: [UUID: Task<Void, Never>] = [:]
 
@@ -108,6 +109,9 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
                 _lastPurgeFailed = false
                 do {
                     try client.setConsent(consent: mapped)
+                    if _consent == .full && consent != .full {
+                        _analyticsEpoch &+= 1
+                    }
                     _consent = consent
                     _revoked = false
                     _lastPurgeFailed = false
@@ -290,6 +294,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         _consent = .off
         _revoked = true
         _consentEpoch &+= 1
+        _analyticsEpoch &+= 1
         _revokedFlushesRemaining = _inFlightFlushes
         let waiters = Array(_flushWaiters.values)
         _flushWaiters.removeAll()
@@ -310,9 +315,10 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             let priorConsent = _closed ? .off : _consent
             let cancelled = ensureExternalConsentLocked()
             let allowed = !_closed && (requiresFull ? (_consent == .full) : (_consent != .off))
+            let activeEpoch = requiresFull ? _analyticsEpoch : _consentEpoch
             let currentConsent = _closed ? .off : _consent
             return (
-                allowed ? _consentEpoch : nil, cancelled, _lastPurgeFailed != priorPurgeFailed,
+                allowed ? activeEpoch : nil, cancelled, _lastPurgeFailed != priorPurgeFailed,
                 currentConsent != priorConsent
             )
         }
@@ -326,7 +332,8 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             let priorPurgeFailed = _lastPurgeFailed
             let priorConsent = _closed ? .off : _consent
             let cancelled = ensureExternalConsentLocked()
-            let epochMatches = expectedEpoch == nil || _consentEpoch == expectedEpoch
+            let activeEpoch = requiresFull ? _analyticsEpoch : _consentEpoch
+            let epochMatches = expectedEpoch == nil || activeEpoch == expectedEpoch
             let allowed = (requiresFull ? (_consent == .full) : (_consent != .off)) && epochMatches
             if !_closed && allowed { work() }
             let currentConsent = _closed ? .off : _consent
