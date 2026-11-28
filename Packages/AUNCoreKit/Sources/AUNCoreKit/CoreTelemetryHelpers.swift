@@ -164,7 +164,7 @@ extension CoreTelemetryService {
         return result
     }
 
-    private static func isASCIIWordChar(_ ch: unichar) -> Bool {
+    static func isASCIIWordChar(_ ch: unichar) -> Bool {
         (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) || (ch >= 0x30 && ch <= 0x39) || ch == 0x5F
     }
 
@@ -178,7 +178,7 @@ extension CoreTelemetryService {
     }
 
     static func redactKeywordUnquotedOnSource(
-        _ nsText: NSString, scanSource: NSString, kwRegex: NSRegularExpression
+        _ nsText: NSString, scanSource: NSString, kwRegex: NSRegularExpression, stopAtDoubleQuote: Bool = false
     ) -> String {
         let scanStr = scanSource as String
         guard scanStr.contains(".") else { return nsText as String }
@@ -191,7 +191,7 @@ extension CoreTelemetryService {
             var segEnd = segStart
             while segEnd < len {
                 let ch = scanSource.character(at: segEnd)
-                if ch == 0x0A || ch == 0x0D || ch == 0x1E || ch == 0x1F { break }
+                if ch == 0x0A || ch == 0x0D || ch == 0x1E || ch == 0x1F || (stopAtDoubleQuote && ch == 0x22) { break }
                 segEnd += 1
             }
             if let (lastDot, lastExtEnd) = Self.findLastUnquotedFilenameExt(
@@ -234,21 +234,16 @@ extension CoreTelemetryService {
                     extLen >= 1 && extLen <= 16
                     && (extEnd == len
                         || (!Self.isASCIIWordChar(nsText.character(at: extEnd)) && nsText.character(at: extEnd) != 0x28))
-                if validBounds && !Self.isSourceLineReference(nsText, extStart: extStart, extEnd: extEnd, len: len) {
+                if validBounds
+                    && !Self.isSourceLineReference(nsText, extStart: extStart, extEnd: extEnd, len: len)
+                    && !Self.isNumericDotToken(nsText, segStart: segStart, dot: dot, extStart: extStart, extEnd: extEnd)
+                {
                     return (dot, extEnd)
                 }
             }
             dot -= 1
         }
         return nil
-    }
-
-    private static func isSourceLineReference(_ nsText: NSString, extStart: Int, extEnd: Int, len: Int) -> Bool {
-        guard extEnd + 1 < len && nsText.character(at: extEnd) == 0x3A else { return false }
-        let digit = nsText.character(at: extEnd + 1)
-        guard digit >= 0x30 && digit <= 0x39 else { return false }
-        let ext = nsText.substring(with: NSRange(location: extStart, length: extEnd - extStart)).lowercased()
-        return Self.sourceLineExtSet.contains(ext)
     }
 
     static func vaultNonFileURLs(in text: String, prefix: String) -> (String, [String]) {
@@ -381,7 +376,7 @@ extension CoreTelemetryService {
         + "create|creating|load|loading|save|saving|access|accessing|unlink|"
         + "file|path|directory|folder|document|filename|filepath"
 
-    private static let sourceLineExtSet: Set<String> = [
+    static let sourceLineExtSet: Set<String> = [
         "kt", "java", "swift", "cs", "cpp", "cc", "c", "h", "hpp", "rs", "py", "js", "ts", "go", "rb", "m", "mm",
     ]
 
@@ -397,7 +392,7 @@ extension CoreTelemetryService {
 
     private static let parenPathRegexes: [NSRegularExpression] = [
         #"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n\u001E]+(\))"#,
-        #"(\()(?![ \t]*(?:HTTP|TLS|SSL)/\d)(?![ \t]*\d+/\d+[.,;:!?\s]*\))"#
+        #"(\()(?![ \t]*(?:HTTP|TLS|SSL)/\d+(?:\.\d+)*[.,;:!?\s]*\))(?![ \t]*\d+/\d+[.,;:!?\s]*\))"#
             + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/[^()\r\n\u001E]+(\))"#,
     ].compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
 
@@ -415,7 +410,7 @@ extension CoreTelemetryService {
                 "[redacted-path]"
             ),
             (
-                #"(^|[\s(\[{)\]}<>"'=,:;\u001F])(?!(?<!['"])(?:HTTP|TLS|SSL)/\d)"#
+                #"(^|[\s(\[{)\]}<>"'=,:;\u001F])(?!(?<!['"])(?:HTTP|TLS|SSL)/\d+(?:\.\d+)*(?:$|[\s(\[{)\]},;:!?]|\.(?![A-Za-z0-9])))"#
                     + #"(?!(?<!['"])\d+/\d+(?:$|[\s)\]},;:!?]|\.(?![A-Za-z0-9])))"#
                     + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/"# + relNonQuoteTail,
                 "$1[redacted-path]"

@@ -369,6 +369,36 @@ extension CoreTelemetryService {
         return result
     }
 
+    static func isSourceLineReference(_ nsText: NSString, extStart: Int, extEnd: Int, len: Int) -> Bool {
+        guard extEnd + 1 < len && nsText.character(at: extEnd) == 0x3A else { return false }
+        let digit = nsText.character(at: extEnd + 1)
+        guard digit >= 0x30 && digit <= 0x39 else { return false }
+        let ext = nsText.substring(with: NSRange(location: extStart, length: extEnd - extStart)).lowercased()
+        return Self.sourceLineExtSet.contains(ext)
+    }
+
+    static func isNumericDotToken(
+        _ nsText: NSString, segStart: Int, dot: Int, extStart: Int, extEnd: Int
+    ) -> Bool {
+        for idx in extStart..<extEnd where !isASCIIDigit(nsText.character(at: idx)) {
+            return false
+        }
+        var p = dot - 1
+        var hasDigitBefore = false
+        while p >= segStart {
+            let ch = nsText.character(at: p)
+            if isASCIIDigit(ch) {
+                hasDigitBefore = true
+                p -= 1
+            } else if ch == 0x2E {
+                p -= 1
+            } else {
+                break
+            }
+        }
+        return hasDigitBefore && (p < segStart || !isASCIIWordChar(nsText.character(at: p)))
+    }
+
     static func redactKeywordUnquotedFilenamesRespectingQuotes(
         in text: String, kwRegex: NSRegularExpression
     ) -> String {
@@ -377,7 +407,9 @@ extension CoreTelemetryService {
         var spans = collectBalancedDoubleQuoteSpans(nsText)
         if spans.isEmpty { return redactKeywordUnquotedOnSource(nsText, scanSource: nsText, kwRegex: kwRegex) }
         let masked = buildMaskedDoubleQuotes(nsText, spans: spans)
-        let afterUnquoted = redactKeywordUnquotedOnSource(nsText, scanSource: masked as NSString, kwRegex: kwRegex)
+        let afterUnquoted = redactKeywordUnquotedOnSource(
+            nsText, scanSource: masked as NSString, kwRegex: kwRegex, stopAtDoubleQuote: true
+        )
         let nsCur = afterUnquoted as NSString
         if afterUnquoted != text {
             guard afterUnquoted.contains("\"") else { return afterUnquoted }

@@ -237,6 +237,16 @@ struct CoreTelemetryQuotedEscapedTests {
             ("https://example.com:/api?token=secret123", "https://example.com:/api?[redacted]"),
             ("https://example.com:?token=secret123", "https://example.com:?[redacted]"),
             ("https://example.com:#secret123", "https://example.com:#[redacted]"),
+            ("HTTP/1/PrivateReorganization", "[redacted-path]"),
+            ("(HTTP/1/PrivateReorganization)", "([redacted-path])"),
+            ("HTTP/1.1 503 Service Unavailable", "HTTP/1.1 503 Service Unavailable"),
+            (
+                "open \"proposal.pdf\" then completed in 3.14 seconds",
+                "open \"[redacted-path]\" then completed in 3.14 seconds"
+            ),
+            ("open failed after 3.14 seconds", "open failed after 3.14 seconds"),
+            ("failed file:/Users/alice/secret.txt", "failed [redacted-path]"),
+            ("{\"uri\":\"file:\\/Users\\/alice\\/secret.txt\",\"ok\":true}", "{\"uri\":\"[redacted-path]\",\"ok\":true}"),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)

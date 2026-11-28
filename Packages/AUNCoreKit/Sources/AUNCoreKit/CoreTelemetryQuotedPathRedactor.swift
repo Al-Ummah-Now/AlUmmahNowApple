@@ -443,7 +443,7 @@ extension CoreTelemetryService {
     }
 
     private static func matchDecodedFileScheme(_ nsText: NSString, pos: Int, end: Int) -> Bool {
-        let fileTarget: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F, 0x2F]
+        let fileTarget: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F]
         if matchDecodedSchemePrefix(nsText, pos: pos, end: end, target: fileTarget) { return true }
         let contentTarget: [unichar] = [0x63, 0x6F, 0x6E, 0x74, 0x65, 0x6E, 0x74, 0x3A, 0x2F, 0x2F]
         return matchDecodedSchemePrefix(nsText, pos: pos, end: end, target: contentTarget)

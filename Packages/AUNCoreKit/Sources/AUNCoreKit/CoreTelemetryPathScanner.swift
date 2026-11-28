@@ -287,6 +287,8 @@ extension CoreTelemetryService {
             if pos > 0 && isURLSchemeChar(nsText.character(at: pos - 1)) { return 0 }
             let fileTarget: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F, 0x2F]  // "file://"
             if matchesFoldedPrefix(nsText, at: pos, target: fileTarget) { return 7 }
+            let singleFileTarget: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F]  // "file:/"
+            if matchesFoldedPrefix(nsText, at: pos, target: singleFileTarget) { return 6 }
             let contentTarget: [unichar] = [0x63, 0x6F, 0x6E, 0x74, 0x65, 0x6E, 0x74, 0x3A, 0x2F, 0x2F]  // "content://"
             if matchesFoldedPrefix(nsText, at: pos, target: contentTarget) { return 10 }
             return 0
@@ -550,7 +552,7 @@ extension CoreTelemetryService {
         let nsText = text as NSString
         let nsPrefix = vaultPrefix as NSString
         let totalLength = nsText.length
-        guard totalLength >= 7 else { return text }
+        guard totalLength >= 6 else { return text }
         var checkedQuotes = false
         var quoteSpans: [QuotedPathSpan]?
         var spanIdx = 0
