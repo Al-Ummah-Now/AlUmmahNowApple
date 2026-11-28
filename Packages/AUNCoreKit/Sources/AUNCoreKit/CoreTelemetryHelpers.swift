@@ -579,12 +579,13 @@ public enum CrashTelemetryHook {
     private static func handle(_ exception: NSException) {
         let (service, previous) = lock.withLock { (activeService, previousHandler) }
         let kind = exception.name.rawValue
-        service?.reportCrash(
-            kind: kind,
-            message: kind.isEmpty ? "Uncaught NSException" : kind,
-            stack: exception.callStackSymbols.joined(separator: "\n"),
-            fromPreviousSession: false
-        )
+        let message = kind.isEmpty ? "Uncaught NSException" : kind
+        let stack = exception.callStackSymbols.joined(separator: "\n")
+        if let core = service as? CoreTelemetryService {
+            core.reportCrashBestEffort(kind: kind, message: message, stack: stack)
+        } else {
+            service?.reportCrash(kind: kind, message: message, stack: stack, fromPreviousSession: false)
+        }
         previous?(exception)
     }
 }

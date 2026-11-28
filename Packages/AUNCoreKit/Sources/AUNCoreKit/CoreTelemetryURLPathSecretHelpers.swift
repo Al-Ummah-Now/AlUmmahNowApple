@@ -343,6 +343,17 @@ extension CoreTelemetryService {
             }
     }
 
+    static func isExactISODate(_ text: String) -> Bool {
+        isoDateExactRegex?.firstMatch(in: text, options: [], range: NSRange(location: 0, length: (text as NSString).length))
+            != nil
+    }
+
+    static func matchesIPLiteral(_ text: String) -> Bool {
+        let r = NSRange(location: 0, length: (text as NSString).length)
+        return ipv4InKeyRegex?.firstMatch(in: text, options: [], range: r) != nil
+            || ipv6InKeyRegex?.firstMatch(in: text, options: [], range: r) != nil
+    }
+
     static func sanitizeDiagnosticText(_ text: String) -> String {
         var pre = redactPercentEncodedURLs(text)
         pre = scrubSensitiveContainerValues(pre, replacement: redactedSentinel)
@@ -352,19 +363,10 @@ extension CoreTelemetryService {
         safe = scrubSensitiveContainerValues(safe, replacement: "[redacted]")
         safe = scrubUnquotedMultiWordSensitiveValues(safe, replacement: "[redacted]")
         safe = scrubSensitiveKeyValues(safe, replacement: "[redacted]")
-        if let regex = spaceDelimitedCredentialRegex {
-            let range = NSRange(location: 0, length: (safe as NSString).length)
-            safe = regex.stringByReplacingMatches(in: safe, options: [], range: range, withTemplate: "$1[redacted]")
-        }
-        if let regex = ipv6InKeyRegex {
-            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
-        }
-        if let regex = ipv4InKeyRegex {
-            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
-        }
-        if let regex = windowsDriveRelativePathRegex {
-            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-path]" }
-        }
+        safe = scrubStandaloneCredentials(safe)
+        if let regex = ipv6InKeyRegex { safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" } }
+        if let regex = ipv4InKeyRegex { safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" } }
+        if let regex = windowsDriveRelativePathRegex { safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-path]" } }
         if let regex = phoneInKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { isRedactedPhoneMatch($0) ? "[redacted-phone]" : nil }
         }

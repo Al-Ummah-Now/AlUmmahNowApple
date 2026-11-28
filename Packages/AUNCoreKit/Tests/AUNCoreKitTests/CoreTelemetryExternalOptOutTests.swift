@@ -127,6 +127,9 @@ struct CoreTelemetryExternalOptOutTests {
                 + #"fullName="Alice Wonderland" username=Jane Doe C:ProjectCodename C:秘密 pwd=shortsecret "#
                 + "https://1drv.ms/u/s!Aq82F1ZLPx0K "
                 + "https://example.org/assets/%41bCdEfGhIjKlMnOpQrStUvWxYz0123456789 "
+                + "https://example.test/lookup/%2B%31%32%30%32%35%35%35%30%31%32%33 "
+                + "https%25253A%25252F%25252Fexample.test%25252Flogin%25253Ftoken%25253Ds3cr3t "
+                + "ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ "
                 + "https://uploads.example.test/upload/853876e8-cc19-465d-bafa-7459aba00936 "
                 + "alummahnow://watch/v1 "
                 + "https://example.com/download/eyJhbGciOiJkaXIifQ%2E%2Eiv1234%2Ecipher7777%2Etag8888",
@@ -156,6 +159,7 @@ struct CoreTelemetryExternalOptOutTests {
             "u:[redacted-email]", "cobalt-orchard", "orchard", "eyJzdWIiOiJhbGljZSJ9",
             "sig123", "cipher5678", "cipher7777", "Aq82F1ZLPx0K",
             "bCdEfGhIjKlMnOpQrStUvWxYz0123456789", "853876e8-cc19-465d-bafa-7459aba00936", "watch/v1",
+            "%2B%31%32%30%32", "s3cr3t", "ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ",
             "AbCdEfGhIjKlMnOpQrStUvWxYzABCDE", "abc123",
         ]
         for token in forbidden {

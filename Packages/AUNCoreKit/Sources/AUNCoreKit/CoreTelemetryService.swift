@@ -2,6 +2,43 @@ import AUNCoreBridge
 import AunCore
 import Foundation
 import Observation
+import os
+
+private final class TrackedLock: @unchecked Sendable {
+    private let underlying = NSLock()
+    private let owner = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+    private static var currentThreadID: Int { Int(bitPattern: pthread_self()) }
+
+    var isHeldByCurrentThread: Bool {
+        let current = Self.currentThreadID
+        return owner.withLock { $0 == current }
+    }
+
+    func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        underlying.lock()
+        let current = Self.currentThreadID
+        owner.withLock { $0 = current }
+        defer {
+            owner.withLock { $0 = 0 }
+            underlying.unlock()
+        }
+        return try body()
+    }
+
+    func tryWithLock<T>(timeout: TimeInterval, _ body: () -> T) -> T? {
+        if isHeldByCurrentThread { return nil }
+        let acquired = underlying.try() || underlying.lock(before: Date(timeIntervalSinceNow: timeout))
+        guard acquired else { return nil }
+        let current = Self.currentThreadID
+        owner.withLock { $0 = current }
+        defer {
+            owner.withLock { $0 = 0 }
+            underlying.unlock()
+        }
+        return body()
+    }
+}
 
 private final class InitOptOutTracker: @unchecked Sendable {
     private let lock = NSLock()
@@ -23,7 +60,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     private let bufferPath: String?
     private let isExternallyEnabled: (@Sendable () -> Bool)?
     private var defaultsObserver: NSObjectProtocol?
-    private let lock = NSLock()
+    private let lock = TrackedLock()
     private let observationRegistrar = ObservationRegistrar()
 
     private var _consent: TelemetryConsent = .off
@@ -455,6 +492,36 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
 }
 
 extension CoreTelemetryService {
+    func reportCrashBestEffort(kind: String, message: String, stack: String?) {
+        guard !lock.isHeldByCurrentThread else { return }
+        if let check = isExternallyEnabled, !check() { return }
+        let captured: UInt64? =
+            lock.tryWithLock(timeout: 0.1) {
+                guard !_closed, _consent != .off else { return nil }
+                return _consentEpoch
+            } ?? nil
+        guard let captureEpoch = captured else { return }
+        let trimmedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeKind = trimmedKind.isEmpty ? "UnhandledException" : Self.sanitizePropertyKey(trimmedKind)
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeMessage = trimmed.isEmpty ? "Unhandled exception" : Self.sanitizeDiagnosticText(trimmed)
+        let report = TelemetryCrashReport(
+            kind: safeKind, message: safeMessage,
+            stack: stack.map(Self.sanitizeDiagnosticText),
+            occurredAtMs: Int64(Date().timeIntervalSince1970 * 1000),
+            fromPreviousSession: false, propertiesJson: nil
+        )
+        _ = lock.tryWithLock(timeout: 0.1) {
+            guard !_closed, _consent != .off, _consentEpoch == captureEpoch else { return }
+            do {
+                _ = try client.reportCrash(report: report)
+                try client.persist()
+            } catch {
+                AUNLog.network.warning("Telemetry crash report skipped: \(error)")
+            }
+        }
+    }
+
     func revokeIfExternallyDisabled() {
         let (cancelled, purgeChanged, consentChanged): ([Task<Void, Never>], Bool, Bool) = lock.withLock {
             let priorPurge = _lastPurgeFailed

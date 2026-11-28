@@ -8,7 +8,7 @@ extension CoreTelemetryService {
     )
     private static let percentEncodedURLRegex = try? NSRegularExpression(
         pattern:
-            #"(?<![A-Za-z0-9+.-])(?:[a-zA-Z][a-zA-Z0-9+.-]*(?:%3[aA]%2[fF]%2[fF]|%253[aA]%252[fF]%252[fF]))[^\s\"'<>]+"#
+            #"(?<![A-Za-z0-9+.-])(?:[a-zA-Z][a-zA-Z0-9+.-]*(?:%(?:25)*3[aA]%(?:25)*2[fF]%(?:25)*2[fF]))[^\s\"'<>]+"#
     )
     private static let multiWordSensitiveSegments: Set<String> = [
         "fullname", "displayname", "firstname", "lastname", "givenname", "familyname",
@@ -44,6 +44,29 @@ extension CoreTelemetryService {
         options: [.caseInsensitive]
     )
 
+    static let knownPrefixCredentialRegex = try? NSRegularExpression(
+        pattern:
+            #"(?<![A-Za-z0-9_])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|"#
+            + #"glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|"#
+            + #"(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{16,}|sk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}|"#
+            + #"(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|"#
+            + #"hf_[A-Za-z0-9]{20,}|npm_[A-Za-z0-9]{20,}|pypi-[A-Za-z0-9_-]{20,}|"#
+            + #"SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|sq0(?:atp|csp)-[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_])"#
+    )
+
+    static func scrubStandaloneCredentials(_ text: String) -> String {
+        var safe = text
+        if let regex = spaceDelimitedCredentialRegex {
+            let range = NSRange(location: 0, length: (safe as NSString).length)
+            safe = regex.stringByReplacingMatches(in: safe, options: [], range: range, withTemplate: "$1[redacted]")
+        }
+        if let regex = knownPrefixCredentialRegex {
+            let range = NSRange(location: 0, length: (safe as NSString).length)
+            safe = regex.stringByReplacingMatches(in: safe, options: [], range: range, withTemplate: "[redacted]")
+        }
+        return safe
+    }
+
     static func redactPercentEncodedURLs(_ text: String) -> String {
         guard text.contains("%"), let regex = percentEncodedURLRegex else { return text }
         let nsText = text as NSString
@@ -54,7 +77,7 @@ extension CoreTelemetryService {
         for match in matches {
             let raw = nsText.substring(with: match.range)
             let replacement: String
-            if raw.range(of: "%253", options: .caseInsensitive) != nil {
+            if raw.range(of: "%25", options: .caseInsensitive) != nil {
                 replacement = "[redacted-url]"
             } else if let decoded = raw.removingPercentEncoding {
                 replacement = sanitizeLocalPaths(decoded)
@@ -374,9 +397,52 @@ extension CoreTelemetryService {
         return true
     }
 
+    private static func isDecodedPhoneURLSegment(_ seg: String) -> Bool {
+        guard seg.utf8.count >= 8 else { return false }
+        var digits = 0
+        var hasFormatting = false
+        for b in seg.utf8 {
+            if b >= 0x30 && b <= 0x39 {
+                digits += 1
+            } else if b == 0x2B || b == 0x2D || b == 0x28 || b == 0x29 || b == 0x20 || b == 0x2E {
+                if b != 0x2E { hasFormatting = true }
+            } else {
+                return false
+            }
+        }
+        if digits >= 9 { return true }
+        return digits == 8 && hasFormatting && !isExactISODate(seg)
+    }
+
+    private static func isDecodedEmailURLSegment(_ seg: String) -> Bool {
+        guard let at = seg.firstIndex(of: "@"), at > seg.startIndex else { return false }
+        let domain = seg[seg.index(after: at)...]
+        return !domain.contains("@") && domain.firstIndex(of: ".").map { $0 > domain.startIndex } == true
+    }
+
+    private static func decodeRepeatedForCheck(_ seg: String) -> String {
+        var cur = seg
+        for _ in 0..<4 {
+            guard cur.contains("%") else { break }
+            let next = decodeURLSegmentFull(cur).0
+            if next == cur { break }
+            cur = next
+        }
+        return cur
+    }
+
+    private static func isDecodedSensitiveURLSegment(_ seg: String, checkEmail: Bool) -> Bool {
+        let expanded = seg.contains("%") ? decodeRepeatedForCheck(seg) : seg
+        return isOpaqueURLSecretSegment(expanded)
+            || isDecodedPhoneURLSegment(expanded)
+            || matchesIPLiteral(expanded)
+            || (checkEmail && isDecodedEmailURLSegment(expanded))
+    }
+
     private static func findOpaqueSegmentRanges(in rawSeg: String, baseOffset: Int) -> [NSRange] {
+        let doubleEncoded = rawSeg.range(of: "%25", options: .caseInsensitive) != nil
         let (decoded, offsets) = decodeURLSegmentFull(rawSeg)
-        if !decoded.hasPrefix("[redacted") && isOpaqueURLSecretSegment(decoded) {
+        if !decoded.hasPrefix("[redacted") && isDecodedSensitiveURLSegment(decoded, checkEmail: doubleEncoded) {
             return [NSRange(location: baseOffset, length: (rawSeg as NSString).length)]
         }
         guard decoded.contains("/") else { return [] }
@@ -389,7 +455,7 @@ extension CoreTelemetryService {
             )
             let subEnd = slash.location == NSNotFound ? nsDec.length : slash.location
             let sub = nsDec.substring(with: NSRange(location: subStart, length: subEnd - subStart))
-            if !sub.isEmpty && !sub.hasPrefix("[redacted") && isOpaqueURLSecretSegment(sub) {
+            if !sub.isEmpty && !sub.hasPrefix("[redacted") && isDecodedSensitiveURLSegment(sub, checkEmail: doubleEncoded) {
                 let start = baseOffset + offsets[subStart]
                 let end = baseOffset + offsets[subEnd]
                 ranges.append(NSRange(location: start, length: end - start))
