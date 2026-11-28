@@ -1,6 +1,17 @@
 import Foundation
 
 enum CoreTelemetryQuotedPathHelpers {
+    static func scanVaultIndexEnd(_ nsText: NSString, from numStart: Int, limit: Int) -> Int {
+        var pos = numStart
+        let maxEnd = min(limit, numStart + 10)
+        while pos < maxEnd {
+            let ch = nsText.character(at: pos)
+            if ch < 0x30 || ch > 0x39 { break }
+            pos += 1
+        }
+        return pos > numStart && pos < limit && nsText.character(at: pos) == 0x1F ? pos : -1
+    }
+
     static func resolveFileURIQuoteBounds(
         _ nsText: NSString,
         pos: Int,

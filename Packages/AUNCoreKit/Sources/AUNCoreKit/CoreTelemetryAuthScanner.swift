@@ -302,7 +302,8 @@ enum CoreTelemetryAuthScanner {
         let isNull = token == "null"
         guard isNull || token == "true" || token == "false" || isJsonNumber(token) else { return nil }
         let next = skipAuthWhitespace(nsText, from: tokenEnd, len: len, allowNewlines: true)
-        guard next >= len || isJsonMemberContinuationDelimiter(nsText, at: next) else { return nil }
+        guard next >= len || isJsonMemberContinuationDelimiter(nsText, at: next, allowTrailingProse: state.allowTrailingProse)
+        else { return nil }
         if !isNull {
             state.appendRedacted(nsText, start: valStart, end: tokenEnd, replacement: "\"[redacted]\"")
         }
@@ -323,7 +324,9 @@ enum CoreTelemetryAuthScanner {
     private static func redactTrailingPlainAuthContinuation(
         _ nsText: NSString, afterPos: Int, isJsonMember: Bool, failedTopEnd: Int, state: inout AuthScanState
     ) -> Int {
-        let tailStart = findTrailingPlainAuthStart(nsText, afterPos: afterPos, isJsonMember: isJsonMember)
+        let tailStart = findTrailingPlainAuthStart(
+            nsText, afterPos: afterPos, isJsonMember: isJsonMember, allowTrailingProse: state.allowTrailingProse
+        )
         if tailStart >= 0 {
             return redactPlainAuthSpan(nsText, from: tailStart, minEnd: failedTopEnd, state: &state)
         }
@@ -336,7 +339,9 @@ enum CoreTelemetryAuthScanner {
         return afterPos
     }
 
-    private static func findTrailingPlainAuthStart(_ nsText: NSString, afterPos: Int, isJsonMember: Bool) -> Int {
+    private static func findTrailingPlainAuthStart(
+        _ nsText: NSString, afterPos: Int, isJsonMember: Bool, allowTrailingProse: Bool
+    ) -> Int {
         let len = nsText.length
         var pos = afterPos
         while pos < len {
@@ -349,7 +354,9 @@ enum CoreTelemetryAuthScanner {
             break
         }
         guard pos < len && !isNewline(nsText.character(at: pos)) else { return -1 }
-        if isJsonMember && isJsonMemberContinuationDelimiter(nsText, at: pos) { return -1 }
+        if isJsonMember && isJsonMemberContinuationDelimiter(nsText, at: pos, allowTrailingProse: allowTrailingProse) {
+            return -1
+        }
         return pos
     }
 

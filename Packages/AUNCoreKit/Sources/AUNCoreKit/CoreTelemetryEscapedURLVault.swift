@@ -509,15 +509,15 @@ extension CoreTelemetryService {
             }
             result += nsText.substring(with: NSRange(location: pos, length: found.location - pos))
             let numStart = found.location + escPrefixLen
-            let endFound = nsText.range(of: "\u{001F}", options: [], range: NSRange(location: numStart, length: end - numStart))
-            if endFound.location != NSNotFound && endFound.location > numStart,
-                let innerIdx = Int(nsText.substring(with: NSRange(location: numStart, length: endFound.location - numStart))),
+            let numEnd = CoreTelemetryQuotedPathHelpers.scanVaultIndexEnd(nsText, from: numStart, limit: end)
+            if numEnd > numStart,
+                let innerIdx = Int(nsText.substring(with: NSRange(location: numStart, length: numEnd - numStart))),
                 innerIdx >= 0 && innerIdx < innerVaulted.count
             {
                 let globalIdx = vaultedURLs.count
                 vaultedURLs.append(innerVaulted[innerIdx])
                 result += "\(prefix)\(globalIdx)\u{001F}"
-                pos = endFound.location + endFound.length
+                pos = numEnd + 1
             } else {
                 result += escVaultPrefix
                 pos = numStart

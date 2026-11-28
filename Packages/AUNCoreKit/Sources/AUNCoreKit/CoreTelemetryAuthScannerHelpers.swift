@@ -385,10 +385,10 @@ extension CoreTelemetryAuthScanner {
         isHorizSpace(ch) || isNewline(ch) || ch == 0x3A || ch == 0x2C || ch == 0x5B
     }
 
-    static func isJsonMemberContinuationDelimiter(_ nsText: NSString, at pos: Int) -> Bool {
+    static func isJsonMemberContinuationDelimiter(_ nsText: NSString, at pos: Int, allowTrailingProse: Bool) -> Bool {
         let ch = nsText.character(at: pos)
         if ch == 0x7D || ch == 0x5D {
-            guard pos + 1 < nsText.length else { return true }
+            if allowTrailingProse || pos + 1 >= nsText.length { return true }
             let after = nsText.character(at: pos + 1)
             return isHorizSpace(after) || isNewline(after) || isJsonDelimiter(after) || after == 0x29 || after == 0x3B
         }

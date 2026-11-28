@@ -167,6 +167,14 @@ struct CoreTelemetryQuotedEscapedTests {
                 "{\"m\":\"{\\\"Authorization\\\":\\\"opaqueSecret123\\\"} after\",\"next\":1}",
                 "{\"m\":\"{\\\"Authorization\\\":\\\"[redacted]\\\"} after\",\"next\":1}"
             ),
+            (
+                "{\"m\":\"{\\\"Authorization\\\":\\\"opaqueSecret123\\\"}after\",\"next\":1}",
+                "{\"m\":\"{\\\"Authorization\\\":\\\"[redacted]\\\"}after\",\"next\":1}"
+            ),
+            (
+                "{\"\\u0063ookie\":\"firstSecret\",\"Cookie\":\"secondSecret\"}",
+                "{\"cookie\":\"[redacted]\",\"Cookie\":\"[redacted]\"}"
+            ),
             ("{\\\"\tCookie\t\\\":\\\"opaqueSecret123\\\"}", "{\\\"\tCookie\t\\\":\\\"[redacted]\\\"}"),
             ("[[\\\"Authorization\\\",\\\"opaqueSecret123\\\"\\n]]", "[[\\\"Authorization\\\",\\\"[redacted]\\\"\\n]]"),
         ]
@@ -177,6 +185,8 @@ struct CoreTelemetryQuotedEscapedTests {
             CoreTelemetryService.sanitizeLocalPaths("{\"\tCookie\t\":\"opaqueSecret123\"}").contains("opaqueSecret123") == false)
         let malformedEscaped = "{\\\"Authorization\\\":[" + String(repeating: "{,", count: 2000) + "]"
         #expect(CoreTelemetryService.sanitizeLocalPaths(malformedEscaped).hasPrefix("{\\\"Authorization\\\":[\\\"[redacted]\\\""))
+        let repeatedVaultPrefix = String(repeating: "\u{001E}AUNURLx ", count: 5000) + "https://example/path"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedVaultPrefix) == repeatedVaultPrefix)
     }
 
     @Test("Scales linearly on unclosed angles/spaced hashes and sanitizes serialized property keys and values")

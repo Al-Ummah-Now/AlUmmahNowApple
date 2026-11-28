@@ -8,12 +8,10 @@ extension CoreTelemetryAuthScanner {
         while hi > lo && (decoded[hi - 1] == 0x20 || decoded[hi - 1] == 0x09) { hi -= 1 }
         guard lo < hi else { return nil }
         let slice = Array(decoded[lo..<hi])
-        let key = String(utf16CodeUnits: slice, count: slice.count).lowercased()
+        let preserved = String(utf16CodeUnits: slice, count: slice.count)
+        let key = preserved.lowercased()
         switch key {
-        case "authorization": return "Authorization"
-        case "proxy-authorization": return "Proxy-Authorization"
-        case "cookie": return "Cookie"
-        case "set-cookie": return "Set-Cookie"
+        case "authorization", "proxy-authorization", "cookie", "set-cookie": return preserved
         default: return nil
         }
     }

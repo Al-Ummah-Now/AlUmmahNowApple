@@ -354,14 +354,13 @@ extension CoreTelemetryService {
             }
             result += nsText.substring(with: NSRange(location: pos, length: found.location - pos))
             let numStart = found.location + found.length
-            let endFound = nsText.range(
-                of: "\u{001F}", options: [], range: NSRange(location: numStart, length: totalLength - numStart))
-            if endFound.location != NSNotFound && endFound.location > numStart,
-                let idx = Int(nsText.substring(with: NSRange(location: numStart, length: endFound.location - numStart))),
+            let numEnd = CoreTelemetryQuotedPathHelpers.scanVaultIndexEnd(nsText, from: numStart, limit: totalLength)
+            if numEnd > numStart,
+                let idx = Int(nsText.substring(with: NSRange(location: numStart, length: numEnd - numStart))),
                 idx >= 0 && idx < vaultedURLs.count
             {
                 result += vaultedURLs[idx]
-                pos = endFound.location + endFound.length
+                pos = numEnd + 1
             } else {
                 result += prefix
                 pos = numStart
