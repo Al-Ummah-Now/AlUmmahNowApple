@@ -32,7 +32,8 @@ extension CoreTelemetryService {
         _ nsText: NSString, start: Int, sep: Int, angleStopMask: Int = 3
     ) -> URLScanMatch? {
         let totalLen = nsText.length
-        guard let afterHost = scanURLHost(nsText, hostStart: sep + 3, len: totalLen),
+        let hostStart = CoreTelemetryService.skipOptionalURLUserinfo(nsText, start: sep + 3, len: totalLen)
+        guard let afterHost = scanURLHost(nsText, hostStart: hostStart, len: totalLen),
             let afterPort = scanOptionalPort(nsText, pos: afterHost, len: totalLen)
         else { return nil }
         let (baseEnd, truncated): (Int, Bool) =

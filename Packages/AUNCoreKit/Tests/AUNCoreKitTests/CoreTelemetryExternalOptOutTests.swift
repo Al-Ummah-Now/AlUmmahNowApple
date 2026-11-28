@@ -85,7 +85,14 @@ struct CoreTelemetryExternalOptOutTests {
                 "https://www.dropbox.com/scl/fi/a1b2c3d4e5f6g7h8i9j0/PrivateAcquisition.pdf"
             ) == "https://www.dropbox.com/scl/[redacted]"
         )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("http://u:p@localhost/x")
+                == "http://[redacted]@localhost/x"
+        )
+    }
 
+    @Test("Diagnostic text, keys, and URLs scrub JOSE tokens, IPs, Unicode phones, credentials, and share links")
+    func diagnosticTextKeysAndURLsScrubbed() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
             "aun-tel-id-scrub-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -97,10 +104,24 @@ struct CoreTelemetryExternalOptOutTests {
             bufferPath: bufferPath, initialEnabled: true)
         service.track("4155550123", properties: [:])
         service.track("peer 2001:db8::beef:cafe", properties: ["2001:db8::beef:cafe": "failed"])
-        service.track("signin_attempt", properties: ["verificationCode": "482193", "token=cobalt-orchard": "ok"])
+        service.track(
+            "signin_attempt",
+            properties: [
+                "verificationCode": "482193",
+                "challenge.verificationCode": "654321",
+                "token=cobalt-orchard": "ok",
+                "http://u:p@localhost/x": "ok",
+                "eyJunction.load.failed": "ok",
+            ]
+        )
         service.addBreadcrumb(
-            category: "token=cobalt-orchard",
-            message: "Remote peer 10.0.0.123. peer:2001:db8::1 Call ٠٥٠\u{2011}١٢٣\u{2011}٤٥٦٧ +𝟏𝟐𝟏𝟐𝟓𝟓𝟓𝟎𝟏𝟐𝟑",
+            category: "http://u:p@localhost/x",
+            message: "Remote peer 10.0.0.123. source:2001:db8::1 peer 2001:db8:0:0:0:0:192.0.2.81 "
+                + "Call ٠٥٠\u{2011}١٢٣\u{2011}٤٥٦٧ +𝟏𝟐𝟏𝟐\u{2212}𝟓𝟓𝟓\u{2212}𝟎𝟏𝟐𝟑 phone 12 34 56 78 "
+                + "eyJhbGciOiJub25lIn0.eyJzdWIiOiJhbGljZSJ9. IHsiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiIxIn0.sig123 "
+                + #"{"challenge.verificationCode":"739104"} pwd=shortsecret "#
+                + "https://1drv.ms/u/s!Aq82F1ZLPx0K "
+                + "https://example.com/download/eyJhbGciOiJkaXIifQ%2E%2Eiv1234%2Ecipher7777%2Etag8888",
             level: .info
         )
         service.reportCrash(
@@ -112,17 +133,16 @@ struct CoreTelemetryExternalOptOutTests {
         )
         service.persist()
         let raw = try String(contentsOfFile: bufferPath, encoding: .utf8)
-        #expect(!raw.contains("4155550123"))
-        #expect(!raw.contains("10.0.0.123"))
-        #expect(!raw.contains("2001:db8"))
-        #expect(!raw.contains("١٢٣"))
-        #expect(!raw.contains("𝟏𝟐𝟏𝟐"))
-        #expect(!raw.contains("beef:cafe"))
-        #expect(!raw.contains("482193"))
-        #expect(!raw.contains("cobalt-orchard"))
-        #expect(!raw.contains("orchard"))
-        #expect(!raw.contains("cipher5678"))
-        #expect(!raw.contains("AbCdEfGhIjKlMnOpQrStUvWxYzABCDE"))
-        #expect(!raw.contains("abc123"))
+        let forbidden = [
+            "4155550123", "10.0.0.123", "2001:db8", "192.0.2.81", "١٢٣", "𝟏𝟐𝟏𝟐", "12 34 56 78",
+            "beef:cafe", "482193", "654321", "739104", "shortsecret", "u:p@localhost",
+            "u:[redacted-email]", "cobalt-orchard", "orchard", "eyJzdWIiOiJhbGljZSJ9",
+            "sig123", "cipher5678", "cipher7777", "Aq82F1ZLPx0K",
+            "AbCdEfGhIjKlMnOpQrStUvWxYzABCDE", "abc123",
+        ]
+        for token in forbidden {
+            #expect(!raw.contains(token), "Expected redacted token: \(token)")
+        }
+        #expect(raw.contains("eyJunction.load.failed"))
     }
 }

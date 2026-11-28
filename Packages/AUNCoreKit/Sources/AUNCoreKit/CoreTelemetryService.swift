@@ -82,7 +82,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         userAgent: String,
         clientHeader: String = AUNClient.value,
         bufferPath: String?,
-        initialEnabled: Bool = false,
+        initialEnabled: Bool? = false,
         isExternallyEnabled: (@Sendable () -> Bool)?,
         observedDefaults: UserDefaults? = nil,
         observedDefaultsKey: String? = nil
@@ -93,7 +93,11 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         let initObserver = Self.observeDefaultsOptOut(observedDefaults, key: observedDefaultsKey) {
             initTracker.markOptOut()
         }
-        defer { if let initObserver { NotificationCenter.default.removeObserver(initObserver) } }
+        var initObserverActive = initObserver != nil
+        defer {
+            if initObserverActive, let initObserver { NotificationCenter.default.removeObserver(initObserver) }
+        }
+        let resolvedInitial = initialEnabled ?? observedDefaultsKey.flatMap { observedDefaults?.bool(forKey: $0) } ?? false
         let app = TelemetryAppInfo(
             platform: platform, appVersion: appVersion, osVersion: osVersion,
             deviceClass: deviceClass, locale: locale
@@ -107,9 +111,18 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         self.defaultsObserver = Self.observeDefaultsOptOut(observedDefaults, key: observedDefaultsKey) { [weak self] in
             self?.revokeIfExternallyDisabled()
         }
-        if initTracker.sawOptOut { _ = Self.removeBufferAndTempFiles(at: bufferPath) }
-        _ = setConsent(initialEnabled ? .full : .off)
-        if initialEnabled, isExternallyEnabled != nil { revokeIfExternallyDisabled() }
+        if initObserverActive, let initObserver {
+            NotificationCenter.default.removeObserver(initObserver)
+            initObserverActive = false
+        }
+        let purgeFailedDuringInit = lock.withLock { () -> Bool in
+            guard initTracker.sawOptOut && !_revoked else { return false }
+            let (purged, _) = revokeLocked()
+            return !purged
+        }
+        if purgeFailedDuringInit { notifyStateChanges(purgeChanged: true, consentChanged: false) }
+        _ = setConsent(resolvedInitial ? .full : .off)
+        if resolvedInitial, isExternallyEnabled != nil { revokeIfExternallyDisabled() }
     }
 
     deinit {
@@ -429,8 +442,12 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         }
     }
 
-    private func ensureExternalConsentLocked(allowWhenClosed: Bool = false) -> [Task<Void, Never>] {
-        let shouldCheck = (!_closed && _consent != .off) || (allowWhenClosed && _closed && !_revoked)
+    private func ensureExternalConsentLocked(
+        allowWhenClosed: Bool = false, allowUnrevokedOff: Bool = false
+    ) -> [Task<Void, Never>] {
+        let shouldCheck =
+            (!_closed && (_consent != .off || (allowUnrevokedOff && !_revoked)))
+            || (allowWhenClosed && _closed && !_revoked)
         guard shouldCheck, let check = isExternallyEnabled, !check() else { return [] }
         let (_, waiters) = revokeLocked()
         return waiters
@@ -442,7 +459,7 @@ extension CoreTelemetryService {
         let (cancelled, purgeChanged, consentChanged): ([Task<Void, Never>], Bool, Bool) = lock.withLock {
             let priorPurge = _lastPurgeFailed
             let priorConsent = _closed ? .off : _consent
-            let waiters = ensureExternalConsentLocked(allowWhenClosed: true)
+            let waiters = ensureExternalConsentLocked(allowWhenClosed: true, allowUnrevokedOff: true)
             let currentConsent = _closed ? .off : _consent
             return (waiters, _lastPurgeFailed != priorPurge, currentConsent != priorConsent)
         }

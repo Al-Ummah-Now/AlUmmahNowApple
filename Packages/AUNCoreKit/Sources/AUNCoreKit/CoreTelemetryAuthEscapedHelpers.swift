@@ -24,14 +24,44 @@ extension CoreTelemetryAuthScanner {
         "password", "passwd",
     ]
 
-    private static let jwtTokenRegex: NSRegularExpression? = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+){1,3}(?![A-Za-z0-9_-])"#
+    static let compactJoseTokenRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern:
+            #"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{8,}\.(?:[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+){1,3}|[A-Za-z0-9_-]+\.)(?![A-Za-z0-9_-])"#
     )
 
+    static func isCompactJoseToken(_ token: String) -> Bool {
+        guard let dot = token.firstIndex(of: ".") else { return false }
+        let header = String(token[..<dot])
+        guard header.count >= 8 && header.count <= 8192 else { return false }
+        var std = header.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        let rem = std.count % 4
+        if rem != 0 { std += String(repeating: "=", count: 4 - rem) }
+        guard let data = Data(base64Encoded: std), let decoded = String(data: data, encoding: .utf8) else {
+            return false
+        }
+        let trimmed = decoded.drop(while: { $0.isWhitespace })
+        guard trimmed.hasPrefix("{") else { return false }
+        return trimmed.contains("\"alg\"") || trimmed.contains("\"enc\"")
+            || trimmed.contains("\"typ\"") || trimmed.contains("\"kid\"")
+    }
+
     static func redactJWTTokens(in text: String) -> String {
-        guard text.contains("eyJ"), let jwtRegex = jwtTokenRegex else { return text }
-        let range = NSRange(location: 0, length: (text as NSString).length)
-        return jwtRegex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "[redacted]")
+        guard text.contains("."), let jwtRegex = compactJoseTokenRegex else { return text }
+        let nsText = text as NSString
+        let matches = jwtRegex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+        var out = ""
+        var copied = 0
+        for match in matches {
+            let sub = nsText.substring(with: match.range)
+            guard isCompactJoseToken(sub) else { continue }
+            out += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
+            out += "[redacted]"
+            copied = match.range.location + match.range.length
+        }
+        guard copied > 0 else { return text }
+        out += nsText.substring(from: copied)
+        return out
     }
 
     static func matchCanonicalAuthHeaderName(_ decoded: [unichar]) -> String? {

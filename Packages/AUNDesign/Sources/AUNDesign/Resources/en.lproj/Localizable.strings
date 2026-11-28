@@ -593,7 +593,7 @@
 
 "player.quranCredit.accessibility" = "Source: Quran Foundation, opens in browser";
 "diagnostics.toggle" = "Diagnostics & crash reports";
-"diagnostics.description" = "Off by default. Shares scrubbed crash reports and basic usage metrics to help fix bugs. Never includes personal data or viewing history.";
+"diagnostics.description" = "Off by default. Shares scrubbed crash and diagnostic reports to help fix bugs. Sensitive details like file paths, credentials, and personal identifiers are scrubbed before sending, and viewing history is not collected.";
 "diagnostics.on" = "On";
 "diagnostics.off" = "Off";
 "diagnostics.purgeWarning" = "Diagnostics turned off, but cached diagnostic files could not be removed from disk.";

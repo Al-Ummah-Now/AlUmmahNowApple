@@ -38,9 +38,37 @@ extension CoreTelemetryService {
             #"(;[a-z0-9_-]*(?:session|jsessionid|phpsessid|sid|token|secret|auth|key|pass|pwd|cred|jwt|sig|code|otp|ticket|cookie)[a-z0-9_-]*=)[^/?#;\s]+"#,
         options: [.caseInsensitive]
     )
+    private static let oneDriveShareTokenRegex = try? NSRegularExpression(
+        pattern: #"((?:/|%2[fF])s!)[^\s?#]+"#, options: [.caseInsensitive]
+    )
+    private static let urlUserinfoRegex = try? NSRegularExpression(
+        pattern: #"^([a-zA-Z][a-zA-Z0-9+.-]*://)([^/\s?#]+)@"#
+    )
+
+    static func skipOptionalURLUserinfo(_ nsText: NSString, start: Int, len: Int) -> Int {
+        var lastAt = -1
+        var q = start
+        while q < len {
+            let ch = nsText.character(at: q)
+            if ch == 0x40 {
+                lastAt = q
+            } else if VaultLineTracker.isWhitespace(ch) || ch == 0x2F || ch == 0x3F || ch == 0x23
+                || ch == 0x22 || ch == 0x27 || ch == 0x3C || ch == 0x3E || ch == 0x5C
+                || ch == 0x7B || ch == 0x7D || ch == 0x0A || ch == 0x0D
+            {
+                break
+            }
+            q += 1
+        }
+        return lastAt > start ? lastAt + 1 : start
+    }
 
     static func redactURLPathSecrets(_ url: String) -> String {
         var result = url
+        if let regex = urlUserinfoRegex {
+            let range = NSRange(result.startIndex..<result.endIndex, in: result)
+            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "$1[redacted]@")
+        }
         if let regex = webhookPathTokenRegex {
             result = replaceURLPathSecret(result, regex: regex)
         }
@@ -48,10 +76,47 @@ extension CoreTelemetryService {
         if let regex = telegramBotTokenURLRegex {
             result = replaceURLPathSecret(result, regex: regex)
         }
+        if let regex = oneDriveShareTokenRegex {
+            result = replaceURLPathSecret(result, regex: regex)
+        }
         if let regex = urlMatrixParamRegex {
             result = replaceURLPathSecret(result, regex: regex)
         }
-        return result
+        return redactEncodedJoseTokensInURL(result)
+    }
+
+    private static func redactEncodedJoseTokensInURL(_ url: String) -> String {
+        guard let regex = CoreTelemetryAuthScanner.compactJoseTokenRegex else { return url }
+        let decoded: String
+        let origOffsets: [Int]?
+        if url.contains("%") {
+            let pair = decodeURLForPathSecretMatch(url)
+            decoded = pair.0
+            origOffsets = pair.1
+        } else {
+            decoded = url
+            origOffsets = nil
+        }
+        guard decoded.contains(".") else { return url }
+        let nsDecoded = decoded as NSString
+        let matches = regex.matches(in: decoded, options: [], range: NSRange(location: 0, length: nsDecoded.length))
+        guard !matches.isEmpty else { return url }
+        let nsURL = url as NSString
+        var rebuilt = ""
+        var copied = 0
+        for match in matches {
+            let candidate = nsDecoded.substring(with: match.range)
+            guard CoreTelemetryAuthScanner.isCompactJoseToken(candidate) else { continue }
+            let start = origOffsets?[match.range.location] ?? match.range.location
+            if start < copied { continue }
+            let end = origOffsets?[match.range.location + match.range.length] ?? (match.range.location + match.range.length)
+            rebuilt += nsURL.substring(with: NSRange(location: copied, length: start - copied))
+            rebuilt += "[redacted]"
+            copied = end
+        }
+        guard copied > 0 else { return url }
+        rebuilt += nsURL.substring(from: copied)
+        return rebuilt
     }
 
     private static func redactSlackWebhookURL(_ url: String) -> String {
@@ -178,21 +243,25 @@ extension CoreTelemetryService {
             .contains { sensitiveCustomHeaderSegments.contains(String($0)) }
     }
 
-    private static let jwtInKeyRegex = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+){1,3}(?![A-Za-z0-9_-])"#
-    )
+    private static let ipv4OctetPattern = #"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"#
+    private static let ipv4CorePattern = "(?:\(ipv4OctetPattern)\\.){3}\(ipv4OctetPattern)"
     private static let ipv4InKeyRegex = try? NSRegularExpression(
-        pattern:
-            #"(?<![A-Za-z0-9_.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![A-Za-z0-9_]|\.\d)"#
+        pattern: #"(?<![A-Za-z0-9_.])"# + ipv4CorePattern + #"(?![A-Za-z0-9_]|\.\d)"#
     )
     private static let ipv6InKeyRegex = try? NSRegularExpression(
         pattern:
-            #"(?<![0-9a-fA-F]:)(?<![A-Za-z0-9_])(?:(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|"#
-            + #"(?:[0-9a-fA-F]{1,4}:){1,7}:(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,5})?|"#
-            + #"::(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,6}))(?:%[A-Za-z0-9_.-]+)?(?![A-Za-z0-9_]|:[0-9a-fA-F])"#
+            #"(?<![A-Za-z0-9_])(?:(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|"#
+            + #"(?:[0-9a-fA-F]{1,4}:){6}"# + ipv4CorePattern + #"|"#
+            + #"(?:[0-9a-fA-F]{1,4}:){1,7}:(?:(?:[0-9a-fA-F]{1,4}:){0,4}"# + ipv4CorePattern
+            + #"|[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,5})?|"#
+            + #"::(?:(?:[0-9a-fA-F]{1,4}:){0,5}"# + ipv4CorePattern
+            + #"|[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,6}))(?:%[A-Za-z0-9_.-]+)?(?![A-Za-z0-9_]|:[0-9a-fA-F])"#
     )
     private static let phoneInKeyRegex = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9_])\+?\p{Nd}[\p{Nd}\s().\p{Pd}]{7,}\p{Nd}(?![A-Za-z0-9_])"#
+        pattern: #"(?<![A-Za-z0-9_])\+?\p{Nd}[\p{Nd}\p{Zs}\t().\p{Pd}\u2212]{6,}\p{Nd}(?![A-Za-z0-9_])"#
+    )
+    private static let isoDateExactRegex = try? NSRegularExpression(
+        pattern: #"^(?:\d{4}[-/.]\d{2}[-/.]\d{2}|\d{2}[-/.]\d{2}[-/.]\d{4})$"#
     )
     private static let opaqueSecretInKeyRegex = try? NSRegularExpression(
         pattern: #"(?<![A-Za-z0-9_])[A-Za-z0-9+/=_-]{32,}(?![A-Za-z0-9_])"#
@@ -215,42 +284,59 @@ extension CoreTelemetryService {
 
     private static let keyValueCredentialRegex = try? NSRegularExpression(
         pattern:
-            #"(?<![A-Za-z0-9_])(token|secret|jwt|passphrase|credential|credentials|"#
+            #"(?<![A-Za-z0-9_])((?:[A-Za-z0-9_.-]*[._-])?(?:token|secret|jwt|passphrase|credential|credentials|"#
             + #"verification[_-]?code|auth[_-]?code|recovery[_-]?code|passcode|otp|pin|"#
             + #"client[_-]?secret|access[_-]?token|refresh[_-]?token|id[_-]?token|"#
             + #"api[_-]?key|api[_-]?token|auth[_-]?token|session[_-]?token|security[_-]?token|"#
             + #"private[_-]?key|secret[_-]?key|access[_-]?key|code[_-]?verifier|"#
-            + #"session[_-]?id|session[_-]?key|password|passwd)(\s*[=:]\s*)"#
-            + #"(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)"#,
+            + #"session[_-]?id|session[_-]?key|password|passwd|pwd)(?:\\?[\"'])?\s*[=:]\s*)"#
+            + #"(?:\\\"(?:\\\\.|[^\"\\])*\\\"|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}\]\"']+)"#,
         options: [.caseInsensitive]
     )
 
+    private static func isRedactedPhoneMatch(_ match: String) -> Bool {
+        let digits = match.unicodeScalars.filter { $0.properties.generalCategory == .decimalNumber }.count
+        if digits >= 9 { return true }
+        guard digits == 8 else { return false }
+        let isDate =
+            isoDateExactRegex?.firstMatch(
+                in: match, options: [], range: NSRange(location: 0, length: (match as NSString).length)
+            ) != nil
+        guard !isDate else { return false }
+        return match.hasPrefix("+")
+            || match.unicodeScalars.contains {
+                $0 == "(" || $0 == ")" || $0 == "\u{2212}"
+                    || $0.properties.generalCategory == .spaceSeparator
+                    || $0.properties.generalCategory == .dashPunctuation
+            }
+    }
+
     static func sanitizeDiagnosticText(_ text: String) -> String {
-        var safe = sanitizeLocalPaths(text)
+        var pre = text
+        if let regex = keyValueCredentialRegex {
+            let range = NSRange(location: 0, length: (pre as NSString).length)
+            pre = regex.stringByReplacingMatches(in: pre, options: [], range: range, withTemplate: "$1[redacted]")
+        }
+        var safe = sanitizeLocalPaths(pre)
         if let regex = keyValueCredentialRegex {
             let range = NSRange(location: 0, length: (safe as NSString).length)
-            safe = regex.stringByReplacingMatches(in: safe, options: [], range: range, withTemplate: "$1$2[redacted]")
-        }
-        if let regex = ipv4InKeyRegex {
-            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
+            safe = regex.stringByReplacingMatches(in: safe, options: [], range: range, withTemplate: "$1[redacted]")
         }
         if let regex = ipv6InKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
         }
+        if let regex = ipv4InKeyRegex {
+            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
+        }
         if let regex = phoneInKeyRegex {
-            safe = replaceMatches(in: safe, regex: regex) { match in
-                match.unicodeScalars.filter { $0.properties.generalCategory == .decimalNumber }.count >= 9
-                    ? "[redacted-phone]" : nil
-            }
+            safe = replaceMatches(in: safe, regex: regex) { isRedactedPhoneMatch($0) ? "[redacted-phone]" : nil }
         }
         return safe
     }
 
     static func sanitizePropertyKey(_ key: String) -> String {
         var safe = sanitizeDiagnosticText(key)
-        if let regex = jwtInKeyRegex {
-            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-token]" }
-        }
+        safe = CoreTelemetryAuthScanner.redactJWTTokens(in: safe)
         if let regex = opaqueSecretInKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { match in
                 let hasLetter = match.utf8.contains { ($0 >= 0x41 && $0 <= 0x5A) || ($0 >= 0x61 && $0 <= 0x7A) }
@@ -311,6 +397,52 @@ extension CoreTelemetryService {
         default:
             return isSensitiveCustomHeader(lower)
         }
+    }
+
+    static func isSensitivePropertyKey(_ trimmedKey: String) -> Bool {
+        isKnownAuthHeaderPropertyKey(trimmedKey) || hasSensitivePropertySegment(trimmedKey)
+    }
+
+    private static let sensitivePropertySegments: Set<String> = [
+        "token", "secret", "jwt", "bearer", "password", "passwd", "pwd", "passphrase",
+        "credential", "credentials", "otp", "pin", "passcode", "cookie",
+        "authorization", "signature", "apikey", "accesskey", "privatekey",
+        "secretkey", "sessionid", "sessionkey", "codeverifier",
+        "verificationcode", "authcode", "recoverycode", "clientsecret",
+        "accesstoken", "refreshtoken", "idtoken", "sessiontoken", "securitytoken",
+    ]
+
+    private static func hasSensitivePropertySegment(_ key: String) -> Bool {
+        let chars = Array(key)
+        var segments: [String] = []
+        var cur = ""
+        for i in chars.indices {
+            let c = chars[i]
+            if !(c.isLetter || c.isNumber) {
+                if !cur.isEmpty {
+                    segments.append(cur.lowercased())
+                    cur = ""
+                }
+                continue
+            }
+            if !cur.isEmpty && i > 0 && c.isUppercase {
+                let prev = chars[i - 1]
+                let nextLower = i + 1 < chars.count && chars[i + 1].isLowercase
+                if prev.isLowercase || prev.isNumber || (prev.isUppercase && nextLower) {
+                    segments.append(cur.lowercased())
+                    cur = ""
+                }
+            }
+            cur.append(c)
+        }
+        if !cur.isEmpty { segments.append(cur.lowercased()) }
+        for i in segments.indices {
+            if sensitivePropertySegments.contains(segments[i]) { return true }
+            if i + 1 < segments.count && sensitivePropertySegments.contains(segments[i] + segments[i + 1]) {
+                return true
+            }
+        }
+        return false
     }
 
     static func decodeDomainScalar(_ nsText: NSString, at pos: Int, len: Int) -> (UnicodeScalar, Int)? {

@@ -19,7 +19,6 @@ extension CoreTelemetryService {
         let locale = defaults.string(forKey: "AUNLanguage") ?? Locale.preferredLanguages.first ?? "en"
         let bufferURL = Self.defaultBufferURL(bundleID: bundleID, filename: bufferFilename)
         let osVersion = Self.osVersionString()
-        let initialEnabled = defaults.bool(forKey: "AUNTelemetryEnabled")
         nonisolated(unsafe) let defaultsStore = defaults
         let externalCheck: @Sendable () -> Bool = {
             defaultsStore.bool(forKey: "AUNTelemetryEnabled")
@@ -35,17 +34,17 @@ extension CoreTelemetryService {
                 userAgent: "\(userAgentPrefix)/\(version)",
                 clientHeader: AUNClient.value,
                 bufferPath: bufferURL?.path,
-                initialEnabled: initialEnabled,
+                initialEnabled: nil,
                 isExternallyEnabled: externalCheck,
                 observedDefaults: defaults,
                 observedDefaultsKey: "AUNTelemetryEnabled"
             )
-            if initialEnabled && service.consent == .off {
+            if defaults.bool(forKey: "AUNTelemetryEnabled") && service.consent == .off {
                 defaults.set(false, forKey: "AUNTelemetryEnabled")
             }
             return service
         } catch {
-            if initialEnabled {
+            if defaults.bool(forKey: "AUNTelemetryEnabled") {
                 defaults.set(false, forKey: "AUNTelemetryEnabled")
             }
             AUNLog.network.error("Telemetry unavailable, continuing with purge-capable fallback: \(error)")
@@ -449,7 +448,7 @@ extension CoreTelemetryService {
     }
 
     private static func isAuthHeaderPropertyKey(_ trimmedKey: String) -> Bool {
-        isKnownAuthHeaderPropertyKey(trimmedKey)
+        isSensitivePropertyKey(trimmedKey)
     }
 
     static func serializeProperties(_ properties: [String: String]) -> String? {
