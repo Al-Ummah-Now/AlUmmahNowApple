@@ -84,6 +84,7 @@ struct SettingsMenu: View {
     var onOpenBlockedList: (() -> Void)?
     @State private var showingPurgeWarning = false
     @State private var confirmingDiagnosticsEnable = false
+    @State private var showingEnableError = false
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
@@ -103,6 +104,7 @@ struct SettingsMenu: View {
         settings.telemetryEnabled = true
         if !telemetry.setConsent(.full) {
             settings.telemetryEnabled = false
+            showingEnableError = true
         }
     }
 
@@ -174,6 +176,11 @@ struct SettingsMenu: View {
             Button(l10n("common.cancel"), role: .cancel) {}
         } message: {
             Text(l10n("diagnostics.description"))
+        }
+        .alert(l10n("diagnostics.toggle"), isPresented: $showingEnableError) {
+            Button(l10n("common.dismiss"), role: .cancel) {}
+        } message: {
+            Text(l10n("diagnostics.enableError"))
         }
         .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
             Button(l10n("common.retry")) {

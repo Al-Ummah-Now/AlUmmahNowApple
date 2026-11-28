@@ -175,34 +175,31 @@ private struct AdminSignedOutDiagnosticsControl: View {
     }
 
     var body: some View {
-        let diagnosticsActive = settings.telemetryEnabled && session.services.telemetry.consent != .off
-        if diagnosticsActive || session.services.telemetry.lastPurgeFailed || diagnosticsMessage != nil {
-            VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
-                Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
-                    .accessibilityIdentifier("admin-signedout-diagnostics")
-                Text(l10n("diagnostics.description"))
+        VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
+            Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
+                .accessibilityIdentifier("admin-signedout-diagnostics")
+            Text(l10n("diagnostics.description"))
+                .fanousFont(.caption)
+                .foregroundStyle(Fanous.textSecondary)
+            if let message = diagnosticsMessage
+                ?? (session.services.telemetry.lastPurgeFailed ? l10n("diagnostics.purgeWarning") : nil)
+            {
+                Text(message)
                     .fanousFont(.caption)
-                    .foregroundStyle(Fanous.textSecondary)
-                if let message = diagnosticsMessage
-                    ?? (session.services.telemetry.lastPurgeFailed ? l10n("diagnostics.purgeWarning") : nil)
-                {
-                    Text(message)
-                        .fanousFont(.caption)
-                        .foregroundStyle(Fanous.errorText)
-                        .accessibilityIdentifier("admin-signedout-diagnostics-warning")
-                }
-                if session.services.telemetry.consent == .off && session.services.telemetry.lastPurgeFailed {
-                    Button(l10n("common.retry")) {
-                        let purged = session.services.telemetry.setConsent(.off)
-                        diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
-                    }
-                    .buttonStyle(FanousButtonStyle(.secondary))
-                    .accessibilityIdentifier("admin-signedout-diagnostics-retry-purge")
-                }
+                    .foregroundStyle(Fanous.errorText)
+                    .accessibilityIdentifier("admin-signedout-diagnostics-warning")
             }
-            .multilineTextAlignment(.leading)
-            .padding(.top, FanousScale.spacingSm)
+            if session.services.telemetry.consent == .off && session.services.telemetry.lastPurgeFailed {
+                Button(l10n("common.retry")) {
+                    let purged = session.services.telemetry.setConsent(.off)
+                    diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
+                }
+                .buttonStyle(FanousButtonStyle(.secondary))
+                .accessibilityIdentifier("admin-signedout-diagnostics-retry-purge")
+            }
         }
+        .multilineTextAlignment(.leading)
+        .padding(.top, FanousScale.spacingSm)
     }
 }
 
@@ -347,6 +344,7 @@ struct AccountMenu: View {
     @Binding var confirmSignOut: Bool
     @State private var showingPurgeWarning = false
     @State private var confirmingDiagnosticsEnable = false
+    @State private var showingEnableError = false
 
     private var diagnosticsBinding: Binding<Bool> {
         Binding(
@@ -368,6 +366,7 @@ struct AccountMenu: View {
         settings.telemetryEnabled = true
         if !telemetry.setConsent(.full) {
             settings.telemetryEnabled = false
+            showingEnableError = true
         }
     }
 
@@ -404,6 +403,11 @@ struct AccountMenu: View {
             Button(l10n("common.cancel"), role: .cancel) {}
         } message: {
             Text(l10n("diagnostics.description"))
+        }
+        .alert(l10n("diagnostics.toggle"), isPresented: $showingEnableError) {
+            Button(l10n("common.dismiss"), role: .cancel) {}
+        } message: {
+            Text(l10n("diagnostics.enableError"))
         }
         .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
             Button(l10n("common.retry")) {

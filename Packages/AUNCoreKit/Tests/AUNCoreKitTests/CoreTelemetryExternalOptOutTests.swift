@@ -33,7 +33,8 @@ struct CoreTelemetryExternalOptOutTests {
         service.close()
         #expect(FileManager.default.fileExists(atPath: bufferPath))
 
-        defaults.set(false, forKey: "AUNTelemetryEnabled")
+        let otherInstance = UserDefaults(suiteName: suiteName)!
+        otherInstance.set(false, forKey: "AUNTelemetryEnabled")
         #expect(service.nativeConsentForTesting == .denied)
         #expect(!FileManager.default.fileExists(atPath: bufferPath))
     }
@@ -60,17 +61,29 @@ struct CoreTelemetryExternalOptOutTests {
         let props = CoreTelemetryService.serializeProperties([
             "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig_part-1": "failed",
             "192.0.2.10": "ok",
+            "2001:db8::beef:cafe": "failed",
+            "fe80::1": "ok",
             "+٩٧١٥٠١٢٣٤٥٦": "ok",
+            "detail": "Peer 192.0.2.10 called +٩٧١٥٠١٢٣٤٥٦ from fe80::1",
             "share": "https://share.example.com/s/V8r2Qp6Lm4",
+            "dropbox": "https://www.dropbox.com/scl/fi/a1b2c3d4e5f6g7h8i9j0/PrivateAcquisition.pdf",
         ])
         #expect(props != nil)
         #expect(!(props?.contains("eyJhbGciOiJIUzI1NiJ9") ?? true))
         #expect(!(props?.contains("192.0.2.10") ?? true))
+        #expect(!(props?.contains("beef:cafe") ?? true))
+        #expect(!(props?.contains("fe80") ?? true))
         #expect(!(props?.contains("٩٧١٥٠١٢٣٤٥٦") ?? true))
         #expect(!(props?.contains("V8r2Qp6Lm4") ?? true))
+        #expect(!(props?.contains("PrivateAcquisition") ?? true))
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://share.example.com/s/V8r2Qp6Lm4")
                 == "https://share.example.com/s/[redacted]"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths(
+                "https://www.dropbox.com/scl/fi/a1b2c3d4e5f6g7h8i9j0/PrivateAcquisition.pdf"
+            ) == "https://www.dropbox.com/scl/[redacted]"
         )
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -83,10 +96,14 @@ struct CoreTelemetryExternalOptOutTests {
             locale: "en", videosAPIBaseURL: nil, userAgent: "AUNTest/1.0",
             bufferPath: bufferPath, initialEnabled: true)
         service.track("4155550123", properties: [:])
-        service.addBreadcrumb(category: "4155550123", message: "opened", level: .info)
-        service.reportCrash(kind: "4155550123", message: "boom", stack: nil)
+        service.track("peer 2001:db8::beef:cafe", properties: ["2001:db8::beef:cafe": "failed"])
+        service.addBreadcrumb(category: "4155550123", message: "Peer 192.0.2.10 called +٩٧١٥٠١٢٣٤٥٦", level: .info)
+        service.reportCrash(kind: "4155550123", message: "Peer 192.0.2.10 called +٩٧١٥٠١٢٣٤٥٦", stack: nil)
         service.persist()
         let raw = try String(contentsOfFile: bufferPath, encoding: .utf8)
         #expect(!raw.contains("4155550123"))
+        #expect(!raw.contains("192.0.2.10"))
+        #expect(!raw.contains("٩٧١٥٠١٢٣٤٥٦"))
+        #expect(!raw.contains("beef:cafe"))
     }
 }

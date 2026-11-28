@@ -96,7 +96,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             nonisolated(unsafe) let defaultsRef = observedDefaults
             self.defaultsObserver = NotificationCenter.default.addObserver(
                 forName: UserDefaults.didChangeNotification,
-                object: observedDefaults,
+                object: nil,
                 queue: nil
             ) { [weak self] _ in
                 if !defaultsRef.bool(forKey: observedDefaultsKey) {
@@ -227,7 +227,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             case .error: .error
             }
         let safeCategory = Self.sanitizePropertyKey(category)
-        let safeMessage = Self.sanitizeLocalPaths(message)
+        let safeMessage = Self.sanitizeDiagnosticText(message)
         beforeRecordCommitForTesting?()
         withActiveConsent(requiresFull: false, expectedEpoch: captureEpoch) {
             client.addBreadcrumb(category: safeCategory, message: safeMessage, level: mapped)
@@ -239,10 +239,10 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         let trimmedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeKind = trimmedKind.isEmpty ? "UnhandledException" : Self.sanitizePropertyKey(trimmedKind)
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        let safeMessage = trimmed.isEmpty ? "Unhandled exception" : Self.sanitizeLocalPaths(trimmed)
+        let safeMessage = trimmed.isEmpty ? "Unhandled exception" : Self.sanitizeDiagnosticText(trimmed)
         let report = TelemetryCrashReport(
             kind: safeKind, message: safeMessage,
-            stack: stack.map(Self.sanitizeLocalPaths),
+            stack: stack.map(Self.sanitizeDiagnosticText),
             occurredAtMs: Int64(Date().timeIntervalSince1970 * 1000),
             fromPreviousSession: fromPreviousSession, propertiesJson: nil
         )

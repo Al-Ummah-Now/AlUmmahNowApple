@@ -19,7 +19,8 @@ extension CoreTelemetryService {
             + #"verify|verify-email|confirm|confirm-email|activate|magic|magic-link|"#
             + #"invite|invitations?|tokens?|auth|oauth2?|callback|sessions?|unsubscribe|"#
             + #"secrets?|keys?|api-?keys?|credentials?|sign-?in|login|sso|redeem|claim|recovery?|passwords?|"#
-            + #"share|shared|sh|s|dl|link|private|join|otp|passkey|code)"#
+            + #"share|shared|sh|s|scl|dl|link|private|join|otp|passkey|code|folders|"#
+            + #"file/d|document/d|spreadsheets/d|presentation/d)"#
             + #"(?:/|%2[fF]))[^\s?#]+"#,
         options: [.caseInsensitive]
     )
@@ -178,7 +179,9 @@ extension CoreTelemetryService {
     )
     private static let ipv6InKeyRegex = try? NSRegularExpression(
         pattern:
-            #"(?<![A-Za-z0-9_:])(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{0,4}|(?<![A-Za-z0-9_:])::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}(?![A-Za-z0-9_:])"#
+            #"(?<![A-Za-z0-9_:])(?:(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|"#
+            + #"(?:[0-9a-fA-F]{1,4}:){1,7}:(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,5})?|"#
+            + #"::(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){0,6}))(?:%[A-Za-z0-9_.-]+)?(?![A-Za-z0-9_:])"#
     )
     private static let phoneInKeyRegex = try? NSRegularExpression(
         pattern: #"(?<![A-Za-z0-9_])\+?\p{Nd}[\p{Nd}\s().-]{7,}\p{Nd}(?![A-Za-z0-9_])"#
@@ -190,11 +193,8 @@ extension CoreTelemetryService {
         pattern: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#
     )
 
-    static func sanitizePropertyKey(_ key: String) -> String {
-        var safe = sanitizeLocalPaths(key)
-        if let regex = jwtInKeyRegex {
-            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-token]" }
-        }
+    static func sanitizeDiagnosticText(_ text: String) -> String {
+        var safe = sanitizeLocalPaths(text)
         if let regex = ipv4InKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
         }
@@ -206,6 +206,14 @@ extension CoreTelemetryService {
                 match.unicodeScalars.filter { $0.properties.generalCategory == .decimalNumber }.count >= 9
                     ? "[redacted-phone]" : nil
             }
+        }
+        return safe
+    }
+
+    static func sanitizePropertyKey(_ key: String) -> String {
+        var safe = sanitizeDiagnosticText(key)
+        if let regex = jwtInKeyRegex {
+            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-token]" }
         }
         if let regex = opaqueSecretInKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { match in

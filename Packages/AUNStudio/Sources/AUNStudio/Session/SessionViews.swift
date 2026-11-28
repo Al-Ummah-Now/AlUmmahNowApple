@@ -73,34 +73,31 @@ private struct SignedOutDiagnosticsControl: View {
     }
 
     var body: some View {
-        let diagnosticsActive = settings.telemetryEnabled && session.services.telemetry.consent != .off
-        if diagnosticsActive || session.services.telemetry.lastPurgeFailed || diagnosticsMessage != nil {
-            VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
-                Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
-                    .accessibilityIdentifier("signin-diagnostics")
-                Text(l10n("diagnostics.description"))
+        VStack(alignment: .leading, spacing: FanousScale.spacingXs) {
+            Toggle(l10n("diagnostics.toggle"), isOn: diagnosticsBinding)
+                .accessibilityIdentifier("signin-diagnostics")
+            Text(l10n("diagnostics.description"))
+                .fanousFont(.caption)
+                .foregroundStyle(Fanous.textSecondary)
+            if let message = diagnosticsMessage
+                ?? (session.services.telemetry.lastPurgeFailed ? l10n("diagnostics.purgeWarning") : nil)
+            {
+                Text(message)
                     .fanousFont(.caption)
-                    .foregroundStyle(Fanous.textSecondary)
-                if let message = diagnosticsMessage
-                    ?? (session.services.telemetry.lastPurgeFailed ? l10n("diagnostics.purgeWarning") : nil)
-                {
-                    Text(message)
-                        .fanousFont(.caption)
-                        .foregroundStyle(Fanous.errorText)
-                        .accessibilityIdentifier("signin-diagnostics-warning")
-                }
-                if session.services.telemetry.consent == .off && session.services.telemetry.lastPurgeFailed {
-                    Button(l10n("common.retry")) {
-                        let purged = session.services.telemetry.setConsent(.off)
-                        diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
-                    }
-                    .buttonStyle(FanousButtonStyle(.secondary))
-                    .accessibilityIdentifier("signin-diagnostics-retry-purge")
-                }
+                    .foregroundStyle(Fanous.errorText)
+                    .accessibilityIdentifier("signin-diagnostics-warning")
             }
-            .multilineTextAlignment(.leading)
-            .padding(.top, FanousScale.spacingSm)
+            if session.services.telemetry.consent == .off && session.services.telemetry.lastPurgeFailed {
+                Button(l10n("common.retry")) {
+                    let purged = session.services.telemetry.setConsent(.off)
+                    diagnosticsMessage = purged ? nil : l10n("diagnostics.purgeWarning")
+                }
+                .buttonStyle(FanousButtonStyle(.secondary))
+                .accessibilityIdentifier("signin-diagnostics-retry-purge")
+            }
         }
+        .multilineTextAlignment(.leading)
+        .padding(.top, FanousScale.spacingSm)
     }
 }
 

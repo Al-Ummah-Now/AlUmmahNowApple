@@ -466,7 +466,7 @@ extension CoreTelemetryService {
             if isAuthHeaderPropertyKey(trimmedKey) {
                 sanitized[uniqueKey] = "[redacted]"
             } else {
-                sanitized[uniqueKey] = Self.sanitizeLocalPaths(value)
+                sanitized[uniqueKey] = Self.sanitizeDiagnosticText(value)
             }
         }
         guard !sanitized.isEmpty,

@@ -152,6 +152,7 @@
         var telemetry: any TelemetryServicing = NullTelemetryService.shared
         @State private var showingPurgeWarning = false
         @State private var confirmingDiagnosticsEnable = false
+        @State private var showingEnableError = false
 
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
@@ -195,11 +196,17 @@
                     settings.telemetryEnabled = true
                     if !telemetry.setConsent(.full) {
                         settings.telemetryEnabled = false
+                        showingEnableError = true
                     }
                 }
                 Button(l10n("common.cancel"), role: .cancel) {}
             } message: {
                 Text(l10n("diagnostics.description"))
+            }
+            .alert(l10n("diagnostics.toggle"), isPresented: $showingEnableError) {
+                Button(l10n("common.dismiss"), role: .cancel) {}
+            } message: {
+                Text(l10n("diagnostics.enableError"))
             }
             .alert(l10n("diagnostics.toggle"), isPresented: $showingPurgeWarning) {
                 Button(l10n("common.retry")) {
