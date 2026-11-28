@@ -4,6 +4,115 @@ extension CoreTelemetryService {
     private static let urlPathKeyValueRegex = try? NSRegularExpression(
         pattern: #"(?<![A-Za-z0-9_])([A-Za-z0-9_.-]{2,64})([=:])([^/?#&\s;]+)"#
     )
+    private static let percentEncodedURLRegex = try? NSRegularExpression(
+        pattern:
+            #"(?<![A-Za-z0-9+.-])(?:[a-zA-Z][a-zA-Z0-9+.-]*(?:%3[aA]%2[fF]%2[fF]|%253[aA]%252[fF]%252[fF]))[^\s\"'<>]+"#
+    )
+    private static let multiWordSensitiveSegments: Set<String> = [
+        "fullname", "displayname", "firstname", "lastname", "givenname", "familyname",
+        "address", "street", "streetaddress", "homeaddress", "passphrase", "pass", "password", "passwd",
+    ]
+    private static let multiWordValueRegex = try? NSRegularExpression(
+        pattern:
+            #"(?<![A-Za-z0-9_])((?:[A-Za-z0-9_.-]|\\u[0-9A-Fa-f]{4}){2,64})"#
+            + #"((?:\\?[\"']|[\u201D\u2019\u00BB\u300D\u300F])?\s*[=:]\s*)"#
+            + #"(?![\"'\u201C\u2018\u00AB\u201E\u300C\u300E\\])([^\r\n,;}\]]+)"#
+    )
+    private static let nextKeyValueBoundaryRegex = try? NSRegularExpression(
+        pattern: #"\s+(?:[A-Za-z0-9_.-]{2,48}\s*[=:])"#
+    )
+
+    static func redactPercentEncodedURLs(_ text: String) -> String {
+        guard text.contains("%"), let regex = percentEncodedURLRegex else { return text }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+        var out = ""
+        var copied = 0
+        for match in matches {
+            let raw = nsText.substring(with: match.range)
+            let replacement: String
+            if raw.range(of: "%253", options: .caseInsensitive) != nil {
+                replacement = "[redacted-url]"
+            } else if let decoded = raw.removingPercentEncoding {
+                replacement = sanitizeLocalPaths(decoded)
+            } else {
+                replacement = "[redacted-url]"
+            }
+            out += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
+            out += replacement
+            copied = match.range.location + match.range.length
+        }
+        out += nsText.substring(from: copied)
+        return out
+    }
+
+    static func isMultiWordSensitiveKey(_ key: String) -> Bool {
+        let chars = Array(key)
+        var segments: [String] = []
+        var cur = ""
+        for i in chars.indices {
+            let c = chars[i]
+            if !(c.isLetter || c.isNumber) {
+                if !cur.isEmpty {
+                    segments.append(cur.lowercased())
+                    cur = ""
+                }
+                continue
+            }
+            if !cur.isEmpty && i > 0 && c.isUppercase {
+                let prev = chars[i - 1]
+                let nextLower = i + 1 < chars.count && chars[i + 1].isLowercase
+                if prev.isLowercase || prev.isNumber || (prev.isUppercase && nextLower) {
+                    segments.append(cur.lowercased())
+                    cur = ""
+                }
+            }
+            cur.append(c)
+        }
+        if !cur.isEmpty { segments.append(cur.lowercased()) }
+        for i in segments.indices {
+            if multiWordSensitiveSegments.contains(segments[i]) { return true }
+            if i + 1 < segments.count && multiWordSensitiveSegments.contains(segments[i] + segments[i + 1]) {
+                return true
+            }
+        }
+        return false
+    }
+
+    static func scrubUnquotedMultiWordSensitiveValues(_ text: String, quoteReplacement: Bool) -> String {
+        guard let regex = multiWordValueRegex else { return text }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+        var out = ""
+        var copied = 0
+        for match in matches {
+            let key = nsText.substring(with: match.range(at: 1))
+            let decodedKey = decodeJSONUnicodeEscapes(key)
+            let lower = decodedKey.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")).lowercased()
+            if lower == "authorization" || lower == "proxy-authorization" { continue }
+            guard isMultiWordSensitiveKey(decodedKey) else { continue }
+            let val = nsText.substring(with: match.range(at: 3))
+            if val.hasPrefix("[redacted") { continue }
+            let tail: String
+            if let boundary = nextKeyValueBoundaryRegex?.firstMatch(
+                in: val, options: [], range: NSRange(location: 0, length: (val as NSString).length)
+            ) {
+                tail = (val as NSString).substring(from: boundary.range.location)
+            } else {
+                tail = ""
+            }
+            let sep = nsText.substring(with: match.range(at: 2))
+            let repl = quoteReplacement ? "\"[redacted]\"" : "[redacted]"
+            out += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
+            out += key + sep + repl + tail
+            copied = match.range.location + match.range.length
+        }
+        guard copied > 0 else { return text }
+        out += nsText.substring(from: copied)
+        return out
+    }
 
     static func decodeJSONUnicodeEscapes(_ raw: String) -> String {
         guard raw.contains("\\u") else { return raw }

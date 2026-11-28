@@ -129,7 +129,10 @@ struct CoreTelemetryExternalOptOutTests {
         service.reportCrash(
             kind: "4155550123",
             message: #"clientSecret="cobalt orchard" eyJhbGciOiJkaXIifQ..iv1234.cipher5678.tag9012 "#
-                + #"{"home\u0041ddress":"12 Cedar Rd"} https://example.test/password%3Dshortcredential "#
+                + #"{"home\u0041ddress":"12 Cedar Rd"} displayName=Alice Smith "#
+                + "password=\u{201C}orchid velvet\u{201D} "
+                + "https://example.test/password%3Dshortcredential "
+                + "https%3A%2F%2Fexample.test%2F%3Fcode%3Dorchid-meadow "
                 + "https://drive.google.com/file/u/0/d/AbCdEfGhIjKlMnOpQrStUvWxYzABCDE/view "
                 + "https://example.com/a;jsessionid=abc123",
             stack: nil
@@ -139,7 +142,8 @@ struct CoreTelemetryExternalOptOutTests {
         let forbidden = [
             "4155550123", "2025550123", "10.0.0.123", "2001:db8", "192.0.2.81", "١٢٣", "𝟏𝟐𝟏𝟐", "12 34 56 78",
             "beef:cafe", "482193", "654321", "739104", "multi word phrase", "word phrase",
-            "Alice", "Wonderland", "shortsecret", "shortcredential", "12 Cedar Rd", "u:p@localhost",
+            "Alice", "Wonderland", "Smith", "orchid-meadow", "velvet", "shortsecret", "shortcredential",
+            "12 Cedar Rd", "u:p@localhost",
             "u:[redacted-email]", "cobalt-orchard", "orchard", "eyJzdWIiOiJhbGljZSJ9",
             "sig123", "cipher5678", "cipher7777", "Aq82F1ZLPx0K",
             "AbCdEfGhIjKlMnOpQrStUvWxYzABCDE", "abc123",

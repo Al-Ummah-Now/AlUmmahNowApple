@@ -285,11 +285,15 @@ extension CoreTelemetryService {
 
     private static let keyValueCredentialRegex = try? NSRegularExpression(
         pattern:
-            #"(?<![A-Za-z0-9_])((?:[A-Za-z0-9_.-]|\\u[0-9A-Fa-f]{4}){2,64})((?:\\?[\"'])?\s*[=:]\s*)"#
-            + #"(?:\[redacted(?:-[a-z]+)?\]|\\\"(?:\\\\.|[^\"\\])*\\\"|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}\]\"']+)"#
+            #"(?<![A-Za-z0-9_])((?:[A-Za-z0-9_.-]|\\u[0-9A-Fa-f]{4}){2,64})"#
+            + #"((?:\\?[\"']|[\u201D\u2019\u00BB\u300D\u300F])?\s*[=:]\s*)"#
+            + #"(\[redacted(?:-[a-z]+)?\]|\\\"(?:\\\\.|[^\"\\])*\\\"|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|"#
+            + #"\u201C[^\u201D\r\n]*\u201D|\u2018[^\u2019\r\n]*\u2019|\u00AB[^\u00BB\r\n]*\u00BB|"#
+            + #"\u201E[^\u201D\r\n]*\u201D|\u300C[^\u300D\r\n]*\u300D|\u300E[^\u300F\r\n]*\u300F|"#
+            + #"[^\s,;}\]\"'\u201C\u201D\u2018\u2019\u00AB\u00BB\u201E\u300C\u300D\u300E\u300F]+)"#
     )
 
-    private static func scrubSensitiveKeyValues(_ text: String) -> String {
+    private static func scrubSensitiveKeyValues(_ text: String, quoteReplacement: Bool) -> String {
         guard let regex = keyValueCredentialRegex else { return text }
         let nsText = text as NSString
         let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
@@ -302,9 +306,12 @@ extension CoreTelemetryService {
             let lower = decodedKey.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")).lowercased()
             if lower == "authorization" || lower == "proxy-authorization" { continue }
             guard hasSensitivePropertySegment(decodedKey) else { continue }
+            let val = nsText.substring(with: match.range(at: 3))
+            if val.hasPrefix("[redacted") || val == "\"[redacted]\"" { continue }
             let sep = nsText.substring(with: match.range(at: 2))
+            let repl = quoteReplacement ? "\"[redacted]\"" : "[redacted]"
             out += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
-            out += key + sep + "[redacted]"
+            out += key + sep + repl
             copied = match.range.location + match.range.length
         }
         guard copied > 0 else { return text }
@@ -330,9 +337,12 @@ extension CoreTelemetryService {
     }
 
     static func sanitizeDiagnosticText(_ text: String) -> String {
-        let pre = scrubSensitiveKeyValues(text)
+        var pre = redactPercentEncodedURLs(text)
+        pre = scrubUnquotedMultiWordSensitiveValues(pre, quoteReplacement: true)
+        pre = scrubSensitiveKeyValues(pre, quoteReplacement: true)
         var safe = sanitizeLocalPaths(pre)
-        safe = scrubSensitiveKeyValues(safe)
+        safe = scrubUnquotedMultiWordSensitiveValues(safe, quoteReplacement: false)
+        safe = scrubSensitiveKeyValues(safe, quoteReplacement: false)
         if let regex = ipv6InKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
         }
