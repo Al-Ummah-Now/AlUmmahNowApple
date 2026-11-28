@@ -207,6 +207,10 @@ struct CoreTelemetryQuotedEscapedTests {
                 "{\"uri\":\"content:\\/\\/com.android.externalstorage.documents\\/document\\/primary%3ADownload%2FPrivateAcquisition.mov\",\"ok\":true}",
                 "{\"uri\":\"[redacted-path]\",\"ok\":true}"
             ),
+            (
+                "https://proxy.example.com/https://hooks.slack.com/./services/T000/B000/fakeWebhookSecret",
+                "https://proxy.example.com/https://hooks.slack.com/./services/[redacted]"
+            ),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
@@ -217,6 +221,9 @@ struct CoreTelemetryQuotedEscapedTests {
         #expect(CoreTelemetryService.sanitizeLocalPaths(malformedEscaped).hasPrefix("{\\\"Authorization\\\":[\\\"[redacted]\\\""))
         let repeatedVaultPrefix = String(repeating: "\u{001E}AUNURLx ", count: 5000) + "https://example/path"
         #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedVaultPrefix) == repeatedVaultPrefix)
+        let repeatedSlackHosts =
+            "https://hooks.slack.com" + String(repeating: "/https://hooks.slack.com", count: 2000) + "/x"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedSlackHosts) == repeatedSlackHosts)
     }
 
     @Test("Scales linearly on unclosed angles/spaced hashes and sanitizes serialized property keys and values")
