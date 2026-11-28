@@ -111,6 +111,7 @@ struct CoreTelemetryExternalOptOutTests {
                 "verificationCode": "482193",
                 "challenge.verificationCode": "654321",
                 "user_id": "alice123",
+                "p\\u0061ssword": "violet-sparrow",
                 "token violet7": "ok",
                 "token=cobalt-orchard": "ok",
                 "http://u:p@localhost/x": "ok",
@@ -122,8 +123,8 @@ struct CoreTelemetryExternalOptOutTests {
             message: "Remote peer 10.0.0.123. source:2001:db8::1 peer 2001:db8:0:0:0:0:192.0.2.81 "
                 + "Call ٠٥٠\u{2011}١٢٣\u{2011}٤٥٦٧ +𝟏𝟐𝟏𝟐\u{2212}𝟓𝟓𝟓\u{2212}𝟎𝟏𝟐𝟑 phone 12 34 56 78 "
                 + "eyJhbGciOiJub25lIn0.eyJzdWIiOiJhbGljZSJ9. IHsiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiIxIn0.sig123 "
-                + #"{"challenge.verificationCode":"739104"} {"pass":"multi word phrase"} "#
-                + #"fullName="Alice Wonderland" username=Jane Doe C:ProjectCodename pwd=shortsecret "#
+                + #"{"challenge.verificationCode":"739104"} {"pass":"multi word phrase"} {"userId":["alice42", "bob73"]} "#
+                + #"fullName="Alice Wonderland" username=Jane Doe C:ProjectCodename C:秘密 pwd=shortsecret "#
                 + "https://1drv.ms/u/s!Aq82F1ZLPx0K "
                 + "https://example.com/download/eyJhbGciOiJkaXIifQ%2E%2Eiv1234%2Ecipher7777%2Etag8888",
             level: .info
@@ -144,7 +145,8 @@ struct CoreTelemetryExternalOptOutTests {
         let raw = try String(contentsOfFile: bufferPath, encoding: .utf8)
         let forbidden = [
             "4155550123", "2025550123", "10.0.0.123", "2001:db8", "192.0.2.81", "١٢٣", "𝟏𝟐𝟏𝟐", "12 34 56 78",
-            "beef:cafe", "482193", "654321", "739104", "alice123", "violet7", "first;second", "second",
+            "beef:cafe", "482193", "654321", "739104", "alice123", "alice42", "bob73", "violet-sparrow", "秘密", "violet7",
+            "first;second", "second",
             "Jane", "Doe", "ProjectCodename", "multi word phrase", "word phrase",
             "Alice", "Wonderland", "Smith", "orchid-meadow", "velvet", "shortsecret", "shortcredential",
             "12 Cedar Rd", "u:p@localhost",

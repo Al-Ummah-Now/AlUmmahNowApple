@@ -344,9 +344,11 @@ extension CoreTelemetryService {
 
     static func sanitizeDiagnosticText(_ text: String) -> String {
         var pre = redactPercentEncodedURLs(text)
+        pre = scrubSensitiveContainerValues(pre, replacement: redactedSentinel)
         pre = scrubUnquotedMultiWordSensitiveValues(pre, replacement: redactedSentinel)
         pre = scrubSensitiveKeyValues(pre, replacement: redactedSentinel)
         var safe = sanitizeLocalPaths(pre).replacingOccurrences(of: redactedSentinel, with: "[redacted]")
+        safe = scrubSensitiveContainerValues(safe, replacement: "[redacted]")
         safe = scrubUnquotedMultiWordSensitiveValues(safe, replacement: "[redacted]")
         safe = scrubSensitiveKeyValues(safe, replacement: "[redacted]")
         if let regex = spaceDelimitedCredentialRegex {
@@ -434,7 +436,8 @@ extension CoreTelemetryService {
     }
 
     static func isSensitivePropertyKey(_ trimmedKey: String) -> Bool {
-        isKnownAuthHeaderPropertyKey(trimmedKey) || hasSensitivePropertySegment(trimmedKey)
+        let decoded = decodeJSONUnicodeEscapes(trimmedKey)
+        return isKnownAuthHeaderPropertyKey(decoded) || hasSensitivePropertySegment(decoded)
     }
 
     private static let sensitivePropertySegments: Set<String> = [

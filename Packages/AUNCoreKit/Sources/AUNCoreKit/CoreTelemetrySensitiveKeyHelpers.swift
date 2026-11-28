@@ -28,7 +28,9 @@ extension CoreTelemetryService {
             + #"(?:\\?[\"']|[\u201D\u2019\u00BB\u300D\u300F])?\s*[=:]"#
     )
     static let windowsDriveRelativePathRegex = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9_:])[A-Za-z]:(?![/\\])(?!\d+:\d+)[A-Za-z_.][A-Za-z0-9_.\\/-]+"#
+        pattern:
+            #"(?<![A-Za-z0-9_:])[A-Za-z]:(?![/\\])(?!\d+:\d+)"#
+            + #"(?:[\p{L}\p{M}_.][\p{L}\p{M}\p{Nd}_.\\/-]+|[^\u0000-\u007F\s,;}\]\"'<>()]+)"#
     )
     static let spaceDelimitedCredentialRegex = try? NSRegularExpression(
         pattern:
@@ -161,6 +163,87 @@ extension CoreTelemetryService {
             guard valEnd > valStart else { continue }
             out += nsText.substring(with: NSRange(location: copied, length: valStart - copied))
             out += replacement
+            copied = valEnd
+            searchPos = valEnd
+        }
+        guard copied > 0 else { return text }
+        out += nsText.substring(from: copied)
+        return out
+    }
+
+    private static func advanceContainerQuote(
+        _ nsText: NSString, at i: Int, totalLen: Int, inQuote: inout unichar
+    ) -> Int {
+        let ch = nsText.character(at: i)
+        if ch == 0x5C && i + 1 < totalLen {
+            if inQuote == 1 && nsText.character(at: i + 1) == 0x22 { inQuote = 0 }
+            return i + 2
+        }
+        if (inQuote == 1 && ch == 0x22) || ch == inQuote { inQuote = 0 }
+        return i + 1
+    }
+
+    private static func scanBalancedContainerEnd(_ nsText: NSString, from start: Int, totalLen: Int) -> Int {
+        let open = nsText.character(at: start)
+        let close: unichar = open == 0x5B ? 0x5D : 0x7D
+        var depth = 0
+        var inQuote: unichar = 0
+        var i = start
+        while i < totalLen {
+            if inQuote != 0 {
+                i = advanceContainerQuote(nsText, at: i, totalLen: totalLen, inQuote: &inQuote)
+                continue
+            }
+            let ch = nsText.character(at: i)
+            if ch == 0x5C && i + 1 < totalLen && nsText.character(at: i + 1) == 0x22 {
+                inQuote = 1
+                i += 2
+                continue
+            }
+            if ch == 0x22 || ch == 0x27 {
+                inQuote = ch
+            } else if ch == open {
+                depth += 1
+            } else if ch == close {
+                depth -= 1
+                if depth == 0 { return i + 1 }
+            }
+            i += 1
+        }
+        return totalLen
+    }
+
+    private static func shouldScrubContainerKey(_ rawKey: String, nsText: NSString, valStart: Int) -> Bool {
+        let open = nsText.character(at: valStart)
+        guard open == 0x5B || open == 0x7B else { return false }
+        if nsText.substring(from: valStart).hasPrefix("[redacted") { return false }
+        let decodedKey = decodeJSONUnicodeEscapes(rawKey)
+        let lower = decodedKey.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")).lowercased()
+        if lower == "authorization" || lower == "proxy-authorization" { return false }
+        return hasSensitivePropertySegment(decodedKey)
+    }
+
+    static func scrubSensitiveContainerValues(_ text: String, replacement: String) -> String {
+        guard text.contains("[") || text.contains("{"), let regex = multiWordKeySepRegex else { return text }
+        let nsText = text as NSString
+        let totalLen = nsText.length
+        var out = ""
+        var copied = 0
+        var searchPos = 0
+        while searchPos < totalLen {
+            guard
+                let match = regex.firstMatch(
+                    in: text, options: [], range: NSRange(location: searchPos, length: totalLen - searchPos)
+                )
+            else { break }
+            let valStart = match.range.location + match.range.length
+            searchPos = valStart
+            guard valStart < totalLen else { break }
+            let rawKey = nsText.substring(with: match.range(at: 1))
+            guard shouldScrubContainerKey(rawKey, nsText: nsText, valStart: valStart) else { continue }
+            let valEnd = scanBalancedContainerEnd(nsText, from: valStart, totalLen: totalLen)
+            out += nsText.substring(with: NSRange(location: copied, length: valStart - copied))
+            out += "\"\(replacement)\""
             copied = valEnd
             searchPos = valEnd
         }
