@@ -36,7 +36,9 @@ extension CoreTelemetryService {
                 clientHeader: AUNClient.value,
                 bufferPath: bufferURL?.path,
                 initialEnabled: initialEnabled,
-                isExternallyEnabled: externalCheck
+                isExternallyEnabled: externalCheck,
+                observedDefaults: defaults,
+                observedDefaultsKey: "AUNTelemetryEnabled"
             )
             if initialEnabled && service.consent == .off {
                 defaults.set(false, forKey: "AUNTelemetryEnabled")

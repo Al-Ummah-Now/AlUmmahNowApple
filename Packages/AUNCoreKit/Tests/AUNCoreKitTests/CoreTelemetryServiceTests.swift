@@ -542,4 +542,47 @@ extension CoreTelemetryServiceTests {
         #expect(laterDenied.nativeConsentForTesting == .denied)
         #expect(!FileManager.default.fileExists(atPath: bufferPath))
     }
+
+    @Test("Direct UserDefaults opt-out during an active flush revokes native consent before next batch")
+    func directDefaultsOptOutRevokesActiveFlushImmediately() async throws {
+        let suiteName = "net.alummahnow.test.flush-revoke.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.set(true, forKey: "AUNTelemetryEnabled")
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "aun-tel-live-flush-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bufferPath = dir.appendingPathComponent("telemetry-buffer.json").path
+
+        nonisolated(unsafe) let defaultsRef = defaults
+        let service = try CoreTelemetryService(
+            platform: "macos", appVersion: "1.0.0", osVersion: "15.0", deviceClass: "desktop",
+            locale: "en", videosAPIBaseURL: nil, userAgent: "AUNTest/1.0",
+            bufferPath: bufferPath, initialEnabled: true,
+            isExternallyEnabled: { defaultsRef.bool(forKey: "AUNTelemetryEnabled") },
+            observedDefaults: defaults, observedDefaultsKey: "AUNTelemetryEnabled")
+        #expect(service.consent == .full)
+        #expect(service.nativeConsentForTesting == .analytics)
+
+        let flushEntered = AsyncStream.makeStream(of: Void.self)
+        let releaseFlush = AsyncStream.makeStream(of: Void.self)
+        service.flushOverrideForTesting = {
+            flushEntered.continuation.yield(())
+            for await _ in releaseFlush.stream { break }
+        }
+
+        let flushTask = Task { await service.flush() }
+        for await _ in flushEntered.stream { break }
+
+        // Direct external opt-out in UserDefaults while batch 1 is stalled must immediately flip native consent to .denied.
+        defaults.set(false, forKey: "AUNTelemetryEnabled")
+        #expect(service.nativeConsentForTesting == .denied)
+        #expect(service.consent == .off)
+
+        releaseFlush.continuation.yield(())
+        releaseFlush.continuation.finish()
+        await flushTask.value
+    }
 }

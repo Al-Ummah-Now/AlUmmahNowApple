@@ -15,6 +15,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     private let client: TelemetryClient
     private let bufferPath: String?
     private let isExternallyEnabled: (@Sendable () -> Bool)?
+    private var defaultsObserver: NSObjectProtocol?
     private let lock = NSLock()
     private let observationRegistrar = ObservationRegistrar()
 
@@ -46,7 +47,9 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         clientHeader: String = AUNClient.value,
         bufferPath: String?,
         initialEnabled: Bool = false,
-        isExternallyEnabled: (@Sendable () -> Bool)? = nil
+        isExternallyEnabled: (@Sendable () -> Bool)? = nil,
+        observedDefaults: UserDefaults? = nil,
+        observedDefaultsKey: String? = nil
     ) throws {
         self.bufferPath = bufferPath
         self.isExternallyEnabled = isExternallyEnabled
@@ -61,6 +64,22 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         )
         self.client = try TelemetryClient(config: config)
         _ = setConsent(initialEnabled ? .full : .off)
+        if let observedDefaults, let observedDefaultsKey {
+            nonisolated(unsafe) let defaultsRef = observedDefaults
+            self.defaultsObserver = NotificationCenter.default.addObserver(
+                forName: UserDefaults.didChangeNotification,
+                object: observedDefaults,
+                queue: nil
+            ) { [weak self] _ in
+                if !defaultsRef.bool(forKey: observedDefaultsKey) {
+                    self?.revokeIfExternallyDisabled()
+                }
+            }
+        }
+    }
+
+    deinit {
+        if let obs = defaultsObserver { NotificationCenter.default.removeObserver(obs) }
     }
 
     public var consent: TelemetryConsent {
@@ -250,6 +269,8 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
                     self.notifyStateChanges(purgeChanged: latePurgeChanged, consentChanged: lateConsentChanged)
                     for waiter in lateCancelled { waiter.cancel() }
                     guard stillAllowed && !Task.isCancelled else { return }
+                    let monitorTask = self.startExternalFlushMonitorIfNeeded()
+                    defer { monitorTask?.cancel() }
                     do {
                         if let override {
                             try await override()
@@ -374,9 +395,38 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         }
     }
 
-    private func ensureExternalConsentLocked() -> [Task<Void, Never>] {
-        guard !_closed, _consent != .off, let check = isExternallyEnabled, !check() else { return [] }
+    private func ensureExternalConsentLocked(allowDuringClosedFlush: Bool = false) -> [Task<Void, Never>] {
+        let activeOrClosingFlush =
+            (!_closed && _consent != .off) || (allowDuringClosedFlush && _closed && _inFlightFlushes > 0 && !_revoked)
+        guard activeOrClosingFlush, let check = isExternallyEnabled, !check() else { return [] }
         let (_, waiters) = revokeLocked()
         return waiters
+    }
+}
+
+extension CoreTelemetryService {
+    func revokeIfExternallyDisabled() {
+        let (cancelled, purgeChanged, consentChanged): ([Task<Void, Never>], Bool, Bool) = lock.withLock {
+            let priorPurge = _lastPurgeFailed
+            let priorConsent = _closed ? .off : _consent
+            let waiters = ensureExternalConsentLocked(allowDuringClosedFlush: true)
+            let currentConsent = _closed ? .off : _consent
+            return (waiters, _lastPurgeFailed != priorPurge, currentConsent != priorConsent)
+        }
+        notifyStateChanges(purgeChanged: purgeChanged, consentChanged: consentChanged)
+        for waiter in cancelled { waiter.cancel() }
+    }
+
+    func startExternalFlushMonitorIfNeeded() -> Task<Void, Never>? {
+        guard isExternallyEnabled != nil else { return nil }
+        return Task<Void, Never> { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+                guard !Task.isCancelled, let self else { return }
+                self.revokeIfExternallyDisabled()
+                let done = self.lock.withLock { self._revoked || (self._consent == .off && self._inFlightFlushes == 0) }
+                if done { return }
+            }
+        }
     }
 }
