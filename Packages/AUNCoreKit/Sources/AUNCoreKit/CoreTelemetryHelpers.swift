@@ -236,8 +236,14 @@ extension CoreTelemetryService {
                         || (!Self.isASCIIWordChar(nsText.character(at: extEnd)) && nsText.character(at: extEnd) != 0x28))
                 if validBounds
                     && !Self.isSourceLineReference(nsText, extStart: extStart, extEnd: extEnd, len: len)
-                    && !Self.isNumericDotToken(nsText, segStart: segStart, dot: dot, extStart: extStart, extEnd: extEnd)
                 {
+                    let skipTo = Self.skipNumericDotRun(
+                        nsText, segStart: segStart, dot: dot, extStart: extStart, extEnd: extEnd
+                    )
+                    if skipTo >= -1 {
+                        dot = skipTo
+                        continue
+                    }
                     return (dot, extEnd)
                 }
             }

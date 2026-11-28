@@ -247,6 +247,8 @@ struct CoreTelemetryQuotedEscapedTests {
             ("open failed after 3.14 seconds", "open failed after 3.14 seconds"),
             ("failed file:/Users/alice/secret.txt", "failed [redacted-path]"),
             ("{\"uri\":\"file:\\/Users\\/alice\\/secret.txt\",\"ok\":true}", "{\"uri\":\"[redacted-path]\",\"ok\":true}"),
+            ("https://registry.npmjs.org/@angular/core", "https://registry.npmjs.org/@angular/core"),
+            ("https://registry.npmjs.org/%40angular/core", "https://registry.npmjs.org/%40angular/core"),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
@@ -254,6 +256,8 @@ struct CoreTelemetryQuotedEscapedTests {
         let repeatedSlackHosts =
             "https://hooks.slack.com" + String(repeating: "/https://hooks.slack.com", count: 2000) + "/x"
         #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedSlackHosts) == repeatedSlackHosts)
+        let dottedNumbers = "read " + String(repeating: "1.", count: 20_000) + "1"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(dottedNumbers) == dottedNumbers)
     }
 
     @Test("Scales linearly on unclosed angles/spaced hashes and sanitizes serialized property keys and values")

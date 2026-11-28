@@ -96,13 +96,9 @@ extension CoreTelemetryService {
         guard pos < len && nsText.character(at: pos) == 0x3A else { return pos }
         var idx = pos + 1
         while idx < len && isASCIIDigit(nsText.character(at: idx)) { idx += 1 }
-        if idx > pos + 1 { return idx }
-        if idx == len { return idx }
+        if idx > pos + 1 || idx == len { return idx }
         let next = nsText.character(at: idx)
-        if next == 0x2F || next == 0x3F || next == 0x23 || isURLEndBoundary(nsText, at: idx, len: len) {
-            return idx
-        }
-        return nil
+        return (next == 0x2F || next == 0x3F || next == 0x23 || isURLEndBoundary(nsText, at: idx, len: len)) ? idx : nil
     }
 
     static func scanURLPath(_ nsText: NSString, start: Int, len: Int) -> (Int, Bool) {
@@ -309,6 +305,7 @@ extension CoreTelemetryService.VaultLineTracker {
         {
             return findQuotedEmailLocalStart(nsText, at: atPos, minPos: minPos)
         }
+        if atPos > minPos && nsText.character(at: atPos - 1) == 0x2F { return atPos }
         var localStart = atPos
         while true {
             while localStart > minPos && isEmailLocalChar(nsText, at: localStart - 1, len: len)

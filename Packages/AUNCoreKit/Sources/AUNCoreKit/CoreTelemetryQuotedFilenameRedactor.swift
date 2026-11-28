@@ -377,11 +377,11 @@ extension CoreTelemetryService {
         return Self.sourceLineExtSet.contains(ext)
     }
 
-    static func isNumericDotToken(
+    static func skipNumericDotRun(
         _ nsText: NSString, segStart: Int, dot: Int, extStart: Int, extEnd: Int
-    ) -> Bool {
+    ) -> Int {
         for idx in extStart..<extEnd where !isASCIIDigit(nsText.character(at: idx)) {
-            return false
+            return -2
         }
         var p = dot - 1
         var hasDigitBefore = false
@@ -396,7 +396,7 @@ extension CoreTelemetryService {
                 break
             }
         }
-        return hasDigitBefore && (p < segStart || !isASCIIWordChar(nsText.character(at: p)))
+        return hasDigitBefore && (p < segStart || !isASCIIWordChar(nsText.character(at: p))) ? p : -2
     }
 
     static func redactKeywordUnquotedFilenamesRespectingQuotes(
