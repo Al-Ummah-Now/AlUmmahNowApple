@@ -135,16 +135,20 @@ struct UploadHoldTests {
             studio: SlowStudio(delay: .zero), transfer: FixtureTUSTransfer(delay: .zero), store: store, defaults: suite)
     }
 
-    @Test func removingAnAccountKeepsWhatAClosedWindowQueuedForAnother() async throws {
+    @Test func removingAnAccountKeepsWhatAClosedWindowQueuedForAnother() throws {
         let shared = store()
         let suite = UserDefaults(suiteName: "closed-\(UUID().uuidString)")!
         let first = queue(shared, suite)
         let mine = try file(bytes: 32)
         let theirs = try file(bytes: 32)
-        do {
+        weak var closedWindow: UploadQueue?
+        // Drain autoreleased references before checking that this queue is no longer a live peer.
+        autoreleasepool {
             let closed = queue(shared, suite)
+            closedWindow = closed
             closed.enqueue([job(mine, title: "Deleted", account: "a1"), job(theirs, title: "Kept", account: "a2")])
         }
+        try #require(closedWindow == nil)
         #expect(first.jobs.isEmpty)
         try first.purgeJobs(of: "a1")
         #expect(shared.load().map(\.title) == ["Kept"])
@@ -152,8 +156,9 @@ struct UploadHoldTests {
         #expect(FileManager.default.fileExists(atPath: theirs.path))
         // This window goes on with it, so its next save keeps it too.
         #expect(first.jobs.map(\.title) == ["Kept"])
-        first.pause(first.jobs[0].id)
+        first.pause(try #require(first.jobs.first?.id))
         #expect(shared.load().map(\.title) == ["Kept"])
+        #expect(shared.load().map(\.state) == [.paused])
         try? FileManager.default.removeItem(at: theirs)
     }
 
