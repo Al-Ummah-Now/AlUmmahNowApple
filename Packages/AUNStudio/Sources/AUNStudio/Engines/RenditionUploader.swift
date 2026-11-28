@@ -103,7 +103,10 @@ public struct RenditionUploader: Sendable {
 
     private func put(_ file: StagedFile, _ staging: RenditionStaging) async throws {
         try Task.checkCancellation()
-        let bytes = try read(root.appending(path: file.path))
+        guard let resolved = SafeInput.resolveContainedFile(root: root, relativePath: file.path) else {
+            throw CoreError.invalid("invalid_path")
+        }
+        let bytes = try read(resolved)
         try await retrying {
             try await service.putRenditionFile(
                 videoID: videoID, stagingID: staging.stagingID, file: file, bytes: bytes, channelID: channelID)

@@ -62,6 +62,7 @@ public struct PreEncoder: Sendable {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             for (offset, rung) in ladder.enumerated() {
                 try Task.checkCancellation()
+                guard SafeInput.isSafeFileName(rung.name) else { throw CoreError.invalid("rung_name") }
                 let share = Self.encodeShare / Double(ladder.count)
                 let base = share * Double(offset)
                 let phase = Phase.encoding(rung: rung.name, index: offset + 1, count: ladder.count)

@@ -54,12 +54,17 @@ public struct NativeTUSUploadEngine: UploadEngine {
         onCreated: @Sendable (URL) async -> Void,
         onProgress: @Sendable (UploadProgress) async -> Void
     ) async throws -> URL {
+        guard SafeInput.isSafeNetworkURL(destination.endpoint) else { throw CoreError.forbidden }
         let values = try file.resourceValues(forKeys: [.fileSizeKey])
         guard let size = values.fileSize.map(Int64.init) else { throw CoreError.upload("unreadable file") }
 
         let location: URL
         var offset: Int64
-        if let resumeURL, let current = try? await serverOffset(resumeURL, destination) {
+        if let resumeURL,
+            SafeInput.isSafeNetworkURL(resumeURL),
+            SafeInput.sameOrigin(resumeURL, destination.endpoint),
+            let current = try? await serverOffset(resumeURL, destination)
+        {
             location = resumeURL
             offset = current
         } else {
@@ -83,11 +88,18 @@ public struct NativeTUSUploadEngine: UploadEngine {
         return location
     }
 
+    private static let blockedHeaders: Set<String> = ["host", "content-length", "transfer-encoding", "cookie"]
+
     private func request(_ url: URL, method: String, _ destination: UploadDestination) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("1.0.0", forHTTPHeaderField: "Tus-Resumable")
-        for (key, value) in destination.headers { request.setValue(value, forHTTPHeaderField: key) }
+        for (key, value) in destination.headers
+        where !Self.blockedHeaders.contains(key.lowercased())
+            && SafeInput.isSafeHeaderValue(key) && SafeInput.isSafeHeaderValue(value)
+        {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
         return request
     }
 
@@ -95,6 +107,9 @@ public struct NativeTUSUploadEngine: UploadEngine {
         var request = request(destination.endpoint, method: "POST", destination)
         request.setValue(String(size), forHTTPHeaderField: "Upload-Length")
         if !destination.metadata.isEmpty {
+            for key in destination.metadata.keys where !SafeInput.isValidTUSMetadataKey(key) {
+                throw CoreError.upload("invalid metadata key")
+            }
             let encoded = destination.metadata.sorted { $0.key < $1.key }
                 .map { "\($0.key) \(Data($0.value.utf8).base64EncodedString())" }.joined(separator: ",")
             request.setValue(encoded, forHTTPHeaderField: "Upload-Metadata")
@@ -104,6 +119,9 @@ public struct NativeTUSUploadEngine: UploadEngine {
             let header = http.value(forHTTPHeaderField: "Location"),
             let location = URL(string: header, relativeTo: destination.endpoint)?.absoluteURL
         else { throw CoreError.upload("create failed") }
+        guard SafeInput.isSafeNetworkURL(location), SafeInput.sameOrigin(location, destination.endpoint) else {
+            throw CoreError.upload("untrusted Location")
+        }
         return location
     }
 

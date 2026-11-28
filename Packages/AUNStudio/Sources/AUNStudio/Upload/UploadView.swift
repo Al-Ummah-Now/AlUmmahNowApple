@@ -257,7 +257,8 @@ struct UploadView: View {
     static func copyIntoContainer(_ url: URL) throws -> URL {
         let directory = UploadStore.filesDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let destination = directory.appending(path: url.lastPathComponent)
+        let safeName = SafeInput.sanitizeFileName(url.lastPathComponent, fallback: "upload.mp4")
+        let destination = directory.appending(path: safeName)
         try FileManager.default.copyItem(at: url, to: destination)
         return destination
     }

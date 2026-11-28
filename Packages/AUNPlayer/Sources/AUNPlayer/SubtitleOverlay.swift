@@ -79,10 +79,12 @@ public struct SubtitleOverlay: View {
         #else
             let accessibleLabel = L10n(language == .ar ? .ar : .en)("player.quranCredit.accessibility")
             Button {
+                let target = QuranCaptionCredit.url
+                guard SafeInput.isSafeExternalURL(target) else { return }
                 if let openCredit {
-                    openCredit(QuranCaptionCredit.url)
+                    openCredit(target)
                 } else {
-                    openURL(QuranCaptionCredit.url)
+                    openURL(target)
                 }
             } label: {
                 #if os(iOS)

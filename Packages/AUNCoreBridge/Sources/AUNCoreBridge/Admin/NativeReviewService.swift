@@ -51,12 +51,9 @@ public struct NativeReviewService: ReviewServicing, PushRegistering {
     func send(
         _ method: String, _ base: URL, _ path: String, query: [URLQueryItem] = [], body: [String: Any]? = nil
     ) async throws -> Data {
-        guard var components = URLComponents(url: base.appending(path: path), resolvingAgainstBaseURL: false) else {
-            throw CoreError.notFound
+        guard let url = SafeInput.resolveSameOrigin(base: base, path: path, query: query) else {
+            throw SafeInput.isSafeNetworkURL(base) ? CoreError.notFound : CoreError.forbidden
         }
-        if !query.isEmpty { components.queryItems = query }
-        guard let url = components.url, url.scheme == "https" || url.host == "localhost" || url.host == "127.0.0.1"
-        else { throw CoreError.forbidden }
         var request = PrivateMediaSession.request(url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")

@@ -29,7 +29,8 @@ extension NativeStudioService {
         guard let kind = comment.kind, let targetID = comment.targetID else { throw CoreError.notFound }
         let body = ModerationBody(action: action, items: [.init(kind: kind, targetId: targetID, commentId: comment.id)])
         let response = try await client.send(
-            .post, "/api/channels/\(channelID)/comments/bulk", channelID: channelID, body: body, accountID: accountID,
+            .post, "/api/channels/\(try Self.checkedSegment(channelID))/comments/bulk", channelID: channelID, body: body,
+            accountID: accountID,
             as: ModerationResponse.self)
         guard response.success, let result = response.results.first, result.commentId == comment.id else {
             throw CoreError.decoding
@@ -70,7 +71,8 @@ extension NativeStudioService {
 
     public func hideCommentAuthor(userID: String, channelID: String, accountID: String) async throws {
         let response = try await client.send(
-            .post, "/api/channels/\(channelID)/blocks", channelID: channelID, body: BlockBody(userId: userID),
+            .post, "/api/channels/\(try Self.checkedSegment(channelID))/blocks", channelID: channelID,
+            body: BlockBody(userId: userID),
             accountID: accountID,
             as: ActionResponse.self)
         guard response.success else { throw CoreError.decoding }

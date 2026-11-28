@@ -1,3 +1,4 @@
+import AUNCoreBridge
 import AUNDesign
 import AVKit
 import SwiftUI
@@ -45,7 +46,7 @@ import SwiftUI
                 var subtitles = SubtitleOverlay(controller: controller)
                 subtitles.creditFrameChanged = { [weak container] in container?.creditFrame = $0 }
                 subtitles.openCredit = { [weak view] url in
-                    guard let view, view.presentedViewController == nil else { return }
+                    guard let view, view.presentedViewController == nil, SafeInput.isSafeExternalURL(url) else { return }
                     let browser = SFSafariViewController(url: url)
                     browser.modalPresentationStyle = .overFullScreen
                     view.present(browser, animated: true)
