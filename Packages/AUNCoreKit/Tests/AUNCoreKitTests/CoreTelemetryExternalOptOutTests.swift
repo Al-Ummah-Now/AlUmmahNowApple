@@ -129,6 +129,7 @@ struct CoreTelemetryExternalOptOutTests {
         service.reportCrash(
             kind: "4155550123",
             message: #"clientSecret="cobalt orchard" eyJhbGciOiJkaXIifQ..iv1234.cipher5678.tag9012 "#
+                + #"{"home\u0041ddress":"12 Cedar Rd"} https://example.test/password%3Dshortcredential "#
                 + "https://drive.google.com/file/u/0/d/AbCdEfGhIjKlMnOpQrStUvWxYzABCDE/view "
                 + "https://example.com/a;jsessionid=abc123",
             stack: nil
@@ -138,7 +139,7 @@ struct CoreTelemetryExternalOptOutTests {
         let forbidden = [
             "4155550123", "2025550123", "10.0.0.123", "2001:db8", "192.0.2.81", "١٢٣", "𝟏𝟐𝟏𝟐", "12 34 56 78",
             "beef:cafe", "482193", "654321", "739104", "multi word phrase", "word phrase",
-            "Alice", "Wonderland", "shortsecret", "u:p@localhost",
+            "Alice", "Wonderland", "shortsecret", "shortcredential", "12 Cedar Rd", "u:p@localhost",
             "u:[redacted-email]", "cobalt-orchard", "orchard", "eyJzdWIiOiJhbGljZSJ9",
             "sig123", "cipher5678", "cipher7777", "Aq82F1ZLPx0K",
             "AbCdEfGhIjKlMnOpQrStUvWxYzABCDE", "abc123",

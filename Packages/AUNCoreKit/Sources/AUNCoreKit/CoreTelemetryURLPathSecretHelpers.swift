@@ -82,6 +82,7 @@ extension CoreTelemetryService {
         if let regex = urlMatrixParamRegex {
             result = replaceURLPathSecret(result, regex: regex)
         }
+        result = redactEncodedKeyValuesInURL(result)
         return redactEncodedJoseTokensInURL(result)
     }
 
@@ -185,7 +186,7 @@ extension CoreTelemetryService {
         return rebuilt
     }
 
-    private static func decodeURLForPathSecretMatch(_ url: String) -> (String, [Int]) {
+    static func decodeURLForPathSecretMatch(_ url: String) -> (String, [Int]) {
         let nsURL = url as NSString
         let len = nsURL.length
         var decodedUnits: [unichar] = []
@@ -215,7 +216,7 @@ extension CoreTelemetryService {
         byteVal >= 0x21 && byteVal <= 0x7E && byteVal != 0x2F && byteVal != 0x3F && byteVal != 0x23
     }
 
-    private static func parseHexByte(_ hi: unichar, _ lo: unichar) -> UInt8? {
+    static func parseHexByte(_ hi: unichar, _ lo: unichar) -> UInt8? {
         guard let h = hexNibble(hi), let l = hexNibble(lo) else { return nil }
         return (h << 4) | l
     }
@@ -284,7 +285,7 @@ extension CoreTelemetryService {
 
     private static let keyValueCredentialRegex = try? NSRegularExpression(
         pattern:
-            #"(?<![A-Za-z0-9_])([A-Za-z0-9_.-]{2,64})((?:\\?[\"'])?\s*[=:]\s*)"#
+            #"(?<![A-Za-z0-9_])((?:[A-Za-z0-9_.-]|\\u[0-9A-Fa-f]{4}){2,64})((?:\\?[\"'])?\s*[=:]\s*)"#
             + #"(?:\[redacted(?:-[a-z]+)?\]|\\\"(?:\\\\.|[^\"\\])*\\\"|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}\]\"']+)"#
     )
 
@@ -297,9 +298,10 @@ extension CoreTelemetryService {
         var copied = 0
         for match in matches {
             let key = nsText.substring(with: match.range(at: 1))
-            let lower = key.lowercased()
+            let decodedKey = decodeJSONUnicodeEscapes(key)
+            let lower = decodedKey.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")).lowercased()
             if lower == "authorization" || lower == "proxy-authorization" { continue }
-            guard hasSensitivePropertySegment(key) else { continue }
+            guard hasSensitivePropertySegment(decodedKey) else { continue }
             let sep = nsText.substring(with: match.range(at: 2))
             out += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
             out += key + sep + "[redacted]"
@@ -433,7 +435,7 @@ extension CoreTelemetryService {
         "credential", "authorization", "privatekey", "cookie", "signature",
     ]
 
-    private static func hasSensitivePropertySegment(_ key: String) -> Bool {
+    static func hasSensitivePropertySegment(_ key: String) -> Bool {
         let squashed = String(key.lowercased().filter { $0.isLetter || $0.isNumber })
         if highValueKeySubstrings.contains(where: { squashed.contains($0) }) { return true }
         let chars = Array(key)
