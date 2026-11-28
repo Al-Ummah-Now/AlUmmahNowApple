@@ -1,6 +1,10 @@
 import Foundation
 
 extension CoreTelemetryAuthScanner {
+    static func areBasicQuotesCompatible(_ openQ: String, _ closeQ: String) -> Bool {
+        closeQ.isEmpty || openQ == closeQ || (openQ.hasPrefix("\\") && closeQ.hasPrefix("\\"))
+    }
+
     static func redactBasicTokens(in text: String) -> String {
         guard text.range(of: "basic", options: [.caseInsensitive]) != nil, let regex = basicTokenRegex else { return text }
         let nsText = text as NSString
@@ -14,15 +18,18 @@ extension CoreTelemetryAuthScanner {
             let quotedRange = match.range(at: 3)
             let isQuoted = quotedRange.location != NSNotFound
             let tokenRange = isQuoted ? quotedRange : match.range(at: 5)
-            guard tokenRange.location != NSNotFound, isBasicCredentialToken(nsText.substring(with: tokenRange)) else {
+            let openQ = isQuoted ? nsText.substring(with: match.range(at: 2)) : ""
+            let closeQ = isQuoted ? nsText.substring(with: match.range(at: 4)) : ""
+            guard tokenRange.location != NSNotFound,
+                !isQuoted || areBasicQuotesCompatible(openQ, closeQ),
+                isBasicCredentialToken(nsText.substring(with: tokenRange))
+            else {
                 pos = match.range.location + 5
                 continue
             }
             if result.isEmpty { result.reserveCapacity(text.count) }
             result += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
             if isQuoted {
-                let openQ = nsText.substring(with: match.range(at: 2))
-                let closeQ = nsText.substring(with: match.range(at: 4))
                 result += "\(nsText.substring(with: match.range(at: 1))) \(openQ)[redacted]\(closeQ)"
             } else {
                 result += "\(nsText.substring(with: match.range(at: 1))) [redacted]"

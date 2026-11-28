@@ -9,16 +9,16 @@ enum CoreTelemetryAuthScanner {
 
     static let basicTokenRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern:
-            #"\b(Basic)[\s\p{Zs}]+(?:("|'|\\"|\\u0022)([A-Za-z0-9+/_-]{2,}={0,2})(?![A-Za-z0-9+/_=-])(\2|$)|([A-Za-z0-9+/_-]{2,}={0,2})(?![A-Za-z0-9+/_=-]))"#,
+            #"\b(Basic)[\s\p{Zs}]+(?:("|'|\\"|\\u0022)([A-Za-z0-9+/_-]{2,}={0,2})(?![A-Za-z0-9+/_=-])(\2|\\"|\\u0022|$)|([A-Za-z0-9+/_-]{2,}={0,2})(?![A-Za-z0-9+/_=-]))"#,
         options: [.caseInsensitive]
     )
 
     static func redactAuthCredentials(in text: String) -> String {
         var result = redactAuthHeaders(in: text)
-        result = redactBearerTokens(in: result)
-        result = redactEscapedBearerInBalancedQuotes(in: result)
         result = redactEscapedBasicInBalancedQuotes(in: result)
-        return redactBasicTokens(in: result)
+        result = redactBasicTokens(in: result)
+        result = redactBearerTokens(in: result)
+        return redactEscapedBearerInBalancedQuotes(in: result)
     }
 
     struct AuthScanState {

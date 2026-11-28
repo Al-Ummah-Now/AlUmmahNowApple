@@ -425,6 +425,14 @@ extension CoreTelemetryAuthSanitizerTests {
                 == "{\"m\":\"Basic Basic \\\"[redacted]\\\"\"}"
         )
         #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"msg\":\"Bearer Basic \\u0022dTpw\\\"\"}")
+                == "{\"msg\":\"Bearer Basic \\u0022[redacted]\\\"\"}"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Basic \\u0022dTpw\\\"")
+                == "Basic \\u0022[redacted]\\\""
+        )
+        #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.org/users/alice/@example.com")
                 == "https://[redacted-email]"
         )

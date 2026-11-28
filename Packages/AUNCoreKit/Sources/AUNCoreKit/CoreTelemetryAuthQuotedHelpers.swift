@@ -208,7 +208,7 @@ extension CoreTelemetryAuthScanner {
                 }
             }
             if afterWs < len
-                && (hasValidBasicCredentialAt(nsText, at: afterWs, len: len)
+                && (hasRedactedBasicAt(nsText, at: afterWs, len: len)
                     || hasBearerTokenAt(nsText, at: afterWs, len: len, flags: flags))
             {
                 return lastBearer
@@ -216,7 +216,7 @@ extension CoreTelemetryAuthScanner {
             ranges.append((prevBearer, lastBearer + 6, false))
             return lastBearer + 6
         }
-        return hasValidBasicCredentialAt(nsText, at: wsEnd, len: len) ? wsEnd : nil
+        return hasRedactedBasicAt(nsText, at: wsEnd, len: len) ? wsEnd : nil
     }
 
     private static func matchesBearerAt(_ nsText: NSString, at idx: Int, len: Int) -> Bool {
@@ -251,11 +251,7 @@ extension CoreTelemetryAuthScanner {
             || scanBearerTokenEnd(nsText, from: pos, len: len, stopAtEscapedQuote: flags.inEscapedQuote) > pos
     }
 
-    private static func isBasicBase64Char(_ ch: unichar) -> Bool {
-        CoreTelemetryService.isASCIIAlphaNum(ch) || ch == 0x2B || ch == 0x2F || ch == 0x5F || ch == 0x2D
-    }
-
-    private static func hasValidBasicCredentialAt(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+    private static func hasRedactedBasicAt(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
         guard pos + 5 < len, matchesASCII(nsText, at: pos, literal: "basic", len: len),
             CoreTelemetryService.VaultLineTracker.isWhitespace(nsText.character(at: pos + 5))
         else { return false }
@@ -264,26 +260,7 @@ extension CoreTelemetryAuthScanner {
         guard p < len else { return false }
         let openCh = nsText.character(at: p)
         let openLen = (openCh == 0x22 || openCh == 0x27) ? 1 : escapedDoubleQuoteLen(nsText, at: p, len: len)
-        let tokStart = p + openLen
-        var tokEnd = tokStart
-        while tokEnd < len && isBasicBase64Char(nsText.character(at: tokEnd)) { tokEnd += 1 }
-        var eqCount = 0
-        while tokEnd < len && eqCount < 2 && nsText.character(at: tokEnd) == 0x3D {
-            tokEnd += 1
-            eqCount += 1
-        }
-        guard tokEnd - tokStart - eqCount >= 2 else { return false }
-        if tokEnd < len && (isBasicBase64Char(nsText.character(at: tokEnd)) || nsText.character(at: tokEnd) == 0x3D) {
-            return false
-        }
-        if openLen > 0 && tokEnd < len {
-            let closeOk =
-                openLen == 1
-                ? nsText.character(at: tokEnd) == openCh
-                : escapedDoubleQuoteLen(nsText, at: tokEnd, len: len) == openLen
-            guard closeOk else { return false }
-        }
-        return isBasicCredentialToken(nsText.substring(with: NSRange(location: tokStart, length: tokEnd - tokStart)))
+        return isRedactedBearerPlaceholder(nsText, at: p + openLen, len: len, stopAtEscapedQuote: openLen > 1)
     }
 
     private static func matchesBearerPrefix(_ nsText: NSString, at idx: Int, len: Int) -> Bool {
@@ -425,7 +402,12 @@ extension CoreTelemetryAuthScanner {
             let quotedRange = match.range(at: 3)
             let isQuoted = quotedRange.location != NSNotFound
             let tokenRange = isQuoted ? quotedRange : match.range(at: 5)
-            guard tokenRange.location != NSNotFound, isBasicCredentialToken(nsDecoded.substring(with: tokenRange)) else {
+            guard tokenRange.location != NSNotFound,
+                !isQuoted
+                    || areBasicQuotesCompatible(
+                        nsDecoded.substring(with: match.range(at: 2)), nsDecoded.substring(with: match.range(at: 4))),
+                isBasicCredentialToken(nsDecoded.substring(with: tokenRange))
+            else {
                 pos = match.range.location + 5
                 continue
             }
