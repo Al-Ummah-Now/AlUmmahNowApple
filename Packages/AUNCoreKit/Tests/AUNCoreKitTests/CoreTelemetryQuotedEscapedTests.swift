@@ -177,6 +177,36 @@ struct CoreTelemetryQuotedEscapedTests {
             ),
             ("{\\\"\tCookie\t\\\":\\\"opaqueSecret123\\\"}", "{\\\"\tCookie\t\\\":\\\"[redacted]\\\"}"),
             ("[[\\\"Authorization\\\",\\\"opaqueSecret123\\\"\\n]]", "[[\\\"Authorization\\\",\\\"[redacted]\\\"\\n]]"),
+            (
+                "https://hooks.slack.com/./services/T000/B000/fakeWebhookSecret",
+                "https://hooks.slack.com/./services/[redacted]"
+            ),
+            (
+                "https://hooks.slack.com/a/../services/T000/B000/fakeWebhookSecret",
+                "https://hooks.slack.com/a/../services/[redacted]"
+            ),
+            (
+                "https://hooks.slack.com/%2e/services/T000/B000/fakeWebhookSecret",
+                "https://hooks.slack.com/%2e/services/[redacted]"
+            ),
+            (
+                "https://hooks.slack.com//services/T000/B000/fakeWebhookSecret",
+                "https://hooks.slack.com//services/[redacted]"
+            ),
+            ("https://example.com/projectc:/foo", "https://example.com/projectc:/foo"),
+            ("https://example.com/my-c:/foo", "https://example.com/my-c:/foo"),
+            (
+                "content://com.android.externalstorage.documents/document/primary%3ADownload%2FPrivateAcquisition.mov",
+                "[redacted-path]"
+            ),
+            (
+                "{\"uri\":\"content://com.android.externalstorage.documents/document/primary%3ADownload%2FPrivateAcquisition.mov\",\"ok\":true}",
+                "{\"uri\":\"[redacted-path]\",\"ok\":true}"
+            ),
+            (
+                "{\"uri\":\"content:\\/\\/com.android.externalstorage.documents\\/document\\/primary%3ADownload%2FPrivateAcquisition.mov\",\"ok\":true}",
+                "{\"uri\":\"[redacted-path]\",\"ok\":true}"
+            ),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)

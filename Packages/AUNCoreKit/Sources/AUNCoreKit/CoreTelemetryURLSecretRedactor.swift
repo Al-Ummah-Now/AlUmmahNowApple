@@ -5,7 +5,7 @@ extension CoreTelemetryService {
         try? NSRegularExpression(pattern: #"((?:^|/|%2[fF])webhooks?(?:/|%2[fF]))[^\s?#]+"#, options: [.caseInsensitive]),
         try? NSRegularExpression(
             pattern:
-                #"(https?://hooks\.slack(?:-gov)?\.com\.?(?::\d+)?(?:/|%2[fF])(?:services|workflows|triggers)(?:/|%2[fF]))[^\s?#]+"#,
+                #"(https?://hooks\.slack(?:-gov)?\.com\.?(?::\d+)?(?:(?:/|%2[fF])[^\s?#]*?)?(?:/|%2[fF])(?:services|workflows|triggers)(?:/|%2[fF]))[^\s?#]+"#,
             options: [.caseInsensitive]
         ),
         try? NSRegularExpression(pattern: #"((?:/|%2[fF])bot\d+:)[^/\s?#]+"#, options: [.caseInsensitive]),
@@ -456,9 +456,7 @@ extension CoreTelemetryService {
         _ nsText: NSString, pos: Int, start: Int, state: inout ContinuationScanState
     ) -> Int {
         let len = nsText.length
-        let isDrive =
-            (pos == 0 || !Self.isASCIIAlphaNum(nsText.character(at: pos - 1)))
-            && Self.isWindowsDriveAt(nsText, at: pos, len: len)
+        let isDrive = Self.isURLWindowsDriveStop(nsText, at: pos, len: len)
         if VaultLineTracker.isFileScheme(nsText, at: pos) || isDrive { return -1 }
         if state.stopAtSchemes && pos > start
             && isURLSchemePrefixBoundary(nsText.character(at: pos - 1))

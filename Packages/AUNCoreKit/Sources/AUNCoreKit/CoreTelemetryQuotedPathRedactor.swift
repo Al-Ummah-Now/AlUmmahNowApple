@@ -379,7 +379,10 @@ extension CoreTelemetryService {
         if tokenStart < 0, let driveAfter = matchDecodedWindowsDrive(nsText, pos: pos, end: end, dec0: dec0) {
             return checkTrailingNonWS(nsText, matchPos: pos, afterPos: driveAfter, end: end, tokenStart: &tokenStart)
         }
-        if tokenStart < 0 && (dec0.ch == 0x66 || dec0.ch == 0x46) && matchDecodedFileScheme(nsText, pos: pos, end: end) {
+        if tokenStart < 0
+            && (dec0.ch == 0x66 || dec0.ch == 0x46 || dec0.ch == 0x63 || dec0.ch == 0x43)
+            && matchDecodedFileScheme(nsText, pos: pos, end: end)
+        {
             return QuotedScanStep(found: pos, nextPos: pos + dec0.len)
         }
         if dec0.ch == 0x2F || (dec0.ch == 0x5C && (tokenStart >= 0 || dec0.len > 1)) {
@@ -440,7 +443,15 @@ extension CoreTelemetryService {
     }
 
     private static func matchDecodedFileScheme(_ nsText: NSString, pos: Int, end: Int) -> Bool {
-        let target: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F, 0x2F]
+        let fileTarget: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F, 0x2F]
+        if matchDecodedSchemePrefix(nsText, pos: pos, end: end, target: fileTarget) { return true }
+        let contentTarget: [unichar] = [0x63, 0x6F, 0x6E, 0x74, 0x65, 0x6E, 0x74, 0x3A, 0x2F, 0x2F]
+        return matchDecodedSchemePrefix(nsText, pos: pos, end: end, target: contentTarget)
+    }
+
+    private static func matchDecodedSchemePrefix(
+        _ nsText: NSString, pos: Int, end: Int, target: [unichar]
+    ) -> Bool {
         var cursor = pos
         for expected in target {
             guard cursor < end else { return false }

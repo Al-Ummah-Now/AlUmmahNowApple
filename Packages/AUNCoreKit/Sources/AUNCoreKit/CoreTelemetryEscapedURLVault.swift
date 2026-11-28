@@ -321,7 +321,7 @@ extension CoreTelemetryService {
         if ch == 0x0A || ch == 0x0D || (flags.inDoubleQuote && ch == 0x22) { return -1 }
         if flags.wrappedInAngle && (ch == 0x3E || isEscapedGreater(nsText, at: pos, len: len)) { return -1 }
         if VaultLineTracker.isFileScheme(nsText, at: pos)
-            || ((pos == 0 || !isASCIIAlphaNum(nsText.character(at: pos - 1))) && isWindowsDriveAt(nsText, at: pos, len: len))
+            || isURLWindowsDriveStop(nsText, at: pos, len: len)
         {
             return -1
         }

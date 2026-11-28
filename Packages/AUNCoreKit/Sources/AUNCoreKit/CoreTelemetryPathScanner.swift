@@ -280,10 +280,21 @@ extension CoreTelemetryService {
         }
 
         static func isFileScheme(_ nsText: NSString, at pos: Int) -> Bool {
-            guard pos + 7 <= nsText.length else { return false }
-            if pos > 0 && isURLSchemeChar(nsText.character(at: pos - 1)) { return false }
-            let target: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F, 0x2F]  // "file://"
-            for offset in 0..<7 {
+            localURISchemeLength(nsText, at: pos) > 0
+        }
+
+        static func localURISchemeLength(_ nsText: NSString, at pos: Int) -> Int {
+            if pos > 0 && isURLSchemeChar(nsText.character(at: pos - 1)) { return 0 }
+            let fileTarget: [unichar] = [0x66, 0x69, 0x6C, 0x65, 0x3A, 0x2F, 0x2F]  // "file://"
+            if matchesFoldedPrefix(nsText, at: pos, target: fileTarget) { return 7 }
+            let contentTarget: [unichar] = [0x63, 0x6F, 0x6E, 0x74, 0x65, 0x6E, 0x74, 0x3A, 0x2F, 0x2F]  // "content://"
+            if matchesFoldedPrefix(nsText, at: pos, target: contentTarget) { return 10 }
+            return 0
+        }
+
+        private static func matchesFoldedPrefix(_ nsText: NSString, at pos: Int, target: [unichar]) -> Bool {
+            guard pos + target.count <= nsText.length else { return false }
+            for offset in 0..<target.count {
                 let raw = nsText.character(at: pos + offset)
                 let folded = (raw >= 0x41 && raw <= 0x5A) ? (raw + 0x20) : raw
                 if folded != target[offset] { return false }
@@ -547,7 +558,8 @@ extension CoreTelemetryService {
         var copyStart = 0
         var pos = 0
         while pos < totalLength {
-            if VaultLineTracker.isFileScheme(nsText, at: pos) {
+            let schemeLen = VaultLineTracker.localURISchemeLength(nsText, at: pos)
+            if schemeLen > 0 {
                 if !checkedQuotes {
                     checkedQuotes = true
                     if text.contains("\"") { quoteSpans = collectBalancedDoubleQuoteSpans(nsText) }
@@ -556,7 +568,7 @@ extension CoreTelemetryService {
                     nsText, pos: pos, spans: quoteSpans, spanIdx: &spanIdx
                 )
                 let (rawEnd, trimmedEnd) = fileURISpanEnd(
-                    nsText, after: pos + 7, isDoubleQuoted: isDoubleQuoted, limit: scanLimit, vaultPrefix: nsPrefix
+                    nsText, after: pos + schemeLen, isDoubleQuoted: isDoubleQuoted, limit: scanLimit, vaultPrefix: nsPrefix
                 )
                 if result.isEmpty { result.reserveCapacity(text.count) }
                 result += nsText.substring(with: NSRange(location: copyStart, length: pos - copyStart))

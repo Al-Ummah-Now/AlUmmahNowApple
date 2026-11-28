@@ -20,10 +20,10 @@ extension CoreTelemetryService {
             let prev = nsText.character(at: start - 1)
             if VaultLineTracker.isURLSchemeChar(prev) || prev == 0x2F || prev == 0x5C { return nil }
         }
-        if sep - start == 4
-            && nsText.substring(with: NSRange(location: start, length: 4)).lowercased() == "file"
-        {
-            return nil
+        let schemeLen = sep - start
+        if schemeLen == 4 || schemeLen == 7 {
+            let lower = nsText.substring(with: NSRange(location: start, length: schemeLen)).lowercased()
+            if lower == "file" || lower == "content" { return nil }
         }
         return start
     }
@@ -146,7 +146,9 @@ extension CoreTelemetryService {
     }
 
     private static func isURLPathTerminator(_ nsText: NSString, pos: Int, len: Int) -> Bool {
-        if VaultLineTracker.isFileScheme(nsText, at: pos) || isWindowsDriveAt(nsText, at: pos, len: len) { return true }
+        if VaultLineTracker.isFileScheme(nsText, at: pos) || isURLWindowsDriveStop(nsText, at: pos, len: len) {
+            return true
+        }
         let ch = nsText.character(at: pos)
         return ch == 0x2C || VaultLineTracker.isWhitespace(ch) || isURLPathStopChar(ch)
     }
@@ -236,7 +238,14 @@ extension CoreTelemetryService {
     private static func isURLEndBoundary(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
         let ch = nsText.character(at: pos)
         if VaultLineTracker.isWhitespace(ch) || isURLEndBoundaryChar(ch) { return true }
-        return VaultLineTracker.isFileScheme(nsText, at: pos) || isWindowsDriveAt(nsText, at: pos, len: len)
+        return VaultLineTracker.isFileScheme(nsText, at: pos) || isURLWindowsDriveStop(nsText, at: pos, len: len)
+    }
+
+    static func isURLWindowsDriveStop(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
+        guard isWindowsDriveAt(nsText, at: pos, len: len) else { return false }
+        if pos == 0 || nsText.character(at: pos + 2) == 0x5C { return true }
+        let prev = nsText.character(at: pos - 1)
+        return !(isASCIIAlphaNum(prev) || prev == 0x2D || prev == 0x5F || prev == 0x2E || prev == 0x7E)
     }
 
     static func isWindowsDriveAt(_ nsText: NSString, at pos: Int, len: Int) -> Bool {
