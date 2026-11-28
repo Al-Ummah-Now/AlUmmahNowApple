@@ -99,7 +99,9 @@ jobs:
         if: failure()
         with:
           name: snapshots-${{ matrix.job }}
-          path: Packages/*/Tests/*/__Snapshots__
+          path: |
+            Packages/*/Tests/*/__Snapshots__
+            UITests/*/__Snapshots__
           retention-days: 7
 
   # Real sign-in through auth.qa with the seeded QA creator. Runs on main and by hand, never on fork PRs.

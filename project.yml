@@ -33,6 +33,7 @@ packages:
   AUNStudio: {path: Packages/AUNStudio}
   AUNCoreKit: {path: Packages/AUNCoreKit}
   AUNAdmin: {path: Packages/AUNAdmin}
+  SnapshotTesting: {url: https://github.com/pointfreeco/swift-snapshot-testing, from: 1.17.0}
 
 targetTemplates:
   App:
@@ -320,9 +321,13 @@ targets:
   ViewerIOSUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests/ViewerIOS, UITests/Shared]
+    sources:
+      - path: UITests/ViewerIOS
+        excludes: [__Snapshots__]
+      - UITests/Diagnostics
+      - UITests/Shared
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: ViewerIOS, TARGETED_DEVICE_FAMILY: "1,2"}}
-    dependencies: [{target: ViewerIOS}]
+    dependencies: [{target: ViewerIOS}, {package: SnapshotTesting}]
   ViewerTVUITests:
     type: bundle.ui-testing
     platform: tvOS
@@ -338,9 +343,13 @@ targets:
   StudioIOSUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests/StudioIOS, UITests/Shared]
+    sources:
+      - path: UITests/StudioIOS
+        excludes: [__Snapshots__]
+      - UITests/Diagnostics
+      - UITests/Shared
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: StudioIOS, TARGETED_DEVICE_FAMILY: "1,2"}}
-    dependencies: [{target: StudioIOS}]
+    dependencies: [{target: StudioIOS}, {package: SnapshotTesting}]
   StudioMacUITests:
     type: bundle.ui-testing
     platform: macOS
@@ -350,9 +359,12 @@ targets:
   AdminIOSUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests/AdminIOS]
+    sources:
+      - path: UITests/AdminIOS
+        excludes: [__Snapshots__]
+      - UITests/Diagnostics
     settings: {base: {GENERATE_INFOPLIST_FILE: YES, TEST_TARGET_NAME: AdminIOS, TARGETED_DEVICE_FAMILY: "1,2"}}
-    dependencies: [{target: AdminIOS}]
+    dependencies: [{target: AdminIOS}, {package: SnapshotTesting}]
   AdminMacUITests:
     type: bundle.ui-testing
     platform: macOS
