@@ -98,11 +98,28 @@ public enum CrashTelemetryHook {
         return (signalName, max(1, fallbackMs))
     }
 
-    static func bufferContainsSignalCrash(at bufferPath: String?, occurredAtMs: Int64) -> Bool {
-        guard let bufferPath, let existing = try? String(contentsOfFile: bufferPath, encoding: .utf8) else {
+    static func bufferContainsSignalCrash(
+        at bufferPath: String?, signalName: String, occurredAtMs: Int64
+    ) -> Bool {
+        guard let bufferPath,
+            let data = try? Data(contentsOf: URL(fileURLWithPath: bufferPath)),
+            let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let events = root["events"] as? [[String: Any]]
+        else {
             return false
         }
-        return existing.contains("\"occurred_at_ms\":\(occurredAtMs)")
+        return events.contains { event in
+            guard (event["kind"] as? String) == "crash",
+                (event["name"] as? String) == "crash",
+                let props = event["properties"] as? [String: Any],
+                (props["kind"] as? String) == "FatalSignal",
+                (props["message"] as? String) == signalName,
+                let fromPrev = props["from_previous_session"],
+                (fromPrev as? Bool) != false,
+                let ts = props["occurred_at_ms"] as? NSNumber
+            else { return false }
+            return ts.int64Value == occurredAtMs
+        }
     }
 
     static func clearConsumedSignalMarker(for bufferPath: String?) {

@@ -207,7 +207,17 @@ struct CoreTelemetryExternalOptOutTests {
             bufferPath: bufferPath, initialEnabled: true)
         #expect(!FileManager.default.fileExists(atPath: markerPath))
         #expect(relaunched.pendingCount == 1)
+
+        // Distinct signal with the same occurredAtMs is NOT deduplicated against a different signal/crash.
+        try Data("SIGABRT 1732752000123\n".utf8).write(to: URL(fileURLWithPath: markerPath))
         relaunched.close()
+        let secondLaunch = try CoreTelemetryService(
+            platform: "macos", appVersion: "1.0.0", osVersion: "15.0", deviceClass: "desktop",
+            locale: "en", videosAPIBaseURL: nil, userAgent: "AUNTest/1.0",
+            bufferPath: bufferPath, initialEnabled: true)
+        #expect(!FileManager.default.fileExists(atPath: markerPath))
+        #expect(secondLaunch.pendingCount == 2)
+        secondLaunch.close()
     }
 
     @Test("Signal hook stays uninstalled when disabled, purges markers in unavailable fallback, and redacts user routes")

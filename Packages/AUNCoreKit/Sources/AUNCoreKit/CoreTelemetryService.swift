@@ -500,7 +500,9 @@ extension CoreTelemetryService {
             let priorConsent = _closed ? .off : _consent
             let cancelled = ensureExternalConsentLocked()
             if !_closed && _consent != .off {
-                if CrashTelemetryHook.bufferContainsSignalCrash(at: bufferPath, occurredAtMs: occurredAtMs) {
+                if CrashTelemetryHook.bufferContainsSignalCrash(
+                    at: bufferPath, signalName: signalName, occurredAtMs: occurredAtMs)
+                {
                     CrashTelemetryHook.clearConsumedSignalMarker(for: bufferPath)
                 } else {
                     do {
