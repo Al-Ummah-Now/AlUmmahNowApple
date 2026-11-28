@@ -110,6 +110,8 @@ struct CoreTelemetryExternalOptOutTests {
             properties: [
                 "verificationCode": "482193",
                 "challenge.verificationCode": "654321",
+                "user_id": "alice123",
+                "token violet7": "ok",
                 "token=cobalt-orchard": "ok",
                 "http://u:p@localhost/x": "ok",
                 "eyJunction.load.failed": "ok",
@@ -121,14 +123,15 @@ struct CoreTelemetryExternalOptOutTests {
                 + "Call ٠٥٠\u{2011}١٢٣\u{2011}٤٥٦٧ +𝟏𝟐𝟏𝟐\u{2212}𝟓𝟓𝟓\u{2212}𝟎𝟏𝟐𝟑 phone 12 34 56 78 "
                 + "eyJhbGciOiJub25lIn0.eyJzdWIiOiJhbGljZSJ9. IHsiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiIxIn0.sig123 "
                 + #"{"challenge.verificationCode":"739104"} {"pass":"multi word phrase"} "#
-                + #"fullName="Alice Wonderland" pwd=shortsecret "#
+                + #"fullName="Alice Wonderland" username=Jane Doe C:ProjectCodename pwd=shortsecret "#
                 + "https://1drv.ms/u/s!Aq82F1ZLPx0K "
                 + "https://example.com/download/eyJhbGciOiJkaXIifQ%2E%2Eiv1234%2Ecipher7777%2Etag8888",
             level: .info
         )
         service.reportCrash(
             kind: "4155550123",
-            message: #"clientSecret="cobalt orchard" eyJhbGciOiJkaXIifQ..iv1234.cipher5678.tag9012 "#
+            message: #"clientSecret="cobalt orchard" status="password=first;second" "#
+                + #"eyJhbGciOiJkaXIifQ..iv1234.cipher5678.tag9012 "#
                 + #"{"home\u0041ddress":"12 Cedar Rd"} displayName=Alice Smith "#
                 + "password=\u{201C}orchid velvet\u{201D} "
                 + "https://example.test/password%3Dshortcredential "
@@ -141,7 +144,8 @@ struct CoreTelemetryExternalOptOutTests {
         let raw = try String(contentsOfFile: bufferPath, encoding: .utf8)
         let forbidden = [
             "4155550123", "2025550123", "10.0.0.123", "2001:db8", "192.0.2.81", "١٢٣", "𝟏𝟐𝟏𝟐", "12 34 56 78",
-            "beef:cafe", "482193", "654321", "739104", "multi word phrase", "word phrase",
+            "beef:cafe", "482193", "654321", "739104", "alice123", "violet7", "first;second", "second",
+            "Jane", "Doe", "ProjectCodename", "multi word phrase", "word phrase",
             "Alice", "Wonderland", "Smith", "orchid-meadow", "velvet", "shortsecret", "shortcredential",
             "12 Cedar Rd", "u:p@localhost",
             "u:[redacted-email]", "cobalt-orchard", "orchard", "eyJzdWIiOiJhbGljZSJ9",

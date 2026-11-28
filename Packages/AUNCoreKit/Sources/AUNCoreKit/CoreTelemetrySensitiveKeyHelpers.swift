@@ -1,6 +1,8 @@
 import Foundation
 
 extension CoreTelemetryService {
+    static let redactedSentinel = "__AUN_REDACTED__"
+
     private static let urlPathKeyValueRegex = try? NSRegularExpression(
         pattern: #"(?<![A-Za-z0-9_])([A-Za-z0-9_.-]{2,64})([=:])([^/?#&\s;]+)"#
     )
@@ -10,16 +12,34 @@ extension CoreTelemetryService {
     )
     private static let multiWordSensitiveSegments: Set<String> = [
         "fullname", "displayname", "firstname", "lastname", "givenname", "familyname",
-        "address", "street", "streetaddress", "homeaddress", "passphrase", "pass", "password", "passwd",
+        "username", "login", "address", "street", "streetaddress", "homeaddress",
+        "passphrase", "pass", "password", "passwd", "pwd",
+        "phone", "phonenumber", "mobile", "tel", "telephone",
+        "card", "creditcard", "iban", "ssn", "dob", "birthdate", "dateofbirth", "passport",
     ]
-    private static let multiWordValueRegex = try? NSRegularExpression(
+    private static let multiWordKeySepRegex = try? NSRegularExpression(
         pattern:
             #"(?<![A-Za-z0-9_])((?:[A-Za-z0-9_.-]|\\u[0-9A-Fa-f]{4}){2,64})"#
             + #"((?:\\?[\"']|[\u201D\u2019\u00BB\u300D\u300F])?\s*[=:]\s*)"#
-            + #"(?![\"'\u201C\u2018\u00AB\u201E\u300C\u300E\\])([^\r\n,;}\]]+)"#
     )
     private static let nextKeyValueBoundaryRegex = try? NSRegularExpression(
-        pattern: #"\s+(?:[A-Za-z0-9_.-]{2,48}\s*[=:])"#
+        pattern:
+            #"^(?:[ \t]+|[,;][ \t]*)(?:[A-Za-z0-9_.-]|\\u[0-9A-Fa-f]{4}){2,48}"#
+            + #"(?:\\?[\"']|[\u201D\u2019\u00BB\u300D\u300F])?\s*[=:]"#
+    )
+    static let windowsDriveRelativePathRegex = try? NSRegularExpression(
+        pattern: #"(?<![A-Za-z0-9_:])[A-Za-z]:(?![/\\])(?!\d+:\d+)[A-Za-z_.][A-Za-z0-9_.\\/-]+"#
+    )
+    static let spaceDelimitedCredentialRegex = try? NSRegularExpression(
+        pattern:
+            #"(?<![A-Za-z0-9_])((?:api[_-]?key|api[_-]?token|access[_-]?token|refresh[_-]?token|id[_-]?token|"#
+            + #"auth[_-]?token|session[_-]?token|security[_-]?token|client[_-]?secret|private[_-]?key|"#
+            + #"secret[_-]?key|access[_-]?key|verification[_-]?code|auth[_-]?code|recovery[_-]?code|"#
+            + #"passphrase|password|passwd|passcode|credential|credentials|token|secret|jwt|otp|pin|pwd)[ \t]+)"#
+            + #"(?!\[redacted(?:-[a-z]+)?\])(?!\"\[redacted\]\")"#
+            + #"(?:\\\"(?:\\\\.|[^\"\\])*\\\"|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|"#
+            + #"\u201C[^\u201D\r\n]*\u201D|\u2018[^\u2019\r\n]*\u2019|[^\s,;}\]\"'=:\u201C\u201D\u2018\u2019]+)"#,
+        options: [.caseInsensitive]
     )
 
     static func redactPercentEncodedURLs(_ text: String) -> String {
@@ -80,34 +100,69 @@ extension CoreTelemetryService {
         return false
     }
 
-    static func scrubUnquotedMultiWordSensitiveValues(_ text: String, quoteReplacement: Bool) -> String {
-        guard let regex = multiWordValueRegex else { return text }
+    private static func isMultiWordOpeningQuote(_ ch: unichar) -> Bool {
+        ch == 0x22 || ch == 0x27 || ch == 0x5C || ch == 0x201C || ch == 0x2018
+            || ch == 0x00AB || ch == 0x201E || ch == 0x300C || ch == 0x300E
+    }
+
+    private static func isMultiWordStopChar(_ ch: unichar) -> Bool {
+        ch == 0x0D || ch == 0x0A || ch == 0x7D || ch == 0x5D || ch == 0x22 || ch == 0x27
+            || ch == 0x201D || ch == 0x2019 || ch == 0x00BB || ch == 0x300D || ch == 0x300F
+    }
+
+    private static func scanMultiWordValueEnd(_ nsText: NSString, from valStart: Int, totalLen: Int) -> Int {
+        var valEnd = valStart
+        while valEnd < totalLen {
+            let ch = nsText.character(at: valEnd)
+            if isMultiWordStopChar(ch) { break }
+            if ch == 0x20 || ch == 0x09 || ch == 0x2C || ch == 0x3B {
+                let tail = nsText.substring(from: valEnd)
+                if nextKeyValueBoundaryRegex?.firstMatch(
+                    in: tail, options: [], range: NSRange(location: 0, length: (tail as NSString).length)
+                ) != nil {
+                    break
+                }
+            }
+            valEnd += 1
+        }
+        return valEnd
+    }
+
+    private static func shouldScrubMultiWordKey(_ rawKey: String, nsText: NSString, valStart: Int) -> Bool {
+        let decodedKey = decodeJSONUnicodeEscapes(rawKey)
+        let lower = decodedKey.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")).lowercased()
+        if lower == "authorization" || lower == "proxy-authorization" || !isMultiWordSensitiveKey(decodedKey) {
+            return false
+        }
+        if isMultiWordOpeningQuote(nsText.character(at: valStart)) { return false }
+        let rest = nsText.substring(from: valStart)
+        return !rest.hasPrefix("[redacted") && !rest.hasPrefix(redactedSentinel)
+    }
+
+    static func scrubUnquotedMultiWordSensitiveValues(_ text: String, replacement: String) -> String {
+        guard let regex = multiWordKeySepRegex else { return text }
         let nsText = text as NSString
-        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
-        guard !matches.isEmpty else { return text }
+        let totalLen = nsText.length
         var out = ""
         var copied = 0
-        for match in matches {
-            let key = nsText.substring(with: match.range(at: 1))
-            let decodedKey = decodeJSONUnicodeEscapes(key)
-            let lower = decodedKey.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")).lowercased()
-            if lower == "authorization" || lower == "proxy-authorization" { continue }
-            guard isMultiWordSensitiveKey(decodedKey) else { continue }
-            let val = nsText.substring(with: match.range(at: 3))
-            if val.hasPrefix("[redacted") { continue }
-            let tail: String
-            if let boundary = nextKeyValueBoundaryRegex?.firstMatch(
-                in: val, options: [], range: NSRange(location: 0, length: (val as NSString).length)
-            ) {
-                tail = (val as NSString).substring(from: boundary.range.location)
-            } else {
-                tail = ""
-            }
-            let sep = nsText.substring(with: match.range(at: 2))
-            let repl = quoteReplacement ? "\"[redacted]\"" : "[redacted]"
-            out += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
-            out += key + sep + repl + tail
-            copied = match.range.location + match.range.length
+        var searchPos = 0
+        while searchPos < totalLen {
+            guard
+                let match = regex.firstMatch(
+                    in: text, options: [], range: NSRange(location: searchPos, length: totalLen - searchPos)
+                )
+            else { break }
+            let valStart = match.range.location + match.range.length
+            searchPos = valStart
+            guard valStart < totalLen else { break }
+            let rawKey = nsText.substring(with: match.range(at: 1))
+            guard shouldScrubMultiWordKey(rawKey, nsText: nsText, valStart: valStart) else { continue }
+            let valEnd = scanMultiWordValueEnd(nsText, from: valStart, totalLen: totalLen)
+            guard valEnd > valStart else { continue }
+            out += nsText.substring(with: NSRange(location: copied, length: valStart - copied))
+            out += replacement
+            copied = valEnd
+            searchPos = valEnd
         }
         guard copied > 0 else { return text }
         out += nsText.substring(from: copied)

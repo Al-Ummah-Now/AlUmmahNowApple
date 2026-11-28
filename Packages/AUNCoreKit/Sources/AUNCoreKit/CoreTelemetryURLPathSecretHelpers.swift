@@ -287,13 +287,14 @@ extension CoreTelemetryService {
         pattern:
             #"(?<![A-Za-z0-9_])((?:[A-Za-z0-9_.-]|\\u[0-9A-Fa-f]{4}){2,64})"#
             + #"((?:\\?[\"']|[\u201D\u2019\u00BB\u300D\u300F])?\s*[=:]\s*)"#
-            + #"(\[redacted(?:-[a-z]+)?\]|\\\"(?:\\\\.|[^\"\\])*\\\"|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|"#
+            + #"(\[redacted(?:-[a-z]+)?\]|__AUN_REDACTED__|\"__AUN_REDACTED__\"|\\\"(?:\\\\.|[^\"\\])*\\\"|"#
+            + #"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|"#
             + #"\u201C[^\u201D\r\n]*\u201D|\u2018[^\u2019\r\n]*\u2019|\u00AB[^\u00BB\r\n]*\u00BB|"#
             + #"\u201E[^\u201D\r\n]*\u201D|\u300C[^\u300D\r\n]*\u300D|\u300E[^\u300F\r\n]*\u300F|"#
             + #"[^\s,;}\]\"'\u201C\u201D\u2018\u2019\u00AB\u00BB\u201E\u300C\u300D\u300E\u300F]+)"#
     )
 
-    private static func scrubSensitiveKeyValues(_ text: String, quoteReplacement: Bool) -> String {
+    private static func scrubSensitiveKeyValues(_ text: String, replacement: String) -> String {
         guard let regex = keyValueCredentialRegex else { return text }
         let nsText = text as NSString
         let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
@@ -307,9 +308,14 @@ extension CoreTelemetryService {
             if lower == "authorization" || lower == "proxy-authorization" { continue }
             guard hasSensitivePropertySegment(decodedKey) else { continue }
             let val = nsText.substring(with: match.range(at: 3))
-            if val.hasPrefix("[redacted") || val == "\"[redacted]\"" { continue }
+            if val.hasPrefix("[redacted") || val == "\"[redacted]\""
+                || val == redactedSentinel || val == "\"\(redactedSentinel)\""
+            {
+                continue
+            }
             let sep = nsText.substring(with: match.range(at: 2))
-            let repl = quoteReplacement ? "\"[redacted]\"" : "[redacted]"
+            let preserveQuotes = val.count >= 2 && val.hasPrefix("\"") && val.hasSuffix("\"")
+            let repl = preserveQuotes ? "\"\(replacement)\"" : replacement
             out += nsText.substring(with: NSRange(location: copied, length: match.range.location - copied))
             out += key + sep + repl
             copied = match.range.location + match.range.length
@@ -338,16 +344,23 @@ extension CoreTelemetryService {
 
     static func sanitizeDiagnosticText(_ text: String) -> String {
         var pre = redactPercentEncodedURLs(text)
-        pre = scrubUnquotedMultiWordSensitiveValues(pre, quoteReplacement: true)
-        pre = scrubSensitiveKeyValues(pre, quoteReplacement: true)
-        var safe = sanitizeLocalPaths(pre)
-        safe = scrubUnquotedMultiWordSensitiveValues(safe, quoteReplacement: false)
-        safe = scrubSensitiveKeyValues(safe, quoteReplacement: false)
+        pre = scrubUnquotedMultiWordSensitiveValues(pre, replacement: redactedSentinel)
+        pre = scrubSensitiveKeyValues(pre, replacement: redactedSentinel)
+        var safe = sanitizeLocalPaths(pre).replacingOccurrences(of: redactedSentinel, with: "[redacted]")
+        safe = scrubUnquotedMultiWordSensitiveValues(safe, replacement: "[redacted]")
+        safe = scrubSensitiveKeyValues(safe, replacement: "[redacted]")
+        if let regex = spaceDelimitedCredentialRegex {
+            let range = NSRange(location: 0, length: (safe as NSString).length)
+            safe = regex.stringByReplacingMatches(in: safe, options: [], range: range, withTemplate: "$1[redacted]")
+        }
         if let regex = ipv6InKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
         }
         if let regex = ipv4InKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-ip]" }
+        }
+        if let regex = windowsDriveRelativePathRegex {
+            safe = replaceMatches(in: safe, regex: regex) { _ in "[redacted-path]" }
         }
         if let regex = phoneInKeyRegex {
             safe = replaceMatches(in: safe, regex: regex) { isRedactedPhoneMatch($0) ? "[redacted-phone]" : nil }
@@ -438,6 +451,8 @@ extension CoreTelemetryService {
         "dob", "birthdate", "dateofbirth",
         "firstname", "lastname", "fullname", "displayname", "givenname", "familyname",
         "username", "login", "passport",
+        "userid", "accountid", "memberid", "profileid", "customerid",
+        "personid", "subscriberid", "deviceid", "uid", "handle",
     ]
 
     private static let highValueKeySubstrings: [String] = [
