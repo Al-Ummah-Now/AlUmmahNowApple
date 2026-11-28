@@ -19,7 +19,8 @@ extension CoreTelemetryService {
             + #"verify|verify-email|confirm|confirm-email|activate|magic|magic-link|"#
             + #"invite|invitations?|tokens?|auth|oauth2?|callback|sessions?|unsubscribe|"#
             + #"secrets?|keys?|api-?keys?|credentials?|sign-?in|login|sso|redeem|claim|recovery?|passwords?|"#
-            + #"share|shared|sh|s|scl|dl|link|private|join|otp|passkey|code|folders|"#
+            + #"share|shared|sh|s|scl|dl|link|private|join|otp|passkey|code|folders|watch|v|videos?|live|channels?|playlists?|streams?|clips?|episodes?|"#
+            + #"uploads?|downloads?|files?|assets?|media|objects?|blobs?|presigned|signed|exports?|imports?|artifacts?|backups?|recordings?|drafts?|"#
             + #"(?:file|document|spreadsheets|presentation)/(?:u/\d+/)?d)"#
             + #"(?:/|%2[fF]))[^\s?#]+"#,
         options: [.caseInsensitive]
@@ -83,7 +84,7 @@ extension CoreTelemetryService {
             result = replaceURLPathSecret(result, regex: regex)
         }
         result = redactEncodedKeyValuesInURL(result)
-        return redactEncodedJoseTokensInURL(result)
+        return redactEncodedOpaqueSegmentsInURL(redactEncodedJoseTokensInURL(result))
     }
 
     private static func redactEncodedJoseTokensInURL(_ url: String) -> String {

@@ -20,6 +20,7 @@ public enum AppTheme: String, CaseIterable, Sendable {
 @MainActor @Observable
 public final class AppSettings {
     private let defaults: UserDefaults
+    private let persistTelemetry: Bool
 
     public var language: AppLanguage { didSet { defaults.set(language.rawValue, forKey: Keys.language) } }
     public var theme: AppTheme {
@@ -33,6 +34,7 @@ public final class AppSettings {
     /// Opt-in diagnostics & crash reports. Always defaults to `false`.
     public var telemetryEnabled: Bool {
         didSet {
+            guard persistTelemetry else { return }
             if defaults.bool(forKey: Keys.telemetryEnabled) != telemetryEnabled {
                 defaults.set(telemetryEnabled, forKey: Keys.telemetryEnabled)
             }
@@ -43,10 +45,13 @@ public final class AppSettings {
         static let language = "AUNLanguage"
         static let theme = "AUNTheme"
         static let telemetryEnabled = "AUNTelemetryEnabled"
+        static let useFixtures = "AUNUseFixtures"
     }
 
     public init(defaults: UserDefaults = .standard, preferredLanguages: [String] = Locale.preferredLanguages) {
         self.defaults = defaults
+        let inFixtures = defaults.bool(forKey: Keys.useFixtures)
+        self.persistTelemetry = !inFixtures
         language =
             defaults.string(forKey: Keys.language).flatMap(AppLanguage.init(rawValue:))
             ?? Self.language(from: preferredLanguages)
@@ -54,7 +59,7 @@ public final class AppSettings {
         let stored = defaults.string(forKey: Keys.theme).flatMap(AppTheme.init(rawValue:))
         theme = stored ?? .dark
         themeChosen = stored != nil
-        telemetryEnabled = defaults.bool(forKey: Keys.telemetryEnabled)
+        telemetryEnabled = inFixtures ? false : defaults.bool(forKey: Keys.telemetryEnabled)
     }
 
     /// The device's mode at first launch becomes the stored choice, once.

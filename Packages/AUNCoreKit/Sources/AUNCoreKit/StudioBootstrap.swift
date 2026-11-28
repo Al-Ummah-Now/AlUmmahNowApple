@@ -38,6 +38,10 @@ public enum StudioBootstrap {
                 channels: defaults.string(forKey: "AUNFixtureChannels").flatMap(FixtureStudioService.Channels.init) ?? .all)
         }
         let environment = AppEnvironment.fromInfoDictionary(bundle.infoDictionary)
+        let telemetry = CoreTelemetryService.live(
+            environment: environment, bundle: bundle, defaults: defaults,
+            userAgentPrefix: "AlUmmahNow-Studio-Apple", bufferFilename: "studio-telemetry-buffer.json")
+        CrashTelemetryHook.install(service: telemetry)
         do {
             let bundleID = bundle.bundleIdentifier ?? "net.alummahnow.studio"
             let accounts = try CoreAccountService.live(environment: environment, bundleID: bundleID)
@@ -50,18 +54,16 @@ public enum StudioBootstrap {
             services.deletion = NativeDeletionService(
                 apiBaseURL: environment.apiBaseURL, authIssuer: environment.authIssuer, proofs: proofs)
             services.deletionRecords = KeychainDeletionRecords(service: "\(bundleID).deletions")
-            let telemetry = CoreTelemetryService.live(
-                environment: environment, bundle: bundle, defaults: defaults,
-                userAgentPrefix: "AlUmmahNow-Studio-Apple", bufferFilename: "studio-telemetry-buffer.json")
-            CrashTelemetryHook.install(service: telemetry)
             services.telemetry = telemetry
             return withMediaEngines(services)
         } catch {
             AUNLog.studio.fault("Studio services could not start: \(error)")
-            return StudioServices(
+            var fallback = StudioServices(
                 environment: environment, accounts: FixtureAccountService(),
                 studio: NativeStudioService(baseURL: environment.apiBaseURL, accounts: FixtureAccountService()),
                 transfer: liveTransfer, search: FixtureSearchService())
+            fallback.telemetry = telemetry
+            return fallback
         }
     }
 

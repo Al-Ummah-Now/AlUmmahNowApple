@@ -316,4 +316,128 @@ extension CoreTelemetryService {
         rebuilt += nsURL.substring(from: copied)
         return rebuilt
     }
+
+    private static func decodeURLSegmentFull(_ raw: String) -> (String, [Int]) {
+        let ns = raw as NSString
+        let len = ns.length
+        var units: [unichar] = []
+        units.reserveCapacity(len)
+        var offsets: [Int] = []
+        offsets.reserveCapacity(len + 1)
+        var i = 0
+        while i < len {
+            offsets.append(i)
+            let ch = ns.character(at: i)
+            if ch == 0x25, i + 2 < len,
+                let b = parseHexByte(ns.character(at: i + 1), ns.character(at: i + 2)),
+                b >= 0x21 && b <= 0x7E && b != 0x3F && b != 0x23
+            {
+                units.append(unichar(b))
+                i += 3
+            } else {
+                units.append(ch)
+                i += 1
+            }
+        }
+        offsets.append(len)
+        return (String(utf16CodeUnits: units, count: units.count), offsets)
+    }
+
+    private static func isOpaqueURLSecretSegment(_ seg: String) -> Bool {
+        let utf8 = seg.utf8
+        guard utf8.count >= 32 else { return false }
+        if seg.count == 36, isUUIDSegment(seg) { return false }
+        var hasLetter = false
+        var hasDigit = false
+        for b in utf8 {
+            if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) {
+                hasLetter = true
+            } else if b >= 0x30 && b <= 0x39 {
+                hasDigit = true
+            } else if b != 0x2D && b != 0x5F && b != 0x2B && b != 0x2F && b != 0x3D {
+                return false
+            }
+        }
+        return hasLetter && hasDigit
+    }
+
+    private static func isUUIDSegment(_ seg: String) -> Bool {
+        let bytes = Array(seg.utf8)
+        guard bytes.count == 36 else { return false }
+        for (idx, b) in bytes.enumerated() {
+            if idx == 8 || idx == 13 || idx == 18 || idx == 23 {
+                if b != 0x2D { return false }
+            } else if !((b >= 0x30 && b <= 0x39) || (b >= 0x41 && b <= 0x46) || (b >= 0x61 && b <= 0x66)) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func findOpaqueSegmentRanges(in rawSeg: String, baseOffset: Int) -> [NSRange] {
+        let (decoded, offsets) = decodeURLSegmentFull(rawSeg)
+        if !decoded.hasPrefix("[redacted") && isOpaqueURLSecretSegment(decoded) {
+            return [NSRange(location: baseOffset, length: (rawSeg as NSString).length)]
+        }
+        guard decoded.contains("/") else { return [] }
+        let nsDec = decoded as NSString
+        var ranges: [NSRange] = []
+        var subStart = 0
+        while subStart < nsDec.length {
+            let slash = nsDec.range(
+                of: "/", options: [], range: NSRange(location: subStart, length: nsDec.length - subStart)
+            )
+            let subEnd = slash.location == NSNotFound ? nsDec.length : slash.location
+            let sub = nsDec.substring(with: NSRange(location: subStart, length: subEnd - subStart))
+            if !sub.isEmpty && !sub.hasPrefix("[redacted") && isOpaqueURLSecretSegment(sub) {
+                let start = baseOffset + offsets[subStart]
+                let end = baseOffset + offsets[subEnd]
+                ranges.append(NSRange(location: start, length: end - start))
+            }
+            subStart = slash.location == NSNotFound ? nsDec.length : slash.location + 1
+        }
+        return ranges
+    }
+
+    static func redactEncodedOpaqueSegmentsInURL(_ url: String) -> String {
+        guard url.contains("%") else { return url }
+        let nsURL = url as NSString
+        let scheme = nsURL.range(of: "://")
+        guard scheme.location != NSNotFound else { return url }
+        let afterScheme = scheme.location + scheme.length
+        let pathSlash = nsURL.range(
+            of: "/", options: [], range: NSRange(location: afterScheme, length: nsURL.length - afterScheme)
+        )
+        guard pathSlash.location != NSNotFound else { return url }
+        let qfRange = nsURL.rangeOfCharacter(
+            from: CharacterSet(charactersIn: "?#"), options: [],
+            range: NSRange(location: pathSlash.location, length: nsURL.length - pathSlash.location)
+        )
+        let pathEnd = qfRange.location == NSNotFound ? nsURL.length : qfRange.location
+        var rebuilt = ""
+        var copied = 0
+        var segStart = pathSlash.location + 1
+        while segStart < pathEnd {
+            let nextSlash = nsURL.range(
+                of: "/", options: [], range: NSRange(location: segStart, length: pathEnd - segStart)
+            )
+            let segEnd = nextSlash.location == NSNotFound ? pathEnd : nextSlash.location
+            let semi = nsURL.range(
+                of: ";", options: [], range: NSRange(location: segStart, length: segEnd - segStart)
+            )
+            let coreEnd = semi.location == NSNotFound ? segEnd : semi.location
+            let rawSeg = nsURL.substring(with: NSRange(location: segStart, length: coreEnd - segStart))
+            if rawSeg.contains("%") {
+                for range in findOpaqueSegmentRanges(in: rawSeg, baseOffset: segStart) where range.location >= copied {
+                    rebuilt += nsURL.substring(with: NSRange(location: copied, length: range.location - copied))
+                    rebuilt += "[redacted]"
+                    copied = range.location + range.length
+                }
+            }
+            segStart = nextSlash.location == NSNotFound ? pathEnd : nextSlash.location + 1
+        }
+        guard copied > 0 else { return url }
+        rebuilt += nsURL.substring(from: copied)
+        return rebuilt
+    }
 }

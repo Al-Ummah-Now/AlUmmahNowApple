@@ -126,6 +126,9 @@ struct CoreTelemetryExternalOptOutTests {
                 + #"{"challenge.verificationCode":"739104"} {"pass":"multi word phrase"} {"userId":["alice42", "bob73"]} "#
                 + #"fullName="Alice Wonderland" username=Jane Doe C:ProjectCodename C:秘密 pwd=shortsecret "#
                 + "https://1drv.ms/u/s!Aq82F1ZLPx0K "
+                + "https://example.org/assets/%41bCdEfGhIjKlMnOpQrStUvWxYz0123456789 "
+                + "https://uploads.example.test/upload/853876e8-cc19-465d-bafa-7459aba00936 "
+                + "alummahnow://watch/v1 "
                 + "https://example.com/download/eyJhbGciOiJkaXIifQ%2E%2Eiv1234%2Ecipher7777%2Etag8888",
             level: .info
         )
@@ -152,6 +155,7 @@ struct CoreTelemetryExternalOptOutTests {
             "12 Cedar Rd", "u:p@localhost",
             "u:[redacted-email]", "cobalt-orchard", "orchard", "eyJzdWIiOiJhbGljZSJ9",
             "sig123", "cipher5678", "cipher7777", "Aq82F1ZLPx0K",
+            "bCdEfGhIjKlMnOpQrStUvWxYz0123456789", "853876e8-cc19-465d-bafa-7459aba00936", "watch/v1",
             "AbCdEfGhIjKlMnOpQrStUvWxYzABCDE", "abc123",
         ]
         for token in forbidden {

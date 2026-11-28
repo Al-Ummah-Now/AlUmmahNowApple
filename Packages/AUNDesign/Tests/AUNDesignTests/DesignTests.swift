@@ -192,6 +192,19 @@ import Testing
         #expect(AppSettings(defaults: defaults, preferredLanguages: ["en"]).language == .ar)
     }
 
+    @MainActor @Test func fixtureModeDoesNotOverwriteLiveTelemetryConsent() throws {
+        let suite = UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "AUNTelemetryEnabled")
+        defaults.set(true, forKey: "AUNUseFixtures")
+        let settings = AppSettings(defaults: defaults, preferredLanguages: ["en"])
+        #expect(!settings.telemetryEnabled)
+        settings.telemetryEnabled = true
+        settings.telemetryEnabled = false
+        #expect(defaults.bool(forKey: "AUNTelemetryEnabled"))
+    }
+
     /// Owner 2026-11-13: Light or Dark only. Until a choice is stored the window follows the device, then keeps it.
     @MainActor @Test func modeIsLightOrDarkAndFirstLaunchAdoptsTheDevice() throws {
         #expect(AppTheme.allCases == [.light, .dark])
