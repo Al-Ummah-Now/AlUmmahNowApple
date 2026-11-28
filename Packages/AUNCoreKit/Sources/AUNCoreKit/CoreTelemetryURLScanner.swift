@@ -96,7 +96,13 @@ extension CoreTelemetryService {
         guard pos < len && nsText.character(at: pos) == 0x3A else { return pos }
         var idx = pos + 1
         while idx < len && isASCIIDigit(nsText.character(at: idx)) { idx += 1 }
-        return idx > pos + 1 ? idx : nil
+        if idx > pos + 1 { return idx }
+        if idx == len { return idx }
+        let next = nsText.character(at: idx)
+        if next == 0x2F || next == 0x3F || next == 0x23 || isURLEndBoundary(nsText, at: idx, len: len) {
+            return idx
+        }
+        return nil
     }
 
     static func scanURLPath(_ nsText: NSString, start: Int, len: Int) -> (Int, Bool) {

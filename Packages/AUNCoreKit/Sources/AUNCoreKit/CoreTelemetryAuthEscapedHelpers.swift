@@ -11,7 +11,9 @@ extension CoreTelemetryAuthScanner {
         let preserved = String(utf16CodeUnits: slice, count: slice.count)
         let key = preserved.lowercased()
         switch key {
-        case "authorization", "proxy-authorization", "cookie", "set-cookie": return preserved
+        case "authorization", "proxy-authorization", "cookie", "set-cookie",
+            "x-api-key", "api-key", "x-auth-token", "x-access-token", "x-api-token":
+            return preserved
         default: return nil
         }
     }

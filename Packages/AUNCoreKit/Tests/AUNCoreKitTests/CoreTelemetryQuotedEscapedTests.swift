@@ -177,6 +177,21 @@ struct CoreTelemetryQuotedEscapedTests {
             ),
             ("{\\\"\tCookie\t\\\":\\\"opaqueSecret123\\\"}", "{\\\"\tCookie\t\\\":\\\"[redacted]\\\"}"),
             ("[[\\\"Authorization\\\",\\\"opaqueSecret123\\\"\\n]]", "[[\\\"Authorization\\\",\\\"[redacted]\\\"\\n]]"),
+        ]
+        for (input, expected) in cases {
+            #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
+        }
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"\tCookie\t\":\"opaqueSecret123\"}").contains("opaqueSecret123") == false)
+        let malformedEscaped = "{\\\"Authorization\\\":[" + String(repeating: "{,", count: 2000) + "]"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(malformedEscaped).hasPrefix("{\\\"Authorization\\\":[\\\"[redacted]\\\""))
+        let repeatedVaultPrefix = String(repeating: "\u{001E}AUNURLx ", count: 5000) + "https://example/path"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedVaultPrefix) == repeatedVaultPrefix)
+    }
+
+    @Test("Redacts Slack dot-segments, API keys, content URIs, and preserves path colons and empty ports")
+    func redactsSlackDotSegmentsApiKeysContentUrisAndEmptyPorts() {
+        let cases: [(String, String)] = [
             (
                 "https://hooks.slack.com/./services/T000/B000/fakeWebhookSecret",
                 "https://hooks.slack.com/./services/[redacted]"
@@ -211,16 +226,21 @@ struct CoreTelemetryQuotedEscapedTests {
                 "https://proxy.example.com/https://hooks.slack.com/./services/T000/B000/fakeWebhookSecret",
                 "https://proxy.example.com/https://hooks.slack.com/./services/[redacted]"
             ),
+            ("X-API-Key: secret123", "X-API-Key: [redacted]"),
+            ("Api-Key: secret123", "Api-Key: [redacted]"),
+            ("X-Auth-Token: secret123", "X-Auth-Token: [redacted]"),
+            ("X-Access-Token: secret123", "X-Access-Token: [redacted]"),
+            (
+                "{\"X-API-Key\":\"secret123\",\"Api-Key\":\"secret456\",\"X-Auth-Token\":\"tok789\"}",
+                "{\"X-API-Key\":\"[redacted]\",\"Api-Key\":\"[redacted]\",\"X-Auth-Token\":\"[redacted]\"}"
+            ),
+            ("https://example.com:/api?token=secret123", "https://example.com:/api?[redacted]"),
+            ("https://example.com:?token=secret123", "https://example.com:?[redacted]"),
+            ("https://example.com:#secret123", "https://example.com:#[redacted]"),
         ]
         for (input, expected) in cases {
             #expect(CoreTelemetryService.sanitizeLocalPaths(input) == expected)
         }
-        #expect(
-            CoreTelemetryService.sanitizeLocalPaths("{\"\tCookie\t\":\"opaqueSecret123\"}").contains("opaqueSecret123") == false)
-        let malformedEscaped = "{\\\"Authorization\\\":[" + String(repeating: "{,", count: 2000) + "]"
-        #expect(CoreTelemetryService.sanitizeLocalPaths(malformedEscaped).hasPrefix("{\\\"Authorization\\\":[\\\"[redacted]\\\""))
-        let repeatedVaultPrefix = String(repeating: "\u{001E}AUNURLx ", count: 5000) + "https://example/path"
-        #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedVaultPrefix) == repeatedVaultPrefix)
         let repeatedSlackHosts =
             "https://hooks.slack.com" + String(repeating: "/https://hooks.slack.com", count: 2000) + "/x"
         #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedSlackHosts) == repeatedSlackHosts)
@@ -243,10 +263,14 @@ struct CoreTelemetryQuotedEscapedTests {
             "Authorization": "opaqueSecret123",
             "Cookie": "session=opaqueSecret123",
             "Set-Cookie": "sid=opaqueSecret456",
+            "X-API-Key": "apiSecret789",
+            "X-Auth-Token": "authTok999",
             "screen": "home",
         ])
         #expect(props != nil)
         #expect(props?.contains("secret") == false)
+        #expect(props?.contains("apiSecret789") == false)
+        #expect(props?.contains("authTok999") == false)
         #expect(props?.contains("session=") == false)
         #expect(props?.contains("Alice") == false)
         #expect(props?.contains("Bob") == false)
@@ -259,6 +283,8 @@ struct CoreTelemetryQuotedEscapedTests {
         #expect(props?.contains("\"Authorization\":\"[redacted]\"") == true)
         #expect(props?.contains("\"Cookie\":\"[redacted]\"") == true)
         #expect(props?.contains("\"Set-Cookie\":\"[redacted]\"") == true)
+        #expect(props?.contains("\"X-API-Key\":\"[redacted]\"") == true)
+        #expect(props?.contains("\"X-Auth-Token\":\"[redacted]\"") == true)
         #expect(props?.contains("\"screen\":\"home\"") == true)
         var manyColliding: [String: String] = [:]
         manyColliding.reserveCapacity(5000)

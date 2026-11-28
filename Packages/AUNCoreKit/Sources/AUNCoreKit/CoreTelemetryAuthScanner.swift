@@ -143,7 +143,10 @@ enum CoreTelemetryAuthScanner {
         }
     }
 
-    private static let unquotedAuthHeaderNames = ["proxy-authorization", "authorization", "set-cookie", "cookie"]
+    private static let unquotedAuthHeaderNames = [
+        "proxy-authorization", "authorization", "set-cookie", "cookie",
+        "x-api-key", "api-key", "x-auth-token", "x-access-token", "x-api-token",
+    ]
 
     private static func matchAuthHeaderKey(
         _ nsText: NSString, at pos: Int, len: Int, state: inout AuthScanState

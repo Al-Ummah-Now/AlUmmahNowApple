@@ -448,6 +448,16 @@ extension CoreTelemetryService {
         return "\(base)#\(suffix)"
     }
 
+    private static func isAuthHeaderPropertyKey(_ trimmedKey: String) -> Bool {
+        switch trimmedKey.lowercased() {
+        case "authorization", "proxy-authorization", "cookie", "set-cookie",
+            "x-api-key", "api-key", "x-auth-token", "x-access-token", "x-api-token":
+            return true
+        default:
+            return false
+        }
+    }
+
     static func serializeProperties(_ properties: [String: String]) -> String? {
         guard !properties.isEmpty else { return nil }
         var sanitized: [String: String] = [:]
@@ -456,10 +466,7 @@ extension CoreTelemetryService {
         for (key, value) in properties.sorted(by: { $0.key < $1.key }) {
             let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedKey.isEmpty else { continue }
-            let lowered = trimmedKey.lowercased()
-            if lowered == "authorization" || lowered == "proxy-authorization"
-                || lowered == "cookie" || lowered == "set-cookie"
-            {
+            if isAuthHeaderPropertyKey(trimmedKey) {
                 let uniqueKey = resolveUniquePropertyKey(sanitized, base: key, nextSuffix: &nextSuffix)
                 sanitized[uniqueKey] = "[redacted]"
             } else {
