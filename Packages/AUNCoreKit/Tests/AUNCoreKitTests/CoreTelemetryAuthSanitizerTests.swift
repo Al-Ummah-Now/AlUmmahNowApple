@@ -432,6 +432,34 @@ extension CoreTelemetryAuthSanitizerTests {
             CoreTelemetryService.sanitizeLocalPaths("Basic \\u0022dTpw\\\"")
                 == "Basic \\u0022[redacted]\\\""
         )
+    }
+
+    @Test("Handles trailing-space Bearer truncation, prose commas, JSON keys, and multiline Basic")
+    func handlesBearerTruncationProseJsonKeysAndMultilineBasic() {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("received Bearer \"opaqueSecret123 ")
+                == "received Bearer \"[redacted] "
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Bearer \"hello, world\"")
+                == "Bearer \"hello, world\""
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"msg\":\"Bearer \\\"hello world\\\"\"}")
+                == "{\"msg\":\"Bearer \\\"hello world\\\"\"}"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("{\"Bearer \":\"ok\"}")
+                == "{\"Bearer \":\"ok\"}"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Basic \"dTpw\nnext line")
+                == "Basic \"[redacted]\nnext line"
+        )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("Basic \"dTpw ")
+                == "Basic \"[redacted] "
+        )
         #expect(
             CoreTelemetryService.sanitizeLocalPaths("https://example.org/users/alice/@example.com")
                 == "https://[redacted-email]"
