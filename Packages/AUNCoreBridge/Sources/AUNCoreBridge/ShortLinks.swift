@@ -22,7 +22,11 @@ public enum ShortLinks {
 
     public static func shortLinkOriginFor(_ siteHostOrOrigin: String) -> URL? {
         let origin = siteHostOrOrigin.contains("://") ? siteHostOrOrigin : "https://\(siteHostOrOrigin)"
-        guard let host = URLComponents(string: origin)?.host?.lowercased() else { return nil }
+        guard let components = URLComponents(string: origin),
+            components.user == nil, components.password == nil,
+            let host = components.host?.lowercased(),
+            SafeInput.isSafeHostname(host)
+        else { return nil }
         if host == "alummahnow.link" || host.hasSuffix(".alummahnow.link") {
             return URL(string: "https://\(host)")
         }

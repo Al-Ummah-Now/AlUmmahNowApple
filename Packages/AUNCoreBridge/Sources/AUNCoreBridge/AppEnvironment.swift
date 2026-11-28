@@ -44,7 +44,7 @@ public struct AppEnvironment: Hashable, Sendable {
         }
         if host.contains(".api.") {
             let webHost = host.replacingOccurrences(of: ".api.", with: ".")
-            if let url = URL(string: "https://\(webHost)") { return url }
+            if SafeInput.isSafeHostname(webHost), let url = URL(string: "https://\(webHost)") { return url }
         }
         return Self.qaWebBase
     }

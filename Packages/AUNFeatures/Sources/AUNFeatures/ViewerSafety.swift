@@ -12,14 +12,23 @@ public enum ViewerReportURL {
 
     private static func build(webBaseURL: URL, language: String, queryItems: [URLQueryItem]) -> URL {
         var components = URLComponents(url: webBaseURL, resolvingAgainstBaseURL: false) ?? URLComponents()
-        if components.scheme == nil { components.scheme = "https" }
-        if components.host == nil {
+        components.user = nil
+        components.password = nil
+        let scheme = components.scheme?.lowercased()
+        let host = components.host?.lowercased()
+        if scheme != "https" && !(scheme == "http" && host.map(SafeInput.isLoopbackHost) == true) {
+            components.scheme = "https"
             components.host = AppEnvironment.qa.webBaseURL.host
+            components.port = nil
+        } else if let host, !SafeInput.isSafeHostname(host) {
+            components.scheme = "https"
+            components.host = AppEnvironment.qa.webBaseURL.host
+            components.port = nil
         }
         components.path = "/\(localeSegment(language))/report"
         components.queryItems = queryItems.filter { !($0.value ?? "").isEmpty }
         components.fragment = nil
-        return components.url ?? webBaseURL
+        return components.url ?? AppEnvironment.qa.webBaseURL
     }
 
     public static func video(id: String, language: String, webBaseURL: URL) -> URL {

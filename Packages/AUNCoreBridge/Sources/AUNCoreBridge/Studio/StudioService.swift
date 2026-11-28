@@ -138,22 +138,29 @@ public struct NativeStudioService: StudioServicing {
         let total: Int?
     }
 
+    static func checkedSegment(_ value: String) throws -> String {
+        guard SafeInput.isSafePathSegment(value) else { throw CoreError.notFound }
+        return value
+    }
+
     public func heldComments(channelID: String, limit: Int, accountID: String) async throws -> HeldComments {
         let query = [URLQueryItem(name: "tab", value: "held"), URLQueryItem(name: "limit", value: String(limit))]
         let page = try await client.send(
-            .get, "/api/channels/\(channelID)/comments", query: query, channelID: channelID, accountID: accountID,
+            .get, "/api/channels/\(try Self.checkedSegment(channelID))/comments", query: query, channelID: channelID,
+            accountID: accountID,
             as: HeldPage.self)
         return HeldComments(items: page.items, total: page.total ?? page.items.count)
     }
 
     public func playlists(channelID: String) async throws -> [StudioPlaylist] {
+        let safeChannel = try Self.checkedSegment(channelID)
         var all: [StudioPlaylist] = []
         var cursor: String?
         repeat {
             var query = [URLQueryItem(name: "limit", value: "100")]
             if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
             let page = try await client.send(
-                .get, "/api/channels/\(channelID)/playlists", query: query, channelID: channelID, as: PlaylistPage.self)
+                .get, "/api/channels/\(safeChannel)/playlists", query: query, channelID: channelID, as: PlaylistPage.self)
             all += page.data
             // The last page has `"cursor": ""`; sending `cursor=` back is a 400.
             cursor = page.data.isEmpty || (page.cursor ?? "").isEmpty ? nil : page.cursor
@@ -170,7 +177,8 @@ public struct NativeStudioService: StudioServicing {
 
     public func resumeUpload(videoID: String, channelID: String) async throws -> UploadTicket {
         try await client.send(
-            .get, "/api/videos/upload/resume/\(videoID)", channelID: channelID, as: ResultEnvelope<UploadTicket>.self
+            .get, "/api/videos/upload/resume/\(try Self.checkedSegment(videoID))", channelID: channelID,
+            as: ResultEnvelope<UploadTicket>.self
         ).result
     }
 
@@ -190,7 +198,8 @@ public struct NativeStudioService: StudioServicing {
     }
 
     public func setLanguage(_ language: VideoLanguage, videoID: String, channelID: String) async throws {
-        try await client.sendRaw(.put, "/api/videos/\(videoID)", channelID: channelID, body: ["language": language.rawValue])
+        try await client.sendRaw(
+            .put, "/api/videos/\(try Self.checkedSegment(videoID))", channelID: channelID, body: ["language": language.rawValue])
     }
 
     private struct PlaylistAdds: Encodable {
@@ -213,7 +222,7 @@ public struct NativeStudioService: StudioServicing {
 
     public func schedule(videoID: String, at date: Date, timeZone: TimeZone, channelID: String) async throws {
         try await client.sendRaw(
-            .post, "/api/videos/\(videoID)/schedule", channelID: channelID,
+            .post, "/api/videos/\(try Self.checkedSegment(videoID))/schedule", channelID: channelID,
             body: Schedule(scheduledPublishDate: date, timezone: timeZone.identifier))
     }
 
@@ -237,7 +246,7 @@ public struct NativeStudioService: StudioServicing {
         if query.visibility != .all { items.append(URLQueryItem(name: "visibility", value: query.visibility.rawValue)) }
         if let cursor = Self.nextCursor(cursor) { items.append(URLQueryItem(name: "cursor", value: cursor)) }
         let page = try await client.send(
-            .get, "/api/channels/\(channelID)/content", query: items, channelID: channelID,
+            .get, "/api/channels/\(try Self.checkedSegment(channelID))/content", query: items, channelID: channelID,
             as: ResultEnvelope<Page<StudioVideo>>.self
         ).result
         return ContentPage(items: page.items, cursor: Self.nextCursor(page.cursor))
@@ -247,14 +256,15 @@ public struct NativeStudioService: StudioServicing {
 
     public func contentCounts(channelID: String) async throws -> ContentCounts {
         let counts = try await client.send(
-            .get, "/api/channels/\(channelID)/content/summary", channelID: channelID, as: ResultEnvelope<Counts>.self
+            .get, "/api/channels/\(try Self.checkedSegment(channelID))/content/summary", channelID: channelID,
+            as: ResultEnvelope<Counts>.self
         ).result.counts
         return Dictionary(
             uniqueKeysWithValues: counts.compactMap { key, value in StudioStatus(rawValue: key).map { ($0, value) } })
     }
 
     public func updateVideo(_ id: String, _ edit: VideoEdit, channelID: String) async throws {
-        try await client.sendRaw(.put, "/api/videos/\(id)", channelID: channelID, body: edit)
+        try await client.sendRaw(.put, "/api/videos/\(try Self.checkedSegment(id))", channelID: channelID, body: edit)
     }
 
     private struct BulkBody: Decodable {
@@ -304,14 +314,15 @@ public struct NativeStudioService: StudioServicing {
 
     public func addToPlaylist(_ playlistID: String, videoIDs: [String], channelID: String) async throws {
         try await client.sendRaw(
-            .post, "/api/playlists/\(playlistID)/videos/bulk", channelID: channelID, body: IDs(videoIds: videoIDs))
+            .post, "/api/playlists/\(try Self.checkedSegment(playlistID))/videos/bulk", channelID: channelID,
+            body: IDs(videoIds: videoIDs))
     }
 
     public func deletedVideos(channelID: String, cursor: String?) async throws -> (items: [DeletedVideo], cursor: String?) {
         var query: [URLQueryItem] = []
         if let cursor = Self.nextCursor(cursor) { query.append(URLQueryItem(name: "cursor", value: cursor)) }
         let page = try await client.send(
-            .get, "/api/channels/\(channelID)/content/deleted", query: query, channelID: channelID,
+            .get, "/api/channels/\(try Self.checkedSegment(channelID))/content/deleted", query: query, channelID: channelID,
             as: ResultEnvelope<Page<DeletedVideo>>.self
         ).result
         return (page.items, Self.nextCursor(page.cursor))
@@ -335,11 +346,13 @@ public struct NativeStudioService: StudioServicing {
     }
 
     public func channelStats(channelID: String, period: DateInterval) async throws -> ChannelStats {
-        try await client.send(.get, "/api/analytics/channels/\(channelID)", query: range(period), as: ChannelStats.self)
+        try await client.send(
+            .get, "/api/analytics/channels/\(try Self.checkedSegment(channelID))", query: range(period), as: ChannelStats.self)
     }
 
     public func videoStats(videoID: String, period: DateInterval) async throws -> VideoStats {
-        try await client.send(.get, "/api/analytics/videos/\(videoID)", query: range(period), as: VideoStats.self)
+        try await client.send(
+            .get, "/api/analytics/videos/\(try Self.checkedSegment(videoID))", query: range(period), as: VideoStats.self)
     }
 }
 
@@ -398,9 +411,9 @@ struct StudioHTTPClient: Sendable {
         _ method: Method, _ path: String, query: [URLQueryItem] = [], channelID: String? = nil, body: Data? = nil,
         contentType: String = "application/json", accountID: String? = nil
     ) async throws -> URLRequest {
-        var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)
-        if !query.isEmpty { components?.queryItems = query }
-        guard let url = components?.url else { throw CoreError.notFound }
+        guard let url = SafeInput.resolveSameOrigin(base: baseURL, path: path, query: query) else {
+            throw CoreError.notFound
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -409,7 +422,10 @@ struct StudioHTTPClient: Sendable {
         // Match the token itself because the active account can change while the token is being acquired.
         if let accountID, DeletionToken.accountID(of: token) != accountID { throw CoreError.cancelled }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        if let channelID { request.setValue(channelID, forHTTPHeaderField: "channelId") }
+        if let channelID {
+            guard SafeInput.isSafeHeaderValue(channelID) else { throw CoreError.invalid("channelId") }
+            request.setValue(channelID, forHTTPHeaderField: "channelId")
+        }
         if let body {
             request.httpBody = body
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")

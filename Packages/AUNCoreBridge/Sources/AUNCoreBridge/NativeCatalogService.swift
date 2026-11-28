@@ -27,19 +27,20 @@ public struct NativeCatalogService: CatalogServicing {
     }
 
     private func get(_ path: String, query: [URLQueryItem] = []) async throws -> Data {
-        var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)
-        if !query.isEmpty { components?.queryItems = query }
-        guard let url = components?.url else { throw CoreError.notFound }
+        guard let url = SafeInput.resolveSameOrigin(base: baseURL, path: path, query: query) else {
+            throw CoreError.notFound
+        }
         return try await fetch(url)
     }
 
     private func fetch(_ url: URL) async throws -> Data {
+        guard SafeInput.isSafeNetworkURL(url) else { throw CoreError.forbidden }
         var request = URLRequest(url: url)
         request.setAUNClient()
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            AUNLog.network.error("GET \(url.path, privacy: .public) failed: \(status)")
+            AUNLog.network.error("GET \(SafeInput.sanitizeLogLine(url.path), privacy: .public) failed: \(status)")
             throw status == 404 ? CoreError.notFound : CoreError.http(status: status)
         }
         return data
@@ -98,6 +99,7 @@ public struct NativeCatalogService: CatalogServicing {
     }
 
     public func video(id: String) async throws -> Video {
+        guard SafeInput.isSafePathSegment(id) else { throw CoreError.notFound }
         if let cached = await detailCache.value(for: id) { return cached }
         let video = try decode(Video.self, from: try await get("/api/videos/\(id)"))
         await detailCache.store(video)
@@ -105,16 +107,19 @@ public struct NativeCatalogService: CatalogServicing {
     }
 
     public func subtitles(videoID: String) async throws -> [SubtitleTrack] {
+        guard SafeInput.isSafePathSegment(videoID) else { throw CoreError.notFound }
         let data = try await get("/api/videos/\(videoID)/subtitles")
         return try decode(DataEnvelope<TracksBody>.self, from: data).data.tracks
     }
 
     public func chapters(videoID: String) async throws -> [Chapter] {
+        guard SafeInput.isSafePathSegment(videoID) else { throw CoreError.notFound }
         let data = try await get("/api/videos/\(videoID)/chapters")
         return try decode(ChaptersEnvelope.self, from: data).chapters.chapters
     }
 
     public func subtitleText(url: URL) async throws -> String {
+        guard SafeInput.isSafeNetworkURL(url) else { throw CoreError.forbidden }
         guard let text = String(data: try await fetch(url), encoding: .utf8) else { throw CoreError.decoding }
         return text
     }

@@ -88,11 +88,18 @@ public final class TUSTransfer: NSObject, TUSTransferring, URLSessionTaskDelegat
         lock.withLock { finishEvents = completion }
     }
 
+    private static let blockedHeaders: Set<String> = ["host", "content-length", "transfer-encoding", "cookie"]
+
     private func request(_ url: URL, _ method: String, _ headers: [String: String]) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("1.0.0", forHTTPHeaderField: "Tus-Resumable")
-        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        for (key, value) in headers
+        where !Self.blockedHeaders.contains(key.lowercased())
+            && SafeInput.isSafeHeaderValue(key) && SafeInput.isSafeHeaderValue(value)
+        {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
         return request
     }
 
@@ -112,6 +119,10 @@ public final class TUSTransfer: NSObject, TUSTransferring, URLSessionTaskDelegat
 
     /// Creates the upload; returns its URL.
     public func create(endpoint: URL, headers: [String: String], size: Int64, metadata: [String: String]) async throws -> URL {
+        guard SafeInput.isSafeNetworkURL(endpoint) else { throw CoreError.forbidden }
+        for key in metadata.keys where !SafeInput.isValidTUSMetadataKey(key) {
+            throw CoreError.upload("invalid metadata key")
+        }
         var request = request(endpoint, "POST", headers)
         request.setValue(String(size), forHTTPHeaderField: "Upload-Length")
         let encoded = metadata.sorted { $0.key < $1.key }
@@ -122,12 +133,15 @@ public final class TUSTransfer: NSObject, TUSTransferring, URLSessionTaskDelegat
         guard let header = http.value(forHTTPHeaderField: "Location"),
             let location = URL(string: header, relativeTo: endpoint)?.absoluteURL
         else { throw CoreError.upload("no Location") }
-        guard location.scheme == "https" || endpoint.scheme != "https" else { throw CoreError.upload("insecure Location") }
+        guard SafeInput.isSafeNetworkURL(location), SafeInput.sameOrigin(location, endpoint) else {
+            throw CoreError.upload("untrusted Location")
+        }
         return location
     }
 
     /// How many bytes the server has.
     public func offset(of url: URL, headers: [String: String]) async throws -> Int64 {
+        guard SafeInput.isSafeNetworkURL(url) else { throw CoreError.forbidden }
         let (_, response) = try await control.data(for: request(url, "HEAD", headers))
         let http = try Self.check(response)
         guard let offset = http.value(forHTTPHeaderField: "Upload-Offset").flatMap(Int64.init) else {
@@ -141,6 +155,7 @@ public final class TUSTransfer: NSObject, TUSTransferring, URLSessionTaskDelegat
         chunk file: URL, to url: URL, offset: Int64, headers: [String: String],
         progress onProgress: @escaping @Sendable (Int64) -> Void
     ) async throws -> Int64 {
+        guard SafeInput.isSafeNetworkURL(url) else { throw CoreError.forbidden }
         var request = request(url, "PATCH", headers)
         request.setValue(String(offset), forHTTPHeaderField: "Upload-Offset")
         request.setValue("application/offset+octet-stream", forHTTPHeaderField: "Content-Type")

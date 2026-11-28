@@ -11,17 +11,25 @@ public struct CSVWriter: Sendable {
     public mutating func append(_ row: [String]) { rows.append(row) }
 
     /// A field quoted when it holds a comma, quote, line break or leading/trailing space. Fields that a spreadsheet
-    /// would run as a formula (`=`, `+`, `-`, `@` at the start of text) get a leading apostrophe.
+    /// would run as a formula (`=`, `+`, `-`, `@`, tab, CR, LF — including after leading whitespace) get a leading apostrophe.
     public static func field(_ value: String) -> String {
         var text = value
-        if let first = text.unicodeScalars.first,
-            "=+@\t\r".unicodeScalars.contains(first)
-                || (first == "-" && Double(text) == nil)
-        {
+        if isFormulaTrigger(text) {
             text = "'" + text
         }
         let needsQuotes = text.contains { ",\"\n\r".contains($0) } || text.first == " " || text.last == " "
         return needsQuotes ? "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\"" : text
+    }
+
+    private static func isFormulaTrigger(_ value: String) -> Bool {
+        guard let first = value.unicodeScalars.first else { return false }
+        if "=+@\t\r\n".unicodeScalars.contains(first) { return true }
+        if first == "-" { return Double(value).map({ !$0.isFinite }) ?? true }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let lead = trimmed.unicodeScalars.first else { return false }
+        if "=+@".unicodeScalars.contains(lead) { return true }
+        if lead == "-" { return Double(trimmed).map({ !$0.isFinite }) ?? true }
+        return false
     }
 
     public static func date(_ date: Date) -> String { date.ISO8601Format() }

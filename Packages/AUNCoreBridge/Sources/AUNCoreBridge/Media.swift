@@ -39,7 +39,9 @@ public struct NativeEncodePlanner: EncodePlanning {
     public init() {}
 
     public func plan(source: URL, preset: EncodePreset, outputDirectory: URL) -> EncodePlan {
-        let name = source.deletingPathExtension().lastPathComponent + "-\(preset.name).mp4"
+        let stem = SafeInput.sanitizeFileName(source.deletingPathExtension().lastPathComponent, fallback: "video")
+        let presetName = SafeInput.sanitizeFileName(preset.name, fallback: "preset")
+        let name = "\(stem)-\(presetName).mp4"
         return EncodePlan(source: source, destination: outputDirectory.appending(path: name), preset: preset)
     }
 }

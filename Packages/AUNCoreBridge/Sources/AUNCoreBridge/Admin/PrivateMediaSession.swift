@@ -35,12 +35,27 @@ public enum PrivateMediaSession {
     }
 }
 
-/// Never caches a response handed to it (a second guard if a protocol class or proxy offers one).
+/// Never caches a response handed to it and refuses cross-origin or insecure redirects so credentials never leak.
 final class NoStoreDelegate: NSObject, URLSessionDataDelegate, Sendable {
     func urlSession(
         _ session: URLSession, dataTask: URLSessionDataTask, willCacheResponse proposedResponse: CachedURLResponse,
         completionHandler: @escaping @Sendable (CachedURLResponse?) -> Void
     ) {
         completionHandler(nil)
+    }
+
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        guard let origin = task.originalRequest?.url,
+            let target = request.url,
+            SafeInput.isSafeNetworkURL(target),
+            SafeInput.sameOrigin(origin, target)
+        else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
     }
 }

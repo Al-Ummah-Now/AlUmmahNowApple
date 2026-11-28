@@ -323,18 +323,21 @@ public struct NativeLiveService: LiveServicing {
         let data: [Lenient]
     }
 
-    private func path(_ id: String, _ tail: String = "") -> String { "/api/live-streams/\(id)\(tail)" }
+    private func path(_ id: String, _ tail: String = "") throws -> String {
+        guard SafeInput.isSafePathSegment(id) else { throw CoreError.notFound }
+        return "/api/live-streams/\(id)\(tail)"
+    }
 
     private func get<T: Decodable>(_ type: T.Type, _ path: String, query: [URLQueryItem] = []) async throws -> T {
-        var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)
-        if !query.isEmpty { components?.queryItems = query }
-        guard let url = components?.url else { throw CoreError.notFound }
+        guard let url = SafeInput.resolveSameOrigin(base: baseURL, path: path, query: query) else {
+            throw CoreError.notFound
+        }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         request.setAUNClient()
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            AUNLog.network.error("GET \(url.path, privacy: .public) failed: \(status)")
+            AUNLog.network.error("GET \(SafeInput.sanitizeLogLine(url.path), privacy: .public) failed: \(status)")
             if let refused = LiveRefused(response, now: now()) { throw refused }
             throw status == 404 ? CoreError.notFound : CoreError.http(status: status)
         }
@@ -359,28 +362,31 @@ public struct NativeLiveService: LiveServicing {
     }
 
     public func stream(id: String) async throws -> LiveStream {
-        try await get(Envelope<StreamBody>.self, path(id)).result.stream
+        try await get(Envelope<StreamBody>.self, try path(id)).result.stream
     }
 
     public func state(id: String) async throws -> TimedLiveState {
         let sentAt = now()
-        let state = try await get(Envelope<LiveState>.self, path(id, "/state")).result
+        let state = try await get(Envelope<LiveState>.self, try path(id, "/state")).result
         return TimedLiveState(state: state, sentAt: sentAt, receivedAt: now())
     }
 
     public func chat(id: String) async throws -> LiveChatPage {
-        try await get(Envelope<LiveChatPage>.self, path(id, "/chat")).result
+        try await get(Envelope<LiveChatPage>.self, try path(id, "/chat")).result
     }
 
     public func chatReplay(id: String, fromMs: Int, toMs: Int) async throws -> LiveChatPage {
         try await get(
-            Envelope<LiveChatPage>.self, path(id, "/chat"),
+            Envelope<LiveChatPage>.self, try path(id, "/chat"),
             query: [URLQueryItem(name: "fromMs", value: String(fromMs)), URLQueryItem(name: "toMs", value: String(toMs))]
         ).result
     }
 
     public func beat(id: String, viewerID: String, leaving: Bool) async throws -> Int? {
-        var request = URLRequest(url: baseURL.appending(path: path(id, "/viewers")))
+        guard let url = SafeInput.resolveSameOrigin(base: baseURL, path: try path(id, "/viewers")) else {
+            throw CoreError.notFound
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setAUNClient()
         request.setValue("text/plain", forHTTPHeaderField: "Content-Type")

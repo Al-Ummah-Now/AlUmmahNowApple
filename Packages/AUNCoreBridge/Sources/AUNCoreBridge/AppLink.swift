@@ -23,14 +23,27 @@ public enum AppLink: Equatable, Sendable {
 
     /// The link for a URL the system handed the app, or nil when it is not one of ours.
     public static func parse(_ url: URL, hosts: Set<String> = AppLink.hosts) -> AppLink? {
-        guard url.scheme?.lowercased() == "https", let host = url.host()?.lowercased(), hosts.contains(host) else {
+        guard url.scheme?.lowercased() == "https",
+            url.user == nil, url.password == nil,
+            let host = url.host()?.lowercased(), hosts.contains(host),
+            url.absoluteString.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7F })
+        else {
             return nil
         }
+        let rawSegments = (URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? "")
+            .split(separator: "/", omittingEmptySubsequences: true)
+        let hasUnsafeSegment = rawSegments.contains { segment in
+            let lower = segment.lowercased()
+            return lower == "." || lower == ".." || lower.contains("%2e") || lower.contains("%2f") || lower.contains("%5c")
+        }
+        guard !hasUnsafeSegment else { return nil }
         var parts = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
         if parts.first == "app" {
             switch parts.dropFirst().first {
             case "auth" where parts.count == 3 && parts[2] == "callback": return .authCallback(url)
-            case "studio": return .studio(StudioLink(Array(parts.dropFirst(2))))
+            case "studio":
+                guard let studio = StudioLink.validated(Array(parts.dropFirst(2))) else { return nil }
+                return .studio(studio)
             default: return nil
             }
         }
@@ -38,10 +51,13 @@ public enum AppLink: Equatable, Sendable {
         guard let head = parts.first else { return nil }
         if head.hasPrefix("@") {
             let handle = String(head.dropFirst())
-            return handle.isEmpty ? nil : .channel(handle: handle)
+            return SafeInput.isSafePathSegment(handle) ? .channel(handle: handle) : nil
         }
-        if head == "studio" { return .studio(StudioLink(Array(parts.dropFirst()))) }
-        guard parts.count >= 2, !parts[1].isEmpty else { return nil }
+        if head == "studio" {
+            guard let studio = StudioLink.validated(Array(parts.dropFirst())) else { return nil }
+            return .studio(studio)
+        }
+        guard parts.count >= 2, SafeInput.isSafePathSegment(parts[1]) else { return nil }
         let id = parts[1]
         switch head {
         case "video": return .video(id: id)
@@ -76,6 +92,12 @@ public struct StudioLink: Equatable, Sendable {
     public init(channelID: String? = nil, section: Section) {
         self.channelID = channelID
         self.section = section
+    }
+
+    static func validated(_ parts: [String]) -> StudioLink? {
+        let link = StudioLink(parts)
+        if let channelID = link.channelID, !SafeInput.isSafePathSegment(channelID) { return nil }
+        return link
     }
 
     init(_ parts: [String]) {
