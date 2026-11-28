@@ -65,7 +65,7 @@ extension CoreTelemetryService {
         let outerQuote = resolveOuterQuote(nsText, spanStart: span.start, inDoubleQuote: input.inDoubleQuote)
         guard isURLContinuationStarter(nsText, at: span.totalEnd, inDoubleQuote: outerQuote == 0x22) else { return nil }
         let probeInput = input.rawURL + "x"
-        let probe = Self.redactURLPathSecrets(probeInput)
+        let probe = Self.redactURLPathSecrets(probeInput, includeUserRoutes: false)
         let webhookProbe = (probe != probeInput && probe.hasSuffix("[redacted]")) ? probe : nil
         if webhookProbe == nil && span.totalEnd < limits.failedContMax { return nil }
         var scanState = ContinuationScanState(
@@ -214,7 +214,7 @@ extension CoreTelemetryService {
                 nsText.substring(with: NSRange(location: span.start, length: sliceEnd - span.start)))
         }
         let prefix = nsText.substring(with: NSRange(location: span.start, length: nestedStart - span.start))
-        let probe = Self.redactURLPathSecrets(prefix + "x")
+        let probe = Self.redactURLPathSecrets(prefix + "x", includeUserRoutes: false)
         if probe != prefix + "x" && probe.hasSuffix("[redacted]") {
             return Self.redactURLPathSecrets(
                 nsText.substring(with: NSRange(location: span.start, length: sliceEnd - span.start)))

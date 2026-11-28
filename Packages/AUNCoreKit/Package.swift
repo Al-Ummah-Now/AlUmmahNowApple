@@ -11,9 +11,10 @@ let package = Package(
         .package(url: "https://github.com/Al-Ummah-Now/AlUmmahNowCore", exact: "0.4.0-rc.13"),
     ],
     targets: [
+        .target(name: "AUNSignalTrap"),
         .target(
             name: "AUNCoreKit",
-            dependencies: ["AUNCoreBridge", .product(name: "AunCore", package: "AlUmmahNowCore")],
+            dependencies: ["AUNCoreBridge", "AUNSignalTrap", .product(name: "AunCore", package: "AlUmmahNowCore")],
             // The root-signed update key list, byte for byte (its signature covers the exact bytes)
             resources: [.copy("Resources/update-keys.json"), .copy("Resources/update-keys.json.sig")]),
         .testTarget(

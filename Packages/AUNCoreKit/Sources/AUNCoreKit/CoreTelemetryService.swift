@@ -2,43 +2,6 @@ import AUNCoreBridge
 import AunCore
 import Foundation
 import Observation
-import os
-
-private final class TrackedLock: @unchecked Sendable {
-    private let underlying = NSLock()
-    private let owner = OSAllocatedUnfairLock<Int>(initialState: 0)
-
-    private static var currentThreadID: Int { Int(bitPattern: pthread_self()) }
-
-    var isHeldByCurrentThread: Bool {
-        let current = Self.currentThreadID
-        return owner.withLock { $0 == current }
-    }
-
-    func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        underlying.lock()
-        let current = Self.currentThreadID
-        owner.withLock { $0 = current }
-        defer {
-            owner.withLock { $0 = 0 }
-            underlying.unlock()
-        }
-        return try body()
-    }
-
-    func tryWithLock<T>(timeout: TimeInterval, _ body: () -> T) -> T? {
-        if isHeldByCurrentThread { return nil }
-        let acquired = underlying.try() || underlying.lock(before: Date(timeIntervalSinceNow: timeout))
-        guard acquired else { return nil }
-        let current = Self.currentThreadID
-        owner.withLock { $0 = current }
-        defer {
-            owner.withLock { $0 = 0 }
-            underlying.unlock()
-        }
-        return body()
-    }
-}
 
 private final class InitOptOutTracker: @unchecked Sendable {
     private let lock = NSLock()
@@ -392,6 +355,7 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             let priorConsent = _consent
             _closed = true
             _consent = .off
+            CrashTelemetryHook.updateSignalCapture(enabled: false, markerPath: signalCrashMarkerPath)
             let pending = Array(_flushWaiters.values)
             _flushWaiters.removeAll()
             return (pending, priorConsent != .off)
@@ -500,26 +464,57 @@ extension CoreTelemetryService {
         bufferPath.map { $0 + ".crash-signal" }
     }
 
-    static func removeSignalCrashMarker(for bufferPath: String?) -> Bool {
-        guard let markerPath = bufferPath.map({ $0 + ".crash-signal" }) else { return true }
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: markerPath) else { return true }
-        do {
-            try fm.removeItem(atPath: markerPath)
-            return true
-        } catch {
-            return !fm.fileExists(atPath: markerPath)
+    func syncCrashSignalCapture() {
+        let (waiters, purgeChanged, consentChanged): ([Task<Void, Never>], Bool, Bool) = lock.withLock {
+            let priorPurgeFailed = _lastPurgeFailed
+            let priorConsent = _closed ? .off : _consent
+            let cancelled = ensureExternalConsentLocked()
+            let enabled = !_closed && _consent != .off
+            CrashTelemetryHook.updateSignalCapture(enabled: enabled, markerPath: signalCrashMarkerPath)
+            let currentConsent = _closed ? .off : _consent
+            return (cancelled, _lastPurgeFailed != priorPurgeFailed, currentConsent != priorConsent)
         }
+        notifyStateChanges(purgeChanged: purgeChanged, consentChanged: consentChanged)
+        for waiter in waiters { waiter.cancel() }
+    }
+
+    static func removeSignalCrashMarker(for bufferPath: String?) -> Bool {
+        guard let markerPath = bufferPath.map({ $0 + ".crash-signal" }), !markerPath.isEmpty else { return true }
+        return removeSingleFile(atPath: markerPath)
     }
 
     func consumePendingSignalCrashIfConsented() {
         guard let markerPath = signalCrashMarkerPath, FileManager.default.fileExists(atPath: markerPath) else { return }
         let raw = (try? String(contentsOfFile: markerPath, encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        try? FileManager.default.removeItem(atPath: markerPath)
         let allowed: Set<String> = ["SIGTRAP", "SIGILL", "SIGABRT", "SIGSEGV", "SIGBUS", "SIGFPE"]
-        guard let signalName = raw, allowed.contains(signalName) else { return }
-        reportCrash(kind: "FatalSignal", message: signalName, stack: nil, fromPreviousSession: true)
+        guard let signalName = raw, allowed.contains(signalName) else {
+            _ = Self.removeSignalCrashMarker(for: bufferPath)
+            return
+        }
+        let report = TelemetryCrashReport(
+            kind: "FatalSignal", message: signalName, stack: nil,
+            occurredAtMs: Int64(Date().timeIntervalSince1970 * 1000),
+            fromPreviousSession: true, propertiesJson: nil
+        )
+        let (waiters, purgeChanged, consentChanged): ([Task<Void, Never>], Bool, Bool) = lock.withLock {
+            let priorPurgeFailed = _lastPurgeFailed
+            let priorConsent = _closed ? .off : _consent
+            let cancelled = ensureExternalConsentLocked()
+            if !_closed && _consent != .off {
+                do {
+                    _ = try client.reportCrash(report: report)
+                    try client.persist()
+                    _ = Self.removeSignalCrashMarker(for: bufferPath)
+                } catch {
+                    AUNLog.network.warning("Previous-session fatal signal crash report deferred: \(error)")
+                }
+            }
+            let currentConsent = _closed ? .off : _consent
+            return (cancelled, _lastPurgeFailed != priorPurgeFailed, currentConsent != priorConsent)
+        }
+        notifyStateChanges(purgeChanged: purgeChanged, consentChanged: consentChanged)
+        for waiter in waiters { waiter.cancel() }
     }
 
     func reportCrashBestEffort(kind: String, message: String, stack: String?) {

@@ -196,5 +196,44 @@ struct CoreTelemetryExternalOptOutTests {
         #expect(persisted.contains("SIGTRAP"))
         #expect(!persisted.contains("Private.mov"))
         service.close()
+        #expect(!CrashTelemetryHook.isSignalTrapInstalled)
+    }
+
+    @Test("Signal hook stays uninstalled when disabled, purges markers in unavailable fallback, and redacts user routes")
+    func signalHookDisabledFallbackMarkerPurgeAndUserRoutes() throws {
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("GET https://example.com/users/AliceSmith failed")
+                == "GET https://example.com/users/[redacted] failed")
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://example.com/%75sers/BobJones")
+                == "https://example.com/%75sers/[redacted]")
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "aun-tel-sigoff-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bufferPath = dir.appendingPathComponent("telemetry-buffer.json").path
+        let markerPath = bufferPath + ".crash-signal"
+
+        let disabled = try CoreTelemetryService(
+            platform: "macos", appVersion: "1.0.0", osVersion: "15.0", deviceClass: "desktop",
+            locale: "en", videosAPIBaseURL: nil, userAgent: "AUNTest/1.0",
+            bufferPath: bufferPath, initialEnabled: false)
+        CrashTelemetryHook.install(service: disabled)
+        #expect(!CrashTelemetryHook.isSignalTrapInstalled)
+        #expect(disabled.setConsent(.full))
+        #expect(CrashTelemetryHook.isSignalTrapInstalled)
+        #expect(disabled.setConsent(.off))
+        #expect(!CrashTelemetryHook.isSignalTrapInstalled)
+        disabled.close()
+
+        try Data("SIGTRAP\n".utf8).write(to: URL(fileURLWithPath: markerPath))
+        let fallback = UnavailableNativeTelemetryService(bufferPath: bufferPath)
+        #expect(!FileManager.default.fileExists(atPath: markerPath))
+        #expect(!fallback.lastPurgeFailed)
+        try Data("SIGABRT\n".utf8).write(to: URL(fileURLWithPath: markerPath))
+        #expect(fallback.setConsent(.off))
+        #expect(!FileManager.default.fileExists(atPath: markerPath))
+        #expect(!fallback.lastPurgeFailed)
     }
 }

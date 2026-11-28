@@ -278,7 +278,7 @@ extension CoreTelemetryService {
     private static func resolveSecretURLPrefix(rawURL: String, redactedURL: String) -> String? {
         if redactedURL != rawURL && redactedURL.hasSuffix("[redacted]") { return redactedURL }
         let probeInput = rawURL + "x"
-        let probe = redactURLPathSecrets(probeInput)
+        let probe = redactURLPathSecrets(probeInput, includeUserRoutes: false)
         return (probe != probeInput && probe.hasSuffix("[redacted]")) ? probe : nil
     }
 

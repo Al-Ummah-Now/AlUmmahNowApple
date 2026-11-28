@@ -64,7 +64,7 @@ extension CoreTelemetryService {
         return lastAt > start ? lastAt + 1 : start
     }
 
-    static func redactURLPathSecrets(_ url: String) -> String {
+    static func redactURLPathSecrets(_ url: String, includeUserRoutes: Bool = true) -> String {
         var result = url
         if let regex = urlUserinfoRegex {
             let range = NSRange(result.startIndex..<result.endIndex, in: result)
@@ -84,7 +84,9 @@ extension CoreTelemetryService {
             result = replaceURLPathSecret(result, regex: regex)
         }
         result = redactEncodedKeyValuesInURL(result)
-        return redactEncodedOpaqueSegmentsInURL(redactEncodedJoseTokensInURL(result))
+        result = redactEncodedJoseTokensInURL(result)
+        if includeUserRoutes { result = redactUserIdentityPathSegments(result) }
+        return redactEncodedOpaqueSegmentsInURL(result)
     }
 
     private static func redactEncodedJoseTokensInURL(_ url: String) -> String {

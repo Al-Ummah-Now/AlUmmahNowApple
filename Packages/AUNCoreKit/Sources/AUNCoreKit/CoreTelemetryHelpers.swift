@@ -480,7 +480,8 @@ extension CoreTelemetryService {
         guard let bufferPath, !bufferPath.isEmpty else { return true }
         let mainOk = removeSingleFile(atPath: bufferPath)
         let tempsOk = removeSiblingTempFiles(for: bufferPath)
-        return mainOk && tempsOk
+        let markerOk = removeSignalCrashMarker(for: bufferPath)
+        return mainOk && tempsOk && markerOk
     }
 
     static func removeSiblingTempFiles(for bufferPath: String?) -> Bool {
@@ -507,7 +508,7 @@ extension CoreTelemetryService {
         return allRemoved
     }
 
-    private static func removeSingleFile(atPath path: String) -> Bool {
+    static func removeSingleFile(atPath path: String) -> Bool {
         // Attempt direct unlink without a fileExists pre-check (which returns false on EACCES).
         if unlink(path) == 0 { return true }
         return errno == ENOENT
