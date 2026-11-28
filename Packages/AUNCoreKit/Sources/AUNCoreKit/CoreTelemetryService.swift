@@ -31,6 +31,8 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     var flushOverrideForTesting: (@Sendable () async throws -> Void)?
     /// Optional hook run inside the queued flush task immediately before the pre-flush consent re-check.
     var beforeFlushExecuteForTesting: (@Sendable () -> Void)?
+    /// Optional hook run right before committing a sanitized event/breadcrumb/crash under active consent.
+    var beforeRecordCommitForTesting: (@Sendable () -> Void)?
 
     public init(
         platform: String,
@@ -126,11 +128,14 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     }
 
     public func track(_ name: String, properties: [String: String]) {
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, consent == .full else { return }
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            let captureEpoch = captureConsentEpoch(requiresFull: true)
+        else { return }
         let safeName = Self.sanitizeLocalPaths(name)
         guard !safeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let json = Self.serializeProperties(properties)
-        withActiveConsent(requiresFull: true) {
+        beforeRecordCommitForTesting?()
+        withActiveConsent(requiresFull: true, expectedEpoch: captureEpoch) {
             do { _ = try client.track(name: safeName, propertiesJson: json) } catch {
                 AUNLog.network.warning("Telemetry track skipped: \(error)")
             }
@@ -138,11 +143,14 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     }
 
     public func trackError(_ code: String, properties: [String: String]) {
-        guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, consent == .full else { return }
+        guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            let captureEpoch = captureConsentEpoch(requiresFull: true)
+        else { return }
         let safeCode = Self.sanitizeLocalPaths(code)
         guard !safeCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let json = Self.serializeProperties(properties)
-        withActiveConsent(requiresFull: true) {
+        beforeRecordCommitForTesting?()
+        withActiveConsent(requiresFull: true, expectedEpoch: captureEpoch) {
             do { _ = try client.trackError(code: safeCode, propertiesJson: json) } catch {
                 AUNLog.network.warning("Telemetry error skipped: \(error)")
             }
@@ -150,7 +158,9 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
     }
 
     public func addBreadcrumb(category: String, message: String, level: TelemetryBreadcrumbSeverity) {
-        guard !category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, consent != .off else { return }
+        guard !category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            let captureEpoch = captureConsentEpoch(requiresFull: false)
+        else { return }
         let mapped: TelemetryBreadcrumbLevel =
             switch level {
             case .debug: .debug
@@ -160,13 +170,14 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             }
         let safeCategory = Self.sanitizeLocalPaths(category)
         let safeMessage = Self.sanitizeLocalPaths(message)
-        withActiveConsent(requiresFull: false) {
+        beforeRecordCommitForTesting?()
+        withActiveConsent(requiresFull: false, expectedEpoch: captureEpoch) {
             client.addBreadcrumb(category: safeCategory, message: safeMessage, level: mapped)
         }
     }
 
     public func reportCrash(kind: String, message: String, stack: String?, fromPreviousSession: Bool) {
-        guard consent != .off else { return }
+        guard let captureEpoch = captureConsentEpoch(requiresFull: false) else { return }
         let trimmedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeKind = trimmedKind.isEmpty ? "UnhandledException" : Self.sanitizeLocalPaths(trimmedKind)
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -177,7 +188,8 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
             occurredAtMs: Int64(Date().timeIntervalSince1970 * 1000),
             fromPreviousSession: fromPreviousSession, propertiesJson: nil
         )
-        withActiveConsent(requiresFull: false) {
+        beforeRecordCommitForTesting?()
+        withActiveConsent(requiresFull: false, expectedEpoch: captureEpoch) {
             do {
                 _ = try client.reportCrash(report: report)
                 try client.persist()
@@ -223,7 +235,8 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
                             let prior = self._lastPurgeFailed
                             let priorC = self._closed ? .off : self._consent
                             let cancelledNow = self.ensureExternalConsentLocked()
-                            let allowed = !self._closed && !self._revoked && self._consent != .off
+                            let allowed =
+                                !self._closed && !self._revoked && self._consent != .off && self._consentEpoch == flushEpoch
                             let currentC = self._closed ? .off : self._consent
                             return (allowed, cancelledNow, self._lastPurgeFailed != prior, currentC != priorC)
                         }
@@ -291,12 +304,30 @@ public final class CoreTelemetryService: TelemetryServicing, Observable, @unchec
         return (!_lastPurgeFailed, waiters)
     }
 
-    private func withActiveConsent(requiresFull: Bool, _ work: () -> Void) {
+    private func captureConsentEpoch(requiresFull: Bool) -> UInt64? {
+        let (epoch, waiters, purgeChanged, consentChanged): (UInt64?, [Task<Void, Never>], Bool, Bool) = lock.withLock {
+            let priorPurgeFailed = _lastPurgeFailed
+            let priorConsent = _closed ? .off : _consent
+            let cancelled = ensureExternalConsentLocked()
+            let allowed = !_closed && (requiresFull ? (_consent == .full) : (_consent != .off))
+            let currentConsent = _closed ? .off : _consent
+            return (
+                allowed ? _consentEpoch : nil, cancelled, _lastPurgeFailed != priorPurgeFailed,
+                currentConsent != priorConsent
+            )
+        }
+        notifyStateChanges(purgeChanged: purgeChanged, consentChanged: consentChanged)
+        for waiter in waiters { waiter.cancel() }
+        return epoch
+    }
+
+    private func withActiveConsent(requiresFull: Bool, expectedEpoch: UInt64? = nil, _ work: () -> Void) {
         let (waiters, purgeChanged, consentChanged): ([Task<Void, Never>], Bool, Bool) = lock.withLock {
             let priorPurgeFailed = _lastPurgeFailed
             let priorConsent = _closed ? .off : _consent
             let cancelled = ensureExternalConsentLocked()
-            let allowed = requiresFull ? (_consent == .full) : (_consent != .off)
+            let epochMatches = expectedEpoch == nil || _consentEpoch == expectedEpoch
+            let allowed = (requiresFull ? (_consent == .full) : (_consent != .off)) && epochMatches
             if !_closed && allowed { work() }
             let currentConsent = _closed ? .off : _consent
             return (cancelled, _lastPurgeFailed != priorPurgeFailed, currentConsent != priorConsent)

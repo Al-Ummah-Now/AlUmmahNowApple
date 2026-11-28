@@ -498,6 +498,12 @@ extension CoreTelemetryAuthSanitizerTests {
             CoreTelemetryService.sanitizeLocalPaths("https://registry.npmjs.org/%40angular/core")
                 == "https://registry.npmjs.org/%40angular/core"
         )
+        #expect(
+            CoreTelemetryService.sanitizeLocalPaths("https://hooks.slack.com:/services/T000/B000/Canary")
+                == "https://hooks.slack.com:/services/[redacted]"
+        )
+        let longProto = "(HTTP/1" + String(repeating: ".1", count: 50_000) + "x)"
+        #expect(CoreTelemetryService.sanitizeLocalPaths(longProto) == "([redacted-path])")
         let repeatedOpen = String(repeating: "x@[", count: 10_000)
         #expect(CoreTelemetryService.sanitizeLocalPaths(repeatedOpen) == repeatedOpen)
     }

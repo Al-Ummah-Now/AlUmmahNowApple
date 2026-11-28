@@ -399,7 +399,7 @@ extension CoreTelemetryService {
 
     private static let parenPathRegexes: [NSRegularExpression] = [
         #"(\()(?:/|~/|[A-Za-z]:[\\/]|\\\\)[^()\r\n\u001E]+(\))"#,
-        #"(\()(?![ \t]*(?:HTTP|TLS|SSL)/\d+(?:\.\d+)*[.,;:!?\s]*\))(?![ \t]*\d+/\d+[.,;:!?\s]*\))"#
+        #"(\()(?![ \t]*(?:HTTP|TLS|SSL)/\d+(?:\.\d+){0,8}[.,;:!?\s]*\))(?![ \t]*\d+/\d+[.,;:!?\s]*\))"#
             + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/[^()\r\n\u001E]+(\))"#,
     ].compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
 
@@ -417,7 +417,7 @@ extension CoreTelemetryService {
                 "[redacted-path]"
             ),
             (
-                #"(^|[\s(\[{)\]}<>"'=,:;\u001F])(?!(?<!['"])(?:HTTP|TLS|SSL)/\d+(?:\.\d+)*(?:$|[\s(\[{)\]},;:!?]|\.(?![A-Za-z0-9])))"#
+                #"(^|[\s(\[{)\]}<>"'=,:;\u001F])(?!(?<!['"])(?:HTTP|TLS|SSL)/\d+(?:\.\d+){0,8}(?:$|[\s(\[{)\]},;:!?]|\.(?![A-Za-z0-9])))"#
                     + #"(?!(?<!['"])\d+/\d+(?:$|[\s)\]},;:!?]|\.(?![A-Za-z0-9])))"#
                     + #"[^\s/\\"'<>()\[\]{}:,;=\u001E\u001F]+/"# + relNonQuoteTail,
                 "$1[redacted-path]"

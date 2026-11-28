@@ -5,7 +5,7 @@ extension CoreTelemetryService {
         pattern: #"((?:^|/|%2[fF])webhooks?(?:/|%2[fF]))[^\s?#]+"#, options: [.caseInsensitive]
     )
     private static let slackWebhookHostRegex = try? NSRegularExpression(
-        pattern: #"https?://hooks\.slack(?:-gov)?\.com\.?(?::\d+)?(?=(?:/|%2[fF]))"#, options: [.caseInsensitive]
+        pattern: #"https?://hooks\.slack(?:-gov)?\.com\.?(?::\d*)?(?=(?:/|%2[fF]))"#, options: [.caseInsensitive]
     )
     private static let slackWebhookRouteRegex = try? NSRegularExpression(
         pattern: #"((?:/|%2[fF])(?:services|workflows|triggers)(?:/|%2[fF]))[^\s?#]+"#, options: [.caseInsensitive]

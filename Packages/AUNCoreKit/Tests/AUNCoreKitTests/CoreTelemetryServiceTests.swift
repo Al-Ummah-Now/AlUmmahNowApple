@@ -456,6 +456,32 @@ struct CoreTelemetryServiceTests {
         #expect(!FileManager.default.fileExists(atPath: tempPath))
     }
 
+    @Test("In-flight recording call drops pre-revocation event after opt-out and re-enable")
+    func inFlightRecordingDropsPreRevocationEvent() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bufferPath = dir.appendingPathComponent("telemetry-buffer.json").path
+        let service = try CoreTelemetryService(
+            platform: "macos",
+            appVersion: "1.0.0",
+            osVersion: "macOS 15.0",
+            deviceClass: "desktop",
+            locale: "en",
+            videosAPIBaseURL: nil,
+            userAgent: "AlUmmahNowMac/1.0.0",
+            bufferPath: bufferPath,
+            initialEnabled: true
+        )
+        service.beforeRecordCommitForTesting = {
+            #expect(service.setConsent(.off))
+            #expect(service.setConsent(.full))
+        }
+        service.track("consent_probe", properties: [:])
+        service.trackError("consent_error", properties: [:])
+        service.reportCrash(kind: "ProbeCrash", message: "stale", stack: nil, fromPreviousSession: false)
+        #expect(service.pendingCount == 0)
+    }
+
     @Test("Resolve ingest URL requires HTTPS, strips path/query/fragment, and rejects credentials")
     func resolveIngestURLStrict() {
         #expect(
